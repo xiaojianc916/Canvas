@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
-const TARGET = '94d118dde8a992e15ebd3a56564cffb8524db912'
+const TARGET = '5c09f7cfffc89bdd871b7701042a3e8e8d8391e3'
 const dryRun = process.argv.includes('--dry-run')
 const forceDirty = process.argv.includes('--allow-dirty')
 const root = resolve(process.cwd())
