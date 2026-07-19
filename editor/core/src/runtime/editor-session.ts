@@ -1,5 +1,5 @@
-import { createTLStore, getSnapshot } from '@tldraw/editor'
-import type { Editor, TLEditorSnapshot } from 'tldraw'
+import { createTLStore } from '@tldraw/editor'
+import type { Editor, TLStore, TLEditorSnapshot } from 'tldraw'
 
 import {
   buildExtensionRegistration,
@@ -17,10 +17,11 @@ export interface CreateEditorSessionOptions {
 export interface EditorSession {
   readonly sessionId: string
   readonly documentId: string
-  readonly store: ReturnType<typeof createTLStore>
+  readonly store: TLStore
   readonly registration: ExtensionRegistration
-  readonly getEditor: () => Editor | null
-  readonly attachEditor: (editor: Editor) => () => void
+  readonly editor: Editor | null
+  readonly attachEditor: (editor: Editor) => void
+  readonly detachEditor: (editor: Editor) => void
   readonly getSnapshot: () => TLEditorSnapshot
   readonly dispose: () => void
 }
@@ -32,10 +33,10 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     ...(registration.bindingUtils.length > 0 ? { bindingUtils: registration.bindingUtils } : {}),
     ...(options.initialSnapshot ? { snapshot: options.initialSnapshot } : {}),
   })
-  let editor: Editor | null = null
+  let attachedEditor: Editor | null = null
   let disposed = false
 
-  function ensureActive(): void {
+  function assertActive(): void {
     if (disposed) {
       throw new Error('EDITOR_SESSION_DISPOSED')
     }
@@ -46,31 +47,75 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     documentId: options.documentId,
     store,
     registration,
-    getEditor() {
-      return editor
+    get editor() {
+      return attachedEditor
     },
-    attachEditor(nextEditor) {
-      ensureActive()
-      if (editor && editor !== nextEditor) {
+    attachEditor(editor) {
+      assertActive()
+      if (attachedEditor && attachedEditor !== editor) {
         throw new Error('EDITOR_SESSION_ALREADY_ATTACHED')
       }
-      editor = nextEditor
-      return () => {
-        if (editor === nextEditor) {
-          editor = null
-        }
+      attachedEditor = editor
+    },
+    detachEditor(editor) {
+      if (attachedEditor === editor) {
+        attachedEditor = null
       }
     },
     getSnapshot() {
-      ensureActive()
-      return editor?.getSnapshot() ?? getSnapshot(store)
+      assertActive()
+      return attachedEditor?.getSnapshot() ?? store.getStoreSnapshot()
     },
     dispose() {
-      if (disposed) {
+      attachedEditor = null
+      disposed = true
+    },
+  }
+}
+
+export interface EditorSessionRegistry {
+  readonly create: (options: CreateEditorSessionOptions) => EditorSession
+  readonly get: (sessionId: string) => EditorSession | null
+  readonly require: (sessionId: string) => EditorSession
+  readonly close: (sessionId: string) => void
+  readonly dispose: () => void
+}
+
+export function createEditorSessionRegistry(): EditorSessionRegistry {
+  const sessions = new Map<string, EditorSession>()
+
+  return {
+    create(options) {
+      if (sessions.has(options.sessionId)) {
+        throw new Error('EDITOR_SESSION_DUPLICATE_ID')
+      }
+      const session = createEditorSession(options)
+      sessions.set(options.sessionId, session)
+      return session
+    },
+    get(sessionId) {
+      return sessions.get(sessionId) ?? null
+    },
+    require(sessionId) {
+      const session = sessions.get(sessionId)
+      if (!session) {
+        throw new Error('EDITOR_SESSION_NOT_FOUND')
+      }
+      return session
+    },
+    close(sessionId) {
+      const session = sessions.get(sessionId)
+      if (!session) {
         return
       }
-      disposed = true
-      editor = null
+      session.dispose()
+      sessions.delete(sessionId)
+    },
+    dispose() {
+      for (const session of sessions.values()) {
+        session.dispose()
+      }
+      sessions.clear()
     },
   }
 }
