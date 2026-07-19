@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.cache/typescript/file.tsbuildinfo",
+    "paths": {
+      "@hybrid-canvas/kernel": ["../../foundations/kernel/src/public-api.ts"],
+      "@hybrid-canvas/observability": ["../../foundations/observability/src/public-api.ts"],
+      "@hybrid-canvas/asset": ["../assets/src/public-api.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

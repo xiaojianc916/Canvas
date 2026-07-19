@@ -6,9 +6,9 @@
 
 | Crate | 职责 |
 |-------|------|
-| `domains/asset/native` | 内容寻址、完整性校验、存储后端 |
-| `domains/file/native` | 原子写入、容器解析、文件锁、崩溃恢复、变更监听 |
-| `domains/plugin/native` | 包解析、签名验证、完整性、信任存储 |
+| `editor/assets/native` | 内容寻址、完整性校验、存储后端 |
+| `editor/persistence/native` | 原子写入、容器解析、文件锁、崩溃恢复、变更监听 |
+| `editor/extensions/native` | 包解析、签名验证、完整性、信任存储 |
 
 规则：
 - 不依赖 `tauri` crate

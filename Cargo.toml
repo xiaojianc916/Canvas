@@ -2,9 +2,9 @@
 resolver = "3"
 members = [
   "apps/desktop/src-tauri",
-  "domains/asset/native",
-  "domains/file/native",
-  "domains/plugin/native",
+  "editor/assets/native",
+  "editor/persistence/native",
+  "editor/extensions/native",
   "platforms/desktop-runtime/native",
 ]
 default-members = [

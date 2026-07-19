@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.cache/typescript/freehand.tsbuildinfo",
+    "paths": {
+      "@hybrid-canvas/kernel": ["../../foundations/kernel/src/public-api.ts"],
+      "@hybrid-canvas/geometry": ["../../foundations/geometry/src/public-api.ts"],
+      "@hybrid-canvas/observability": ["../../foundations/observability/src/public-api.ts"],
+      "@hybrid-canvas/canvas": ["../../editor/core/src/public-api.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

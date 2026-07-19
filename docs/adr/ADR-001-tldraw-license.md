@@ -23,21 +23,21 @@ Accepted
 - 本地开发通过 `.env.local` 配置（不提交）
 - 构建脚本校验 license key 存在性，缺失则失败
 
-### 2. 架构层面解耦 tldraw（退出策略前置）
-在 `domains/canvas` 内部建立 **严格边界**：
+### 2. 架构层面：tldraw 为编辑器内核，退出策略通过扩展边界保障
+
+tldraw 是 `editor/core` 的不可分割内核，而非可替换适配器。退出策略通过限定 `public-api.ts` 的导出边界实现：
 
 | 层 | 职责 | 禁止事项 |
 |---|---|---|
-| `adapters/tldraw` | TLStore 初始化、shape/tool/binding 注册、license key 注入、导入导出适配 | 不导出 tldraw 类型到 public-api |
-| `application/` | 画布用例（创建/删除元素、撤销重做、选择、编组） | 不直接操作 TLStore |
-| `domain/` | 画布领域模型（Canvas、Element、Selection、History） | 零 tldraw 依赖 |
-| `ports/` | `CanvasPort`、`CanvasRepository`、`ShapeSerializer` | 仅领域类型 |
+| `editor/core` | Editor Runtime、TLSchema/TLStore 创建、Extension Registry | 不将 tldraw 类型泄漏到 features/public-api |
+| `features/*` | 通过 `EditorExtension` 贡献 Shape/Tool/Binding/Record | 直接创建 TLStore 或 Editor |
+| `editor/extensions` | 插件声明与生命周期管理 | 直接操作 Editor |
 
 **关键约束：**
-- `domain/`、`application/`、`ports/` **零 tldraw 导入**
-- 仅 `adapters/tldraw/` 可导入 `tldraw`、`@tldraw/tlschema`、`@tldraw/editor`
-- 文件格式 `.draw` **不等于** TLStore snapshot；领域层自有序列化 Schema
-- Shape/Tool/Binding 仅存在于 adapter 内部，领域层使用 `Element` + `ShapeType` 枚举
+- 只有 `editor/core` 可以创建 TLSchema、TLStore、Editor
+- Feature 通过 `EditorExtension` 接口贡献类型
+- 文件格式 `.draw` 以 TLStore snapshot 为核心
+- 退出场景下仅需替换 `editor/core` 及其 snapshot 格式
 
 ### 3. 许可证成本纳入预算
 - 团队版许可证费用记入项目运营预算
@@ -50,10 +50,10 @@ Accepted
 
 ### 5. 退出策略（随时可执行）
 若许可证谈判失败、tldraw 变更许可模式、或技术栈调整：
-1. 在 `adapters/` 新增 `canvas-kit` / `fabric` / `excalidraw` 等替代 adapter
-2. 领域层、应用层、端口**零修改**
+1. 替换 `editor/core` 实现（适配新内核的 Editor Runtime、TLSchema、Extension API）
+2. Feature 层通过一致的 `EditorExtension` 接口迁移
 3. 通过 feature flag 逐步切流量
-4. 保留 `.draw` 文件格式兼容性（迁移脚本由 import-export 领域提供）
+4. 保留 `.draw` 文件格式兼容性（迁移脚本由 import-export feature 提供）
 
 ## 后果
 
@@ -63,12 +63,11 @@ Accepted
 - 具备真实的技术选型可逆性
 
 ### 负面
-- 初期需编写 adapter 层胶水代码（约 2-3 人周）
-- 需维护双套序列化（领域 Schema + tldraw snapshot）
+- 退出时需要替换整个 `editor/core`，成本约为 3-5 人周
 
 ## 验收标准
 - [ ] CI 中 `pnpm build` 缺少 `TLDRaw_LICENSE_KEY` 直接失败
-- [ ] `domains/canvas/src/public-api.ts` **不导出** 任何 `tldraw` 类型
-- [ ] `domains/canvas/src/domain/`、`application/`、`ports/` 目录下 `grep -r "tldraw"` 结果为空
-- [ ] `.draw` 文件 round-trip 测试通过（不依赖 tldraw 运行时）
+- [ ] `editor/core/src/public-api.ts` **不导出** 任何 `tldraw` 类型
+- [ ] Feature 通过 `EditorExtension` 贡献，不直接创建 Editor 或 TLStore
+- [ ] `.draw` 文件 round-trip 测试通过
 - [ ] ADR 评审通过，记录许可证费用、到期日、负责人

@@ -15,9 +15,9 @@ Platform-level native capabilities shared across any desktop application build.
 **Does NOT own:**
 - Tauri IPC or Tauri commands
 - Business logic of any domain
-- Asset storage (domains/asset/native)
-- File container (domains/file/native)
-- Plugin verification (domains/plugin/native)
+- Asset storage (editor/assets/native)
+- File container (editor/persistence/native)
+- Plugin verification (editor/extensions/native)
 
 ## Activation phase
 

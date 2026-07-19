@@ -1,13 +1,15 @@
+import type { Editor } from 'tldraw'
+
 import {
   CanvasInspector,
-  type CanvasSessionViewModel,
   CanvasStatusLeft,
   CanvasStatusRight,
   EditorCanvas,
-  EMPTY_CANVAS_SESSION_VIEW_MODEL,
+  EditorProvider,
 } from '@hybrid-canvas/canvas'
+import { flowchartExtension } from '@hybrid-canvas/flowchart'
 import { WorkspaceShell, type WorkspaceShellActions } from '@hybrid-canvas/workspace'
-import { useCallback, useState, useSyncExternalStore } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
 
 import { useApplicationRuntime } from '../../bootstrap/react-providers'
 
@@ -18,13 +20,16 @@ export function MainWindow() {
     runtime.workspace.getSnapshot,
     runtime.workspace.getSnapshot,
   )
-  const [canvasSession, setCanvasSession] = useState<CanvasSessionViewModel>(
-    EMPTY_CANVAS_SESSION_VIEW_MODEL,
-  )
 
-  const handleCanvasSessionChange = useCallback((model: CanvasSessionViewModel) => {
-    setCanvasSession(model)
-  }, [])
+  const handleSave = useCallback(
+    (editor: Editor) => {
+      const snapshot = editor.getSnapshot()
+      const activeDoc = workbench.activeDocument
+      if (!activeDoc) return
+      void runtime.files.saveDocument(activeDoc.documentId, snapshot)
+    },
+    [runtime.files, workbench.activeDocument],
+  )
 
   const actions: WorkspaceShellActions = {
     createDocument() {
@@ -37,11 +42,9 @@ export function MainWindow() {
       void runtime.files.openDocument()
     },
     activateDocument(sessionId) {
-      setCanvasSession(EMPTY_CANVAS_SESSION_VIEW_MODEL)
       void runtime.workspace.activateDocument(sessionId)
     },
     closeDocument(sessionId) {
-      setCanvasSession(EMPTY_CANVAS_SESSION_VIEW_MODEL)
       void runtime.workspace.closeDocument(sessionId)
     },
     activatePage(_pageId) {
@@ -61,23 +64,26 @@ export function MainWindow() {
   const activeDocument = workbench.activeDocument
 
   return (
-    <WorkspaceShell
-      actions={actions}
-      editor={
-        activeDocument ? (
-          <EditorCanvas
-            documentId={activeDocument.documentId}
-            key={activeDocument.sessionId}
-            onSessionChange={handleCanvasSessionChange}
-            sessionId={activeDocument.sessionId}
-          />
-        ) : null
-      }
-      inspector={<CanvasInspector selection={canvasSession.selection} />}
-      model={workbench}
-      statusLeft={<CanvasStatusLeft model={canvasSession} />}
-      statusRight={<CanvasStatusRight model={canvasSession} />}
-    />
+    <EditorProvider>
+      <WorkspaceShell
+        actions={actions}
+        editor={
+          activeDocument ? (
+            <EditorCanvas
+              documentId={activeDocument.documentId}
+              extensions={[flowchartExtension]}
+              key={activeDocument.sessionId}
+              onSave={handleSave}
+              sessionId={activeDocument.sessionId}
+            />
+          ) : null
+        }
+        inspector={<CanvasInspector />}
+        model={workbench}
+        statusLeft={<CanvasStatusLeft />}
+        statusRight={<CanvasStatusRight />}
+      />
+    </EditorProvider>
   )
 }
 

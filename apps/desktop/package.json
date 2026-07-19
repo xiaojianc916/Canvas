@@ -18,15 +18,14 @@
   },
   "dependencies": {
     "@hybrid-canvas/canvas": "workspace:*",
-    "@hybrid-canvas/workspace": "workspace:*",
     "@hybrid-canvas/design-system": "workspace:*",
-    "@tauri-apps/api": "catalog:tauri",
-    "@tauri-apps/plugin-dialog": "catalog:tauri",
-    "@tauri-apps/plugin-opener": "catalog:tauri",
-    "@tauri-apps/plugin-window-state": "catalog:tauri",
+    "@hybrid-canvas/file": "workspace:*",
+    "@hybrid-canvas/flowchart": "workspace:*",
+    "@hybrid-canvas/workspace": "workspace:*",
     "@hybrid-canvas/platforms-desktop-runtime": "workspace:*",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "tldraw": "catalog:"
   },
 "devDependencies": {
     "@tailwindcss/vite": "catalog:",

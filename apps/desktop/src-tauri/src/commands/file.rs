@@ -1,6 +1,7 @@
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::path::PathBuf;
 use tauri::{command, AppHandle};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_fs::FilePath;
@@ -158,4 +159,51 @@ pub async fn file_close(app: AppHandle, path: String) -> Result<()> {
     store.set("files", serde_json::to_value(files)?);
     store.save()?;
     Ok(())
+}
+
+#[derive(Debug, Deserialize, Serialize, Type)]
+pub struct DrawSaveRequest {
+    pub path: String,
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Type)]
+pub struct DrawReadResult {
+    pub content: String,
+}
+
+#[command]
+pub async fn file_save_draw(request: DrawSaveRequest) -> Result<()> {
+    let path = PathBuf::from(&request.path);
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let temp_path = path.with_extension("draw.tmp");
+    std::fs::write(&temp_path, &request.content)?;
+    std::fs::rename(&temp_path, &path)?;
+
+    Ok(())
+}
+
+#[command]
+pub async fn file_read_draw(path: String) -> Result<DrawReadResult> {
+    let content = std::fs::read_to_string(&path)?;
+    Ok(DrawReadResult { content })
+}
+
+#[command]
+pub async fn file_create_draw(path: String, content: String) -> Result<DrawReadResult> {
+    let file_path = PathBuf::from(&path);
+
+    if let Some(parent) = file_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let temp_path = file_path.with_extension("draw.tmp");
+    std::fs::write(&temp_path, &content)?;
+    std::fs::rename(&temp_path, &file_path)?;
+
+    Ok(DrawReadResult { content })
 }

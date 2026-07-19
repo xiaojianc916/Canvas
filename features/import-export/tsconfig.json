@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.cache/typescript/import-export.tsbuildinfo",
+    "paths": {
+      "@hybrid-canvas/kernel": ["../../foundations/kernel/src/public-api.ts"],
+      "@hybrid-canvas/observability": ["../../foundations/observability/src/public-api.ts"],
+      "@hybrid-canvas/flowchart": ["../../features/flowchart/src/public-api.ts"],
+      "@hybrid-canvas/scientific-plot": ["../../features/scientific-plot/src/public-api.ts"],
+      "@hybrid-canvas/freehand": ["../../features/freehand/src/public-api.ts"],
+      "@hybrid-canvas/canvas": ["../../editor/core/src/public-api.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

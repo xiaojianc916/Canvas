@@ -4,10 +4,10 @@
     "tsBuildInfoFile": "./node_modules/.cache/typescript/desktop-runtime.tsbuildinfo",
     "paths": {
       "@hybrid-canvas/desktop-ipc": ["../desktop-ipc/src/public-api.ts"],
-      "@hybrid-canvas/asset": ["../../domains/asset/src/public-api.ts"],
-      "@hybrid-canvas/file": ["../../domains/file/src/public-api.ts"],
-      "@hybrid-canvas/plugin": ["../../domains/plugin/src/public-api.ts"],
-      "@hybrid-canvas/settings": ["../../domains/settings/src/public-api.ts"]
+      "@hybrid-canvas/asset": ["../../editor/assets/src/public-api.ts"],
+      "@hybrid-canvas/file": ["../../editor/persistence/src/public-api.ts"],
+      "@hybrid-canvas/plugin": ["../../editor/extensions/src/public-api.ts"],
+      "@hybrid-canvas/settings": ["../../features/settings/src/public-api.ts"]
     }
   },
   "include": ["src/**/*.ts"]

@@ -1,0 +1,37 @@
+{
+  "name": "@hybrid-canvas/settings",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/public-api.ts",
+  "types": "./src/public-api.ts",
+  "exports": {
+    ".": "./src/public-api.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome lint src",
+    "lint:fix": "biome lint --write src",
+    "test": "vitest run",
+    "clean": "rm -rf node_modules dist"
+  },
+"devDependencies": {
+    "@hybrid-canvas/foundations-test-kit": "workspace:*",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "dependencies": {
+    "valibot": "catalog:",
+    "@hybrid-canvas/foundations-kernel": "workspace:*",
+    "@hybrid-canvas/design-system": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  }
+}
+
+

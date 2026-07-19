@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
-  - "domains/*"
+  - "editor/*"
+  - "features/*"
   - "foundations/*"
   - "platforms/*"
   - "tooling/*"
@@ -27,8 +28,6 @@ catalog:
   esbuild: "0.25.5"
   lucide-react: "1.25.0"
 
-  perfect-freehand: "1.2.3"
-
   react: "19.2.7"
   react-dom: "19.2.7"
   tailwind-merge: "3.6.0"
@@ -44,25 +43,22 @@ catalog:
   valibot: "1.4.2"
   vite: "8.1.4"
   vitest: "4.1.10"
-  y-websocket: "3.0.0"
-
-  yjs: "13.6.31"
-  zustand: "5.0.14"
+  "@tldraw/editor": "5.2.5"
+  "@tldraw/sync": "5.2.5"
+  "@tldraw/sync-core": "5.2.5"
+  "@tldraw/tlschema": "5.2.5"
+  "@tldraw/validate": "5.2.5"
 
 catalogs:
   tauri:
     "@tauri-apps/api": "2.11.1"
     "@tauri-apps/cli": "2.11.4"
     "@tauri-apps/plugin-clipboard-manager": "2.3.2"
-    "@tauri-apps/plugin-dialog": "2.7.1"
     "@tauri-apps/plugin-fs": "2.5.1"
     "@tauri-apps/plugin-global-shortcut": "2.3.2"
     "@tauri-apps/plugin-notification": "2.3.3"
-    "@tauri-apps/plugin-opener": "2.5.4"
     "@tauri-apps/plugin-process": "2.3.1"
     "@tauri-apps/plugin-shell": "2.3.5"
-    "@tauri-apps/plugin-store": "2.4.3"
-    "@tauri-apps/plugin-window-state": "2.4.1"
 
   testing:
     "@playwright/test": "^1.58.0"
