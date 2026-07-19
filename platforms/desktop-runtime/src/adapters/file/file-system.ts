@@ -1,5 +1,8 @@
 import { invoke } from '@hybrid-canvas/desktop-ipc'
-import type { AtomicDocumentStorage, FileReference } from '@hybrid-canvas/file'
+
+interface DrawReadResult {
+  readonly content: string
+}
 
 export interface DrawFileCommands {
   readonly saveDraw: (path: string, content: string) => Promise<void>
@@ -9,21 +12,27 @@ export interface DrawFileCommands {
 
 export function createDrawFileCommands(): DrawFileCommands {
   return {
-    saveDraw: (path, content) => invoke('file_save_draw', { request: { path, content } }),
-    readDraw: (path) => invoke('file_read_draw', { path }).then((r: any) => r.content as string),
-    createDraw: (path, content) => invoke('file_create_draw', { path, content }).then((r: any) => r.content as string),
-  }
-}
+    saveDraw: (path, content) =>
+      invoke<void>('file_save_draw', {
+        request: {
+          path,
+          content,
+        },
+      }),
 
-export function createAtomicDocumentStorage(): AtomicDocumentStorage {
-  return {
-    create: (archive: any) => invoke('file_create', { archive }),
-    open: (ref: FileReference) => invoke('file_open', { ref }),
-    commit: (request: any) => invoke('file_commit', { request }),
-    createRecoverySnapshot: (request: any) => invoke('file_recovery_snapshot', { request }),
-    watch: (_ref: FileReference, _listener: any) => {
-      // Phase 2: implement file watching via Rust notify
-      return () => {}
-    },
+    readDraw: async (path) =>
+      (
+        await invoke<DrawReadResult>('file_read_draw', {
+          path,
+        })
+      ).content,
+
+    createDraw: async (path, content) =>
+      (
+        await invoke<DrawReadResult>('file_create_draw', {
+          path,
+          content,
+        })
+      ).content,
   }
 }

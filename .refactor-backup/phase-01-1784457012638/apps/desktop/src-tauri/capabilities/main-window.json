@@ -1,8 +1,6 @@
 {
   "identifier": "main-window-capability",
-  "windows": [
-    "main"
-  ],
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:default",
@@ -12,7 +10,12 @@
     "core:window:allow-show",
     "core:event:default",
     "dialog:default",
+    "opener:default",
+    "fs:default",
     "clipboard-manager:default",
+    "shell:allow-open",
+    "process:default",
+    "store:default",
     "window-state:default"
   ]
 }

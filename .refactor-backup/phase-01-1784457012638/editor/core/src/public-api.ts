@@ -5,9 +5,11 @@ export {
   type CanvasToolbarProps,
   EditorProvider,
   useEditor,
-  buildExtensionRegistration,
-  HYBRID_CANVAS_EXTENSION_API_VERSION,
+  registerExtension,
+  getExtensionRegistration,
+  clearExtensions,
   type HybridCanvasExtension,
+  type CustomRecordContribution,
   type ExtensionRegistration,
 } from './react/public-api'
 

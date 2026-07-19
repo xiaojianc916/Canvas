@@ -70,6 +70,7 @@ export function createApplicationRuntime(): ApplicationRuntime {
         await drawFiles.saveDraw(path, json)
       },
     },
+    storage: createAtomicDocumentStorage(),
     drawFiles,
     settings: createDesktopSettingsStore(),
     dialog,

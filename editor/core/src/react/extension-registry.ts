@@ -4,57 +4,57 @@ import type {
   TLStateNodeConstructor,
 } from 'tldraw'
 
+export const HYBRID_CANVAS_EXTENSION_API_VERSION = '1'
+
 export interface HybridCanvasExtension {
   readonly id: string
   readonly version: string
   readonly apiVersion: string
-  readonly shapeUtils?: TLAnyShapeUtilConstructor[]
-  readonly bindingUtils?: TLAnyBindingUtilConstructor[]
-  readonly tools?: TLStateNodeConstructor[]
-  readonly records?: CustomRecordContribution[]
-  readonly shapeLabels?: Record<string, string>
-}
-
-export interface CustomRecordContribution {
-  readonly id: string
-  readonly record: Record<string, unknown>
+  readonly shapeUtils?: readonly TLAnyShapeUtilConstructor[]
+  readonly bindingUtils?: readonly TLAnyBindingUtilConstructor[]
+  readonly tools?: readonly TLStateNodeConstructor[]
+  readonly shapeLabels?: Readonly<Record<string, string>>
 }
 
 export interface ExtensionRegistration {
   readonly extensions: readonly HybridCanvasExtension[]
-  readonly shapeUtils: TLAnyShapeUtilConstructor[]
-  readonly bindingUtils: TLAnyBindingUtilConstructor[]
-  readonly tools: TLStateNodeConstructor[]
-  readonly shapeLabels: Record<string, string>
+  readonly shapeUtils: readonly TLAnyShapeUtilConstructor[]
+  readonly bindingUtils: readonly TLAnyBindingUtilConstructor[]
+  readonly tools: readonly TLStateNodeConstructor[]
+  readonly shapeLabels: Readonly<Record<string, string>>
 }
 
-const registered: HybridCanvasExtension[] = []
-
-export function registerExtension(extension: HybridCanvasExtension): void {
-  const existing = registered.findIndex((e) => e.id === extension.id)
-  if (existing >= 0) {
-    registered[existing] = extension
-    return
-  }
-  registered.push(extension)
-}
-
-export function getExtensionRegistration(): ExtensionRegistration {
+export function buildExtensionRegistration(
+  input: readonly HybridCanvasExtension[] = [],
+): ExtensionRegistration {
+  const ids = new Set<string>()
   const shapeUtils: TLAnyShapeUtilConstructor[] = []
   const bindingUtils: TLAnyBindingUtilConstructor[] = []
   const tools: TLStateNodeConstructor[] = []
   const shapeLabels: Record<string, string> = {}
 
-  for (const ext of registered) {
-    if (ext.shapeUtils) shapeUtils.push(...ext.shapeUtils)
-    if (ext.bindingUtils) bindingUtils.push(...ext.bindingUtils)
-    if (ext.tools) tools.push(...ext.tools)
-    if (ext.shapeLabels) Object.assign(shapeLabels, ext.shapeLabels)
+  for (const extension of input) {
+    if (!extension.id || ids.has(extension.id)) {
+      throw new Error('EXTENSION_DUPLICATE_ID')
+    }
+
+    if (extension.apiVersion !== HYBRID_CANVAS_EXTENSION_API_VERSION) {
+      throw new Error('EXTENSION_API_VERSION_MISMATCH')
+    }
+
+    ids.add(extension.id)
+
+    shapeUtils.push(...(extension.shapeUtils ?? []))
+    bindingUtils.push(...(extension.bindingUtils ?? []))
+    tools.push(...(extension.tools ?? []))
+    Object.assign(shapeLabels, extension.shapeLabels)
   }
 
-  return { extensions: [...registered], shapeUtils, bindingUtils, tools, shapeLabels }
-}
-
-export function clearExtensions(): void {
-  registered.length = 0
+  return Object.freeze({
+    extensions: Object.freeze([...input]),
+    shapeUtils: Object.freeze(shapeUtils),
+    bindingUtils: Object.freeze(bindingUtils),
+    tools: Object.freeze(tools),
+    shapeLabels: Object.freeze(shapeLabels),
+  })
 }

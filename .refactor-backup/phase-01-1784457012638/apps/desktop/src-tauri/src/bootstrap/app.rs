@@ -28,7 +28,11 @@ pub fn build() -> tauri::Builder<Wry> {
         .invoke_handler(tauri::generate_handler![
             commands::opener::opener_show_in_folder,
             commands::opener::opener_open_external,
-
+            commands::plugin::plugin_install,
+            commands::plugin::plugin_uninstall,
+            commands::plugin::plugin_list,
+            commands::plugin::plugin_enable,
+            commands::plugin::plugin_disable,
             commands::asset::asset_store,
             commands::asset::asset_load,
             commands::asset::asset_delete,

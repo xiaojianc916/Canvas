@@ -40,7 +40,7 @@ export function EditorCanvas({
       ...(hasBindingUtils ? { bindingUtils: registration.bindingUtils } : {}),
       ...(initialSnapshot ? { snapshot: initialSnapshot } : {}),
     })
-  }, [initialSnapshot, registration])
+  }, [initialSnapshot])
 
   const tldrawProps = useMemo((): TldrawProps => {
     const base: TldrawProps = {
