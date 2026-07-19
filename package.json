@@ -1,0 +1,42 @@
+{
+  "name": "hybrid-canvas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first hybrid canvas for diagrams, scientific plots, freehand drawing and collaboration.",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@11.0.0",
+  "engines": {
+    "node": ">=24.0.0 <25",
+    "pnpm": ">=11.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --filter=@hybrid-canvas/desktop",
+    "dev:desktop": "pnpm --filter @hybrid-canvas/desktop dev",
+    "build": "turbo run build",
+    "build:desktop": "pnpm --filter @hybrid-canvas/desktop build",
+    "build:native": "cargo build --workspace",
+    "check": "turbo run check && pnpm check:rust",
+    "check:rust": "cargo check --workspace --all-targets --all-features",
+    "typecheck": "turbo run typecheck",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "test": "turbo run test && cargo test --workspace --all-features",
+    "test:rust": "cargo test --workspace --all-features",
+    "clippy": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "audit": "pnpm audit --audit-level high",
+    "audit:rust": "cargo deny check",
+    "clean": "turbo run clean && rimraf node_modules .turbo target",
+    "tauri": "pnpm --filter @hybrid-canvas/desktop tauri",
+    "tauri:dev": "pnpm --filter @hybrid-canvas/desktop tauri dev",
+    "tauri:build": "pnpm --filter @hybrid-canvas/desktop tauri build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.4",
+    "@types/node": "catalog:",
+    "rimraf": "6.0.1",
+    "turbo": "2.10.5",
+    "typescript": "catalog:"
+  }
+}

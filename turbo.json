@@ -1,0 +1,78 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "globalDependencies": [
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "tsconfig.base.json",
+    "biome.json",
+    "turbo.json",
+    "rust-toolchain.toml"
+  ],
+  "globalEnv": ["CI", "NODE_ENV", "RUST_BACKTRACE", "TAURI_ENV_*", "VITE_*"],
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "interruptible": true
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.test.*",
+        "!**/*.spec.*",
+        "!**/__tests__/**",
+        "!**/fixtures/**"
+      ],
+      "outputs": ["dist/**", "build/**", ".vite/**", "coverage/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "inputs": ["$TURBO_DEFAULT$", "../../tsconfig.base.json", "tsconfig.json"],
+      "outputs": []
+    },
+    "check": {
+      "dependsOn": ["^check"],
+      "inputs": ["$TURBO_DEFAULT$", "../../tsconfig.base.json", "tsconfig.json"],
+      "outputs": []
+    },
+    "lint": {
+      "dependsOn": ["^lint"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "vitest.config.*", "playwright.config.*"],
+      "outputs": ["coverage/**", "test-results/**", "playwright-report/**"]
+    },
+    "test:unit": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "vitest.config.*"],
+      "outputs": ["coverage/**"]
+    },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": ["test-results/**"]
+    },
+    "test:architecture": {
+      "dependsOn": ["^build"],
+      "outputs": ["test-results/architecture/**"]
+    },
+    "test:e2e": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "outputs": ["playwright-report/**", "test-results/**"]
+    },
+    "test:performance": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "outputs": ["benchmark-results/**", "performance-results/**"]
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}

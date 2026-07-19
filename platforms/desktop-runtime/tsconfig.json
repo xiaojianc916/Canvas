@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.cache/typescript/desktop-runtime.tsbuildinfo",
+    "paths": {
+      "@hybrid-canvas/desktop-ipc": ["../desktop-ipc/src/public-api.ts"],
+      "@hybrid-canvas/domain-asset": ["../../domains/asset/src/public-api.ts"],
+      "@hybrid-canvas/domain-file": ["../../domains/file/src/public-api.ts"],
+      "@hybrid-canvas/domain-plugin": ["../../domains/plugin/src/public-api.ts"],
+      "@hybrid-canvas/domain-settings": ["../../domains/settings/src/public-api.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

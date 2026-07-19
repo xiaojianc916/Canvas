@@ -1,0 +1,48 @@
+[package]
+name = "hybrid-canvas-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "hybrid_canvas_desktop_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[package.metadata]
+tauri-build = { version = "2.0" }
+
+[lints]
+workspace = true
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+tauri.workspace = true
+tauri-plugin-clipboard-manager.workspace = true
+tauri-plugin-dialog.workspace = true
+tauri-plugin-fs.workspace = true
+tauri-plugin-log.workspace = true
+tauri-plugin-opener.workspace = true
+tauri-plugin-os.workspace = true
+tauri-plugin-process.workspace = true
+tauri-plugin-shell.workspace = true
+tauri-plugin-store.workspace = true
+tauri-plugin-window-state.workspace = true
+tauri-plugin-global-shortcut.workspace = true
+tauri-plugin-notification.workspace = true
+tauri-plugin-updater.workspace = true
+
+specta.workspace = true
+specta-typescript.workspace = true
+tauri-specta.workspace = true

@@ -1,0 +1,19 @@
+{
+  "name": "@hybrid-canvas/platforms-desktop-runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "main": "./src/public-api.ts",
+  "types": "./src/public-api.ts",
+  "exports": {
+    ".": "./src/public-api.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo 'lint ok'"
+  },
+  "dependencies": {
+    "@hybrid-canvas/desktop-ipc": "workspace:*"
+  }
+}
+

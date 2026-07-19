@@ -1,0 +1,123 @@
+use crate::error::Result;
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use tauri::{command, AppHandle, Manager, WebviewWindow};
+use tauri_plugin_window_state::{AppHandleExt, StateFlags};
+
+#[derive(Debug, Deserialize, Type)]
+pub struct WindowOptions {
+    pub label: String,
+    pub title: Option<String>,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+    pub fullscreen: Option<bool>,
+    pub resizable: Option<bool>,
+    pub decorations: Option<bool>,
+    pub always_on_top: Option<bool>,
+    pub visible: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Type)]
+pub struct WindowInfo {
+    pub label: String,
+    pub title: String,
+    pub width: f64,
+    pub height: f64,
+    pub x: f64,
+    pub y: f64,
+    pub fullscreen: bool,
+    pub resizable: bool,
+    pub minimized: bool,
+    pub maximized: bool,
+    pub visible: bool,
+    pub focused: bool,
+}
+
+#[command]
+pub async fn window_create(app: AppHandle, options: WindowOptions) -> Result<WindowInfo> {
+    let mut builder = tauri::WebviewWindowBuilder::new(&app, &options.label, tauri::WebviewUrl::default())
+        .title(options.title.unwrap_or_else(|| "Hybrid Canvas".into()))
+        .inner_size(options.width.unwrap_or(800.0), options.height.unwrap_or(600.0))
+        .resizable(options.resizable.unwrap_or(true))
+        .decorations(options.decorations.unwrap_or(true))
+        .always_on_top(options.always_on_top.unwrap_or(false))
+        .visible(options.visible.unwrap_or(true));
+
+    if let (Some(x), Some(y)) = (options.x, options.y) {
+        builder = builder.position(x, y);
+    }
+    if let Some(fs) = options.fullscreen {
+        builder = builder.fullscreen(fs);
+    }
+
+    let window = builder.build()?;
+    window.on_window_event(|event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+        }
+    });
+    window_info(window)
+}
+
+#[command]
+pub async fn window_get(app: AppHandle, label: String) -> Result<Option<WindowInfo>> {
+    Ok(app.get_webview_window(&label).map(window_info).transpose()?)
+}
+
+#[command]
+pub async fn window_list(app: AppHandle) -> Result<Vec<WindowInfo>> {
+    Ok(app.webview_windows().into_values().map(window_info).collect::<Result<Vec<_>>>()?)
+}
+
+#[command]
+pub async fn window_close(app: AppHandle, label: String) -> Result<()> {
+    if let Some(window) = app.get_webview_window(&label) { window.close()?; }
+    Ok(())
+}
+
+#[command]
+pub async fn window_minimize(app: AppHandle, label: String) -> Result<()> {
+    if let Some(window) = app.get_webview_window(&label) { window.minimize()?; }
+    Ok(())
+}
+
+#[command]
+pub async fn window_maximize(app: AppHandle, label: String) -> Result<()> {
+    if let Some(window) = app.get_webview_window(&label) {
+        if window.is_maximized()? { window.unmaximize()?; } else { window.maximize()?; }
+    }
+    Ok(())
+}
+
+#[command]
+pub async fn window_set_title(app: AppHandle, label: String, title: String) -> Result<()> {
+    if let Some(window) = app.get_webview_window(&label) { window.set_title(&title)?; }
+    Ok(())
+}
+
+#[command]
+pub async fn window_save_state(app: AppHandle, _label: String) -> Result<()> {
+    app.save_window_state(StateFlags::all())?;
+    Ok(())
+}
+
+fn window_info(window: WebviewWindow) -> Result<WindowInfo> {
+    let outer = window.outer_size()?;
+    let pos = window.outer_position()?;
+    Ok(WindowInfo {
+        label: window.label().to_string(),
+        title: window.title()?,
+        width: outer.width as f64,
+        height: outer.height as f64,
+        x: pos.x as f64,
+        y: pos.y as f64,
+        fullscreen: window.is_fullscreen()?,
+        resizable: window.is_resizable()?,
+        minimized: window.is_minimized()?,
+        maximized: window.is_maximized()?,
+        visible: window.is_visible()?,
+        focused: window.is_focused()?,
+    })
+}

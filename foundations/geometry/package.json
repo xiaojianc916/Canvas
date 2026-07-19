@@ -1,0 +1,30 @@
+{
+  "name": "@hybrid-canvas/foundations-geometry",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/public-api.ts",
+  "types": "./src/public-api.ts",
+  "exports": {
+    ".": "./src/public-api.ts",
+    "./point": "./src/point.ts",
+    "./size": "./src/size.ts",
+    "./rect": "./src/rect.ts",
+    "./transform": "./src/transform.ts",
+    "./vector": "./src/vector.ts",
+    "./angle": "./src/angle.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome lint src",
+    "lint:fix": "biome lint --write src",
+    "test": "vitest run",
+    "clean": "rm -rf node_modules dist"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
+
+

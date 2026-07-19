@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "tsBuildInfoFile": "./node_modules/.cache/typescript/settings.tsbuildinfo",
+    "paths": {
+      "@hybrid-canvas/kernel": ["../../foundations/kernel/src/public-api.ts"],
+      "@hybrid-canvas/design-system": ["../../foundations/design-system/src/public-api.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

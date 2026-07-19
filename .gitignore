@@ -1,0 +1,196 @@
+# Dependencies
+node_modules/
+**/node_modules/
+.pnpm-store/
+**/.pnpm-store/
+
+# Turborepo
+.turbo/
+**/.turbo/
+
+# Vite / Rolldown
+.vite/
+**/.vite/
+.rolldown/
+**/.rolldown/
+vite.config.*.timestamp-*
+**/vite.config.*.timestamp-*
+
+# TypeScript
+*.tsbuildinfo
+**/*.tsbuildinfo
+.tsbuild/
+**/.tsbuild/
+
+# Build outputs
+dist/
+**/dist/
+build/
+**/build/
+out/
+**/out/
+
+# Test outputs
+coverage/
+**/coverage/
+.vitest/
+**/.vitest/
+test-results/
+**/test-results/
+playwright-report/
+**/playwright-report/
+blob-report/
+**/blob-report/
+benchmark-results/
+**/benchmark-results/
+performance-results/
+**/performance-results/
+
+# Rust / Cargo
+target/
+**/target/
+*.rs.bk
+
+# Tauri generated files
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/.tauri/
+**/src-tauri/gen/
+**/src-tauri/.tauri/
+
+# Desktop installers and bundles
+*.app
+*.app/
+*.dmg
+*.pkg
+*.msi
+*.msix
+*.deb
+*.rpm
+*.AppImage
+*.appimage
+*.pdb
+*.dSYM
+*.dSYM/
+
+# Environment variables and secrets
+.env
+.env.*
+**/.env
+**/.env.*
+
+!.env.example
+!**/.env.example
+!.env.template
+!**/.env.template
+!.env.schema
+!**/.env.schema
+
+# Certificates and private keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Local databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Logs
+*.log
+*.log.*
+logs/
+**/logs/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+tmp/
+**/tmp/
+temp/
+**/temp/
+.cache/
+**/.cache/
+*.tmp
+*.temp
+*.swp
+*.swo
+*.orig
+*.bak
+*~
+
+# Hybrid Canvas temporary documents
+*.draw~
+*.draw.tmp
+*.draw.temp
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# JetBrains
+.idea/
+**/.idea/
+*.iml
+*.ipr
+*.iws
+
+# Visual Studio
+.vs/
+**/.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# macOS
+.DS_Store
+**/.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+*.stackdump
+
+# Linux
+.directory
+.Trash-*
+.nfs*
+
+# Profiling and diagnostics output
+*.cpuprofile
+*.heapprofile
+*.heapsnapshot
+*.trace
+*.trace.json
+perf.data
+perf.data.old
+flamegraph.svg
+
+# Local reports
+biome-report.*
+eslint-report.*

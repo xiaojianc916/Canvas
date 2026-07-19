@@ -1,0 +1,11 @@
+{
+  "identifier": "recovery-window-capability",
+  "windows": ["recovery"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-close",
+    "dialog:default",
+    "fs:default"
+  ]
+}

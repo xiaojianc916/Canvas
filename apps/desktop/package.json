@@ -1,0 +1,49 @@
+{
+  "name": "@hybrid-canvas/desktop",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "lint": "biome lint src",
+    "lint:fix": "biome lint --write src",
+    "format": "biome format --write src",
+    "format:check": "biome format src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@hybrid-canvas/canvas": "workspace:*",
+    "@hybrid-canvas/workspace": "workspace:*",
+    "@hybrid-canvas/design-system": "workspace:*",
+    "@tauri-apps/api": "catalog:tauri",
+    "@tauri-apps/plugin-clipboard-manager": "catalog:tauri",
+    "@tauri-apps/plugin-dialog": "catalog:tauri",
+    "@tauri-apps/plugin-fs": "catalog:tauri",
+    "@tauri-apps/plugin-global-shortcut": "catalog:tauri",
+    "@tauri-apps/plugin-notification": "catalog:tauri",
+    "@tauri-apps/plugin-opener": "catalog:tauri",
+    "@tauri-apps/plugin-process": "catalog:tauri",
+    "@tauri-apps/plugin-shell": "catalog:tauri",
+    "@tauri-apps/plugin-store": "catalog:tauri",
+    "@tauri-apps/plugin-window-state": "catalog:tauri",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "@tauri-apps/cli": "catalog:tauri",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}
+
