@@ -1,6 +1,9 @@
 export {
   EditorCanvas,
   type EditorCanvasProps,
+  EditorSessionHost,
+  type EditorSessionHostEntry,
+  type EditorSessionHostProps,
   CanvasToolbar,
   type CanvasToolbarProps,
   EditorProvider,
@@ -13,8 +16,10 @@ export {
 
 export {
   createEditorSession,
+  createEditorSessionRegistry,
   type CreateEditorSessionOptions,
   type EditorSession,
+  type EditorSessionRegistry,
 } from './runtime/editor-session'
 
 export {

@@ -46,23 +46,29 @@ export function WorkspaceShell({
   const [isInspectorOpen] = useState(true)
 
   const hasActiveDocument = model.activeDocument !== null
+  const workbenchState = hasActiveDocument ? 'document' : 'empty'
+  const gridTemplateColumns = [
+    'var(--activity-rail-width)',
+    isSidebarOpen ? 'var(--workspace-sidebar-width)' : '0px',
+    'minmax(0, 1fr)',
+    isInspectorOpen && hasActiveDocument ? 'var(--inspector-width)' : '0px',
+  ].join(' ')
+  const gridTemplateRows = hasActiveDocument
+    ? 'var(--chrome-height) minmax(0, 1fr) var(--status-height)'
+    : 'var(--chrome-height) minmax(0, 1fr)'
 
   return (
     <TooltipProvider delayDuration={450}>
       <div
+        aria-label="主工作台"
         className="grid h-dvh min-h-0 overflow-hidden bg-background text-foreground"
+        data-workbench-state={workbenchState}
         style={{
-          gridTemplateColumns: [
-            'var(--activity-rail-width)',
-            isSidebarOpen ? 'var(--workspace-sidebar-width)' : '0px',
-            'minmax(0, 1fr)',
-            isInspectorOpen && hasActiveDocument ? 'var(--inspector-width)' : '0px',
-          ].join(' '),
-          gridTemplateRows: 'var(--chrome-height) minmax(0, 1fr)',
+          gridTemplateColumns,
+          gridTemplateRows,
         }}
       >
-        <div className="border-b border-r bg-chrome" />
-        <div className="min-w-0 [grid-column:2/-1]">
+        <header className="min-w-0 col-[2/-1]">
           <DocumentTabs
             onActivate={actions.activateDocument}
             onClose={actions.closeDocument}
@@ -70,25 +76,28 @@ export function WorkspaceShell({
             onCreate={actions.createDocument}
             tabs={model.tabs}
           />
-        </div>
+        </header>
         <ActivityRail
           isSidebarOpen={isSidebarOpen}
           onSettingsOpen={actions.openSettingsWindow}
           onSidebarOpen={() => setSidebarOpen(true)}
         />
         {isSidebarOpen ? (
-          <WorkspaceSidebar
-            onActivatePage={actions.activatePage}
-            onClose={() => setSidebarOpen(false)}
-            onCreatePage={actions.createPage}
-            pages={model.activeDocument?.pages ?? []}
-          />
+          <aside aria-label="工作区侧栏" className="min-h-0 min-w-0">
+            <WorkspaceSidebar
+              onActivatePage={actions.activatePage}
+              onClose={() => setSidebarOpen(false)}
+              onCreatePage={actions.createPage}
+              pages={model.activeDocument?.pages ?? []}
+            />
+          </aside>
         ) : null}
         <section
+          aria-label="内容区"
           className="grid min-h-0 min-w-0"
           style={{
             gridTemplateRows: hasActiveDocument
-              ? 'minmax(0, 1fr) var(--status-height)'
+              ? 'minmax(0, 1fr)'
               : 'minmax(0, 1fr)',
           }}
         >
@@ -102,9 +111,13 @@ export function WorkspaceShell({
               />
             )}
           </main>
-          {hasActiveDocument ? <StatusBarHost left={statusLeft} right={statusRight} /> : null}
         </section>
-        {isInspectorOpen && hasActiveDocument ? <InspectorHost>{inspector}</InspectorHost> : null}
+        {isInspectorOpen && hasActiveDocument ? (
+          <aside aria-label="属性检查器" className="min-h-0 min-w-0">
+            <InspectorHost>{inspector}</InspectorHost>
+          </aside>
+        ) : null}
+        {hasActiveDocument ? <StatusBarHost left={statusLeft} right={statusRight} /> : null}
       </div>
     </TooltipProvider>
   )

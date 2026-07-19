@@ -2,11 +2,11 @@ import {
   CanvasInspector,
   CanvasStatusLeft,
   CanvasStatusRight,
-  EditorCanvas,
   EditorProvider,
+  EditorSessionHost,
 } from '@hybrid-canvas/canvas'
 import { WorkspaceShell, type WorkspaceShellActions } from '@hybrid-canvas/workspace'
-import { useCallback, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
 
 import { useApplicationRuntime } from '../../bootstrap/react-providers'
 
@@ -18,13 +18,9 @@ export function MainWindow() {
     runtime.workspace.getSnapshot,
   )
 
-  const handleSave = useCallback(() => {
-    const activeSessionId = workbench.activeSessionId
-    if (!activeSessionId) {
-      return
-    }
-    void runtime.documents.saveDocument(activeSessionId)
-  }, [runtime.documents, workbench.activeSessionId])
+  const handleSave = useCallback((sessionId: string) => {
+    void runtime.documents.saveDocument(sessionId)
+  }, [runtime.documents])
 
   const actions: WorkspaceShellActions = {
     createDocument() {
@@ -56,21 +52,25 @@ export function MainWindow() {
     },
   }
 
-  const activeDocument = workbench.activeDocument
-  const activeEditorSession = workbench.activeSessionId
-    ? runtime.editorSessions.get(workbench.activeSessionId)
-    : null
+  const hostedSessions = useMemo(
+    () =>
+      workbench.tabs.flatMap((tab) => {
+        const session = runtime.editorSessions.get(tab.sessionId)
+        return session ? [{ sessionId: tab.sessionId, session }] : []
+      }),
+    [runtime.editorSessions, workbench.tabs],
+  )
 
   return (
     <EditorProvider>
       <WorkspaceShell
         actions={actions}
         editor={
-          activeDocument && activeEditorSession ? (
-            <EditorCanvas
-              key={activeDocument.sessionId}
+          workbench.activeDocument ? (
+            <EditorSessionHost
+              activeSessionId={workbench.activeSessionId}
               onSave={handleSave}
-              session={activeEditorSession}
+              sessions={hostedSessions}
             />
           ) : null
         }

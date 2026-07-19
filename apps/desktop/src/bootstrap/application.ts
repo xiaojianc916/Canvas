@@ -1,5 +1,5 @@
 import {
-  createEditorSession,
+  createEditorSessionRegistry,
   type EditorSession,
 } from '@hybrid-canvas/canvas'
 import { parseDrawDocument, serializeDrawDocument } from '@hybrid-canvas/file'
@@ -58,17 +58,29 @@ export function createApplicationRuntime(): ApplicationRuntime {
   const workspace = createWorkbenchSessionController()
   const drawFiles = createDrawFileCommands()
   const dialog = createFileDialog()
-  const sessions = new Map<DocumentSessionId, OwnedEditorSession>()
+  const editorRegistry = createEditorSessionRegistry()
+  const ownedSessions = new Map<DocumentSessionId, OwnedEditorSession>()
+
+  function trackSession(sessionId: DocumentSessionId, filePath: string | null): EditorSession {
+    const editor = editorRegistry.require(sessionId)
+    ownedSessions.set(sessionId, { editor, filePath })
+    return editor
+  }
+
+  function releaseSession(sessionId: DocumentSessionId): void {
+    ownedSessions.delete(sessionId)
+    editorRegistry.close(sessionId)
+  }
 
   async function createDocument(title: string, initialPageTitle: string): Promise<void> {
     const documentId = crypto.randomUUID()
     const sessionId = crypto.randomUUID()
-    const editor = createEditorSession({
+    editorRegistry.create({
       documentId,
       sessionId,
       extensions: [flowchartExtension],
     })
-    sessions.set(sessionId, { editor, filePath: null })
+    trackSession(sessionId, null)
 
     try {
       await workspace.createDocument({
@@ -79,8 +91,7 @@ export function createApplicationRuntime(): ApplicationRuntime {
         persistence: 'dirty',
       })
     } catch (error) {
-      sessions.delete(sessionId)
-      editor.dispose()
+      releaseSession(sessionId)
       throw error
     }
   }
@@ -98,13 +109,13 @@ export function createApplicationRuntime(): ApplicationRuntime {
     const container = parseDrawDocument(json)
     const documentId = crypto.randomUUID()
     const sessionId = crypto.randomUUID()
-    const editor = createEditorSession({
+    editorRegistry.create({
       documentId,
       sessionId,
       initialSnapshot: container.content,
       extensions: [flowchartExtension],
     })
-    sessions.set(sessionId, { editor, filePath })
+    trackSession(sessionId, filePath)
 
     try {
       await workspace.createDocument({
@@ -115,14 +126,13 @@ export function createApplicationRuntime(): ApplicationRuntime {
         persistence: 'clean',
       })
     } catch (error) {
-      sessions.delete(sessionId)
-      editor.dispose()
+      releaseSession(sessionId)
       throw error
     }
   }
 
   async function saveDocument(sessionId: DocumentSessionId): Promise<void> {
-    const ownedSession = sessions.get(sessionId)
+    const ownedSession = ownedSessions.get(sessionId)
     if (!ownedSession) {
       throw new Error('EDITOR_SESSION_NOT_FOUND')
     }
@@ -145,9 +155,7 @@ export function createApplicationRuntime(): ApplicationRuntime {
 
   async function closeDocument(sessionId: DocumentSessionId): Promise<void> {
     await workspace.closeDocument(sessionId)
-    const ownedSession = sessions.get(sessionId)
-    sessions.delete(sessionId)
-    ownedSession?.editor.dispose()
+    releaseSession(sessionId)
   }
 
   return {
@@ -160,7 +168,7 @@ export function createApplicationRuntime(): ApplicationRuntime {
     },
     editorSessions: {
       get(sessionId) {
-        return sessions.get(sessionId)?.editor ?? null
+        return editorRegistry.get(sessionId)
       },
     },
     windows: {

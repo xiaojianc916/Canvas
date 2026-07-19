@@ -9,13 +9,14 @@ import { useBindEditorSession, useEditor } from './editor-context'
 
 export interface EditorCanvasProps {
   readonly session: EditorSession
+  readonly isActive?: boolean
   readonly onSave?: () => void
 }
 
-export function EditorCanvas({ session, onSave }: EditorCanvasProps) {
+export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasProps) {
   const [editor, setEditor] = useState<Editor | null>(null)
   const { registration, store } = session
-  useBindEditorSession(editor, registration)
+  useBindEditorSession(isActive ? editor : null, isActive ? registration : null)
   const hasTools = registration.tools.length > 0
 
   const tldrawProps = useMemo((): TldrawProps => {
@@ -35,23 +36,32 @@ export function EditorCanvas({ session, onSave }: EditorCanvasProps) {
     if (!editor) {
       return
     }
-    return session.attachEditor(editor)
-  }, [editor, session])
+    if (isActive) {
+      session.attachEditor(editor)
+      return () => session.detachEditor(editor)
+    }
+    session.detachEditor(editor)
+    return undefined
+  }, [editor, isActive, session])
 
   const handleSave = useCallback(() => {
     onSave?.()
   }, [onSave])
 
   useEffect(() => {
+    if (!isActive || !onSave) {
+      return
+    }
+    const save = onSave
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
-        onSave?.()
+        save()
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onSave])
+  }, [isActive, onSave])
 
   return (
     <TooltipProvider delayDuration={450}>

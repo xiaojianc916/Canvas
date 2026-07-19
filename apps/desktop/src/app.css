@@ -1,58 +1,60 @@
 ﻿@import "tailwindcss";
 
-/* ── CSS 变量（浅色主题） ── */
 :root {
   --activity-rail-width: 52px;
-  --workspace-sidebar-width: 240px;
-  --inspector-width: 260px;
-  --chrome-height: 45px;
-  --status-height: 28px;
+  --workspace-sidebar-width: 250px;
+  --inspector-width: 292px;
+  --chrome-height: 48px;
+  --status-height: 30px;
 
-  --color-chrome: oklch(0.97 0.005 90);
-  --color-surface: oklch(0.97 0.004 90);
-  --color-canvas: oklch(0.95 0.004 90);
-
-  --color-sidebar: oklch(0.985 0.002 90);
-  --color-sidebar-accent: oklch(0.92 0.006 90);
-  --color-sidebar-accent-foreground: oklch(0.2 0.02 90);
-
-  --font-family: "Inter", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --color-background: oklch(0.985 0.003 90);
+  --color-foreground: oklch(0.19 0.01 90);
+  --color-chrome: oklch(0.975 0.004 90);
+  --color-surface: oklch(1 0 0);
+  --color-canvas: oklch(0.96 0.004 90);
+  --color-sidebar: oklch(0.987 0.003 90);
+  --color-sidebar-accent: oklch(0.93 0.006 90);
+  --color-sidebar-accent-foreground: oklch(0.18 0.01 90);
+  --font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-/* ── Tailwind v4 主题扩展 ── */
 @theme {
+  --color-background: var(--color-background);
+  --color-foreground: var(--color-foreground);
   --color-chrome: var(--color-chrome);
   --color-surface: var(--color-surface);
   --color-canvas: var(--color-canvas);
   --color-sidebar: var(--color-sidebar);
   --color-sidebar-accent: var(--color-sidebar-accent);
   --color-sidebar-accent-foreground: var(--color-sidebar-accent-foreground);
-
   --font-family-sans: var(--font-family);
 }
 
-/* ── 全局基础样式 ── */
 * {
+  box-sizing: border-box;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
   margin: 0;
   overflow: hidden;
   font-family: var(--font-family);
+  background: var(--color-background);
+  color: var(--color-foreground);
 }
 
-/* ── tldraw 表面层叠 ── */
-.tl-canvas {
-  background-color: var(--color-canvas) !important;
-}
-
+.tl-canvas,
 .tl-background {
   background-color: var(--color-canvas) !important;
 }
 
-/* 隐藏 tldraw 原生 UI 元素（我们使用自己的） */
 .tlui-help-menu,
 .tlui-menu-zone,
 .tlui-navigation-zone,
@@ -60,26 +62,18 @@ body {
   display: none !important;
 }
 
-/* 自定义圆角与阴影覆盖 tldraw 样式边界 */
 .tlui-toolbar__tools {
   border-radius: 10px;
 }
 
-/* 覆盖 tldraw 页面对齐 —— 自适应 */
 .tlui-page-menu {
   --tl-page-menu-y: auto;
 }
 
-/*
- * 没有活动文档时，隐藏 tldraw 的任何残留层。
- */
 [data-workbench-state="empty"] .tl-container {
   display: none;
 }
 
-/*
- * 文档标签栏允许横向滚动，但不显示浏览器风格滚动条。
- */
 [role="tablist"] {
   scrollbar-width: none;
 }
@@ -88,19 +82,12 @@ body {
   display: none;
 }
 
-/*
- * Tauri 桌面应用不允许意外选中 chrome 文本。
- * 输入框、编辑器文本和正文区域按组件自行恢复。
- */
 .bg-chrome,
 .bg-sidebar {
   -webkit-user-select: none;
   user-select: none;
 }
 
-/*
- * tldraw 继续拥有自己的输入与文本选择语义。
- */
 .tl-container,
 .tl-container * {
   -webkit-user-select: initial;

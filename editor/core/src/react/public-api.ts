@@ -1,4 +1,9 @@
 export { EditorCanvas, type EditorCanvasProps } from './EditorCanvas'
+export {
+  EditorSessionHost,
+  type EditorSessionHostEntry,
+  type EditorSessionHostProps,
+} from './EditorSessionHost'
 export { CanvasToolbar, type CanvasToolbarProps } from './CanvasToolbar'
 export { EditorProvider, useEditor } from './editor-context'
 export {

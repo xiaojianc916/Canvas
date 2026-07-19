@@ -122,7 +122,7 @@ rstest = "0.25.0"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_debug_implementations = "warn"
-missing_docs = "warn"
+missing_docs = "allow"
 non_ascii_idents = "forbid"
 rust_2018_idioms = { level = "deny", priority = -1 }
 rust_2021_compatibility = { level = "warn", priority = -1 }

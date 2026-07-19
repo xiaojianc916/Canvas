@@ -1,4 +1,4 @@
-import { createTLStore } from '@tldraw/editor'
+import { createTLStore, getSnapshot as getStoreEditorSnapshot } from '@tldraw/editor'
 import type { Editor, TLStore, TLEditorSnapshot } from 'tldraw'
 
 import {
@@ -64,7 +64,7 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     },
     getSnapshot() {
       assertActive()
-      return attachedEditor?.getSnapshot() ?? store.getStoreSnapshot()
+      return attachedEditor?.getSnapshot() ?? getStoreEditorSnapshot(store)
     },
     dispose() {
       attachedEditor = null

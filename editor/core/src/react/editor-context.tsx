@@ -44,7 +44,7 @@ export function useExtensionRegistration(): ExtensionRegistration | null {
 
 export function useBindEditorSession(
   editor: Editor | null,
-  registration: ExtensionRegistration,
+  registration: ExtensionRegistration | null,
 ): void {
   const ctx = useContext(EditorCtx)
 
