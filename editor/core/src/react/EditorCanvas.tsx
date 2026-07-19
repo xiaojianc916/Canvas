@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { type Editor, Tldraw, useValue, type TldrawProps, type TLEditorSnapshot } from 'tldraw'
 
 import { CanvasToolbar } from './CanvasToolbar'
-import { useBindEditor } from './editor-context'
+import { useBindEditor, useEditor } from './editor-context'
 import { getExtensionRegistration, type HybridCanvasExtension } from './extension-registry'
 import { registerExtension } from './extension-registry'
 

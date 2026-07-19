@@ -1,2 +1,2 @@
-export { CanvasInspector, type CanvasInspectorProps } from './inspector/CanvasInspector'
-export { CanvasStatusLeft, CanvasStatusRight, type CanvasStatusProps } from './status/CanvasStatus'
+export { CanvasInspector } from './inspector/CanvasInspector'
+export { CanvasStatusLeft, CanvasStatusRight } from './status/CanvasStatus'
