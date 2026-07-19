@@ -52,7 +52,7 @@ Hybrid Canvas 的目标不是简单封装一个画布组件，而是建立一套
 | 构建工具 | Vite 8、Turborepo |
 | 包管理器 | pnpm 11 |
 | 画布引擎 | tldraw 5 |
-| UI 基础 | Radix UI、Tailwind CSS 4 |
+| UI 基础 | Base UI、Tailwind CSS 4 |
 | 组件模式 | shadcn/ui |
 | 图标 | Lucide |
 | 状态管理 | Zustand 5 |

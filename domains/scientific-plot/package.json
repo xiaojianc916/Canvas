@@ -16,12 +16,8 @@
     "test": "vitest run",
     "clean": "rm -rf node_modules dist"
   },
-  "devDependencies": {
-    "@hybrid-canvas/foundations-kernel": "workspace:*",
-    "@hybrid-canvas/foundations-geometry": "workspace:*",
+"devDependencies": {
     "@hybrid-canvas/foundations-test-kit": "workspace:*",
-    "@hybrid-canvas/domain-document": "workspace:*",
-    "@hybrid-canvas/domain-asset": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
@@ -30,7 +26,11 @@
     "d3-array": "catalog:",
     "d3-scale": "catalog:",
     "uplot": "catalog:",
-    "valibot": "catalog:"
+    "valibot": "catalog:",
+    "@hybrid-canvas/foundations-kernel": "workspace:*",
+    "@hybrid-canvas/foundations-geometry": "workspace:*",
+    "@hybrid-canvas/domain-document": "workspace:*",
+    "@hybrid-canvas/domain-asset": "workspace:*"
   }
 }
 

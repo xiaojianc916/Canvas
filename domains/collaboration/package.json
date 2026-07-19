@@ -16,18 +16,18 @@
     "test": "vitest run",
     "clean": "rm -rf node_modules dist"
   },
-  "devDependencies": {
-    "@hybrid-canvas/foundations-kernel": "workspace:*",
+"devDependencies": {
     "@hybrid-canvas/foundations-test-kit": "workspace:*",
-    "@hybrid-canvas/domain-document": "workspace:*",
-    "@hybrid-canvas/domain-asset": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
   "dependencies": {
     "valibot": "catalog:",
     "yjs": "catalog:",
-    "y-websocket": "catalog:"
+    "y-websocket": "catalog:",
+    "@hybrid-canvas/foundations-kernel": "workspace:*",
+    "@hybrid-canvas/domain-document": "workspace:*",
+    "@hybrid-canvas/domain-asset": "workspace:*"
   }
 }
 

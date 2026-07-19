@@ -16,20 +16,18 @@
     "test": "vitest run",
     "clean": "rm -rf node_modules dist"
   },
-  "devDependencies": {
-    "@hybrid-canvas/foundations-kernel": "workspace:*",
-    "@hybrid-canvas/design-system": "workspace:*",
+"devDependencies": {
     "@hybrid-canvas/foundations-test-kit": "workspace:*",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "react": "catalog:",
-    "react-dom": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
   "dependencies": {
     "zustand": "catalog:",
-    "valibot": "catalog:"
+    "valibot": "catalog:",
+    "@hybrid-canvas/foundations-kernel": "workspace:*",
+    "@hybrid-canvas/design-system": "workspace:*"
   },
   "peerDependencies": {
     "react": "19.2.7",

@@ -18,13 +18,13 @@
   },
 "devDependencies": {
     "@hybrid-canvas/foundations-test-kit": "workspace:*",
-    "@hybrid-canvas/domain-document": "workspace:*",
-    "@hybrid-canvas/domain-asset": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
   "dependencies": {
     "@hybrid-canvas/foundations-kernel": "workspace:*",
+    "@hybrid-canvas/domain-document": "workspace:*",
+    "@hybrid-canvas/domain-asset": "workspace:*",
     "valibot": "catalog:"
   }
 }

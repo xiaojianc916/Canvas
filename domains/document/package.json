@@ -19,13 +19,13 @@
     "clean": "rm -rf node_modules dist"
   },
 "devDependencies": {
-    "@hybrid-canvas/foundations-geometry": "workspace:*",
     "@hybrid-canvas/foundations-test-kit": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
   "dependencies": {
     "@hybrid-canvas/foundations-kernel": "workspace:*",
+    "@hybrid-canvas/foundations-geometry": "workspace:*",
     "valibot": "catalog:"
   }
 }

@@ -13,7 +13,11 @@
     "lint": "echo 'lint ok'"
   },
   "dependencies": {
-    "@hybrid-canvas/desktop-ipc": "workspace:*"
+    "@hybrid-canvas/desktop-ipc": "workspace:*",
+    "@hybrid-canvas/domain-asset": "workspace:*",
+    "@hybrid-canvas/domain-file": "workspace:*",
+    "@hybrid-canvas/domain-plugin": "workspace:*",
+    "@hybrid-canvas/domain-settings": "workspace:*"
   }
 }
 
