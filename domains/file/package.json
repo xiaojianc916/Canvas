@@ -1,6 +1,7 @@
 {
   "name": "@hybrid-canvas/domain-file",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "main": "./src/public-api.ts",
   "types": "./src/public-api.ts",
@@ -15,8 +16,7 @@
     "test": "vitest run",
     "clean": "rm -rf node_modules dist"
   },
-  "devDependencies": {
-    "@hybrid-canvas/foundations-kernel": "workspace:*",
+"devDependencies": {
     "@hybrid-canvas/foundations-test-kit": "workspace:*",
     "@hybrid-canvas/domain-document": "workspace:*",
     "@hybrid-canvas/domain-asset": "workspace:*",
@@ -24,6 +24,7 @@
     "vitest": "catalog:"
   },
   "dependencies": {
+    "@hybrid-canvas/foundations-kernel": "workspace:*",
     "valibot": "catalog:"
   }
 }

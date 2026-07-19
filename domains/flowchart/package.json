@@ -1,6 +1,7 @@
 {
   "name": "@hybrid-canvas/domain-flowchart",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "main": "./src/public-api.ts",
   "types": "./src/public-api.ts",

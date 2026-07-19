@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub enum Error {
     NotFound(String),
     Integrity(String),

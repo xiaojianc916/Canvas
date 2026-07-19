@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub enum Error {
     InvalidPackage(String),
     Signature(String),

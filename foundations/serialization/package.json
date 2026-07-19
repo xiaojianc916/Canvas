@@ -1,6 +1,7 @@
 {
   "name": "@hybrid-canvas/foundations-serialization",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "main": "./src/public-api.ts",
   "types": "./src/public-api.ts",
@@ -16,7 +17,8 @@
     "test": "vitest run",
     "clean": "rm -rf node_modules dist"
   },
-  "dependencies": {
+"dependencies": {
+    "uuid": "catalog:",
     "valibot": "catalog:"
   },
   "devDependencies": {

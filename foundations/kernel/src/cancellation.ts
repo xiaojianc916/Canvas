@@ -1,40 +1,41 @@
 export interface CancellationToken {
   readonly cancelled: boolean
-  readonly reason?: CancellationReason
+  readonly reason: CancellationReason | undefined
   onCancelled(listener: () => void): () => void
 }
 
 export type CancellationReason = 'aborted' | 'timeout' | 'cancelled' | 'superseded' | string
 
 export class CancellationTokenSource {
-  private _cancelled = false
-  private _reason?: CancellationReason
-  private listeners: (() => void)[] = []
+  #cancelled = false
+  #reason: CancellationReason | undefined
+  #listeners: (() => void)[] = []
 
   get token(): CancellationToken {
+    const source = this
     return {
       get cancelled() {
-        return this._cancelled
+        return source.#cancelled
       },
       get reason() {
-        return this._reason
+        return source.#reason
       },
-      onCancelled: (listener: () => void) => {
-        this.listeners.push(listener)
+      onCancelled(listener: () => void): () => void {
+        source.#listeners.push(listener)
         return () => {
-          const idx = this.listeners.indexOf(listener)
-          if (idx >= 0) this.listeners.splice(idx, 1)
+          const idx = source.#listeners.indexOf(listener)
+          if (idx >= 0) source.#listeners.splice(idx, 1)
         }
       },
     }
   }
 
   cancel(reason: CancellationReason = 'cancelled'): void {
-    if (this._cancelled) return
-    this._cancelled = true
-    this._reason = reason
-    const listeners = [...this.listeners]
-    this.listeners = []
+    if (this.#cancelled) return
+    this.#cancelled = true
+    this.#reason = reason
+    const listeners = [...this.#listeners]
+    this.#listeners = []
     for (const l of listeners) {
       try {
         l()
@@ -65,7 +66,7 @@ export class CancellationTokenSource {
       get reason() {
         return undefined
       },
-      onCancelled(_listener) {
+      onCancelled() {
         return () => {}
       },
     }
@@ -113,9 +114,12 @@ export function withCancellation<T>(
 }
 
 export class CancellationError extends Error {
-  constructor(public readonly reason: CancellationReason) {
+  readonly reason: CancellationReason
+
+  constructor(reason: CancellationReason) {
     super(`Cancelled: ${reason}`)
     this.name = 'CancellationError'
+    this.reason = reason
   }
 }
 

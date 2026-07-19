@@ -3,14 +3,17 @@ export abstract class DomainError extends Error {
   abstract readonly userMessage: string
   abstract readonly httpStatus: number
   readonly timestamp: string
-  readonly context?: Record<string, unknown>
+  readonly context: Record<string, unknown> | undefined
 
   constructor(message: string, context?: Record<string, unknown>) {
     super(message)
     this.name = this.constructor.name
     this.timestamp = new Date().toISOString()
     this.context = context
-    Error.captureStackTrace?.(this, this.constructor)
+    // Error.captureStackTrace is non-standard, use standard stack instead
+    if ('captureStackTrace' in Error) {
+      (Error as { captureStackTrace?: (target: object, constructor: Function) => void }).captureStackTrace?.(this, this.constructor)
+    }
   }
 
   toJSON() {

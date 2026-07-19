@@ -16,12 +16,12 @@ export interface Serializer<T> {
 }
 
 export class SerializationError extends Error {
-  constructor(
-    message: string,
-    readonly cause?: unknown,
-  ) {
+  override readonly cause: unknown
+
+  constructor(message: string, cause?: unknown) {
     super(message)
     this.name = 'SerializationError'
+    this.cause = cause
   }
 }
 

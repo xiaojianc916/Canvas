@@ -22,6 +22,6 @@
       "@hybrid-canvas/desktop-runtime": ["../../platforms/desktop-runtime/src/public-api.ts"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "src/css.d.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

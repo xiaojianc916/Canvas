@@ -1,4 +1,3 @@
-import { ulid } from 'ulid'
 import { v7 as uuidv7 } from 'uuid'
 
 export type Brand<T, B> = T & { readonly __brand: B }
@@ -27,52 +26,52 @@ export function createDocumentId(): DocumentId {
   return brander(uuidv7())
 }
 export function createPageId(): PageId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createElementId(): ElementId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createRelationId(): RelationId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createStyleId(): StyleId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createAssetId(): AssetId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createDatasetId(): DatasetId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createChartSpecId(): ChartSpecId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createCommandId(): CommandId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createTransactionId(): TransactionId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createActorId(): ActorId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createPluginId(): PluginId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createExtensionId(): ExtensionId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createRevisionId(): RevisionId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createRequestId(): RequestId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createSessionId(): SessionId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 export function createWindowId(): WindowId {
-  return brander(ulid())
+  return brander(uuidv7())
 }
 
 export function parseDocumentId(value: string): DocumentId {

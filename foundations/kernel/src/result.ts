@@ -88,12 +88,12 @@ export function all<T, E>(results: readonly Result<T, E>[]): Result<T[], E> {
 }
 
 export function firstOk<T, E>(results: readonly Result<T, E>[]): Result<T, E> {
+  if (results.length === 0) {
+    return err(undefined as E)
+  }
   for (const r of results) {
     if (r._tag === 'Ok') return r
   }
-  return err(
-    results[results.length - 1]?._tag === 'Err'
-      ? results[results.length - 1].error
-      : (null as unknown as E),
-  )
+  const last = results[results.length - 1]!
+  return last._tag === 'Err' ? last : err(undefined as E)
 }

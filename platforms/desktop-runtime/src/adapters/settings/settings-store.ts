@@ -5,7 +5,7 @@ export function createDesktopSettingsStore(): SettingsStore {
   return {
     get: (key) => invoke('settings_get', { key }),
     set: (key, value) => invoke('settings_set', { key, value }),
-    delete: (key) => invoke('settings_delete', { key }),
-    clear: () => invoke('settings_clear'),
+    reset: () => invoke('settings_clear'),
+    subscribe: () => () => {},
   }
 }

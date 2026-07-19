@@ -15,7 +15,11 @@ export interface TransformComponents {
   skewY: Radians
 }
 
-export function createTransform(init?: DOMMatrixInit): Transform2D {
+function r(n: number): Radians {
+  return n as Radians
+}
+
+export function createTransform(init?: string | number[]): Transform2D {
   return new DOMMatrix(init)
 }
 
@@ -32,12 +36,12 @@ export function transformScale(sx: number, sy: number = sx): Transform2D {
 export function transformRotate(angle: Radians, cx = 0, cy = 0): Transform2D {
   return new DOMMatrix()
     .translateSelf(cx, cy)
-    .rotateSelf((angle * 180) / Math.PI)
+    .rotateSelf(r((angle as number * 180) / Math.PI))
     .translateSelf(-cx, -cy)
 }
 
-export function transformSkew(skx: Radians, sky: Radians = 0): Transform2D {
-  return new DOMMatrix().skewXSelf((skx * 180) / Math.PI).skewYSelf((sky * 180) / Math.PI)
+export function transformSkew(skx: Radians, sky: Radians = r(0)): Transform2D {
+  return new DOMMatrix().skewXSelf(r((skx as number * 180) / Math.PI)).skewYSelf(r((sky as number * 180) / Math.PI))
 }
 
 export function transformMultiply(a: Transform2D, b: Transform2D): Transform2D {
@@ -62,22 +66,23 @@ export function transformVector(t: Transform2D, v: Vector2D): Vector2D {
   return [pt.x, pt.y]
 }
 
-export function transformRect(t: Transform2D, r: Rect): Rect {
+export function transformRect(t: Transform2D, rect: Rect): Rect {
   const corners = [
-    [r[0], r[1]],
-    [r[0] + r[2], r[1]],
-    [r[0] + r[2], r[1] + r[3]],
-    [r[0], r[1] + r[3]],
-  ].map((p) => transformPoint(t, p))
-  let minX = Number.POSITIVE_INFINITY,
-    minY = Number.POSITIVE_INFINITY,
-    maxX = Number.NEGATIVE_INFINITY,
-    maxY = Number.NEGATIVE_INFINITY
+    [rect[0], rect[1]],
+    [rect[0] + rect[2], rect[1]],
+    [rect[0] + rect[2], rect[1] + rect[3]],
+    [rect[0], rect[1] + rect[3]],
+  ] as const
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
   for (const [x, y] of corners) {
-    if (x < minX) minX = x
-    if (x > maxX) maxX = x
-    if (y < minY) minY = y
-    if (y > maxY) maxY = y
+    const transformed = transformPoint(t, [x, y])
+    if (transformed[0] < minX) minX = transformed[0]
+    if (transformed[0] > maxX) maxX = transformed[0]
+    if (transformed[1] < minY) minY = transformed[1]
+    if (transformed[1] > maxY) maxY = transformed[1]
   }
   return [minX, minY, maxX - minX, maxY - minY]
 }
@@ -91,16 +96,16 @@ export function transformDecompose(t: Transform2D): TransformComponents {
   const sx = Math.hypot(m.a, m.b)
   const sy = Math.hypot(m.c, m.d)
   const det = m.a * m.d - m.b * m.c
-  const rotation = Math.atan2(m.b, m.a)
-  const skewX = Math.atan2(-m.c * sx, m.d * sx) - rotation
+  const rotation = r(Math.atan2(m.b, m.a))
+  const skewX = r(Math.atan2(-m.c * sx, m.d * sx) - (rotation as number))
   return {
     translateX: m.e,
     translateY: m.f,
     scaleX: sx,
     scaleY: sy * (det >= 0 ? 1 : -1),
-    rotation: rotation,
+    rotation,
     skewX,
-    skewY: 0,
+    skewY: 0 as Radians,
   }
 }
 
@@ -122,7 +127,7 @@ export function transformLerp(a: Transform2D, b: Transform2D, t: number): Transf
   const result = new DOMMatrix()
   result.translateSelf(lerp(ca.translateX, cb.translateX), lerp(ca.translateY, cb.translateY))
   result.scaleSelf(lerp(ca.scaleX, cb.scaleX), lerp(ca.scaleY, cb.scaleY))
-  result.rotateSelf((lerp(ca.rotation, cb.rotation) * 180) / Math.PI)
-  result.skewXSelf((lerp(ca.skewX, cb.skewX) * 180) / Math.PI)
+  result.rotateSelf(r((lerp(ca.rotation, cb.rotation) * 180) / Math.PI))
+  result.skewXSelf(r((lerp(ca.skewX, cb.skewX) * 180) / Math.PI))
   return result
 }
