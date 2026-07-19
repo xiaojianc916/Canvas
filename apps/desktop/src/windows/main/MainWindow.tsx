@@ -1,5 +1,3 @@
-import type { Editor } from 'tldraw'
-
 import {
   CanvasInspector,
   CanvasStatusLeft,
@@ -7,7 +5,6 @@ import {
   EditorCanvas,
   EditorProvider,
 } from '@hybrid-canvas/canvas'
-import { flowchartExtension } from '@hybrid-canvas/flowchart'
 import { WorkspaceShell, type WorkspaceShellActions } from '@hybrid-canvas/workspace'
 import { useCallback, useSyncExternalStore } from 'react'
 
@@ -21,31 +18,29 @@ export function MainWindow() {
     runtime.workspace.getSnapshot,
   )
 
-  const handleSave = useCallback(
-    (editor: Editor) => {
-      const snapshot = editor.getSnapshot()
-      const activeDoc = workbench.activeDocument
-      if (!activeDoc) return
-      void runtime.files.saveDocument(activeDoc.documentId, snapshot)
-    },
-    [runtime.files, workbench.activeDocument],
-  )
+  const handleSave = useCallback(() => {
+    const activeSessionId = workbench.activeSessionId
+    if (!activeSessionId) {
+      return
+    }
+    void runtime.documents.saveDocument(activeSessionId)
+  }, [runtime.documents, workbench.activeSessionId])
 
   const actions: WorkspaceShellActions = {
     createDocument() {
-      void runtime.workspace.createDocument({
-        title: createUntitledDocumentTitle(workbench.tabs.map((tab) => tab.title)),
-        initialPageTitle: '画板 1',
-      })
+      void runtime.documents.createDocument(
+        createUntitledDocumentTitle(workbench.tabs.map((tab) => tab.title)),
+        '画板 1',
+      )
     },
     openDocument() {
-      void runtime.files.openDocument()
+      void runtime.documents.openDocument()
     },
     activateDocument(sessionId) {
       void runtime.workspace.activateDocument(sessionId)
     },
     closeDocument(sessionId) {
-      void runtime.workspace.closeDocument(sessionId)
+      void runtime.documents.closeDocument(sessionId)
     },
     activatePage(_pageId) {
       /* 接入 Document Application Command 后实现 */
@@ -62,19 +57,20 @@ export function MainWindow() {
   }
 
   const activeDocument = workbench.activeDocument
+  const activeEditorSession = workbench.activeSessionId
+    ? runtime.editorSessions.get(workbench.activeSessionId)
+    : null
 
   return (
     <EditorProvider>
       <WorkspaceShell
         actions={actions}
         editor={
-          activeDocument ? (
+          activeDocument && activeEditorSession ? (
             <EditorCanvas
-              documentId={activeDocument.documentId}
-              extensions={[flowchartExtension]}
               key={activeDocument.sessionId}
               onSave={handleSave}
-              sessionId={activeDocument.sessionId}
+              session={activeEditorSession}
             />
           ) : null
         }
@@ -89,7 +85,9 @@ export function MainWindow() {
 
 function createUntitledDocumentTitle(existingTitles: readonly string[]): string {
   const baseTitle = '未命名画板'
-  if (!existingTitles.includes(baseTitle)) return baseTitle
+  if (!existingTitles.includes(baseTitle)) {
+    return baseTitle
+  }
   let suffix = 2
   while (existingTitles.includes(`${baseTitle} ${suffix}`)) {
     suffix += 1

@@ -1,11 +1,11 @@
 import { Separator } from '@hybrid-canvas/design-system'
 import { useValue } from 'tldraw'
 
-import { getExtensionRegistration } from '../../react/extension-registry'
-import { useEditor } from '../../react/editor-context'
+import { useEditor, useExtensionRegistration } from '../../react/editor-context'
 
 export function CanvasInspector() {
   const editor = useEditor()
+  const registration = useExtensionRegistration()
   const selectedShapes = useValue('selected shapes', () => editor?.getSelectedShapes() ?? [], [editor])
   const selectionBounds = useValue('selection bounds', () => editor?.getSelectionPageBounds() ?? null, [editor])
   const count = selectedShapes.length
@@ -28,7 +28,7 @@ export function CanvasInspector() {
   }
 
   const firstShape = selectedShapes[0]
-  const shapeLabel = getShapeDisplayLabel(firstShape?.type)
+  const shapeLabel = getShapeDisplayLabel(firstShape?.type, registration?.shapeLabels)
 
   return (
     <div>
@@ -88,12 +88,12 @@ function InspectorEmptyState({
   )
 }
 
-function getShapeDisplayLabel(shapeType: string | undefined): string | null {
+function getShapeDisplayLabel(
+  shapeType: string | undefined,
+  extensionLabels: Readonly<Record<string, string>> | undefined,
+): string | null {
   if (!shapeType) return null
-  const label = SHAPE_TYPE_LABELS[shapeType]
-  if (label) return label
-  const registration = getExtensionRegistration()
-  return registration.shapeLabels[shapeType] ?? null
+  return SHAPE_TYPE_LABELS[shapeType] ?? extensionLabels?.[shapeType] ?? null
 }
 
 const SHAPE_TYPE_LABELS: Record<string, string> = {

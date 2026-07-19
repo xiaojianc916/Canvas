@@ -9,6 +9,9 @@ import {
 export interface CreateDocumentRequest {
   readonly title: string
   readonly initialPageTitle: string
+  readonly documentId?: string
+  readonly sessionId?: string
+  readonly persistence?: 'clean' | 'dirty'
 }
 
 export interface WorkbenchSessionActions {
@@ -45,8 +48,8 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
   }
 
   async function createDocument(request: CreateDocumentRequest): Promise<void> {
-    const documentId = crypto.randomUUID()
-    const sessionId = crypto.randomUUID()
+    const documentId = request.documentId ?? crypto.randomUUID()
+    const sessionId = request.sessionId ?? crypto.randomUUID()
     const pageId = crypto.randomUUID()
 
     const activeDocument: ActiveDocumentViewModel = {
@@ -81,7 +84,7 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
           documentId,
           title: request.title,
           persistence: {
-            local: 'dirty',
+            local: request.persistence ?? 'dirty',
             remote: 'not-configured',
           },
           isActive: true,
@@ -93,7 +96,9 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
 
   async function activateDocument(sessionId: DocumentSessionId): Promise<void> {
     const targetTab = snapshot.tabs.find((tab) => tab.sessionId === sessionId)
-    if (!targetTab || targetTab.isActive) return
+    if (!targetTab || targetTab.isActive) {
+      return
+    }
 
     const activeDocument: ActiveDocumentViewModel = {
       sessionId: targetTab.sessionId,
@@ -114,7 +119,9 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
 
   async function closeDocument(sessionId: DocumentSessionId): Promise<void> {
     const closingIndex = snapshot.tabs.findIndex((tab) => tab.sessionId === sessionId)
-    if (closingIndex < 0) return
+    if (closingIndex < 0) {
+      return
+    }
 
     const remainingTabs = snapshot.tabs.filter((tab) => tab.sessionId !== sessionId)
 

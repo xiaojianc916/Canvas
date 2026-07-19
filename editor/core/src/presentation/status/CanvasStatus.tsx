@@ -1,15 +1,17 @@
 import { Grid2X2, Link2, MousePointer2 } from 'lucide-react'
 import { useValue } from 'tldraw'
 
-import { getExtensionRegistration } from '../../react/extension-registry'
-import { useEditor } from '../../react/editor-context'
+import { useEditor, useExtensionRegistration } from '../../react/editor-context'
 
 export function CanvasStatusLeft() {
   const editor = useEditor()
+  const registration = useExtensionRegistration()
   const selectedShapes = useValue('selected shapes', () => editor?.getSelectedShapes() ?? [], [editor])
   const selectionBounds = useValue('selection bounds', () => editor?.getSelectionPageBounds() ?? null, [editor])
 
-  const shapeLabel = selectedShapes.length === 1 ? getShapeDisplayLabel(selectedShapes[0]?.type) : null
+  const shapeLabel = selectedShapes.length === 1
+    ? getShapeDisplayLabel(selectedShapes[0]?.type, registration?.shapeLabels)
+    : null
 
   return (
     <>
@@ -50,12 +52,12 @@ export function CanvasStatusRight() {
   )
 }
 
-function getShapeDisplayLabel(shapeType: string | undefined): string | null {
+function getShapeDisplayLabel(
+  shapeType: string | undefined,
+  extensionLabels: Readonly<Record<string, string>> | undefined,
+): string | null {
   if (!shapeType) return null
-  const label = SHAPE_TYPE_LABELS[shapeType]
-  if (label) return label
-  const registration = getExtensionRegistration()
-  return registration.shapeLabels[shapeType] ?? null
+  return SHAPE_TYPE_LABELS[shapeType] ?? extensionLabels?.[shapeType] ?? null
 }
 
 const SHAPE_TYPE_LABELS: Record<string, string> = {

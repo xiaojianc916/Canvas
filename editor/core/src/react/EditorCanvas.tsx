@@ -1,46 +1,22 @@
 import { TooltipProvider } from '@hybrid-canvas/design-system'
-import { createTLStore } from '@tldraw/editor'
 import { Minus, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { type Editor, Tldraw, useValue, type TldrawProps, type TLEditorSnapshot } from 'tldraw'
+import { type Editor, Tldraw, useValue, type TldrawProps } from 'tldraw'
 
+import type { EditorSession } from '../runtime/editor-session'
 import { CanvasToolbar } from './CanvasToolbar'
-import { useBindEditor, useEditor } from './editor-context'
-import { buildExtensionRegistration, type HybridCanvasExtension } from './extension-registry'
+import { useBindEditorSession, useEditor } from './editor-context'
 
 export interface EditorCanvasProps {
-  readonly sessionId: string
-  readonly documentId: string
-  readonly onSave?: (editor: Editor) => void
-  readonly initialSnapshot?: TLEditorSnapshot
-  readonly extensions?: readonly HybridCanvasExtension[]
+  readonly session: EditorSession
+  readonly onSave?: () => void
 }
 
-export function EditorCanvas({
-  sessionId,
-  documentId,
-  onSave,
-  initialSnapshot,
-  extensions,
-}: EditorCanvasProps) {
+export function EditorCanvas({ session, onSave }: EditorCanvasProps) {
   const [editor, setEditor] = useState<Editor | null>(null)
-  useBindEditor(editor)
-
-  const registration = useMemo(
-    () => buildExtensionRegistration(extensions),
-    [extensions],
-  )
-  const hasShapeUtils = registration.shapeUtils.length > 0
-  const hasBindingUtils = registration.bindingUtils.length > 0
+  const { registration, store } = session
+  useBindEditorSession(editor, registration)
   const hasTools = registration.tools.length > 0
-
-  const store = useMemo(() => {
-    return createTLStore({
-      ...(hasShapeUtils ? { shapeUtils: registration.shapeUtils } : {}),
-      ...(hasBindingUtils ? { bindingUtils: registration.bindingUtils } : {}),
-      ...(initialSnapshot ? { snapshot: initialSnapshot } : {}),
-    })
-  }, [initialSnapshot, registration])
 
   const tldrawProps = useMemo((): TldrawProps => {
     const base: TldrawProps = {
@@ -49,31 +25,40 @@ export function EditorCanvas({
       onMount: setEditor,
       options: { maxPages: 100 },
     }
-    if (hasTools) base.tools = registration.tools
+    if (hasTools) {
+      base.tools = registration.tools
+    }
     return base
   }, [store, registration, hasTools])
 
+  useEffect(() => {
+    if (!editor) {
+      return
+    }
+    return session.attachEditor(editor)
+  }, [editor, session])
+
   const handleSave = useCallback(() => {
-    if (editor) onSave?.(editor)
-  }, [editor, onSave])
+    onSave?.()
+  }, [onSave])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
-        if (editor) onSave?.(editor)
+        onSave?.()
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [editor, onSave])
+  }, [onSave])
 
   return (
     <TooltipProvider delayDuration={450}>
       <div
         className="relative size-full overflow-hidden bg-canvas"
-        data-document-id={documentId}
-        data-session-id={sessionId}
+        data-document-id={session.documentId}
+        data-session-id={session.sessionId}
       >
         <Tldraw {...tldrawProps} />
         <CanvasToolbar onSave={handleSave} />
@@ -87,7 +72,9 @@ function CanvasZoomControl() {
   const editor = useEditor()
   const zoomPercentage = useValue('canvas zoom', () => editor ? Math.round(editor.getZoomLevel() * 100) : 100, [editor])
 
-  if (!editor) return null
+  if (!editor) {
+    return null
+  }
 
   return (
     <div className="absolute bottom-3 right-3 z-20 flex h-8 items-center rounded-lg border bg-background/95 shadow-sm backdrop-blur-xl">

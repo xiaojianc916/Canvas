@@ -4,6 +4,7 @@
     "includes": [
       "**",
       "!**/node_modules",
+      "!**/.refactor-backup",
       "!**/.turbo",
       "!**/dist",
       "!**/build",
@@ -55,7 +56,7 @@
     }
   },
   "css": {
-    "parser": { "cssModules": true },
+    "parser": { "cssModules": true, "tailwindDirectives": true },
     "formatter": {
       "enabled": true,
       "indentStyle": "space",

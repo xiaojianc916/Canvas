@@ -12,6 +12,12 @@ export {
 } from './react/public-api'
 
 export {
+  createEditorSession,
+  type CreateEditorSessionOptions,
+  type EditorSession,
+} from './runtime/editor-session'
+
+export {
   type CanvasBoundsViewModel,
   type CanvasSelectionViewModel,
   type CanvasSessionViewModel,

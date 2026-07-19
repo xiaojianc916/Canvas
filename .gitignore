@@ -115,6 +115,8 @@ yarn-debug.log*
 yarn-error.log*
 
 # Temporary files
+.refactor-backup/
+**/.refactor-backup/
 tmp/
 **/tmp/
 temp/
