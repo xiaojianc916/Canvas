@@ -8,6 +8,10 @@
     ".": {
       "types": "./src/public-api.ts",
       "default": "./src/public-api.ts"
+    },
+    "./react": {
+      "types": "./src/presentation/public-api.ts",
+      "default": "./src/presentation/public-api.ts"
     }
   },
   "scripts": {

@@ -10,10 +10,18 @@
     ".": {
       "types": "./src/public-api.ts",
       "default": "./src/public-api.ts"
+    },
+    "./react": {
+      "types": "./src/presentation/public-api.ts",
+      "default": "./src/presentation/public-api.ts"
+    },
+    "./tldraw": {
+      "types": "./src/adapters/tldraw/public-api.ts",
+      "default": "./src/adapters/tldraw/public-api.ts"
     }
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json --noEmit",
+    "build": "tsc --project tsconfig.json --noEmit && node scripts/check-license.js",
     "check": "tsc --project tsconfig.json --noEmit",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "clean": "rimraf .turbo *.tsbuildinfo"

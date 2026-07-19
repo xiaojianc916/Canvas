@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "@hybrid-canvas/platforms-desktop-runtime",
   "version": "0.1.0",
   "type": "module",
@@ -14,10 +14,11 @@
   },
   "dependencies": {
     "@hybrid-canvas/desktop-ipc": "workspace:*",
-    "@hybrid-canvas/domain-asset": "workspace:*",
-    "@hybrid-canvas/domain-file": "workspace:*",
-    "@hybrid-canvas/domain-plugin": "workspace:*",
-    "@hybrid-canvas/domain-settings": "workspace:*"
+    "@hybrid-canvas/asset": "workspace:*",
+    "@hybrid-canvas/file": "workspace:*",
+    "@hybrid-canvas/plugin": "workspace:*",
+    "@hybrid-canvas/settings": "workspace:*"
   }
 }
+
 

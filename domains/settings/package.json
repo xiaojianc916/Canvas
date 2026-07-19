@@ -1,5 +1,5 @@
 {
-  "name": "@hybrid-canvas/domain-settings",
+  "name": "@hybrid-canvas/settings",
   "version": "0.1.0",
   "private": true,
   "type": "module",

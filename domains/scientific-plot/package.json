@@ -1,5 +1,5 @@
-{
-  "name": "@hybrid-canvas/domain-scientific-plot",
+﻿{
+  "name": "@hybrid-canvas/scientific-plot",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -29,9 +29,10 @@
     "valibot": "catalog:",
     "@hybrid-canvas/foundations-kernel": "workspace:*",
     "@hybrid-canvas/foundations-geometry": "workspace:*",
-    "@hybrid-canvas/domain-document": "workspace:*",
-    "@hybrid-canvas/domain-asset": "workspace:*"
+    "@hybrid-canvas/document": "workspace:*",
+    "@hybrid-canvas/asset": "workspace:*"
   }
 }
+
 
 

@@ -1,8 +1,8 @@
 import { invoke } from '@hybrid-canvas/desktop-ipc'
-import type { PluginVerifier } from '@hybrid-canvas/domain-plugin'
+import type { PluginVerifier } from '@hybrid-canvas/plugin'
 
 export function createDesktopPluginVerifier(): PluginVerifier {
   return {
-    verify: (packagePath) => invoke('plugin_verify', { packagePath }),
+    verify: (packagePath: string) => invoke('plugin_verify', { packagePath }),
   }
 }

@@ -1,5 +1,5 @@
-{
-  "name": "@hybrid-canvas/domain-flowchart",
+﻿{
+  "name": "@hybrid-canvas/flowchart",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -27,9 +27,10 @@
     "valibot": "catalog:",
     "@hybrid-canvas/foundations-kernel": "workspace:*",
     "@hybrid-canvas/foundations-geometry": "workspace:*",
-    "@hybrid-canvas/domain-document": "workspace:*",
+    "@hybrid-canvas/document": "workspace:*",
     "@hybrid-canvas/canvas": "workspace:*"
   }
 }
+
 
 

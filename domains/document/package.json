@@ -1,5 +1,5 @@
 {
-  "name": "@hybrid-canvas/domain-document",
+  "name": "@hybrid-canvas/document",
   "version": "0.1.0",
   "private": true,
   "type": "module",

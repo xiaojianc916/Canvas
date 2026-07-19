@@ -1,5 +1,5 @@
-{
-  "name": "@hybrid-canvas/domain-import-export",
+﻿{
+  "name": "@hybrid-canvas/import-export",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -24,12 +24,12 @@
   "dependencies": {
     "valibot": "catalog:",
     "@hybrid-canvas/foundations-kernel": "workspace:*",
-    "@hybrid-canvas/domain-document": "workspace:*",
-    "@hybrid-canvas/domain-flowchart": "workspace:*",
-    "@hybrid-canvas/domain-scientific-plot": "workspace:*",
-    "@hybrid-canvas/domain-freehand": "workspace:*",
-    "@hybrid-canvas/canvas": "workspace:*"
+    "@hybrid-canvas/document": "workspace:*",
+    "@hybrid-canvas/flowchart": "workspace:*",
+    "@hybrid-canvas/scientific-plot": "workspace:*",
+    "@hybrid-canvas/freehand": "workspace:*"
   }
 }
+
 
 

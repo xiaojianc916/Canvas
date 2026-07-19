@@ -1,5 +1,5 @@
-{
-  "name": "@hybrid-canvas/domain-freehand",
+﻿{
+  "name": "@hybrid-canvas/freehand",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -26,9 +26,10 @@
     "valibot": "catalog:",
     "@hybrid-canvas/foundations-kernel": "workspace:*",
     "@hybrid-canvas/foundations-geometry": "workspace:*",
-    "@hybrid-canvas/domain-document": "workspace:*",
+    "@hybrid-canvas/document": "workspace:*",
     "@hybrid-canvas/canvas": "workspace:*"
   }
 }
+
 
 

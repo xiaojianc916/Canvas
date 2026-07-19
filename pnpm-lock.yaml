@@ -13,8 +13,8 @@ catalogs:
       specifier: 4.3.3
       version: 4.3.3
     '@types/node':
-      specifier: 26.1.1
-      version: 26.1.1
+      specifier: 24.0.15
+      version: 24.0.15
     '@types/react':
       specifier: 19.2.17
       version: 19.2.17
@@ -113,7 +113,7 @@ importers:
         version: 2.5.4
       '@types/node':
         specifier: 'catalog:'
-        version: 26.1.1
+        version: 24.0.15
       rimraf:
         specifier: 6.0.1
         version: 6.0.1
@@ -159,7 +159,7 @@ importers:
     devDependencies:
       '@tailwindcss/vite':
         specifier: 'catalog:'
-        version: 4.3.3(vite@8.1.4(@types/node@26.1.1)(esbuild@0.25.5)(jiti@2.7.0))
+        version: 4.3.3(vite@8.1.4(@types/node@24.13.3)(esbuild@0.25.5)(jiti@2.7.0))
       '@tauri-apps/cli':
         specifier: catalog:tauri
         version: 2.11.4
@@ -171,7 +171,7 @@ importers:
         version: 19.2.3(@types/react@19.2.17)
       '@vitejs/plugin-react':
         specifier: 'catalog:'
-        version: 6.0.3(vite@8.1.4(@types/node@26.1.1)(esbuild@0.25.5)(jiti@2.7.0))
+        version: 6.0.3(vite@8.1.4(@types/node@24.13.3)(esbuild@0.25.5)(jiti@2.7.0))
       esbuild:
         specifier: 'catalog:'
         version: 0.25.5
@@ -183,10 +183,10 @@ importers:
         version: 7.0.2
       vite:
         specifier: 'catalog:'
-        version: 8.1.4(@types/node@26.1.1)(esbuild@0.25.5)(jiti@2.7.0)
+        version: 8.1.4(@types/node@24.13.3)(esbuild@0.25.5)(jiti@2.7.0)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   domains/asset:
     dependencies:
@@ -205,7 +205,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   domains/canvas:
     dependencies:
@@ -234,10 +234,10 @@ importers:
 
   domains/collaboration:
     dependencies:
-      '@hybrid-canvas/domain-asset':
+      '@hybrid-canvas/asset':
         specifier: workspace:*
         version: link:../asset
-      '@hybrid-canvas/domain-document':
+      '@hybrid-canvas/document':
         specifier: workspace:*
         version: link:../document
       '@hybrid-canvas/foundations-kernel':
@@ -261,7 +261,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   domains/document:
     dependencies:
@@ -283,14 +283,14 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   domains/file:
     dependencies:
-      '@hybrid-canvas/domain-asset':
+      '@hybrid-canvas/asset':
         specifier: workspace:*
         version: link:../asset
-      '@hybrid-canvas/domain-document':
+      '@hybrid-canvas/document':
         specifier: workspace:*
         version: link:../document
       '@hybrid-canvas/foundations-kernel':
@@ -308,7 +308,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   domains/flowchart:
     dependencies:
@@ -318,7 +318,7 @@ importers:
       '@hybrid-canvas/canvas':
         specifier: workspace:*
         version: link:../canvas
-      '@hybrid-canvas/domain-document':
+      '@hybrid-canvas/document':
         specifier: workspace:*
         version: link:../document
       '@hybrid-canvas/foundations-geometry':
@@ -342,14 +342,14 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   domains/freehand:
     dependencies:
       '@hybrid-canvas/canvas':
         specifier: workspace:*
         version: link:../canvas
-      '@hybrid-canvas/domain-document':
+      '@hybrid-canvas/document':
         specifier: workspace:*
         version: link:../document
       '@hybrid-canvas/foundations-geometry':
@@ -373,28 +373,25 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   domains/import-export:
     dependencies:
-      '@hybrid-canvas/canvas':
-        specifier: workspace:*
-        version: link:../canvas
-      '@hybrid-canvas/domain-document':
+      '@hybrid-canvas/document':
         specifier: workspace:*
         version: link:../document
-      '@hybrid-canvas/domain-flowchart':
+      '@hybrid-canvas/flowchart':
         specifier: workspace:*
         version: link:../flowchart
-      '@hybrid-canvas/domain-freehand':
-        specifier: workspace:*
-        version: link:../freehand
-      '@hybrid-canvas/domain-scientific-plot':
-        specifier: workspace:*
-        version: link:../scientific-plot
       '@hybrid-canvas/foundations-kernel':
         specifier: workspace:*
         version: link:../../foundations/kernel
+      '@hybrid-canvas/freehand':
+        specifier: workspace:*
+        version: link:../freehand
+      '@hybrid-canvas/scientific-plot':
+        specifier: workspace:*
+        version: link:../scientific-plot
       valibot:
         specifier: 'catalog:'
         version: 1.4.2(typescript@7.0.2)
@@ -407,14 +404,11 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   domains/plugin:
     dependencies:
-      '@hybrid-canvas/canvas':
-        specifier: workspace:*
-        version: link:../canvas
-      '@hybrid-canvas/domain-document':
+      '@hybrid-canvas/document':
         specifier: workspace:*
         version: link:../document
       '@hybrid-canvas/foundations-kernel':
@@ -432,14 +426,14 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   domains/scientific-plot:
     dependencies:
-      '@hybrid-canvas/domain-asset':
+      '@hybrid-canvas/asset':
         specifier: workspace:*
         version: link:../asset
-      '@hybrid-canvas/domain-document':
+      '@hybrid-canvas/document':
         specifier: workspace:*
         version: link:../document
       '@hybrid-canvas/foundations-geometry':
@@ -472,7 +466,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   domains/settings:
     dependencies:
@@ -509,7 +503,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   domains/workspace:
     dependencies:
@@ -574,7 +568,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   foundations/kernel:
     dependencies:
@@ -587,7 +581,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   foundations/observability:
     devDependencies:
@@ -596,7 +590,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   foundations/serialization:
     dependencies:
@@ -612,7 +606,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   foundations/test-kit:
     dependencies:
@@ -628,7 +622,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   platforms/desktop-ipc:
     dependencies:
@@ -638,19 +632,19 @@ importers:
 
   platforms/desktop-runtime:
     dependencies:
+      '@hybrid-canvas/asset':
+        specifier: workspace:*
+        version: link:../../domains/asset
       '@hybrid-canvas/desktop-ipc':
         specifier: workspace:*
         version: link:../desktop-ipc
-      '@hybrid-canvas/domain-asset':
-        specifier: workspace:*
-        version: link:../../domains/asset
-      '@hybrid-canvas/domain-file':
+      '@hybrid-canvas/file':
         specifier: workspace:*
         version: link:../../domains/file
-      '@hybrid-canvas/domain-plugin':
+      '@hybrid-canvas/plugin':
         specifier: workspace:*
         version: link:../../domains/plugin
-      '@hybrid-canvas/domain-settings':
+      '@hybrid-canvas/settings':
         specifier: workspace:*
         version: link:../../domains/settings
 
@@ -2186,11 +2180,11 @@ packages:
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
+  '@types/node@24.0.15':
+    resolution: {integrity: sha512-oaeTSbCef7U/z7rDeJA138xpG3NuKc64/rZ2qmUFkFJmnMsAPaluIifqyWd8hSSMxyP9oie3dLAqYPblag9KgA==}
+
   '@types/node@24.13.3':
     resolution: {integrity: sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==}
-
-  '@types/node@26.1.1':
-    resolution: {integrity: sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw==}
 
   '@types/react-dom@19.2.3':
     resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
@@ -2946,8 +2940,8 @@ packages:
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
-  undici-types@8.3.0:
-    resolution: {integrity: sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==}
+  undici-types@7.8.0:
+    resolution: {integrity: sha512-9UJ2xGDvQ43tYyVMpuHlsgApydB8ZKfVYTsLDhXkFL/6gfkp+U8xTGdh8pMJv1SpZna0zxG1DwsKZsreLbXBxw==}
 
   uplot@1.6.32:
     resolution: {integrity: sha512-KIMVnG68zvu5XXUbC4LQEPnhwOxBuLyW1AHtpm6IKTXImkbLgkMy+jabjLgSLMasNuGGzQm/ep3tOkyTxpiQIw==}
@@ -4206,12 +4200,12 @@ snapshots:
       '@tailwindcss/oxide-win32-arm64-msvc': 4.3.3
       '@tailwindcss/oxide-win32-x64-msvc': 4.3.3
 
-  '@tailwindcss/vite@4.3.3(vite@8.1.4(@types/node@26.1.1)(esbuild@0.25.5)(jiti@2.7.0))':
+  '@tailwindcss/vite@4.3.3(vite@8.1.4(@types/node@24.13.3)(esbuild@0.25.5)(jiti@2.7.0))':
     dependencies:
       '@tailwindcss/node': 4.3.3
       '@tailwindcss/oxide': 4.3.3
       tailwindcss: 4.3.3
-      vite: 8.1.4(@types/node@26.1.1)(esbuild@0.25.5)(jiti@2.7.0)
+      vite: 8.1.4(@types/node@24.13.3)(esbuild@0.25.5)(jiti@2.7.0)
 
   '@tauri-apps/api@2.11.1': {}
 
@@ -4558,13 +4552,13 @@ snapshots:
 
   '@types/estree@1.0.9': {}
 
+  '@types/node@24.0.15':
+    dependencies:
+      undici-types: 7.8.0
+
   '@types/node@24.13.3':
     dependencies:
       undici-types: 7.18.2
-
-  '@types/node@26.1.1':
-    dependencies:
-      undici-types: 8.3.0
 
   '@types/react-dom@19.2.3(@types/react@19.2.17)':
     dependencies:
@@ -4636,10 +4630,10 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
-  '@vitejs/plugin-react@6.0.3(vite@8.1.4(@types/node@26.1.1)(esbuild@0.25.5)(jiti@2.7.0))':
+  '@vitejs/plugin-react@6.0.3(vite@8.1.4(@types/node@24.13.3)(esbuild@0.25.5)(jiti@2.7.0))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.1.4(@types/node@26.1.1)(esbuild@0.25.5)(jiti@2.7.0)
+      vite: 8.1.4(@types/node@24.13.3)(esbuild@0.25.5)(jiti@2.7.0)
 
   '@vitest/expect@4.1.10':
     dependencies:
@@ -4650,13 +4644,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.0
 
-  '@vitest/mocker@4.1.10(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))':
+  '@vitest/mocker@4.1.10(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))':
     dependencies:
       '@vitest/spy': 4.1.10
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 8.1.4(@types/node@26.1.1)(esbuild@0.25.5)(jiti@2.7.0)
+      vite: 8.1.4(@types/node@24.13.3)(esbuild@0.25.5)(jiti@2.7.0)
 
   '@vitest/pretty-format@4.1.10':
     dependencies:
@@ -5315,7 +5309,7 @@ snapshots:
 
   undici-types@7.18.2: {}
 
-  undici-types@8.3.0: {}
+  undici-types@7.8.0: {}
 
   uplot@1.6.32: {}
 
@@ -5348,7 +5342,7 @@ snapshots:
     optionalDependencies:
       typescript: 7.0.2
 
-  vite@8.1.4(@types/node@26.1.1)(esbuild@0.25.5)(jiti@2.7.0):
+  vite@8.1.4(@types/node@24.13.3)(esbuild@0.25.5)(jiti@2.7.0):
     dependencies:
       lightningcss: 1.32.0
       picomatch: 4.0.5
@@ -5356,15 +5350,15 @@ snapshots:
       rolldown: 1.1.5
       tinyglobby: 0.2.17
     optionalDependencies:
-      '@types/node': 26.1.1
+      '@types/node': 24.13.3
       esbuild: 0.25.5
       fsevents: 2.3.3
       jiti: 2.7.0
 
-  vitest@4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0)):
+  vitest@4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0)):
     dependencies:
       '@vitest/expect': 4.1.10
-      '@vitest/mocker': 4.1.10(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))
+      '@vitest/mocker': 4.1.10(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
       '@vitest/pretty-format': 4.1.10
       '@vitest/runner': 4.1.10
       '@vitest/snapshot': 4.1.10
@@ -5381,10 +5375,10 @@ snapshots:
       tinyexec: 1.2.4
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
-      vite: 8.1.4(@types/node@26.1.1)(esbuild@0.25.5)(jiti@2.7.0)
+      vite: 8.1.4(@types/node@24.13.3)(esbuild@0.25.5)(jiti@2.7.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 26.1.1
+      '@types/node': 24.13.3
     transitivePeerDependencies:
       - msw
 

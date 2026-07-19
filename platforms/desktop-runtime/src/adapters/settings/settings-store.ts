@@ -1,10 +1,10 @@
 import { invoke } from '@hybrid-canvas/desktop-ipc'
-import type { SettingsStore } from '@hybrid-canvas/domain-settings'
+import type { SettingsStore } from '@hybrid-canvas/settings'
 
 export function createDesktopSettingsStore(): SettingsStore {
   return {
-    get: (key) => invoke('settings_get', { key }),
-    set: (key, value) => invoke('settings_set', { key, value }),
+    get: (key: string) => invoke('settings_get', { key }),
+    set: (key: string, value: any) => invoke('settings_set', { key, value }),
     reset: () => invoke('settings_clear'),
     subscribe: () => () => {},
   }

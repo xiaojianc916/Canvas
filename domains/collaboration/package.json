@@ -1,5 +1,5 @@
-{
-  "name": "@hybrid-canvas/domain-collaboration",
+﻿{
+  "name": "@hybrid-canvas/collaboration",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -26,9 +26,10 @@
     "yjs": "catalog:",
     "y-websocket": "catalog:",
     "@hybrid-canvas/foundations-kernel": "workspace:*",
-    "@hybrid-canvas/domain-document": "workspace:*",
-    "@hybrid-canvas/domain-asset": "workspace:*"
+    "@hybrid-canvas/document": "workspace:*",
+    "@hybrid-canvas/asset": "workspace:*"
   }
 }
+
 
 
