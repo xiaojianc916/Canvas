@@ -67,10 +67,15 @@ function DocumentTab({ model, onActivate, onClose }: DocumentTabProps) {
     <div
       aria-selected={model.isActive}
       className={cn(
-        'group mb-[3px] flex h-8 min-w-36 max-w-64 shrink-0 items-center gap-2 rounded-md border px-2.5 text-[12px] text-muted-foreground',
-        'hover:bg-accent/70 hover:text-foreground',
-        model.isActive &&
-          '-mb-px h-[35px] rounded-b-none border-b-background bg-background text-foreground',
+        'group relative mb-[3px] flex h-8 min-w-36 max-w-64 shrink-0 items-center gap-2 px-3 text-[12px] text-muted-foreground',
+        'rounded-t-[10px] hover:bg-accent/70 hover:text-foreground',
+        'after:pointer-events-none after:absolute after:inset-y-1 after:right-0 after:w-px after:bg-divider/70',
+        model.isActive && [
+          '-mb-px h-[35px] bg-background text-foreground after:hidden',
+          'before:pointer-events-none before:absolute before:-left-2 before:bottom-0 before:size-2',
+          'before:rounded-br-[8px] before:shadow-[4px_4px_0_4px_var(--background)]',
+          '[&>span[data-tab-curve=right]]:block',
+        ],
       )}
       onClick={() => onActivate(model.sessionId)}
       onKeyDown={(event) => {

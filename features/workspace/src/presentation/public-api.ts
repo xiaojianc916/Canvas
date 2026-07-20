@@ -1,4 +1,6 @@
-export { WorkspaceShell, type WorkspaceShellProps } from './shell/WorkspaceShell'
+export { WorkspaceShell } from './shell/WorkspaceShell'
+export { CanvasChrome, type CanvasChromeProps } from './shell/WorkspaceChrome'
+export type { WorkspaceShellProps } from '../contracts/shell-contract'
 export { ActivityRail } from './shell/ActivityRail'
 export { DocumentTabs, type DocumentTabsProps } from './shell/DocumentTabs'
 export { WorkspaceSidebar } from './shell/WorkspaceSidebar'

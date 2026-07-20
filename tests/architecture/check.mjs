@@ -114,6 +114,18 @@ function check(path) {
     violations.push(`${rel}: composition root 承载文档或编辑器业务逻辑`)
   }
 
+  if (rel.startsWith('apps/desktop/src/presentation/') && /from\s+['"][^'"]*\/application\//.test(text)) {
+    violations.push(`${rel}: presentation deep import application 实现`)
+  }
+
+  if (/\/src\/presentation\//.test(rel) && /create(?:WorkbenchSession|EditorSession|ApplicationRuntime)\s*\(/.test(text)) {
+    violations.push(`${rel}: presentation 创建 application/runtime 实例`)
+  }
+
+  if (/\/src\/presentation\//.test(rel) && /createContext\s*<[^>]*(?:Runtime|Service)/.test(text)) {
+    violations.push(`${rel}: presentation 使用 Context 作为服务定位器`)
+  }
+
   if (/from\s+['"]\.\.\/\.\.\/(?:apps|editor|features|foundations|platforms)\//.test(text)) {
     violations.push(`${rel}: 使用相对路径跨越顶层包边界`)
   }

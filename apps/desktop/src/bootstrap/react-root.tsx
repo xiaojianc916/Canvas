@@ -1,17 +1,29 @@
 import { createRoot } from 'react-dom/client'
+import type { Root } from 'react-dom/client'
+import { AppShell } from '../presentation/AppShell'
 import { ApplicationErrorBoundary } from './ApplicationErrorBoundary'
 import { createApplicationRuntime } from './application'
-import { ApplicationRuntimeProvider } from './react-providers'
-const runtime = createApplicationRuntime()
 
-export async function mountReactApplication(container: HTMLElement): Promise<void> {
-  const { AppShell } = await import('./app-shell')
+export interface MountedReactApplication {
+  readonly runtime: ReturnType<typeof createApplicationRuntime>
+  readonly unmount: () => void
+}
 
-  createRoot(container).render(
+export function mountReactApplication(container: HTMLElement): MountedReactApplication {
+  const runtime = createApplicationRuntime()
+  const root: Root = createRoot(container)
+
+  root.render(
     <ApplicationErrorBoundary>
-      <ApplicationRuntimeProvider runtime={runtime}>
-        <AppShell />
-      </ApplicationRuntimeProvider>
+      <AppShell runtime={runtime} />
     </ApplicationErrorBoundary>,
   )
+
+  return {
+    runtime,
+    unmount() {
+      root.unmount()
+      runtime.dispose()
+    },
+  }
 }

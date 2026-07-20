@@ -27,13 +27,13 @@ export function WorkspaceSidebar({
     <section className="flex h-full min-h-0 min-w-0 flex-col bg-sidebar">
       <header className="flex h-11 shrink-0 items-center border-b border-divider px-3">
         <div>
-          <h2 className="text-xs font-semibold">画板</h2>
+          <h2 className="text-xs font-semibold">页面</h2>
           <p className="text-[10px] text-muted-foreground">当前文档中的画布页面</p>
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
-              aria-label="新建画板页面"
+              aria-label="新建页面"
               className="ml-auto size-7"
               onClick={onCreatePage}
               size="icon"
@@ -43,12 +43,12 @@ export function WorkspaceSidebar({
               <Plus className="size-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">新建画板页面</TooltipContent>
+          <TooltipContent side="bottom">新建页面</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
-              aria-label="收起画板栏"
+              aria-label="收起页面栏"
               className="size-7"
               onClick={onClose}
               size="icon"
@@ -58,7 +58,7 @@ export function WorkspaceSidebar({
               <PanelLeftClose className="size-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">收起画板栏</TooltipContent>
+          <TooltipContent side="bottom">收起页面栏</TooltipContent>
         </Tooltip>
       </header>
       <ScrollArea className="min-h-0 flex-1">
@@ -86,7 +86,7 @@ export function WorkspaceSidebar({
               <div className="mx-auto grid size-9 place-items-center rounded-lg border border-divider bg-background">
                 <Grid2X2 className="size-4 text-muted-foreground" />
               </div>
-              <p className="mt-3 text-xs font-medium">还没有画板页面</p>
+              <p className="mt-3 text-xs font-medium">还没有页面</p>
               <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
                 创建页面后即可开始绘制
               </p>

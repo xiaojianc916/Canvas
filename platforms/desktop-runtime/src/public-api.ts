@@ -5,7 +5,10 @@ export type { FileDialog } from './adapters/dialog/file-dialog'
 export { createDrawFileCommands } from './adapters/file/file-system'
 export type { DrawFileCommands } from './adapters/file/file-system'
 export type { NativeRuntimeInfo } from './adapters/native-runtime-info'
-export type { NativeWindow } from './adapters/native-window'
+export {
+  createMainWindowController,
+  type MainWindowController,
+} from './adapters/native-window'
 export { createExternalOpener } from './adapters/opener/external-opener'
 export type { ExternalOpener } from './adapters/opener/external-opener'
 export { createDesktopPluginVerifier } from './adapters/plugin/plugin-verifier'

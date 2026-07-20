@@ -4,8 +4,10 @@ import type {
   DocumentSessionId,
   DocumentTabViewModel,
   LocalPersistenceState,
+  PageId,
   WorkbenchSessionStore,
   WorkbenchViewModel,
+  WorkspacePageViewModel,
 } from '../../contracts/public-api'
 import { EMPTY_WORKBENCH_VIEW_MODEL } from '../../contracts/public-api'
 
@@ -137,6 +139,47 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
     })
   }
 
+  function createPage(sessionId: DocumentSessionId, title: string): void {
+    const activeDocument = snapshot.activeDocument
+    if (!activeDocument || activeDocument.sessionId !== sessionId) {
+      return
+    }
+    const page: WorkspacePageViewModel = {
+      pageId: crypto.randomUUID(),
+      title,
+      kind: 'canvas',
+      isActive: false,
+      isArchived: false,
+    }
+    emit({
+      ...snapshot,
+      activeDocument: {
+        ...activeDocument,
+        pages: [...activeDocument.pages, page],
+      },
+    })
+  }
+
+  function activatePage(sessionId: DocumentSessionId, pageId: PageId): void {
+    const activeDocument = snapshot.activeDocument
+    if (!activeDocument || activeDocument.sessionId !== sessionId) {
+      return
+    }
+    if (!activeDocument.pages.some((page) => page.pageId === pageId)) {
+      return
+    }
+    emit({
+      ...snapshot,
+      activeDocument: {
+        ...activeDocument,
+        pages: activeDocument.pages.map((page) => ({
+          ...page,
+          isActive: page.pageId === pageId,
+        })),
+      },
+    })
+  }
+
   function setLocalPersistence(
     sessionId: DocumentSessionId,
     state: LocalPersistenceState,
@@ -162,6 +205,8 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
     createDocument,
     activateDocument,
     closeDocument,
+    createPage,
+    activatePage,
     setLocalPersistence,
   }
 }

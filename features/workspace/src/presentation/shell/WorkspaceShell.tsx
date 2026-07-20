@@ -7,7 +7,7 @@ import { InspectorHost } from '../inspector/InspectorHost'
 import { StatusBarHost } from '../status/StatusBarHost'
 import { ActivityRail } from './ActivityRail'
 import { DocumentTabs } from './DocumentTabs'
-import { WorkspaceChrome } from './WorkspaceChrome'
+import { CanvasChrome } from './WorkspaceChrome'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 
 export function WorkspaceShell({
@@ -52,7 +52,7 @@ export function WorkspaceShell({
           aria-hidden="true"
           className="pointer-events-none absolute left-(--activity-rail-width) top-(--chrome-height) z-40 h-px w-(--workspace-sidebar-width) bg-divider"
         />
-        <WorkspaceChrome
+        <CanvasChrome
           rail={
             <ActivityRail
               isSidebarOpen={isSidebarOpen}

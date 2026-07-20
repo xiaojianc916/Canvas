@@ -21,12 +21,25 @@ export interface CreateDocumentServiceDependencies {
   readonly extensions: readonly HybridCanvasExtension[]
 }
 
+type DocumentSessionState = 'ready' | 'dirty' | 'saving' | 'failed' | 'closing' | 'closed'
+
 interface OwnedDocumentSession {
   readonly editor: EditorSession
+  stopObserving: () => void
   filePath: string | null
   revision: number
   savedRevision: number
+  state: DocumentSessionState
   saveOperation: Promise<void> | null
+}
+
+const ALLOWED_TRANSITIONS: Readonly<Record<DocumentSessionState, readonly DocumentSessionState[]>> = {
+  ready: ['dirty', 'saving', 'closing'],
+  dirty: ['saving', 'closing'],
+  saving: ['ready', 'dirty', 'failed'],
+  failed: ['dirty', 'saving', 'closing'],
+  closing: ['closed'],
+  closed: [],
 }
 
 export function createDocumentService({
@@ -42,13 +55,8 @@ export function createDocumentService({
     const documentId = crypto.randomUUID()
     const sessionId = crypto.randomUUID()
     const editor = editorSessions.create({ documentId, sessionId, extensions })
-    sessions.set(sessionId, {
-      editor,
-      filePath: null,
-      revision: 0,
-      savedRevision: -1,
-      saveOperation: null,
-    })
+    const session = createOwnedSession(editor, null, 'dirty')
+    sessions.set(sessionId, session)
 
     try {
       workspace.createDocument({
@@ -83,13 +91,7 @@ export function createDocumentService({
       initialSnapshot: container.content,
       extensions,
     })
-    sessions.set(sessionId, {
-      editor,
-      filePath,
-      revision: 0,
-      savedRevision: 0,
-      saveOperation: null,
-    })
+    sessions.set(sessionId, createOwnedSession(editor, filePath, 'ready'))
 
     try {
       workspace.createDocument({
@@ -105,7 +107,7 @@ export function createDocumentService({
     }
   }
 
-  async function save(sessionId: DocumentSessionId): Promise<void> {
+  function save(sessionId: DocumentSessionId): Promise<void> {
     const session = requireSession(sessionId)
     if (session.saveOperation) {
       return session.saveOperation
@@ -134,17 +136,18 @@ export function createDocumentService({
     }
 
     const capturedRevision = session.revision
+    transition(session, 'saving')
     workspace.setLocalPersistence(sessionId, 'saving')
     try {
       const json = serializeDrawDocument(session.editor.getSnapshot())
       await files.saveDraw(filePath, json)
       session.filePath = filePath
       session.savedRevision = capturedRevision
-      workspace.setLocalPersistence(
-        sessionId,
-        session.revision === capturedRevision ? 'clean' : 'dirty',
-      )
+      const nextState = session.revision === capturedRevision ? 'ready' : 'dirty'
+      transition(session, nextState)
+      workspace.setLocalPersistence(sessionId, nextState === 'ready' ? 'clean' : 'dirty')
     } catch (error) {
+      transition(session, 'failed')
       workspace.setLocalPersistence(sessionId, 'failed')
       throw error
     }
@@ -158,13 +161,50 @@ export function createDocumentService({
     if (session.saveOperation) {
       throw new Error('DOCUMENT_SESSION_SAVE_IN_PROGRESS')
     }
+    transition(session, 'closing')
     workspace.closeDocument(sessionId)
+    transition(session, 'closed')
     release(sessionId)
   }
 
   function release(sessionId: DocumentSessionId): void {
+    const session = sessions.get(sessionId)
+    session?.stopObserving()
     sessions.delete(sessionId)
     editorSessions.close(sessionId)
+  }
+
+  function createOwnedSession(
+    editor: EditorSession,
+    filePath: string | null,
+    initialState: 'ready' | 'dirty',
+  ): OwnedDocumentSession {
+    const session: OwnedDocumentSession = {
+      editor,
+      filePath,
+      revision: 0,
+      savedRevision: initialState === 'ready' ? 0 : -1,
+      state: initialState,
+      saveOperation: null,
+      stopObserving: () => {},
+    }
+    const stopObserving = editor.store.listen(
+      () => {
+        if (session.state === 'closing' || session.state === 'closed') {
+          return
+        }
+        session.revision += 1
+        if (session.state !== 'saving') {
+          if (session.state !== 'dirty') {
+            transition(session, 'dirty')
+          }
+          workspace.setLocalPersistence(editor.sessionId, 'dirty')
+        }
+      },
+      { scope: 'document', source: 'user' },
+    )
+    session.stopObserving = stopObserving
+    return session
   }
 
   function requireSession(sessionId: DocumentSessionId): OwnedDocumentSession {
@@ -184,10 +224,23 @@ export function createDocumentService({
       return sessions.get(sessionId)?.editor ?? null
     },
     dispose() {
+      for (const session of sessions.values()) {
+        session.stopObserving()
+      }
       sessions.clear()
       editorSessions.dispose()
     },
   }
+}
+
+function transition(session: OwnedDocumentSession, nextState: DocumentSessionState): void {
+  if (session.state === nextState) {
+    return
+  }
+  if (!ALLOWED_TRANSITIONS[session.state].includes(nextState)) {
+    throw new Error(`DOCUMENT_SESSION_INVALID_TRANSITION:${session.state}->${nextState}`)
+  }
+  session.state = nextState
 }
 
 function getFileTitle(filePath: string): string {

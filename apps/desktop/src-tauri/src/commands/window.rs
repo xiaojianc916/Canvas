@@ -10,6 +10,8 @@ pub struct WindowOptions {
     pub title: Option<String>,
     pub width: Option<f64>,
     pub height: Option<f64>,
+    pub min_width: Option<f64>,
+    pub min_height: Option<f64>,
     pub x: Option<f64>,
     pub y: Option<f64>,
     pub fullscreen: Option<bool>,
@@ -37,6 +39,12 @@ pub struct WindowInfo {
 
 #[command]
 pub async fn window_create(app: AppHandle, options: WindowOptions) -> Result<WindowInfo> {
+    if let Some(existing) = app.get_webview_window(&options.label) {
+        existing.show()?;
+        existing.set_focus()?;
+        return window_info(existing);
+    }
+
     let mut builder = tauri::WebviewWindowBuilder::new(&app, &options.label, tauri::WebviewUrl::default())
         .title(options.title.unwrap_or_else(|| "Hybrid Canvas".into()))
         .inner_size(options.width.unwrap_or(800.0), options.height.unwrap_or(600.0))
@@ -44,6 +52,9 @@ pub async fn window_create(app: AppHandle, options: WindowOptions) -> Result<Win
         .decorations(options.decorations.unwrap_or(true))
         .always_on_top(options.always_on_top.unwrap_or(false))
         .visible(options.visible.unwrap_or(true));
+    if let Some(min_width) = options.min_width {
+        builder = builder.min_inner_size(min_width, options.min_height.unwrap_or(min_width));
+    }
 
     if let (Some(x), Some(y)) = (options.x, options.y) {
         builder = builder.position(x, y);
@@ -52,13 +63,7 @@ pub async fn window_create(app: AppHandle, options: WindowOptions) -> Result<Win
         builder = builder.fullscreen(fs);
     }
 
-    let window = builder.build()?;
-    window.on_window_event(|event| {
-        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-            api.prevent_close();
-        }
-    });
-    window_info(window)
+    window_info(builder.build()?)
 }
 
 #[command]

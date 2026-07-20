@@ -58,6 +58,8 @@ export interface WorkbenchSessionCommands {
   readonly createDocument: (request: CreateDocumentRequest) => void
   readonly activateDocument: (sessionId: DocumentSessionId) => void
   readonly closeDocument: (sessionId: DocumentSessionId) => void
+  readonly createPage: (sessionId: DocumentSessionId, title: string) => void
+  readonly activatePage: (sessionId: DocumentSessionId, pageId: PageId) => void
   readonly setLocalPersistence: (
     sessionId: DocumentSessionId,
     state: LocalPersistenceState,

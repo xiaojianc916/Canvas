@@ -9,11 +9,8 @@ import {
   useSyncExternalStore,
 } from 'react'
 
-import {
-  createCommandRegistry,
-  type CommandRegistry,
-  type RegisteredCommand,
-} from '../../application/public-api'
+import { createCommandRegistry, type CommandRegistry } from '../../application/public-api'
+import type { RegisteredCommand } from '../../contracts/public-api'
 
 interface CommandContextValue {
   readonly commands: readonly RegisteredCommand[]

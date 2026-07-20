@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 import { DesktopTitleBar } from './DesktopTitleBar'
 
-export interface WorkspaceChromeProps {
+export interface CanvasChromeProps {
   readonly rail: ReactNode
   readonly tabs: ReactNode
   readonly onWindowMinimize: () => void
@@ -11,14 +11,14 @@ export interface WorkspaceChromeProps {
   readonly onWindowStartDragging: () => void
 }
 
-export function WorkspaceChrome({
+export function CanvasChrome({
   rail,
   tabs,
   onWindowMinimize,
   onWindowMaximize,
   onWindowClose,
   onWindowStartDragging,
-}: WorkspaceChromeProps) {
+}: CanvasChromeProps) {
   return (
     <>
       <div className="row-[2/-1] min-h-0 border-r border-divider">{rail}</div>

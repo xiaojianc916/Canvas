@@ -1,4 +1,3 @@
-import { TooltipProvider } from '@hybrid-canvas/design-system'
 import { Minus, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { type Editor, Tldraw, useValue, type TldrawProps } from 'tldraw'
@@ -64,17 +63,15 @@ export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasP
   }, [isActive, onSave])
 
   return (
-    <TooltipProvider delayDuration={450}>
-      <div
-        className="relative size-full overflow-hidden bg-canvas"
-        data-document-id={session.documentId}
-        data-session-id={session.sessionId}
-      >
-        <Tldraw {...tldrawProps} />
-        <CanvasToolbar onSave={handleSave} />
-        {editor ? <CanvasZoomControl /> : null}
-      </div>
-    </TooltipProvider>
+    <div
+      className="relative size-full overflow-hidden bg-canvas"
+      data-document-id={session.documentId}
+      data-session-id={session.sessionId}
+    >
+      <Tldraw {...tldrawProps} />
+      <CanvasToolbar onSave={handleSave} />
+      {editor ? <CanvasZoomControl /> : null}
+    </div>
   )
 }
 
