@@ -80,7 +80,11 @@ export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasP
 
 function CanvasZoomControl() {
   const editor = useEditor()
-  const zoomPercentage = useValue('canvas zoom', () => editor ? Math.round(editor.getZoomLevel() * 100) : 100, [editor])
+  const zoomPercentage = useValue(
+    'canvas zoom',
+    () => (editor ? Math.round(editor.getZoomLevel() * 100) : 100),
+    [editor],
+  )
 
   if (!editor) {
     return null

@@ -4,12 +4,18 @@ import { cn } from '../../lib/utils'
 
 const DropdownMenu = Menu.Root
 
-const DropdownMenuTrigger = forwardRef<HTMLButtonElement, React.ComponentPropsWithoutRef<typeof Menu.Trigger>>(({ className, ...props }, ref) => (
+const DropdownMenuTrigger = forwardRef<
+  HTMLButtonElement,
+  React.ComponentPropsWithoutRef<typeof Menu.Trigger>
+>(({ className, ...props }, ref) => (
   <Menu.Trigger className={cn('', className)} ref={ref} {...props} />
 ))
 DropdownMenuTrigger.displayName = 'DropdownMenuTrigger'
 
-const DropdownMenuContent = forwardRef<HTMLDivElement, React.ComponentPropsWithoutRef<typeof Menu.Popup> & { readonly sideOffset?: number }>(({ className, sideOffset = 4, ...props }, ref) => (
+const DropdownMenuContent = forwardRef<
+  HTMLDivElement,
+  React.ComponentPropsWithoutRef<typeof Menu.Popup> & { readonly sideOffset?: number }
+>(({ className, sideOffset = 4, ...props }, ref) => (
   <Menu.Portal>
     <Menu.Positioner sideOffset={sideOffset}>
       <Menu.Popup
@@ -25,7 +31,10 @@ const DropdownMenuContent = forwardRef<HTMLDivElement, React.ComponentPropsWitho
 ))
 DropdownMenuContent.displayName = 'DropdownMenuContent'
 
-const DropdownMenuItem = forwardRef<HTMLDivElement, React.ComponentPropsWithoutRef<typeof Menu.Item> & { readonly inset?: boolean }>(({ className, inset, ...props }, ref) => (
+const DropdownMenuItem = forwardRef<
+  HTMLDivElement,
+  React.ComponentPropsWithoutRef<typeof Menu.Item> & { readonly inset?: boolean }
+>(({ className, inset, ...props }, ref) => (
   <Menu.Item
     className={cn(
       'relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
@@ -38,7 +47,10 @@ const DropdownMenuItem = forwardRef<HTMLDivElement, React.ComponentPropsWithoutR
 ))
 DropdownMenuItem.displayName = 'DropdownMenuItem'
 
-const DropdownMenuLabel = forwardRef<HTMLDivElement, React.ComponentPropsWithoutRef<typeof Menu.GroupLabel> & { readonly inset?: boolean }>(({ className, inset, ...props }, ref) => (
+const DropdownMenuLabel = forwardRef<
+  HTMLDivElement,
+  React.ComponentPropsWithoutRef<typeof Menu.GroupLabel> & { readonly inset?: boolean }
+>(({ className, inset, ...props }, ref) => (
   <Menu.GroupLabel
     className={cn('px-2 py-1.5 text-sm font-semibold', inset && 'pl-8', className)}
     ref={ref}
@@ -47,7 +59,10 @@ const DropdownMenuLabel = forwardRef<HTMLDivElement, React.ComponentPropsWithout
 ))
 DropdownMenuLabel.displayName = 'DropdownMenuLabel'
 
-const DropdownMenuSeparator = forwardRef<HTMLDivElement, React.ComponentPropsWithoutRef<typeof Menu.Separator>>(({ className, ...props }, ref) => (
+const DropdownMenuSeparator = forwardRef<
+  HTMLDivElement,
+  React.ComponentPropsWithoutRef<typeof Menu.Separator>
+>(({ className, ...props }, ref) => (
   <Menu.Separator className={cn('-mx-1 my-1 h-px bg-border', className)} ref={ref} {...props} />
 ))
 DropdownMenuSeparator.displayName = 'DropdownMenuSeparator'

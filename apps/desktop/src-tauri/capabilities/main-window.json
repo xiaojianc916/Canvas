@@ -1,8 +1,6 @@
 {
   "identifier": "main-window-capability",
-  "windows": [
-    "main"
-  ],
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:default",

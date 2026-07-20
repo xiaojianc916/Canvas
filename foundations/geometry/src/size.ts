@@ -66,10 +66,7 @@ export function sizeContains(outer: Size, inner: Size): boolean {
 }
 
 export function sizeClamp(s: Size, min: Size, max: Size): Size {
-  return [
-    Math.max(min[0], Math.min(max[0], s[0])),
-    Math.max(min[1], Math.min(max[1], s[1])),
-  ]
+  return [Math.max(min[0], Math.min(max[0], s[0])), Math.max(min[1], Math.min(max[1], s[1]))]
 }
 
 export function sizeRound(s: Size): Size {

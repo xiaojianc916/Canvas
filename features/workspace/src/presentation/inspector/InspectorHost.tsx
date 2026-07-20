@@ -14,12 +14,20 @@ export function InspectorHost({ title = '属性', children }: InspectorHostProps
       </header>
       <Tabs className="flex min-h-0 flex-1 flex-col" defaultValue="design">
         <TabsList className="grid h-10 w-full shrink-0 grid-cols-3 rounded-none border-b bg-transparent p-1.5">
-          <TabsTrigger className="h-7 text-[11px] shadow-none" value="design">设计</TabsTrigger>
-          <TabsTrigger className="h-7 text-[11px] shadow-none" value="data">数据</TabsTrigger>
-          <TabsTrigger className="h-7 text-[11px] shadow-none" value="interaction">交互</TabsTrigger>
+          <TabsTrigger className="h-7 text-[11px] shadow-none" value="design">
+            设计
+          </TabsTrigger>
+          <TabsTrigger className="h-7 text-[11px] shadow-none" value="data">
+            数据
+          </TabsTrigger>
+          <TabsTrigger className="h-7 text-[11px] shadow-none" value="interaction">
+            交互
+          </TabsTrigger>
         </TabsList>
         <TabsContent className="mt-0 min-h-0 flex-1" value="design">
-          <ScrollArea className="h-full"><div className="p-3">{children}</div></ScrollArea>
+          <ScrollArea className="h-full">
+            <div className="p-3">{children}</div>
+          </ScrollArea>
         </TabsContent>
         <TabsContent className="mt-0 min-h-0 flex-1" value="data">
           <InspectorPlaceholder description="选择支持数据绑定的对象后，可在这里配置字段和数据源。" />

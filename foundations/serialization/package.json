@@ -17,7 +17,7 @@
     "test": "vitest run",
     "clean": "rm -rf node_modules dist"
   },
-"dependencies": {
+  "dependencies": {
     "uuid": "catalog:",
     "valibot": "catalog:"
   },
@@ -26,5 +26,3 @@
     "vitest": "catalog:"
   }
 }
-
-

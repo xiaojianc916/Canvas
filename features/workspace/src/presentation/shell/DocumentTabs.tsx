@@ -14,12 +14,7 @@ export interface DocumentTabsProps {
   readonly onCreate: () => void
 }
 
-export function DocumentTabs({
-  tabs,
-  onActivate,
-  onClose,
-  onCreate,
-}: DocumentTabsProps) {
+export function DocumentTabs({ tabs, onActivate, onClose, onCreate }: DocumentTabsProps) {
   return (
     <header className="flex min-w-0 items-end border-b bg-chrome">
       <div
@@ -47,7 +42,15 @@ export function DocumentTabs({
         </Tooltip>
       </div>
       <div className="flex h-11 shrink-0 items-center gap-0.5 px-2">
-        <Button aria-label="收起侧边栏" className="size-8" size="icon" type="button" variant="ghost"><PanelLeftClose className="size-4" /></Button>
+        <Button
+          aria-label="收起侧边栏"
+          className="size-8"
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <PanelLeftClose className="size-4" />
+        </Button>
       </div>
     </header>
   )

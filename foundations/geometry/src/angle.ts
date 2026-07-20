@@ -13,13 +13,13 @@ export const Radians = {
     return r(value)
   },
   fromDegrees(deg: Degrees): Radians {
-    return r((deg as number * Math.PI) / 180)
+    return r(((deg as number) * Math.PI) / 180)
   },
   fromTurns(turns: number): Radians {
     return r(turns * 2 * Math.PI)
   },
   toDegrees(rad: Radians): Degrees {
-    return d((rad as number * 180) / Math.PI)
+    return d(((rad as number) * 180) / Math.PI)
   },
   toTurns(rad: Radians): number {
     return (rad as number) / (2 * Math.PI)
@@ -36,7 +36,7 @@ export const Radians = {
     return r as Radians
   },
   lerp(a: Radians, b: Radians, t: number): Radians {
-    const diff = Radians.normalizeHalf(r(b as number - a as number))
+    const diff = Radians.normalizeHalf(r(((b as number) - a) as number))
     return Radians.normalize(r((a as number) + diff * t))
   },
   add(a: Radians, b: Radians): Radians {
@@ -73,7 +73,7 @@ export const Degrees = {
     return d(value)
   },
   fromRadians(rad: Radians): Degrees {
-    return d((rad as number * 180) / Math.PI)
+    return d(((rad as number) * 180) / Math.PI)
   },
   toRadians(deg: Degrees): Radians {
     return Radians.fromDegrees(deg)

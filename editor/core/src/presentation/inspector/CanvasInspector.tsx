@@ -7,8 +7,14 @@ import { useEditor, useExtensionRegistration } from '../../react/editor-context'
 export function CanvasInspector() {
   const editor = useEditor()
   const registration = useExtensionRegistration()
-  const selectedShapes = useValue('selected shapes', () => editor?.getSelectedShapes() ?? [], [editor])
-  const selectionBounds = useValue('selection bounds', () => editor?.getSelectionPageBounds() ?? null, [editor])
+  const selectedShapes = useValue('selected shapes', () => editor?.getSelectedShapes() ?? [], [
+    editor,
+  ])
+  const selectionBounds = useValue(
+    'selection bounds',
+    () => editor?.getSelectionPageBounds() ?? null,
+    [editor],
+  )
   const count = selectedShapes.length
 
   if (count === 0) {
@@ -94,7 +100,9 @@ function PropertyRow({ label, value, monospace = false }: PropertyRowProps) {
   return (
     <div className="flex min-h-7 items-center justify-between gap-3 text-[11px]">
       <span className="text-muted-foreground">{label}</span>
-      <span className={monospace ? 'truncate font-mono text-[10px]' : 'truncate font-medium'}>{value}</span>
+      <span className={monospace ? 'truncate font-mono text-[10px]' : 'truncate font-medium'}>
+        {value}
+      </span>
     </div>
   )
 }

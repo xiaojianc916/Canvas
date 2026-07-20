@@ -5,24 +5,12 @@
   type DocumentSessionId,
   type DocumentTabViewModel,
   EMPTY_WORKBENCH_VIEW_MODEL,
+  type LocalPersistenceState,
   type PageId,
+  type RemoteSynchronizationState,
   type WorkbenchViewModel,
   type WorkspacePageViewModel,
-} from './application/model/workbench-view-model'
-
-export {
-  type CreateDocumentRequest,
-  createWorkbenchSessionController,
-  type WorkbenchSessionActions,
-  type WorkbenchSessionStore,
-} from './application/session/workbench-session-controller'
-
-export {
-  type CommandRegistry,
-  createCommandRegistry,
-  type RegisteredCommand,
-} from './application/commands/command-registry'
-export { type UICommand, type UICommandHandler } from './application/commands/ui-command'
+} from './contracts/public-api'
 
 export {
   WorkspaceShell,

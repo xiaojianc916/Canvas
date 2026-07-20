@@ -13,7 +13,7 @@ import {
   createCommandRegistry,
   type CommandRegistry,
   type RegisteredCommand,
-} from '../../application/commands/command-registry'
+} from '../../application/public-api'
 
 interface CommandContextValue {
   readonly commands: readonly RegisteredCommand[]

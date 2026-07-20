@@ -11,4 +11,4 @@ export {
   HYBRID_CANVAS_EXTENSION_API_VERSION,
   type HybridCanvasExtension,
   type ExtensionRegistration,
-} from './extension-registry'
+} from '../contracts/public-api'

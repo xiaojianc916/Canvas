@@ -2,15 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 import type { Editor } from 'tldraw'
 
-import type { ExtensionRegistration } from './extension-registry'
+import type { ExtensionRegistration } from '../contracts/public-api'
+
+export type { ExtensionRegistration } from './extension-registry'
 
 interface EditorContextValue {
   readonly editor: Editor | null
   readonly registration: ExtensionRegistration | null
-  readonly bindSession: (
-    editor: Editor | null,
-    registration: ExtensionRegistration | null,
-  ) => void
+  readonly bindSession: (editor: Editor | null, registration: ExtensionRegistration | null) => void
 }
 
 const EditorCtx = createContext<EditorContextValue | null>(null)
@@ -20,16 +19,19 @@ export function EditorProvider({ children }: { readonly children: ReactNode }) {
     readonly editor: Editor | null
     readonly registration: ExtensionRegistration | null
   }>({ editor: null, registration: null })
-  const bindSession = useCallback((
-    editor: Editor | null,
-    registration: ExtensionRegistration | null,
-  ) => {
-    setSession({ editor, registration })
-  }, [])
-  const value = useMemo<EditorContextValue>(() => ({
-    ...session,
-    bindSession,
-  }), [session, bindSession])
+  const bindSession = useCallback(
+    (editor: Editor | null, registration: ExtensionRegistration | null) => {
+      setSession({ editor, registration })
+    },
+    [],
+  )
+  const value = useMemo<EditorContextValue>(
+    () => ({
+      ...session,
+      bindSession,
+    }),
+    [session, bindSession],
+  )
 
   return <EditorCtx.Provider value={value}>{children}</EditorCtx.Provider>
 }

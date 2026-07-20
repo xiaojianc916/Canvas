@@ -2,7 +2,7 @@ import { Input } from '@hybrid-canvas/design-system'
 import { Command, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { CommandRegistry, RegisteredCommand } from '../../application/commands/command-registry'
+import type { CommandRegistry, RegisteredCommand } from '../../contracts/public-api'
 
 export interface CommandPaletteProps {
   readonly open: boolean
@@ -102,11 +102,15 @@ export function CommandPalette({ open, registry, onOpenChange }: CommandPaletteP
                 {command.category ? (
                   <span className="text-xs text-muted-foreground">{command.category}</span>
                 ) : null}
-                {command.shortcut ? <kbd className="text-xs text-muted-foreground">{command.shortcut}</kbd> : null}
+                {command.shortcut ? (
+                  <kbd className="text-xs text-muted-foreground">{command.shortcut}</kbd>
+                ) : null}
               </button>
             ))
           ) : (
-            <div className="grid h-28 place-items-center text-sm text-muted-foreground">没有匹配的命令</div>
+            <div className="grid h-28 place-items-center text-sm text-muted-foreground">
+              没有匹配的命令
+            </div>
           )}
         </div>
       </section>

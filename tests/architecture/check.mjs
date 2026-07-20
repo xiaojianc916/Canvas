@@ -18,7 +18,8 @@ const ignoredDirectories = new Set([
 const layerRules = [
   {
     source: 'foundations/',
-    forbiddenPackages: /@hybrid-canvas\/(?:asset|canvas|desktop(?:-ipc)?|file|flowchart|freehand|import-export|platforms-desktop-runtime|plugin|scientific-plot|settings|workspace)(?:['"/])?/g,
+    forbiddenPackages:
+      /@hybrid-canvas\/(?:asset|canvas|desktop(?:-ipc)?|file|flowchart|freehand|import-export|platforms-desktop-runtime|plugin|scientific-plot|settings|workspace)(?:['"/])?/g,
     message: 'foundations 反向依赖上层包',
   },
   {
@@ -28,7 +29,8 @@ const layerRules = [
   },
   {
     source: 'features/',
-    forbiddenPackages: /@hybrid-canvas\/(?:desktop|desktop-ipc|platforms-desktop-runtime)(?:['"/])?/g,
+    forbiddenPackages:
+      /@hybrid-canvas\/(?:desktop|desktop-ipc|platforms-desktop-runtime)(?:['"/])?/g,
     message: 'feature 直接依赖桌面平台',
   },
   {
@@ -40,7 +42,9 @@ const layerRules = [
 
 function walk(dir) {
   for (const name of readdirSync(dir)) {
-    if (ignoredDirectories.has(name)) continue
+    if (ignoredDirectories.has(name)) {
+      continue
+    }
 
     const path = join(dir, name)
 
@@ -53,7 +57,9 @@ function walk(dir) {
 }
 
 function check(path) {
-  if (!/\.(?:ts|tsx)$/.test(path)) return
+  if (!/\.(?:ts|tsx)$/.test(path)) {
+    return
+  }
 
   const rel = relative(root, path).replaceAll('\\', '/')
   const text = readFileSync(path, 'utf8')
@@ -66,19 +72,38 @@ function check(path) {
   }
 
   if (rel.startsWith('features/') && /@tauri-apps\//.test(text)) {
-    violations.push(rel + ': feature 直接依赖 Tauri SDK')
+    violations.push(`${rel}: feature 直接依赖 Tauri SDK`)
+  }
+
+  if (rel === 'editor/core/src/public-api.ts' && /from '\.\/runtime\//.test(text)) {
+    violations.push(`${rel}: editor core public-api 暴露 runtime 实现`)
+  }
+
+  if (rel === 'editor/core/src/public-api.ts' && /from '\.\/application\/model\//.test(text)) {
+    violations.push(`${rel}: editor core public-api 直接暴露 model 内部实现`)
+  }
+
+  if (rel === 'editor/core/src/public-api.ts' && /from '\.\/react\/editor-context'/.test(text)) {
+    violations.push(`${rel}: editor core public-api 不应绕过 react/public-api`)
+  }
+
+  if (
+    rel === 'features/workspace/src/public-api.ts' &&
+    /from '\.\/application\/(?:session|commands|model)\//.test(text)
+  ) {
+    violations.push(`${rel}: workspace public-api 暴露 application 内部实现`)
   }
 
   if (!rel.startsWith('editor/core/') && /createTLStore\s*\(/.test(text)) {
-    violations.push(rel + ': 非 editor/core 创建 TLStore')
+    violations.push(`${rel}: 非 editor/core 创建 TLStore`)
   }
 
   if (/from\s+['"]@hybrid-canvas\/[^'"]+\/src\//.test(text)) {
-    violations.push(rel + ': 跨包 deep import，必须使用 package exports')
+    violations.push(`${rel}: 跨包 deep import，必须使用 package exports`)
   }
 
   if (/from\s+['"]\.\.\/\.\.\/(?:apps|editor|features|foundations|platforms)\//.test(text)) {
-    violations.push(rel + ': 使用相对路径跨越顶层包边界')
+    violations.push(`${rel}: 使用相对路径跨越顶层包边界`)
   }
 }
 

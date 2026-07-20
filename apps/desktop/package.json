@@ -29,7 +29,7 @@
     "react-dom": "catalog:",
     "tldraw": "catalog:"
   },
-"devDependencies": {
+  "devDependencies": {
     "@tailwindcss/vite": "catalog:",
     "@tauri-apps/cli": "catalog:tauri",
     "@types/react": "catalog:",
@@ -42,4 +42,3 @@
     "vitest": "catalog:"
   }
 }
-

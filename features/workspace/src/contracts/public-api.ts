@@ -10,4 +10,15 @@ export {
   type RemoteSynchronizationState,
   type WorkbenchViewModel,
   type WorkspacePageViewModel,
-} from '../../contracts/workbench-contract'
+} from './workbench-contract'
+
+export {
+  type CommandRegistry,
+  createCommandRegistry,
+} from '../application/commands/command-registry'
+
+export type {
+  RegisteredCommand,
+  UICommand,
+  UICommandHandler,
+} from './command-contract'

@@ -1,8 +1,4 @@
-import type { UICommand } from './ui-command'
-
-export interface RegisteredCommand extends UICommand {
-  readonly execute: () => void | Promise<void>
-}
+import type { RegisteredCommand } from './ui-command'
 
 export interface CommandRegistry {
   readonly register: (command: RegisteredCommand) => () => void

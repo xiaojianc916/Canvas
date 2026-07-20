@@ -16,7 +16,7 @@
     "test": "vitest run",
     "clean": "rm -rf node_modules dist"
   },
-"devDependencies": {
+  "devDependencies": {
     "@hybrid-canvas/foundations-test-kit": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:"
@@ -32,6 +32,3 @@
     "@hybrid-canvas/asset": "workspace:*"
   }
 }
-
-
-

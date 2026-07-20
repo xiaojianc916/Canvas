@@ -11,11 +11,27 @@ export interface WorkspaceChromeProps {
   readonly onWindowStartDragging: () => void
 }
 
-export function WorkspaceChrome({ rail, tabs, onWindowMinimize, onWindowMaximize, onWindowClose, onWindowStartDragging }: WorkspaceChromeProps) {
+export function WorkspaceChrome({
+  rail,
+  tabs,
+  onWindowMinimize,
+  onWindowMaximize,
+  onWindowClose,
+  onWindowStartDragging,
+}: WorkspaceChromeProps) {
   return (
     <>
       <div className="row-[2/-1] min-h-0 border-r border-divider">{rail}</div>
-      <div className="col-[1/-1] row-[1] min-w-0"><DesktopTitleBar onClose={onWindowClose} onMaximize={onWindowMaximize} onMinimize={onWindowMinimize} onStartDragging={onWindowStartDragging}>{tabs}</DesktopTitleBar></div>
+      <div className="col-[1/-1] row-[1] min-w-0">
+        <DesktopTitleBar
+          onClose={onWindowClose}
+          onMaximize={onWindowMaximize}
+          onMinimize={onWindowMinimize}
+          onStartDragging={onWindowStartDragging}
+        >
+          {tabs}
+        </DesktopTitleBar>
+      </div>
     </>
   )
 }

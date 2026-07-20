@@ -36,12 +36,14 @@ export function transformScale(sx: number, sy: number = sx): Transform2D {
 export function transformRotate(angle: Radians, cx = 0, cy = 0): Transform2D {
   return new DOMMatrix()
     .translateSelf(cx, cy)
-    .rotateSelf(r((angle as number * 180) / Math.PI))
+    .rotateSelf(r(((angle as number) * 180) / Math.PI))
     .translateSelf(-cx, -cy)
 }
 
 export function transformSkew(skx: Radians, sky: Radians = r(0)): Transform2D {
-  return new DOMMatrix().skewXSelf(r((skx as number * 180) / Math.PI)).skewYSelf(r((sky as number * 180) / Math.PI))
+  return new DOMMatrix()
+    .skewXSelf(r(((skx as number) * 180) / Math.PI))
+    .skewYSelf(r(((sky as number) * 180) / Math.PI))
 }
 
 export function transformMultiply(a: Transform2D, b: Transform2D): Transform2D {

@@ -16,7 +16,7 @@
     "test": "vitest run",
     "clean": "rm -rf node_modules dist"
   },
-"devDependencies": {
+  "devDependencies": {
     "@hybrid-canvas/foundations-test-kit": "workspace:*",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
@@ -33,5 +33,3 @@
     "react-dom": "19.2.7"
   }
 }
-
-

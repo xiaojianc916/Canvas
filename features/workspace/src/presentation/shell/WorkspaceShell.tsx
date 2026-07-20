@@ -2,11 +2,7 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 
-import type {
-  DocumentSessionId,
-  PageId,
-  WorkbenchViewModel,
-} from '../../application/model/workbench-view-model'
+import type { DocumentSessionId, PageId, WorkbenchViewModel } from '../../application/public-api'
 import { NoDocumentSurface } from '../empty/NoDocumentSurface'
 import { InspectorHost } from '../inspector/InspectorHost'
 import { StatusBarHost } from '../status/StatusBarHost'
@@ -73,8 +69,14 @@ export function WorkspaceShell({
           gridTemplateRows,
         }}
       >
-        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-(--chrome-height) z-40 h-px bg-divider" />
-        <div aria-hidden="true" className="pointer-events-none absolute left-(--activity-rail-width) top-(--chrome-height) z-40 h-px w-(--workspace-sidebar-width) bg-divider" />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-(--chrome-height) z-40 h-px bg-divider"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute left-(--activity-rail-width) top-(--chrome-height) z-40 h-px w-(--workspace-sidebar-width) bg-divider"
+        />
         <WorkspaceChrome
           rail={
             <ActivityRail

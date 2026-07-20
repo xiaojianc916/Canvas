@@ -2,7 +2,10 @@ import { ScrollArea } from '@base-ui/react/scroll-area'
 import { forwardRef } from 'react'
 import { cn } from '../../lib/utils'
 
-const ScrollAreaComponent = forwardRef<HTMLDivElement, React.ComponentPropsWithoutRef<typeof ScrollArea.Root>>(({ className, children, ...props }, ref) => (
+const ScrollAreaComponent = forwardRef<
+  HTMLDivElement,
+  React.ComponentPropsWithoutRef<typeof ScrollArea.Root>
+>(({ className, children, ...props }, ref) => (
   <ScrollArea.Root className={cn('relative overflow-hidden', className)} ref={ref} {...props}>
     <ScrollArea.Viewport className="size-full rounded-[inherit]">
       <ScrollArea.Content>{children}</ScrollArea.Content>
@@ -13,7 +16,10 @@ const ScrollAreaComponent = forwardRef<HTMLDivElement, React.ComponentPropsWitho
 ))
 ScrollAreaComponent.displayName = 'ScrollArea'
 
-const ScrollBar = forwardRef<HTMLDivElement, React.ComponentPropsWithoutRef<typeof ScrollArea.Scrollbar>>(({ className, orientation = 'vertical', ...props }, ref) => (
+const ScrollBar = forwardRef<
+  HTMLDivElement,
+  React.ComponentPropsWithoutRef<typeof ScrollArea.Scrollbar>
+>(({ className, orientation = 'vertical', ...props }, ref) => (
   <ScrollArea.Scrollbar
     className={cn(
       'flex touch-none select-none transition-colors',

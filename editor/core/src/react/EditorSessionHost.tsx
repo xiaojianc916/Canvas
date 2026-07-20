@@ -12,11 +12,7 @@ export interface EditorSessionHostProps {
   readonly onSave?: (sessionId: string) => void
 }
 
-export function EditorSessionHost({
-  activeSessionId,
-  sessions,
-  onSave,
-}: EditorSessionHostProps) {
+export function EditorSessionHost({ activeSessionId, sessions, onSave }: EditorSessionHostProps) {
   if (sessions.length === 0) {
     return null
   }

@@ -1,7 +1,4 @@
-import {
-  createEditorSessionRegistry,
-  type EditorSession,
-} from '@hybrid-canvas/canvas'
+import { createEditorSessionRegistry, type EditorSession } from '@hybrid-canvas/canvas'
 import { parseDrawDocument, serializeDrawDocument } from '@hybrid-canvas/file'
 import { flowchartExtension } from '@hybrid-canvas/flowchart'
 import {

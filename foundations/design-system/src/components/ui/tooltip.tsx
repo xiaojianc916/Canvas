@@ -3,7 +3,14 @@ import * as React from 'react'
 import { forwardRef } from 'react'
 import { cn } from '../../lib/utils'
 
-const TooltipProvider = ({ delayDuration, children, closeDelay, timeout }: React.ComponentPropsWithoutRef<typeof Tooltip.Provider> & { readonly delayDuration?: number }) => (
+const TooltipProvider = ({
+  delayDuration,
+  children,
+  closeDelay,
+  timeout,
+}: React.ComponentPropsWithoutRef<typeof Tooltip.Provider> & {
+  readonly delayDuration?: number
+}) => (
   <Tooltip.Provider delay={delayDuration} closeDelay={closeDelay} timeout={timeout}>
     {children}
   </Tooltip.Provider>
@@ -12,7 +19,10 @@ TooltipProvider.displayName = 'TooltipProvider'
 
 const TooltipRoot = Tooltip.Root
 
-const TooltipTrigger = forwardRef<HTMLButtonElement, React.ComponentPropsWithoutRef<typeof Tooltip.Trigger> & { readonly asChild?: boolean }>(({ asChild = false, children, ...props }, ref) => {
+const TooltipTrigger = forwardRef<
+  HTMLButtonElement,
+  React.ComponentPropsWithoutRef<typeof Tooltip.Trigger> & { readonly asChild?: boolean }
+>(({ asChild = false, children, ...props }, ref) => {
   const child = React.Children.only(children)
   const renderElement = asChild && React.isValidElement(child) ? child : undefined
 
@@ -20,7 +30,13 @@ const TooltipTrigger = forwardRef<HTMLButtonElement, React.ComponentPropsWithout
 })
 TooltipTrigger.displayName = 'TooltipTrigger'
 
-const TooltipContent = forwardRef<HTMLDivElement, React.ComponentPropsWithoutRef<typeof Tooltip.Popup> & { readonly sideOffset?: number; readonly side?: string }>(({ className, sideOffset = 4, side, ...props }, ref) => (
+const TooltipContent = forwardRef<
+  HTMLDivElement,
+  React.ComponentPropsWithoutRef<typeof Tooltip.Popup> & {
+    readonly sideOffset?: number
+    readonly side?: string
+  }
+>(({ className, sideOffset = 4, side, ...props }, ref) => (
   <Tooltip.Portal>
     <Tooltip.Positioner sideOffset={sideOffset} side={side as Tooltip.Positioner.Props['side']}>
       <Tooltip.Popup

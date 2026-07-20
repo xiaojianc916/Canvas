@@ -98,8 +98,5 @@ export function pointMax(a: Point, b: Point): Point {
 }
 
 export function pointClamp(p: Point, min: Point, max: Point): Point {
-  return [
-    Math.max(min[0], Math.min(max[0], p[0])),
-    Math.max(min[1], Math.min(max[1], p[1])),
-  ]
+  return [Math.max(min[0], Math.min(max[0], p[0])), Math.max(min[1], Math.min(max[1], p[1]))]
 }

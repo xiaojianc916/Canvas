@@ -6,12 +6,19 @@ import { useEditor, useExtensionRegistration } from '../../react/editor-context'
 export function CanvasStatusLeft() {
   const editor = useEditor()
   const registration = useExtensionRegistration()
-  const selectedShapes = useValue('selected shapes', () => editor?.getSelectedShapes() ?? [], [editor])
-  const selectionBounds = useValue('selection bounds', () => editor?.getSelectionPageBounds() ?? null, [editor])
+  const selectedShapes = useValue('selected shapes', () => editor?.getSelectedShapes() ?? [], [
+    editor,
+  ])
+  const selectionBounds = useValue(
+    'selection bounds',
+    () => editor?.getSelectionPageBounds() ?? null,
+    [editor],
+  )
 
-  const shapeLabel = selectedShapes.length === 1
-    ? getShapeDisplayLabel(selectedShapes[0]?.type, registration?.shapeLabels)
-    : null
+  const shapeLabel =
+    selectedShapes.length === 1
+      ? getShapeDisplayLabel(selectedShapes[0]?.type, registration?.shapeLabels)
+      : null
 
   return (
     <>
@@ -35,7 +42,11 @@ export function CanvasStatusLeft() {
 
 export function CanvasStatusRight() {
   const editor = useEditor()
-  const zoomPercentage = useValue('canvas zoom', () => editor ? Math.round(editor.getZoomLevel() * 100) : 100, [editor])
+  const zoomPercentage = useValue(
+    'canvas zoom',
+    () => (editor ? Math.round(editor.getZoomLevel() * 100) : 100),
+    [editor],
+  )
 
   return (
     <>

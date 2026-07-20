@@ -5,7 +5,11 @@ import {
   EditorProvider,
   EditorSessionHost,
 } from '@hybrid-canvas/canvas'
-import { CommandPalette, WorkspaceShell, type WorkspaceShellActions } from '@hybrid-canvas/workspace'
+import {
+  CommandPalette,
+  WorkspaceShell,
+  type WorkspaceShellActions,
+} from '@hybrid-canvas/workspace'
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
 import { SettingsDialog } from '../windows/settings/SettingsShell'
@@ -21,9 +25,12 @@ export function AppShell() {
     runtime.workspace.getSnapshot,
   )
 
-  const handleSave = useCallback((sessionId: string) => {
-    void runtime.documents.saveDocument(sessionId)
-  }, [runtime.documents])
+  const handleSave = useCallback(
+    (sessionId: string) => {
+      void runtime.documents.saveDocument(sessionId)
+    },
+    [runtime.documents],
+  )
 
   useEffect(() => {
     const unregisterCreate = runtime.commands.register({
@@ -138,7 +145,9 @@ export function AppShell() {
   )
 }
 
-async function invokeWindowAction(action: 'minimize' | 'toggleMaximize' | 'close' | 'startDragging'): Promise<void> {
+async function invokeWindowAction(
+  action: 'minimize' | 'toggleMaximize' | 'close' | 'startDragging',
+): Promise<void> {
   if (!('__TAURI_INTERNALS__' in window)) return
   const { getCurrentWindow } = await import('@tauri-apps/api/window')
   await getCurrentWindow()[action]()

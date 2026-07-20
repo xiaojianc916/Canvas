@@ -13,9 +13,7 @@ export function createDrawFileHeader(createdAt?: string): DrawFileHeader {
   }
 }
 
-export function serializeDrawDocument(
-  content: DrawFileContainer['content'],
-): string {
+export function serializeDrawDocument(content: DrawFileContainer['content']): string {
   return JSON.stringify({
     header: createDrawFileHeader(),
     content,
@@ -43,17 +41,13 @@ export function parseDrawDocument(json: string): DrawFileContainer {
 
   if (header['version'] !== CURRENT_FILE_VERSION) {
     throw new Error(
-      typeof header['version'] === 'number' &&
-        header['version'] > CURRENT_FILE_VERSION
+      typeof header['version'] === 'number' && header['version'] > CURRENT_FILE_VERSION
         ? 'DRAW_FUTURE_VERSION'
         : 'DRAW_UNSUPPORTED_VERSION',
     )
   }
 
-  if (
-    typeof header['createdAt'] !== 'string' ||
-    Number.isNaN(Date.parse(header['createdAt']))
-  ) {
+  if (typeof header['createdAt'] !== 'string' || Number.isNaN(Date.parse(header['createdAt']))) {
     throw new Error('DRAW_INVALID_CREATED_AT')
   }
 

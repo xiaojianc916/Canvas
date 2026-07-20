@@ -6,7 +6,16 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@hybrid-canvas/design-system'
-import { ArrowRight, Hand, MousePointer2, Pencil, Save, Shapes, StickyNote, Type } from 'lucide-react'
+import {
+  ArrowRight,
+  Hand,
+  MousePointer2,
+  Pencil,
+  Save,
+  Shapes,
+  StickyNote,
+  Type,
+} from 'lucide-react'
 import type { ComponentType } from 'react'
 import { useValue } from 'tldraw'
 
@@ -37,7 +46,11 @@ export interface CanvasToolbarProps {
 
 export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
   const editor = useEditor()
-  const activeToolId = useValue('active canvas tool', () => editor?.getCurrentToolId() ?? 'select', [editor])
+  const activeToolId = useValue(
+    'active canvas tool',
+    () => editor?.getCurrentToolId() ?? 'select',
+    [editor],
+  )
 
   function activateTool(toolId: CanvasToolId): void {
     editor?.setCurrentTool(toolId)
