@@ -1,11 +1,12 @@
-﻿import { TooltipProvider } from '@hybrid-canvas/design-system'
+﻿import { Button, TooltipProvider } from '@hybrid-canvas/design-system'
+import { PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { useState } from 'react'
 
 import type { WorkspaceShellProps } from '../../contracts/shell-contract'
 import { NoDocumentSurface } from '../empty/NoDocumentSurface'
 import { InspectorHost } from '../inspector/InspectorHost'
 import { StatusBarHost } from '../status/StatusBarHost'
-import { ActivityRail } from './ActivityRail'
+import { ActivityRail, type CanvasNavigationItemId } from './ActivityRail'
 import { DocumentTabs } from './DocumentTabs'
 import { CanvasChrome } from './WorkspaceChrome'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
@@ -19,7 +20,8 @@ export function WorkspaceShell({
   statusRight,
 }: WorkspaceShellProps) {
   const [isSidebarOpen, setSidebarOpen] = useState(true)
-  const [isInspectorOpen] = useState(true)
+  const [isInspectorOpen, setInspectorOpen] = useState(true)
+  const [activeNavigationItem, setActiveNavigationItem] = useState<CanvasNavigationItemId>('pages')
 
   const hasActiveDocument = model.activeDocument !== null
   const workbenchState = hasActiveDocument ? 'document' : 'empty'
@@ -55,15 +57,20 @@ export function WorkspaceShell({
         <CanvasChrome
           rail={
             <ActivityRail
-              isSidebarOpen={isSidebarOpen}
+              activeItemId={activeNavigationItem}
+              onItemActivate={(itemId) => {
+                setActiveNavigationItem(itemId)
+                setSidebarOpen(true)
+              }}
               onSettingsOpen={actions.openSettingsWindow}
-              onSidebarOpen={() => setSidebarOpen(true)}
             />
           }
           onWindowClose={actions.closeWindow}
           onWindowMaximize={actions.maximizeWindow}
           onWindowMinimize={actions.minimizeWindow}
           onWindowStartDragging={actions.startWindowDragging}
+          onSidebarToggle={() => setSidebarOpen((open) => !open)}
+          isSidebarOpen={isSidebarOpen}
           tabs={
             <DocumentTabs
               onActivate={actions.activateDocument}
@@ -74,8 +81,9 @@ export function WorkspaceShell({
           }
         />
         {isSidebarOpen ? (
-          <aside aria-label="画板侧栏" className="min-h-0 min-w-0 border-r border-divider">
+          <aside aria-label="画板侧栏" className="col-start-2 min-h-0 min-w-0 border-r border-divider">
             <WorkspaceSidebar
+              activeNavigationItem={activeNavigationItem}
               onActivatePage={actions.activatePage}
               onClose={() => setSidebarOpen(false)}
               onCreatePage={actions.createPage}
@@ -83,7 +91,7 @@ export function WorkspaceShell({
             />
           </aside>
         ) : null}
-        <section aria-label="内容区" className="grid min-h-0 min-w-0">
+        <section aria-label="内容区" className="col-3 grid min-h-0 min-w-0">
           <main className="relative min-h-0 min-w-0 overflow-hidden">
             {hasActiveDocument ? (
               editor
@@ -95,12 +103,44 @@ export function WorkspaceShell({
             )}
           </main>
         </section>
-        {isInspectorOpen && hasActiveDocument ? (
-          <aside aria-label="属性检查器" className="min-h-0 min-w-0 border-l border-divider">
-            <InspectorHost>{inspector}</InspectorHost>
+        {hasActiveDocument ? (
+          <aside
+            aria-label="属性检查器"
+            className={isInspectorOpen ? 'col-4 min-h-0 min-w-0 border-l border-divider' : 'pointer-events-none'}
+          >
+            {isInspectorOpen ? (
+              <div className="relative h-full">
+                <Button
+                  aria-label="收起属性面板"
+                  className="absolute -left-8 top-3 z-30 size-7 rounded-l-md rounded-r-none border border-r-0 bg-background/95 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground"
+                  onClick={() => setInspectorOpen(false)}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <PanelRightClose className="size-3.5" />
+                </Button>
+                <InspectorHost>{inspector}</InspectorHost>
+              </div>
+            ) : (
+              <Button
+                aria-label="展开属性面板"
+                className="pointer-events-auto absolute right-0 top-(--chrome-height) z-30 size-8 rounded-l-md rounded-r-none border border-r-0 bg-background/95 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground"
+                onClick={() => setInspectorOpen(true)}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <PanelRightOpen className="size-4" />
+              </Button>
+            )}
           </aside>
         ) : null}
-        {hasActiveDocument ? <StatusBarHost left={statusLeft} right={statusRight} /> : null}
+        {hasActiveDocument ? (
+          <div className="col-span-4 row-3 min-w-0">
+            <StatusBarHost left={statusLeft} right={statusRight} />
+          </div>
+        ) : null}
       </div>
     </TooltipProvider>
   )

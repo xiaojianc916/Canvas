@@ -2,7 +2,7 @@
 
 ## 使命 
 
-项目软件是tldraw画图软件，核心是这个，不要忘记。
+项目软件是tldraw画图软件，核心是这个，不要忘记，以 tldraw-native canvas application 为唯一核心。
 
 守住 Hybrid Canvas 的长期架构地基：**tldraw-first、本地优先、安全、高性能、可演进**。
 

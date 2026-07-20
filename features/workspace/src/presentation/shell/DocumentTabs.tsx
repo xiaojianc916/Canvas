@@ -1,5 +1,5 @@
-import { Button, cn, Tooltip, TooltipContent, TooltipTrigger } from '@hybrid-canvas/design-system'
-import { PanelLeftClose, Plus, X } from 'lucide-react'
+import { Button, cn } from '@hybrid-canvas/design-system'
+import { X } from 'lucide-react'
 
 import type {
   DocumentPersistenceViewModel,
@@ -25,32 +25,6 @@ export function DocumentTabs({ tabs, onActivate, onClose, onCreate }: DocumentTa
         {tabs.map((tab) => (
           <DocumentTab key={tab.sessionId} model={tab} onActivate={onActivate} onClose={onClose} />
         ))}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              aria-label="新建画板"
-              className="mb-1 size-7 shrink-0"
-              onClick={onCreate}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <Plus className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">新建画板</TooltipContent>
-        </Tooltip>
-      </div>
-      <div className="flex h-11 shrink-0 items-center gap-0.5 px-2">
-        <Button
-          aria-label="收起侧边栏"
-          className="size-8"
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <PanelLeftClose className="size-4" />
-        </Button>
       </div>
     </header>
   )
@@ -87,6 +61,11 @@ function DocumentTab({ model, onActivate, onClose }: DocumentTabProps) {
       role="tab"
       tabIndex={0}
     >
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-2 bottom-0 hidden size-2 rounded-bl-[8px] shadow-[-4px_4px_0_4px_var(--background)]"
+        data-tab-curve="right"
+      />
       <span className="truncate">{model.title}</span>
       <DocumentPersistenceIndicator model={model.persistence} />
       {model.canClose ? (

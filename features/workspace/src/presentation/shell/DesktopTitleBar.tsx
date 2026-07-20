@@ -1,4 +1,4 @@
-import { Minus, PanelsTopLeft, Square, X } from 'lucide-react'
+import { Minus, PanelLeftClose, PanelLeftOpen, Square, X } from 'lucide-react'
 
 export interface DesktopTitleBarProps {
   readonly children: React.ReactNode
@@ -6,6 +6,8 @@ export interface DesktopTitleBarProps {
   readonly onMaximize: () => void
   readonly onClose: () => void
   readonly onStartDragging: () => void
+  readonly onSidebarToggle: () => void
+  readonly isSidebarOpen: boolean
 }
 
 export function DesktopTitleBar({
@@ -14,6 +16,8 @@ export function DesktopTitleBar({
   onMaximize,
   onClose,
   onStartDragging,
+  onSidebarToggle,
+  isSidebarOpen,
 }: DesktopTitleBarProps) {
   function handleDragMouseDown(event: React.MouseEvent<HTMLElement>) {
     if (event.button !== 0 || (event.target as HTMLElement).closest('button')) {
@@ -33,7 +37,14 @@ export function DesktopTitleBar({
           className="flex w-(--activity-rail-width) shrink-0 items-center justify-center border-r border-divider"
           data-tauri-drag-region
         >
-          <PanelsTopLeft className="pointer-events-none size-4 text-muted-foreground" />
+          <button
+            aria-label={isSidebarOpen ? '收起侧边栏' : '展开侧边栏'}
+            className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+            onClick={onSidebarToggle}
+            type="button"
+          >
+            {isSidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
+          </button>
         </div>
         <div className="min-w-0 flex-1" data-tauri-drag-region>
           {children}

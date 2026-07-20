@@ -1,3 +1,5 @@
+import 'tldraw/tldraw.css'
+
 import { EditorProvider } from '@hybrid-canvas/canvas'
 import { CommandPalette } from '@hybrid-canvas/workspace'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -7,6 +9,17 @@ import { SettingsDialog } from '../windows/settings/SettingsShell'
 import { useGlobalCommandShortcuts } from './commands/useGlobalCommandShortcuts'
 import { UiErrorBoundary } from './boundaries/UiErrorBoundary'
 import { WorkspaceContainer } from './workspace/WorkspaceContainer'
+
+async function invokeWindowAction(
+  action: 'minimize' | 'toggleMaximize' | 'close' | 'startDragging',
+): Promise<void> {
+  const { isTauri } = await import('@tauri-apps/api/core')
+  if (!isTauri()) {
+    return
+  }
+  const { getCurrentWindow } = await import('@tauri-apps/api/window')
+  await getCurrentWindow()[action]()
+}
 
 export interface AppShellProps {
   readonly runtime: ApplicationRuntime
@@ -36,6 +49,10 @@ export function AppShell({ runtime }: AppShellProps) {
         <WorkspaceContainer
           onCommandPaletteOpen={openCommandPalette}
           onSettingsOpen={openSettings}
+          onWindowClose={() => void invokeWindowAction('close')}
+          onWindowMaximize={() => void invokeWindowAction('toggleMaximize')}
+          onWindowMinimize={() => void invokeWindowAction('minimize')}
+          onWindowStartDragging={() => void invokeWindowAction('startDragging')}
           port={workspacePort}
         />
       </UiErrorBoundary>

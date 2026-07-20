@@ -1,3 +1,4 @@
+import { isTauri } from '@tauri-apps/api/core'
 import type { EditorSession } from '@hybrid-canvas/canvas'
 import {
   CanvasInspector,
@@ -73,8 +74,18 @@ export function WorkspaceContainer({
       closeDocument(sessionId) {
         port.documents.close(sessionId)
       },
-      activatePage() {},
-      createPage() {},
+      activatePage(pageId) {
+        const activeSessionId = port.workspace.getSnapshot().activeSessionId
+        if (activeSessionId) {
+          port.workspace.activatePage(activeSessionId, pageId)
+        }
+      },
+      createPage() {
+        const activeSessionId = port.workspace.getSnapshot().activeSessionId
+        if (activeSessionId) {
+          port.workspace.createPage(activeSessionId, `画板 ${(port.workspace.getSnapshot().activeDocument?.pages.length ?? 0) + 1}`)
+        }
+      },
       openCommandPalette: onCommandPaletteOpen,
       openSettingsWindow: onSettingsOpen,
       minimizeWindow: onWindowMinimize,

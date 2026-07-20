@@ -1,4 +1,5 @@
 import type { EditorSession, EditorSessionRegistry } from '@hybrid-canvas/canvas'
+import type { TLEditorSnapshot } from 'tldraw'
 import { parseDrawDocument, serializeDrawDocument } from '@hybrid-canvas/file'
 import type { HybridCanvasExtension } from '@hybrid-canvas/canvas'
 import type { DrawFileCommands, FileDialog } from '@hybrid-canvas/platforms-desktop-runtime'
@@ -82,13 +83,13 @@ export function createDocumentService({
     }
 
     const json = await files.readDraw(filePath)
-    const container = parseDrawDocument(json)
+    const initialSnapshot = parseEditorSnapshot(json)
     const documentId = crypto.randomUUID()
     const sessionId = crypto.randomUUID()
     const editor = editorSessions.create({
       documentId,
       sessionId,
-      initialSnapshot: container.content,
+      initialSnapshot,
       extensions,
     })
     sessions.set(sessionId, createOwnedSession(editor, filePath, 'ready'))
@@ -241,6 +242,26 @@ function transition(session: OwnedDocumentSession, nextState: DocumentSessionSta
     throw new Error(`DOCUMENT_SESSION_INVALID_TRANSITION:${session.state}->${nextState}`)
   }
   session.state = nextState
+}
+
+function parseEditorSnapshot(json: string): TLEditorSnapshot {
+  try {
+    return parseDrawDocument(json).content
+  } catch (containerError) {
+    try {
+      const parsed: unknown = JSON.parse(json)
+      if (isEditorSnapshot(parsed)) {
+        return parsed
+      }
+    } catch {
+      // Preserve the validated container error below when input is not JSON.
+    }
+    throw containerError
+  }
+}
+
+function isEditorSnapshot(value: unknown): value is TLEditorSnapshot {
+  return typeof value === 'object' && value !== null && 'document' in value && 'session' in value
 }
 
 function getFileTitle(filePath: string): string {

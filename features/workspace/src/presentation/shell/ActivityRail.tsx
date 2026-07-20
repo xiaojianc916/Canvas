@@ -8,10 +8,8 @@ import {
   Image,
   Layers3,
   Network,
-  PanelLeftOpen,
   Search,
   Settings,
-  SlidersHorizontal,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 
@@ -24,7 +22,6 @@ export type CanvasNavigationItemId =
   | 'data'
   | 'assets'
   | 'extensions'
-  | 'diagnostics'
 
 export interface CanvasNavigationItem {
   readonly id: CanvasNavigationItemId
@@ -35,9 +32,7 @@ export interface CanvasNavigationItem {
 export interface ActivityRailProps {
   readonly activeItemId?: CanvasNavigationItemId
   readonly items?: readonly CanvasNavigationItem[]
-  readonly isSidebarOpen: boolean
   readonly onItemActivate?: (itemId: CanvasNavigationItemId) => void
-  readonly onSidebarOpen: () => void
   readonly onSettingsOpen: () => void
 }
 
@@ -50,23 +45,17 @@ const DEFAULT_NAVIGATION: readonly CanvasNavigationItem[] = [
   { id: 'data', label: '数据', icon: ChartNoAxesCombined },
   { id: 'assets', label: '资源', icon: Image },
   { id: 'extensions', label: '扩展', icon: Boxes },
-  { id: 'diagnostics', label: '诊断', icon: SlidersHorizontal },
 ]
 
 export function ActivityRail({
   activeItemId = 'pages',
   items = DEFAULT_NAVIGATION,
-  isSidebarOpen,
   onItemActivate,
-  onSidebarOpen,
   onSettingsOpen,
 }: ActivityRailProps) {
   return (
     <nav aria-label="主导航" className="flex h-full min-h-0 flex-col items-center bg-sidebar py-2">
       <div className="flex flex-col gap-1">
-        {!isSidebarOpen ? (
-          <RailButton icon={PanelLeftOpen} label="展开侧栏" onClick={onSidebarOpen} />
-        ) : null}
         {items.map(({ icon, id, label }) => (
           <RailButton
             active={id === activeItemId}

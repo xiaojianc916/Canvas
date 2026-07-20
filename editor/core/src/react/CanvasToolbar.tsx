@@ -13,6 +13,10 @@ import {
   Pencil,
   Save,
   Shapes,
+  Copy,
+  Eraser,
+  Grid2X2,
+  MoreHorizontal,
   StickyNote,
   Type,
 } from 'lucide-react'
@@ -100,6 +104,11 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
           </div>
         )
       })}
+      <Separator className="mx-1 h-5" orientation="vertical" />
+      <ToolbarAction icon={Grid2X2} label="网格" onClick={() => undefined} />
+      <ToolbarAction icon={Copy} label="复制样式" onClick={() => editor?.duplicateShapes(editor.getSelectedShapeIds())} />
+      <ToolbarAction icon={Eraser} label="删除" onClick={() => editor?.deleteShapes(editor.getSelectedShapeIds())} />
+      <ToolbarAction icon={MoreHorizontal} label="更多" onClick={() => undefined} />
       {onSave ? (
         <>
           <Separator className="mx-1 h-5" orientation="vertical" />
@@ -124,5 +133,33 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
         </>
       ) : null}
     </div>
+  )
+}
+
+function ToolbarAction({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  readonly icon: ComponentType<{ className?: string }>
+  readonly label: string
+  readonly onClick: () => void
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          aria-label={label}
+          className="size-8 rounded-md text-muted-foreground"
+          onClick={onClick}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <Icon className="size-4" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   )
 }
