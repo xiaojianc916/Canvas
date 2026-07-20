@@ -12,6 +12,7 @@ import { InspectorHost } from '../inspector/InspectorHost'
 import { StatusBarHost } from '../status/StatusBarHost'
 import { ActivityRail } from './ActivityRail'
 import { DocumentTabs } from './DocumentTabs'
+import { WorkspaceChrome } from './WorkspaceChrome'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 
 export interface WorkspaceShellActions {
@@ -23,6 +24,10 @@ export interface WorkspaceShellActions {
   readonly createPage: () => void
   readonly openCommandPalette: () => void
   readonly openSettingsWindow: () => void
+  readonly minimizeWindow: () => void
+  readonly maximizeWindow: () => void
+  readonly closeWindow: () => void
+  readonly startWindowDragging: () => void
 }
 
 export interface WorkspaceShellProps {
@@ -61,29 +66,38 @@ export function WorkspaceShell({
     <TooltipProvider delayDuration={450}>
       <div
         aria-label="主工作台"
-        className="grid h-dvh min-h-0 overflow-hidden bg-background text-foreground"
+        className="relative grid h-dvh min-h-0 overflow-hidden bg-background text-foreground"
         data-workbench-state={workbenchState}
         style={{
           gridTemplateColumns,
           gridTemplateRows,
         }}
       >
-        <header className="min-w-0 col-[2/-1]">
-          <DocumentTabs
-            onActivate={actions.activateDocument}
-            onClose={actions.closeDocument}
-            onCommandPaletteOpen={actions.openCommandPalette}
-            onCreate={actions.createDocument}
-            tabs={model.tabs}
-          />
-        </header>
-        <ActivityRail
-          isSidebarOpen={isSidebarOpen}
-          onSettingsOpen={actions.openSettingsWindow}
-          onSidebarOpen={() => setSidebarOpen(true)}
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-(--chrome-height) z-40 h-px bg-divider" />
+        <div aria-hidden="true" className="pointer-events-none absolute left-(--activity-rail-width) top-(--chrome-height) z-40 h-px w-(--workspace-sidebar-width) bg-divider" />
+        <WorkspaceChrome
+          rail={
+            <ActivityRail
+              isSidebarOpen={isSidebarOpen}
+              onSettingsOpen={actions.openSettingsWindow}
+              onSidebarOpen={() => setSidebarOpen(true)}
+            />
+          }
+          onWindowClose={actions.closeWindow}
+          onWindowMaximize={actions.maximizeWindow}
+          onWindowMinimize={actions.minimizeWindow}
+          onWindowStartDragging={actions.startWindowDragging}
+          tabs={
+            <DocumentTabs
+              onActivate={actions.activateDocument}
+              onClose={actions.closeDocument}
+              onCreate={actions.createDocument}
+              tabs={model.tabs}
+            />
+          }
         />
         {isSidebarOpen ? (
-          <aside aria-label="工作区侧栏" className="min-h-0 min-w-0">
+          <aside aria-label="画板侧栏" className="min-h-0 min-w-0 border-r border-divider">
             <WorkspaceSidebar
               onActivatePage={actions.activatePage}
               onClose={() => setSidebarOpen(false)}
@@ -92,15 +106,7 @@ export function WorkspaceShell({
             />
           </aside>
         ) : null}
-        <section
-          aria-label="内容区"
-          className="grid min-h-0 min-w-0"
-          style={{
-            gridTemplateRows: hasActiveDocument
-              ? 'minmax(0, 1fr)'
-              : 'minmax(0, 1fr)',
-          }}
-        >
+        <section aria-label="内容区" className="grid min-h-0 min-w-0">
           <main className="relative min-h-0 min-w-0 overflow-hidden">
             {hasActiveDocument ? (
               editor
@@ -113,7 +119,7 @@ export function WorkspaceShell({
           </main>
         </section>
         {isInspectorOpen && hasActiveDocument ? (
-          <aside aria-label="属性检查器" className="min-h-0 min-w-0">
+          <aside aria-label="属性检查器" className="min-h-0 min-w-0 border-l border-divider">
             <InspectorHost>{inspector}</InspectorHost>
           </aside>
         ) : null}

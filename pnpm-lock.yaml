@@ -132,6 +132,12 @@ importers:
       '@hybrid-canvas/workspace':
         specifier: workspace:*
         version: link:../../features/workspace
+      '@tauri-apps/api':
+        specifier: catalog:tauri
+        version: 2.11.1
+      lucide-react:
+        specifier: 'catalog:'
+        version: 1.25.0(react@19.2.7)
       react:
         specifier: 'catalog:'
         version: 19.2.7

@@ -1,5 +1,5 @@
 import { Button, cn, Tooltip, TooltipContent, TooltipTrigger } from '@hybrid-canvas/design-system'
-import { Command, MoreHorizontal, Plus, Users, X } from 'lucide-react'
+import { PanelLeftClose, Plus, X } from 'lucide-react'
 
 import type {
   DocumentPersistenceViewModel,
@@ -12,7 +12,6 @@ export interface DocumentTabsProps {
   readonly onActivate: (sessionId: DocumentSessionId) => void
   readonly onClose: (sessionId: DocumentSessionId) => void
   readonly onCreate: () => void
-  readonly onCommandPaletteOpen: () => void
 }
 
 export function DocumentTabs({
@@ -20,7 +19,6 @@ export function DocumentTabs({
   onActivate,
   onClose,
   onCreate,
-  onCommandPaletteOpen,
 }: DocumentTabsProps) {
   return (
     <header className="flex min-w-0 items-end border-b bg-chrome">
@@ -49,22 +47,7 @@ export function DocumentTabs({
         </Tooltip>
       </div>
       <div className="flex h-11 shrink-0 items-center gap-0.5 px-2">
-        <Button
-          aria-label="打开命令面板"
-          className="size-8"
-          onClick={onCommandPaletteOpen}
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <Command className="size-4" />
-        </Button>
-        <Button aria-label="协作成员" className="size-8" size="icon" type="button" variant="ghost">
-          <Users className="size-4" />
-        </Button>
-        <Button aria-label="更多操作" className="size-8" size="icon" type="button" variant="ghost">
-          <MoreHorizontal className="size-4" />
-        </Button>
+        <Button aria-label="收起侧边栏" className="size-8" size="icon" type="button" variant="ghost"><PanelLeftClose className="size-4" /></Button>
       </div>
     </header>
   )

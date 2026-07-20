@@ -1,59 +1,49 @@
 'use client'
 
-import { createContext, type ReactNode, useCallback, useContext, useState } from 'react'
-import type { UICommand } from '../../application/commands/ui-command'
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 
-interface InternalCommand extends UICommand {
-  action: () => void | Promise<void>
-  icon?: React.ReactNode
+import {
+  createCommandRegistry,
+  type CommandRegistry,
+  type RegisteredCommand,
+} from '../../application/commands/command-registry'
+
+interface CommandContextValue {
+  readonly commands: readonly RegisteredCommand[]
+  readonly registry: CommandRegistry
 }
 
-interface CommandContextType {
-  commands: Map<string, InternalCommand>
-  registerCommand: (command: InternalCommand) => () => void
-  executeCommand: (id: string) => void
-  getCommand: (id: string) => InternalCommand | undefined
+const CommandContext = createContext<CommandContextValue | null>(null)
+
+export interface CommandProviderProps {
+  readonly children: ReactNode
+  readonly registry?: CommandRegistry
 }
 
-const CommandContext = createContext<CommandContextType | undefined>(undefined)
-
-export function CommandProvider({ children }: { children: ReactNode }) {
-  const [commands] = useState(() => new Map<string, InternalCommand>())
-
-  const registerCommand = useCallback(
-    (command: InternalCommand) => {
-      commands.set(command.id, command)
-      return () => commands.delete(command.id)
-    },
-    [commands],
+export function CommandProvider({ children, registry: providedRegistry }: CommandProviderProps) {
+  const [ownedRegistry] = useState(createCommandRegistry)
+  const registry = providedRegistry ?? ownedRegistry
+  const commands = useSyncExternalStore(
+    registry.subscribe,
+    registry.getSnapshot,
+    registry.getSnapshot,
   )
+  const value = useMemo(() => ({ commands, registry }), [commands, registry])
 
-  const executeCommand = useCallback(
-    (id: string) => {
-      const command = commands.get(id)
-      if (command) {
-        command.action()
-      }
-    },
-    [commands],
-  )
-
-  const getCommand = useCallback(
-    (id: string) => {
-      return commands.get(id)
-    },
-    [commands],
-  )
-
-  return (
-    <CommandContext.Provider value={{ commands, registerCommand, executeCommand, getCommand }}>
-      {children}
-    </CommandContext.Provider>
-  )
+  return <CommandContext.Provider value={value}>{children}</CommandContext.Provider>
 }
 
-export function useCommands() {
+export function useCommands(): CommandContextValue {
   const context = useContext(CommandContext)
-  if (!context) throw new Error('useCommands must be used within a CommandProvider')
+  if (!context) {
+    throw new Error('useCommands must be used within a CommandProvider')
+  }
   return context
 }

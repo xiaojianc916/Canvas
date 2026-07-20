@@ -3,6 +3,7 @@ export interface UICommand {
   readonly label: string
   readonly shortcut?: string
   readonly when?: string
+  readonly category?: string
 }
 
 export interface UICommandHandler {

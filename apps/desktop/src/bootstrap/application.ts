@@ -17,6 +17,8 @@ import {
   type SystemTheme,
 } from '@hybrid-canvas/platforms-desktop-runtime'
 import {
+  type CommandRegistry,
+  createCommandRegistry,
   createWorkbenchSessionController,
   type DocumentSessionId,
   type WorkbenchSessionStore,
@@ -39,6 +41,7 @@ export interface EditorSessionRegistry {
 
 export interface ApplicationRuntime {
   readonly workspace: WorkbenchSessionStore
+  readonly commands: CommandRegistry
   readonly documents: DocumentApplicationPort
   readonly editorSessions: EditorSessionRegistry
   readonly windows: WindowApplicationPort
@@ -56,6 +59,7 @@ interface OwnedEditorSession {
 
 export function createApplicationRuntime(): ApplicationRuntime {
   const workspace = createWorkbenchSessionController()
+  const commands = createCommandRegistry()
   const drawFiles = createDrawFileCommands()
   const dialog = createFileDialog()
   const editorRegistry = createEditorSessionRegistry()
@@ -160,6 +164,7 @@ export function createApplicationRuntime(): ApplicationRuntime {
 
   return {
     workspace,
+    commands,
     documents: {
       createDocument,
       openDocument,
@@ -172,9 +177,7 @@ export function createApplicationRuntime(): ApplicationRuntime {
       },
     },
     windows: {
-      async openSettingsWindow(): Promise<void> {
-        // Window creation remains a desktop composition concern.
-      },
+      async openSettingsWindow() {},
     },
     drawFiles,
     settings: createDesktopSettingsStore(),

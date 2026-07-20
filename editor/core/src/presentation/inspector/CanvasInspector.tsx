@@ -1,4 +1,5 @@
 import { Separator } from '@hybrid-canvas/design-system'
+import { Box, Component, Move, Shapes } from 'lucide-react'
 import { useValue } from 'tldraw'
 
 import { useEditor, useExtensionRegistration } from '../../react/editor-context'
@@ -31,27 +32,69 @@ export function CanvasInspector() {
   const shapeLabel = getShapeDisplayLabel(firstShape?.type, registration?.shapeLabels)
 
   return (
-    <div>
-      <section className="pb-4">
-        <header className="mb-3">
-          <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">当前选择</p>
-          <h2 className="mt-1 text-[12px] font-semibold">{shapeLabel ?? '对象'}</h2>
-        </header>
+    <div className="space-y-0">
+      <InspectorSection icon={<Move className="size-3.5" />} title="位置与尺寸">
         {selectionBounds ? (
           <div className="grid grid-cols-2 gap-2">
             <ReadOnlyValue label="X" value={Math.round(selectionBounds.x)} />
             <ReadOnlyValue label="Y" value={Math.round(selectionBounds.y)} />
-            <ReadOnlyValue label="宽度" value={Math.round(selectionBounds.width)} />
-            <ReadOnlyValue label="高度" value={Math.round(selectionBounds.height)} />
+            <ReadOnlyValue label="W" value={Math.round(selectionBounds.width)} />
+            <ReadOnlyValue label="H" value={Math.round(selectionBounds.height)} />
           </div>
         ) : null}
-      </section>
+        <PropertyRow label="约束" value="左侧 · 顶部" />
+      </InspectorSection>
       <Separator />
-      <section className="py-4">
-        <p className="text-[11px] leading-5 text-muted-foreground">
-          编辑命令尚未连接到领域 Command。在接入之前，这里只显示真实选择状态，不提供伪修改能力。
-        </p>
-      </section>
+      <InspectorSection icon={<Shapes className="size-3.5" />} title="外观">
+        <PropertyRow label="对象类型" value={shapeLabel ?? '对象'} />
+        <PropertyRow label="旋转" value="0°" />
+        <div className="rounded-lg border bg-muted/30 px-3 py-2 text-[10px] leading-4 text-muted-foreground">
+          外观编辑将在形状属性 Command 接入后启用；当前只展示编辑器的真实选择数据。
+        </div>
+      </InspectorSection>
+      <Separator />
+      <InspectorSection icon={<Box className="size-3.5" />} title="排列">
+        <PropertyRow label="层级" value="当前图层" />
+        <PropertyRow label="锁定" value="否" />
+      </InspectorSection>
+      <Separator />
+      <InspectorSection icon={<Component className="size-3.5" />} title="语义">
+        <PropertyRow label="类型" value={firstShape?.type ?? 'unknown'} monospace />
+        <PropertyRow label="选择数量" value="1" />
+      </InspectorSection>
+    </div>
+  )
+}
+
+interface InspectorSectionProps {
+  readonly title: string
+  readonly icon: React.ReactNode
+  readonly children: React.ReactNode
+}
+
+function InspectorSection({ title, icon, children }: InspectorSectionProps) {
+  return (
+    <section className="py-4 first:pt-1">
+      <header className="mb-3 flex items-center gap-2 text-[11px] font-semibold">
+        <span className="text-muted-foreground">{icon}</span>
+        <h2>{title}</h2>
+      </header>
+      <div className="space-y-3">{children}</div>
+    </section>
+  )
+}
+
+interface PropertyRowProps {
+  readonly label: string
+  readonly value: string
+  readonly monospace?: boolean
+}
+
+function PropertyRow({ label, value, monospace = false }: PropertyRowProps) {
+  return (
+    <div className="flex min-h-7 items-center justify-between gap-3 text-[11px]">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={monospace ? 'truncate font-mono text-[10px]' : 'truncate font-medium'}>{value}</span>
     </div>
   )
 }

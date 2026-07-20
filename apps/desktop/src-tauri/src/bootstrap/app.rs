@@ -1,4 +1,4 @@
-use tauri::{Manager, Wry};
+use tauri::Wry;
 use tauri_plugin_store::StoreExt;
 
 use super::logging;
@@ -16,16 +16,21 @@ pub fn build() -> tauri::Builder<Wry> {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_window_state::Builder::new().build())
         .setup(|app| {
-            #[cfg(debug_assertions)]
-            if let Some(win) = app.get_webview_window("main") {
-                win.open_devtools();
-            }
             let _ = app.store("settings.json");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::window::window_create,
+            commands::window::window_get,
+            commands::window::window_list,
+            commands::window::window_show,
+            commands::window::window_focus,
+            commands::window::window_close,
+            commands::window::window_minimize,
+            commands::window::window_maximize,
+            commands::window::window_set_title,
+            commands::window::window_save_state,
             commands::opener::opener_show_in_folder,
             commands::opener::opener_open_external,
 

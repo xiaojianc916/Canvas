@@ -72,6 +72,18 @@ pub async fn window_list(app: AppHandle) -> Result<Vec<WindowInfo>> {
 }
 
 #[command]
+pub async fn window_show(app: AppHandle, label: String) -> Result<()> {
+    if let Some(window) = app.get_webview_window(&label) { window.show()?; }
+    Ok(())
+}
+
+#[command]
+pub async fn window_focus(app: AppHandle, label: String) -> Result<()> {
+    if let Some(window) = app.get_webview_window(&label) { window.set_focus()?; }
+    Ok(())
+}
+
+#[command]
 pub async fn window_close(app: AppHandle, label: String) -> Result<()> {
     if let Some(window) = app.get_webview_window(&label) { window.close()?; }
     Ok(())

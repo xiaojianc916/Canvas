@@ -1,14 +1,17 @@
 import { createRoot } from 'react-dom/client'
-import { MainWindow } from '../windows/main/MainWindow'
+import { ApplicationErrorBoundary } from './ApplicationErrorBoundary'
 import { createApplicationRuntime } from './application'
 import { ApplicationRuntimeProvider } from './react-providers'
-
 const runtime = createApplicationRuntime()
 
-export function mountReactApplication(container: HTMLElement): void {
+export async function mountReactApplication(container: HTMLElement): Promise<void> {
+  const { AppShell } = await import('./app-shell')
+
   createRoot(container).render(
-    <ApplicationRuntimeProvider runtime={runtime}>
-      <MainWindow />
-    </ApplicationRuntimeProvider>,
+    <ApplicationErrorBoundary>
+      <ApplicationRuntimeProvider runtime={runtime}>
+        <AppShell />
+      </ApplicationRuntimeProvider>
+    </ApplicationErrorBoundary>,
   )
 }

@@ -38,13 +38,12 @@ export interface ButtonProps
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, children, ...props }, ref) => {
-    const child = React.Children.only(children)
-    const renderElement = asChild && React.isValidElement(child) ? child : undefined
+    const renderElement = asChild && React.isValidElement(children) ? children : undefined
 
     const element = useRender({
       defaultTagName: 'button',
       render: renderElement,
-      props: { ...props, ref },
+      props: { ...props, children: renderElement ? undefined : children, ref },
     })
 
     const classNameValue = cn(buttonVariants({ variant, size, className }))

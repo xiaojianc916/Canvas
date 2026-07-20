@@ -5,4 +5,9 @@ export { WorkspaceSidebar } from './shell/WorkspaceSidebar'
 export { NoDocumentSurface } from './empty/NoDocumentSurface'
 export { InspectorHost } from './inspector/InspectorHost'
 export { StatusBarHost } from './status/StatusBarHost'
-export { CommandProvider, useCommands } from './commands/CommandProvider'
+export { CommandPalette, type CommandPaletteProps } from './commands/CommandPalette'
+export {
+  CommandProvider,
+  type CommandProviderProps,
+  useCommands,
+} from './commands/CommandProvider'
