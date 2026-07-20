@@ -1,4 +1,4 @@
-import type { RegisteredCommand } from './ui-command'
+import type { RegisteredCommand } from '../../contracts/command-contract'
 
 export interface CommandRegistry {
   readonly register: (command: RegisteredCommand) => () => void

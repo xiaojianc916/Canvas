@@ -16,7 +16,9 @@ export function DesktopTitleBar({
   onStartDragging,
 }: DesktopTitleBarProps) {
   function handleDragMouseDown(event: React.MouseEvent<HTMLElement>) {
-    if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
+    if (event.button !== 0 || (event.target as HTMLElement).closest('button')) {
+      return
+    }
     if (event.detail === 2) {
       onMaximize()
       return
@@ -25,46 +27,44 @@ export function DesktopTitleBar({
   }
 
   return (
-    <header
-      className="flex h-(--chrome-height) min-w-0 bg-chrome"
-      data-tauri-drag-region
-      onMouseDown={handleDragMouseDown}
-    >
-      <div
-        className="flex w-(--activity-rail-width) shrink-0 items-center justify-center border-r border-divider"
-        data-tauri-drag-region
-      >
-        <PanelsTopLeft className="pointer-events-none size-4 text-muted-foreground" />
-      </div>
-      <div className="min-w-0 flex-1" data-tauri-drag-region>
-        {children}
-      </div>
-      <div className="flex shrink-0" data-tauri-drag-region>
-        <button
-          aria-label="最小化"
-          className="grid w-11 place-items-center text-muted-foreground hover:bg-black/5 hover:text-foreground"
-          onClick={onMinimize}
-          type="button"
+    <div className="flex h-(--chrome-height) min-w-0 bg-chrome" data-tauri-drag-region>
+      <div className="flex h-full w-full" onMouseDown={handleDragMouseDown}>
+        <div
+          className="flex w-(--activity-rail-width) shrink-0 items-center justify-center border-r border-divider"
+          data-tauri-drag-region
         >
-          <Minus className="size-3.5" />
-        </button>
-        <button
-          aria-label="最大化或还原"
-          className="grid w-11 place-items-center text-muted-foreground hover:bg-black/5 hover:text-foreground"
-          onClick={onMaximize}
-          type="button"
-        >
-          <Square className="size-3" />
-        </button>
-        <button
-          aria-label="关闭"
-          className="grid w-12 place-items-center text-muted-foreground hover:bg-[#c42b1c] hover:text-white"
-          onClick={onClose}
-          type="button"
-        >
-          <X className="size-4" />
-        </button>
+          <PanelsTopLeft className="pointer-events-none size-4 text-muted-foreground" />
+        </div>
+        <div className="min-w-0 flex-1" data-tauri-drag-region>
+          {children}
+        </div>
+        <div className="flex shrink-0" data-tauri-drag-region>
+          <button
+            aria-label="最小化"
+            className="grid w-11 place-items-center text-muted-foreground hover:bg-black/5 hover:text-foreground"
+            onClick={onMinimize}
+            type="button"
+          >
+            <Minus className="size-3.5" />
+          </button>
+          <button
+            aria-label="最大化或还原"
+            className="grid w-11 place-items-center text-muted-foreground hover:bg-black/5 hover:text-foreground"
+            onClick={onMaximize}
+            type="button"
+          >
+            <Square className="size-3" />
+          </button>
+          <button
+            aria-label="关闭"
+            className="grid w-12 place-items-center text-muted-foreground hover:bg-[#c42b1c] hover:text-white"
+            onClick={onClose}
+            type="button"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
       </div>
-    </header>
+    </div>
   )
 }

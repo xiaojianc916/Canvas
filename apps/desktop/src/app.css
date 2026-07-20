@@ -90,14 +90,14 @@ body {
 
 .tl-canvas,
 .tl-background {
-  background-color: var(--color-canvas) !important;
+  background-color: var(--color-canvas);
 }
 
 .tlui-help-menu,
 .tlui-menu-zone,
 .tlui-navigation-zone,
 .tlui-debug-panel {
-  display: none !important;
+  display: none;
 }
 
 .tlui-toolbar__tools {
@@ -124,10 +124,4 @@ body {
 .bg-sidebar {
   -webkit-user-select: none;
   user-select: none;
-}
-
-.tl-container,
-.tl-container * {
-  -webkit-user-select: initial;
-  user-select: initial;
 }

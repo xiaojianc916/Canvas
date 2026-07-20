@@ -14,7 +14,7 @@ export function Dialog({ open, title, children, onClose, ...rest }: DialogProps)
         {title && <header className="hc-dialog__header">{title}</header>}
         <div className="hc-dialog__body">{children}</div>
         {onClose && (
-          <button aria-label="Close" className="hc-dialog__close" onClick={onClose}>
+          <button aria-label="Close" className="hc-dialog__close" onClick={onClose} type="button">
             ×
           </button>
         )}

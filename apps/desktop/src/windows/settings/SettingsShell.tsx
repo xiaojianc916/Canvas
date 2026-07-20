@@ -12,7 +12,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      return
+    }
     const previousFocus =
       document.activeElement instanceof HTMLElement ? document.activeElement : null
     closeButtonRef.current?.focus()
@@ -21,7 +23,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         event.preventDefault()
         onOpenChange(false)
       }
-      if (event.key === 'Tab') trapFocus(event, dialogRef.current)
+      if (event.key === 'Tab') {
+        trapFocus(event, dialogRef.current)
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => {
@@ -30,7 +34,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     }
   }, [onOpenChange, open])
 
-  if (!open) return null
+  if (!open) {
+    return null
+  }
 
   return (
     <div
@@ -38,7 +44,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       aria-modal="true"
       className="fixed inset-0 z-100 grid place-items-center bg-black/25 p-6 backdrop-blur-[2px]"
       onMouseDown={(event) => {
-        if (event.currentTarget === event.target) onOpenChange(false)
+        if (event.currentTarget === event.target) {
+          onOpenChange(false)
+        }
       }}
       role="dialog"
     >
@@ -109,7 +117,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 }
 
 function trapFocus(event: KeyboardEvent, container: HTMLElement | null) {
-  if (!container) return
+  if (!container) {
+    return
+  }
   const focusable = Array.from(
     container.querySelectorAll<HTMLElement>(
       'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',

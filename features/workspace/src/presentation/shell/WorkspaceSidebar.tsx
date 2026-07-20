@@ -109,7 +109,11 @@ export function WorkspaceSidebar({
 }
 
 function PageIcon({ model }: { readonly model: WorkspacePageViewModel }) {
-  if (model.isArchived) return <Archive className="size-3.5 shrink-0" />
-  if (model.kind === 'canvas') return <Grid2X2 className="size-3.5 shrink-0" />
+  if (model.isArchived) {
+    return <Archive className="size-3.5 shrink-0" />
+  }
+  if (model.kind === 'canvas') {
+    return <Grid2X2 className="size-3.5 shrink-0" />
+  }
   return <FileText className="size-3.5 shrink-0" />
 }

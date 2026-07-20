@@ -1,8 +1,7 @@
 ﻿import { TooltipProvider } from '@hybrid-canvas/design-system'
-import type { ReactNode } from 'react'
 import { useState } from 'react'
 
-import type { DocumentSessionId, PageId, WorkbenchViewModel } from '../../application/public-api'
+import type { WorkspaceShellProps } from '../../contracts/public-api'
 import { NoDocumentSurface } from '../empty/NoDocumentSurface'
 import { InspectorHost } from '../inspector/InspectorHost'
 import { StatusBarHost } from '../status/StatusBarHost'
@@ -10,30 +9,6 @@ import { ActivityRail } from './ActivityRail'
 import { DocumentTabs } from './DocumentTabs'
 import { WorkspaceChrome } from './WorkspaceChrome'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
-
-export interface WorkspaceShellActions {
-  readonly createDocument: () => void
-  readonly openDocument: () => void
-  readonly activateDocument: (sessionId: DocumentSessionId) => void
-  readonly closeDocument: (sessionId: DocumentSessionId) => void
-  readonly activatePage: (pageId: PageId) => void
-  readonly createPage: () => void
-  readonly openCommandPalette: () => void
-  readonly openSettingsWindow: () => void
-  readonly minimizeWindow: () => void
-  readonly maximizeWindow: () => void
-  readonly closeWindow: () => void
-  readonly startWindowDragging: () => void
-}
-
-export interface WorkspaceShellProps {
-  readonly model: WorkbenchViewModel
-  readonly actions: WorkspaceShellActions
-  readonly editor: ReactNode
-  readonly inspector: ReactNode
-  readonly statusLeft: ReactNode
-  readonly statusRight?: ReactNode
-}
 
 export function WorkspaceShell({
   model,
@@ -61,9 +36,9 @@ export function WorkspaceShell({
   return (
     <TooltipProvider delayDuration={450}>
       <div
-        aria-label="主工作台"
         className="relative grid h-dvh min-h-0 overflow-hidden bg-background text-foreground"
         data-workbench-state={workbenchState}
+        role="application"
         style={{
           gridTemplateColumns,
           gridTemplateRows,

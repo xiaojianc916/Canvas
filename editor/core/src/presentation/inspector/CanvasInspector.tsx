@@ -143,7 +143,9 @@ function getShapeDisplayLabel(
   shapeType: string | undefined,
   extensionLabels: Readonly<Record<string, string>> | undefined,
 ): string | null {
-  if (!shapeType) return null
+  if (!shapeType) {
+    return null
+  }
   return SHAPE_TYPE_LABELS[shapeType] ?? extensionLabels?.[shapeType] ?? null
 }
 

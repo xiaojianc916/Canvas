@@ -18,14 +18,18 @@ export function CommandPalette({ open, registry, onOpenChange }: CommandPaletteP
   const filteredCommands = useMemo(() => filterCommands(commands, query), [commands, query])
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      return
+    }
     setQuery('')
     setActiveIndex(0)
     requestAnimationFrame(() => inputRef.current?.focus())
   }, [open])
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      return
+    }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -36,7 +40,9 @@ export function CommandPalette({ open, registry, onOpenChange }: CommandPaletteP
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onOpenChange, open])
 
-  if (!open) return null
+  if (!open) {
+    return null
+  }
 
   const execute = (command: RegisteredCommand) => {
     onOpenChange(false)
@@ -49,7 +55,9 @@ export function CommandPalette({ open, registry, onOpenChange }: CommandPaletteP
       aria-modal="true"
       className="fixed inset-0 z-100 grid place-items-start bg-black/20 px-4 pt-[14vh] backdrop-blur-[2px]"
       onMouseDown={(event) => {
-        if (event.currentTarget === event.target) onOpenChange(false)
+        if (event.currentTarget === event.target) {
+          onOpenChange(false)
+        }
       }}
       role="dialog"
     >
@@ -73,7 +81,9 @@ export function CommandPalette({ open, registry, onOpenChange }: CommandPaletteP
                 setActiveIndex((index) => Math.max(index - 1, 0))
               } else if (event.key === 'Enter') {
                 const command = filteredCommands[activeIndex]
-                if (command) execute(command)
+                if (command) {
+                  execute(command)
+                }
               }
             }}
             placeholder="输入命令名称…"
@@ -120,7 +130,9 @@ export function CommandPalette({ open, registry, onOpenChange }: CommandPaletteP
 
 function filterCommands(commands: readonly RegisteredCommand[], query: string) {
   const normalizedQuery = query.trim().toLocaleLowerCase()
-  if (!normalizedQuery) return commands
+  if (!normalizedQuery) {
+    return commands
+  }
   return commands.filter((command) =>
     `${command.category ?? ''} ${command.label} ${command.id}`
       .toLocaleLowerCase()

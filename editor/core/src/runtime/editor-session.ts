@@ -5,7 +5,7 @@ import {
   buildExtensionRegistration,
   type ExtensionRegistration,
   type HybridCanvasExtension,
-} from '../react/extension-registry'
+} from '../contracts/public-api'
 
 export interface CreateEditorSessionOptions {
   readonly sessionId: string
@@ -14,12 +14,15 @@ export interface CreateEditorSessionOptions {
   readonly extensions?: readonly HybridCanvasExtension[]
 }
 
+export type EditorSessionState = 'created' | 'attached' | 'detached' | 'disposed'
+
 export interface EditorSession {
   readonly sessionId: string
   readonly documentId: string
   readonly store: TLStore
   readonly registration: ExtensionRegistration
   readonly editor: Editor | null
+  readonly state: EditorSessionState
   readonly attachEditor: (editor: Editor) => void
   readonly detachEditor: (editor: Editor) => void
   readonly getSnapshot: () => TLEditorSnapshot
@@ -34,10 +37,10 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     ...(options.initialSnapshot ? { snapshot: options.initialSnapshot } : {}),
   })
   let attachedEditor: Editor | null = null
-  let disposed = false
+  let state: EditorSessionState = 'created'
 
   function assertActive(): void {
-    if (disposed) {
+    if (state === 'disposed') {
       throw new Error('EDITOR_SESSION_DISPOSED')
     }
   }
@@ -50,16 +53,21 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     get editor() {
       return attachedEditor
     },
+    get state() {
+      return state
+    },
     attachEditor(editor) {
       assertActive()
       if (attachedEditor && attachedEditor !== editor) {
         throw new Error('EDITOR_SESSION_ALREADY_ATTACHED')
       }
       attachedEditor = editor
+      state = 'attached'
     },
     detachEditor(editor) {
       if (attachedEditor === editor) {
         attachedEditor = null
+        state = 'detached'
       }
     },
     getSnapshot() {
@@ -68,7 +76,7 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     },
     dispose() {
       attachedEditor = null
-      disposed = true
+      state = 'disposed'
     },
   }
 }

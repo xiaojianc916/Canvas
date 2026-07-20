@@ -33,25 +33,25 @@ export function parseDrawDocument(json: string): DrawFileContainer {
     throw new Error('DRAW_INVALID_ROOT')
   }
 
-  const header = parsed['header']
+  const header = parsed.header
 
-  if (!isRecord(header) || header['format'] !== 'hybrid-canvas/draw') {
+  if (!isRecord(header) || header.format !== 'hybrid-canvas/draw') {
     throw new Error('DRAW_INVALID_HEADER')
   }
 
-  if (header['version'] !== CURRENT_FILE_VERSION) {
+  if (header.version !== CURRENT_FILE_VERSION) {
     throw new Error(
-      typeof header['version'] === 'number' && header['version'] > CURRENT_FILE_VERSION
+      typeof header.version === 'number' && header.version > CURRENT_FILE_VERSION
         ? 'DRAW_FUTURE_VERSION'
         : 'DRAW_UNSUPPORTED_VERSION',
     )
   }
 
-  if (typeof header['createdAt'] !== 'string' || Number.isNaN(Date.parse(header['createdAt']))) {
+  if (typeof header.createdAt !== 'string' || Number.isNaN(Date.parse(header.createdAt))) {
     throw new Error('DRAW_INVALID_CREATED_AT')
   }
 
-  if (!isRecord(parsed['content'])) {
+  if (!isRecord(parsed.content)) {
     throw new Error('DRAW_INVALID_CONTENT')
   }
 

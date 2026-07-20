@@ -18,7 +18,7 @@ export function createFixedClock(date: Date): Clock {
   }
 }
 
-export function createMockClock(initial: Date = new Date(), stepMs = 0): Clock {
+export function createMockClock(initial: Date = new Date(), _stepMs = 0): Clock {
   const current = initial.getTime()
   return {
     now: () => new Date(current),

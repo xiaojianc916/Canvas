@@ -114,4 +114,3 @@ if (violations.length) {
   process.exit(1)
 }
 
-console.log('Architecture invariants passed')

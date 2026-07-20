@@ -1,5 +1,3 @@
-import type { Result } from '@hybrid-canvas/foundations-kernel'
-
 export type AssetId = string & { readonly __brand: 'AssetId' }
 export type AssetHash = string & { readonly __brand: 'AssetHash' }
 export type MimeType = string

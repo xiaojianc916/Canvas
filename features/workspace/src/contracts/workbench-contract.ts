@@ -46,8 +46,31 @@ export interface WorkbenchViewModel {
   readonly activeDocument: ActiveDocumentViewModel | null
 }
 
-export const EMPTY_WORKBENCH_VIEW_MODEL: WorkbenchViewModel = {
-  activeSessionId: null,
-  tabs: [],
-  activeDocument: null,
+export interface CreateDocumentRequest {
+  readonly title: string
+  readonly initialPageTitle: string
+  readonly documentId?: DocumentId
+  readonly sessionId?: DocumentSessionId
+  readonly persistence?: LocalPersistenceState
 }
+
+export interface WorkbenchSessionCommands {
+  readonly createDocument: (request: CreateDocumentRequest) => void
+  readonly activateDocument: (sessionId: DocumentSessionId) => void
+  readonly closeDocument: (sessionId: DocumentSessionId) => void
+  readonly setLocalPersistence: (
+    sessionId: DocumentSessionId,
+    state: LocalPersistenceState,
+  ) => void
+}
+
+export interface WorkbenchSessionStore extends WorkbenchSessionCommands {
+  readonly getSnapshot: () => WorkbenchViewModel
+  readonly subscribe: (listener: () => void) => () => void
+}
+
+export const EMPTY_WORKBENCH_VIEW_MODEL: WorkbenchViewModel = Object.freeze({
+  activeSessionId: null,
+  tabs: Object.freeze([]),
+  activeDocument: null,
+})

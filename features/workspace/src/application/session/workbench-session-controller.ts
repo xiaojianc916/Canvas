@@ -1,35 +1,20 @@
-import {
-  type ActiveDocumentViewModel,
-  type DocumentSessionId,
-  type DocumentTabViewModel,
-  EMPTY_WORKBENCH_VIEW_MODEL,
-  type WorkbenchViewModel,
-} from '../model/workbench-view-model'
-
-export interface CreateDocumentRequest {
-  readonly title: string
-  readonly initialPageTitle: string
-  readonly documentId?: string
-  readonly sessionId?: string
-  readonly persistence?: 'clean' | 'dirty'
-}
-
-export interface WorkbenchSessionActions {
-  readonly createDocument: (request: CreateDocumentRequest) => Promise<void>
-  readonly activateDocument: (sessionId: DocumentSessionId) => Promise<void>
-  readonly closeDocument: (sessionId: DocumentSessionId) => Promise<void>
-}
-
-export interface WorkbenchSessionStore extends WorkbenchSessionActions {
-  readonly getSnapshot: () => WorkbenchViewModel
-  readonly subscribe: (listener: () => void) => () => void
-}
+import type {
+  ActiveDocumentViewModel,
+  CreateDocumentRequest,
+  DocumentSessionId,
+  DocumentTabViewModel,
+  LocalPersistenceState,
+  WorkbenchSessionStore,
+  WorkbenchViewModel,
+} from '../../contracts/public-api'
+import { EMPTY_WORKBENCH_VIEW_MODEL } from '../../contracts/public-api'
 
 export function createWorkbenchSessionController(): WorkbenchSessionStore {
   let snapshot = EMPTY_WORKBENCH_VIEW_MODEL
   const listeners = new Set<() => void>()
 
   function emit(nextSnapshot: WorkbenchViewModel): void {
+    assertWorkbenchInvariants(nextSnapshot)
     snapshot = nextSnapshot
     for (const listener of listeners) {
       listener()
@@ -47,7 +32,7 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
     }
   }
 
-  async function createDocument(request: CreateDocumentRequest): Promise<void> {
+  function createDocument(request: CreateDocumentRequest): void {
     const documentId = request.documentId ?? crypto.randomUUID()
     const sessionId = request.sessionId ?? crypto.randomUUID()
     const pageId = crypto.randomUUID()
@@ -94,7 +79,7 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
     })
   }
 
-  async function activateDocument(sessionId: DocumentSessionId): Promise<void> {
+  function activateDocument(sessionId: DocumentSessionId): void {
     const targetTab = snapshot.tabs.find((tab) => tab.sessionId === sessionId)
     if (!targetTab || targetTab.isActive) {
       return
@@ -117,7 +102,7 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
     })
   }
 
-  async function closeDocument(sessionId: DocumentSessionId): Promise<void> {
+  function closeDocument(sessionId: DocumentSessionId): void {
     const closingIndex = snapshot.tabs.findIndex((tab) => tab.sessionId === sessionId)
     if (closingIndex < 0) {
       return
@@ -152,11 +137,58 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
     })
   }
 
+  function setLocalPersistence(
+    sessionId: DocumentSessionId,
+    state: LocalPersistenceState,
+  ): void {
+    const tab = snapshot.tabs.find((candidate) => candidate.sessionId === sessionId)
+    if (!tab || tab.persistence.local === state) {
+      return
+    }
+
+    emit({
+      ...snapshot,
+      tabs: snapshot.tabs.map((candidate) =>
+        candidate.sessionId === sessionId
+          ? { ...candidate, persistence: { ...candidate.persistence, local: state } }
+          : candidate,
+      ),
+    })
+  }
+
   return {
     getSnapshot,
     subscribe,
     createDocument,
     activateDocument,
     closeDocument,
+    setLocalPersistence,
+  }
+}
+
+function assertWorkbenchInvariants(snapshot: WorkbenchViewModel): void {
+  const activeTabs = snapshot.tabs.filter((tab) => tab.isActive)
+  const sessionIds = new Set(snapshot.tabs.map((tab) => tab.sessionId))
+
+  if (sessionIds.size !== snapshot.tabs.length) {
+    throw new Error('WORKBENCH_DUPLICATE_SESSION_ID')
+  }
+  if (activeTabs.length > 1) {
+    throw new Error('WORKBENCH_MULTIPLE_ACTIVE_SESSIONS')
+  }
+  if (snapshot.activeSessionId === null) {
+    if (activeTabs.length !== 0 || snapshot.activeDocument !== null) {
+      throw new Error('WORKBENCH_EMPTY_STATE_INCONSISTENT')
+    }
+    return
+  }
+  if (!sessionIds.has(snapshot.activeSessionId)) {
+    throw new Error('WORKBENCH_ACTIVE_SESSION_NOT_FOUND')
+  }
+  if (activeTabs[0]?.sessionId !== snapshot.activeSessionId) {
+    throw new Error('WORKBENCH_ACTIVE_TAB_INCONSISTENT')
+  }
+  if (snapshot.activeDocument?.sessionId !== snapshot.activeSessionId) {
+    throw new Error('WORKBENCH_ACTIVE_DOCUMENT_INCONSISTENT')
   }
 }

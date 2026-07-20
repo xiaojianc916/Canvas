@@ -100,7 +100,7 @@ export class FlowNodeShapeUtil extends ShapeUtil<FlowNodeShape> {
   }
 
   override toSvg(shape: FlowNodeShape): ReactElement | null {
-    const { label, nodeType, w, h, color } = shape.props
+    const { label, w, h, color } = shape.props
 
     return (
       <foreignObject x={0} y={0} width={w} height={h}>

@@ -107,8 +107,8 @@ function DocumentPersistenceIndicator({ model }: { readonly model: DocumentPersi
   if (model.local === 'failed') {
     return (
       <span
-        aria-label="本地保存失败"
         className="size-1.5 shrink-0 rounded-full bg-red-500"
+        role="img"
         title="本地保存失败"
       />
     )
@@ -116,8 +116,8 @@ function DocumentPersistenceIndicator({ model }: { readonly model: DocumentPersi
   if (model.local === 'saving') {
     return (
       <span
-        aria-label="正在保存"
         className="size-1.5 shrink-0 animate-pulse rounded-full bg-blue-500"
+        role="img"
         title="正在保存"
       />
     )
@@ -125,8 +125,8 @@ function DocumentPersistenceIndicator({ model }: { readonly model: DocumentPersi
   if (model.local === 'dirty') {
     return (
       <span
-        aria-label="存在未保存更改"
         className="size-1.5 shrink-0 rounded-full bg-amber-500"
+        role="img"
         title="存在未保存更改"
       />
     )
@@ -134,8 +134,8 @@ function DocumentPersistenceIndicator({ model }: { readonly model: DocumentPersi
   if (model.remote === 'conflicted') {
     return (
       <span
-        aria-label="远程同步冲突"
         className="size-1.5 shrink-0 rounded-full bg-red-500"
+        role="img"
         title="远程同步冲突"
       />
     )
@@ -143,8 +143,8 @@ function DocumentPersistenceIndicator({ model }: { readonly model: DocumentPersi
   if (model.remote === 'syncing') {
     return (
       <span
-        aria-label="正在同步"
         className="size-1.5 shrink-0 animate-pulse rounded-full bg-violet-500"
+        role="img"
         title="正在同步"
       />
     )
@@ -152,8 +152,8 @@ function DocumentPersistenceIndicator({ model }: { readonly model: DocumentPersi
   if (model.remote === 'synced') {
     return (
       <span
-        aria-label="已同步"
         className="size-1.5 shrink-0 rounded-full bg-emerald-500"
+        role="img"
         title="已同步"
       />
     )

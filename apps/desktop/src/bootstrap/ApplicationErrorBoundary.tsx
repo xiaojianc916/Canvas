@@ -26,7 +26,9 @@ export class ApplicationErrorBoundary extends Component<
 
   override render() {
     const { error } = this.state
-    if (!error) return this.props.children
+    if (!error) {
+      return this.props.children
+    }
 
     return (
       <main className="grid h-dvh place-items-center bg-background p-8 text-foreground">

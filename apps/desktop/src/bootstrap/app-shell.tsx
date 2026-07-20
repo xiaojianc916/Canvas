@@ -148,7 +148,9 @@ export function AppShell() {
 async function invokeWindowAction(
   action: 'minimize' | 'toggleMaximize' | 'close' | 'startDragging',
 ): Promise<void> {
-  if (!('__TAURI_INTERNALS__' in window)) return
+  if (!('__TAURI_INTERNALS__' in window)) {
+    return
+  }
   const { getCurrentWindow } = await import('@tauri-apps/api/window')
   await getCurrentWindow()[action]()
 }

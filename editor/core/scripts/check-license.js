@@ -1,8 +1,8 @@
 // TLDRaw License Key Validation
 // Runs during canvas package build - fails if TLDRaw_LICENSE_KEY not set
 
-import { readFileSync } from 'fs'
-import { resolve } from 'path'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 // Load .env.local if exists
 try {
@@ -31,4 +31,3 @@ if (licenseKey.startsWith('DEV-') || licenseKey.startsWith('TEST-')) {
   console.warn('⚠️  Using development/test license key. Not valid for production.')
 }
 
-console.log('✅ TLDRaw license key validated')
