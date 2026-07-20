@@ -22,5 +22,17 @@ export {
   type CanvasSelectionViewModel,
   type CanvasSessionViewModel,
   type CanvasToolId,
+  createEditorSession,
+  createEditorSessionRegistry,
+  type CreateEditorSessionOptions,
+  type EditorSession,
+  type EditorSessionRegistry,
+  type EditorSessionState,
   EMPTY_CANVAS_SESSION_VIEW_MODEL,
 } from './application/public-api'
+
+export {
+  CanvasInspector,
+  CanvasStatusLeft,
+  CanvasStatusRight,
+} from './presentation/public-api'

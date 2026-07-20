@@ -102,6 +102,18 @@ function check(path) {
     violations.push(`${rel}: 跨包 deep import，必须使用 package exports`)
   }
 
+  if (/\/src\/contracts\//.test(rel) && /from\s+['"][^'"]*\/(?:application|presentation|runtime)\//.test(text)) {
+    violations.push(`${rel}: contract 反向依赖实现层`)
+  }
+
+  if (/\/src\/application\//.test(rel) && /from\s+['"][^'"]*\/presentation\//.test(text)) {
+    violations.push(`${rel}: application 反向依赖 presentation`)
+  }
+
+  if (rel.startsWith('apps/desktop/src/bootstrap/') && /(?:parseDrawDocument|serializeDrawDocument|createTLStore)\s*\(/.test(text)) {
+    violations.push(`${rel}: composition root 承载文档或编辑器业务逻辑`)
+  }
+
   if (/from\s+['"]\.\.\/\.\.\/(?:apps|editor|features|foundations|platforms)\//.test(text)) {
     violations.push(`${rel}: 使用相对路径跨越顶层包边界`)
   }

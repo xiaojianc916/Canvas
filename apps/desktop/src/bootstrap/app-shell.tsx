@@ -27,7 +27,7 @@ export function AppShell() {
 
   const handleSave = useCallback(
     (sessionId: string) => {
-      void runtime.documents.saveDocument(sessionId)
+      void runtime.documents.save(sessionId)
     },
     [runtime.documents],
   )
@@ -39,7 +39,7 @@ export function AppShell() {
       category: '文件',
       shortcut: 'Ctrl+N',
       execute() {
-        return runtime.documents.createDocument(
+        return runtime.documents.create(
           createUntitledDocumentTitle(runtime.workspace.getSnapshot().tabs.map((tab) => tab.title)),
           '画板 1',
         )
@@ -50,7 +50,7 @@ export function AppShell() {
       label: '打开画板',
       category: '文件',
       shortcut: 'Ctrl+O',
-      execute: runtime.documents.openDocument,
+      execute: runtime.documents.open,
     })
     return () => {
       unregisterOpen()
@@ -72,19 +72,19 @@ export function AppShell() {
 
   const actions: WorkspaceShellActions = {
     createDocument() {
-      void runtime.documents.createDocument(
+      runtime.documents.create(
         createUntitledDocumentTitle(workbench.tabs.map((tab) => tab.title)),
         '画板 1',
       )
     },
     openDocument() {
-      void runtime.documents.openDocument()
+      void runtime.documents.open()
     },
     activateDocument(sessionId) {
-      void runtime.workspace.activateDocument(sessionId)
+      runtime.workspace.activateDocument(sessionId)
     },
     closeDocument(sessionId) {
-      void runtime.documents.closeDocument(sessionId)
+      runtime.documents.close(sessionId)
     },
     activatePage(_pageId) {},
     createPage() {},
@@ -111,10 +111,10 @@ export function AppShell() {
   const hostedSessions = useMemo(
     () =>
       workbench.tabs.flatMap((tab) => {
-        const session = runtime.editorSessions.get(tab.sessionId)
+        const session = runtime.documents.getEditorSession(tab.sessionId)
         return session ? [{ sessionId: tab.sessionId, session }] : []
       }),
-    [runtime.editorSessions, workbench.tabs],
+    [runtime.documents, workbench.tabs],
   )
 
   return (

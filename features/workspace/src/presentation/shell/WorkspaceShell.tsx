@@ -1,7 +1,7 @@
 ﻿import { TooltipProvider } from '@hybrid-canvas/design-system'
 import { useState } from 'react'
 
-import type { WorkspaceShellProps } from '../../contracts/public-api'
+import type { WorkspaceShellProps } from '../../contracts/shell-contract'
 import { NoDocumentSurface } from '../empty/NoDocumentSurface'
 import { InspectorHost } from '../inspector/InspectorHost'
 import { StatusBarHost } from '../status/StatusBarHost'
