@@ -1,14 +1,16 @@
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
 import { EditorSessionHost } from '@hybrid-canvas/canvas/react'
+import { ConfirmationDialog } from '@hybrid-canvas/design-system'
 import type {
   CanvasSessionId,
   WorkbenchSessionStore,
   WorkspaceShellActions,
 } from '@hybrid-canvas/workspace/contracts'
-import { WorkspaceShell } from '@hybrid-canvas/workspace/react'
+import { CanvasTabs, WorkspaceShell } from '@hybrid-canvas/workspace/react'
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
+import { DesktopTitleBar } from '../chrome/DesktopTitleBar'
 
 const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({ pages: Object.freeze([]) })
 const EMPTY_SUBSCRIBE = () => () => {}
@@ -104,10 +106,6 @@ export function WorkspaceContainer({
       },
       openCommandPalette: onCommandPaletteOpen,
       openSettingsWindow: onSettingsOpen,
-      minimizeWindow: onWindowMinimize,
-      maximizeWindow: onWindowMaximize,
-      closeWindow: onWindowClose,
-      startWindowDragging: onWindowStartDragging,
     }),
     [onCommandPaletteOpen, onSettingsOpen, port, workbench.tabs],
   )
@@ -156,49 +154,53 @@ export function WorkspaceContainer({
       inspector={<CanvasInspectorContent hasActiveCanvas={workbench.activeCanvas !== null} />}
       model={workbenchWithCanvasStatus}
       pages={pages}
+      renderChrome={({
+        isSidebarOpen,
+        sidebarWidth,
+        tabs,
+        onSidebarToggle,
+        onActivateCanvas,
+        onCloseCanvas,
+        onCreateCanvas,
+      }) => (
+        <DesktopTitleBar
+          isSidebarOpen={isSidebarOpen}
+          onClose={onWindowClose}
+          onMaximize={onWindowMaximize}
+          onMinimize={onWindowMinimize}
+          onSidebarToggle={onSidebarToggle}
+          onStartDragging={onWindowStartDragging}
+          sidebarWidth={sidebarWidth}
+        >
+          <CanvasTabs
+            onActivate={onActivateCanvas}
+            onClose={onCloseCanvas}
+            onCreate={onCreateCanvas}
+            tabs={tabs}
+          />
+        </DesktopTitleBar>
+      )}
       statusLeft={<CanvasStatusLeftContent hasActiveCanvas={workbench.activeCanvas !== null} />}
       statusRight={<CanvasStatusRightContent pageCount={pages.length} />}
       overlays={
-        pendingCloseSessionId ? (
-          <div
-            className="absolute inset-0 z-50 grid place-items-center bg-black/25"
-            role="presentation"
-          >
-            <section
-              aria-labelledby="discard-canvas-title"
-              aria-modal="true"
-              className="w-96 rounded-xl border border-divider bg-background p-5 shadow-2xl"
-              role="dialog"
-            >
-              <h2 className="text-base font-semibold" id="discard-canvas-title">
-                放弃未保存的更改？
-              </h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                关闭画布会丢失自上次保存后的更改，此操作无法撤销。
-              </p>
-              <div className="mt-5 flex justify-end gap-2">
-                <button
-                  className="rounded-md px-3 py-2 text-sm hover:bg-muted"
-                  onClick={() => setPendingCloseSessionId(null)}
-                  type="button"
-                >
-                  取消
-                </button>
-                <button
-                  className="rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground"
-                  onClick={() => {
-                    port.canvases.discardAndClose(pendingCloseSessionId)
-                    setPendingCloseSessionId(null)
-                  }}
-                  type="button"
-                >
-                  放弃并关闭
-                </button>
-              </div>
-            </section>
-          </div>
-        ) : null
+        <ConfirmationDialog
+          confirmLabel="放弃并关闭"
+          description="关闭画布会丢失自上次保存后的更改，此操作无法撤销。"
+          destructive
+          onCancel={() => setPendingCloseSessionId(null)}
+          onConfirm={() => {
+            if (!pendingCloseSessionId) {
+              return
+            }
+
+            port.canvases.discardAndClose(pendingCloseSessionId)
+            setPendingCloseSessionId(null)
+          }}
+          open={pendingCloseSessionId !== null}
+          title="放弃未保存的更改？"
+        />
       }
+    />      }
     />
   )
 }

@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
 
 export interface WorkspaceFrameProps {
+  readonly rootRef?: Ref<HTMLDivElement>
   readonly chrome: ReactNode
   readonly rail: ReactNode
   readonly sidebar: ReactNode
@@ -13,6 +14,7 @@ export interface WorkspaceFrameProps {
 }
 
 export function WorkspaceFrame({
+  rootRef,
   chrome,
   rail,
   sidebar,
@@ -25,6 +27,7 @@ export function WorkspaceFrame({
 }: WorkspaceFrameProps) {
   return (
     <div
+      ref={rootRef}
       className="workspace-shell relative grid h-dvh w-full min-h-0 overflow-hidden bg-background text-foreground"
       style={{ gridTemplateColumns, gridTemplateRows }}
     >

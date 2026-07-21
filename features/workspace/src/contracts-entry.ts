@@ -12,6 +12,7 @@ export {
 
 export type {
   CanvasPageViewModel,
+  WorkspaceChromeRenderProps,
   WorkspaceShellActions,
   WorkspaceShellProps,
 } from './contracts/shell-contract'

@@ -1,5 +1,9 @@
 export { Button, type ButtonProps, buttonVariants } from './components/ui/button'
 export {
+  ConfirmationDialog,
+  type ConfirmationDialogProps,
+} from './components/ui/confirmation-dialog'
+export {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,

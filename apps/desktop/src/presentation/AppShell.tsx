@@ -1,4 +1,5 @@
 import { EditorProvider } from '@hybrid-canvas/canvas/react'
+import { ConfirmationDialog } from '@hybrid-canvas/design-system'
 import { CommandPalette } from '@hybrid-canvas/workspace/react'
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
@@ -89,43 +90,34 @@ export function AppShell({ runtime }: AppShellProps) {
         registry={runtime.commands}
       />
       <SettingsDialog onOpenChange={setSettingsOpen} open={isSettingsOpen} />
-      {termination.state === 'confirmation-required' ? (
-        <div
-          className="fixed inset-0 z-100 grid place-items-center bg-black/30"
-          role="presentation"
-        >
-          <section
-            aria-labelledby="exit-title"
-            aria-modal="true"
-            className="w-96 rounded-xl border border-divider bg-background p-5 shadow-2xl"
-            role="dialog"
-          >
-            <h2 className="text-base font-semibold" id="exit-title">
-              退出并放弃未保存的更改？
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              有 {termination.sessionIds.length} 个画布包含未保存的更改。
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                className="rounded-md px-3 py-2 text-sm hover:bg-muted"
-                onClick={() => runtime.termination.cancel()}
-                type="button"
-              >
-                取消
-              </button>
-              <button
-                className="rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground"
-                onClick={runtime.termination.confirmDiscard}
-                type="button"
-              >
-                放弃全部并退出
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
-    </EditorProvider>
+      <ConfirmationDialog
+        confirmLabel="放弃全部并退出"
+        description={
+          termination.state === 'confirmation-required'
+            ? `有 ${termination.sessionIds.length} 个画布包含未保存的更改。`
+            : ''
+        }
+        destructive
+        onCancel={runtime.termination.cancel}
+        onConfirm={runtime.termination.confirmDiscard}
+        open={termination.state === 'confirmation-required'}
+        title="退出并放弃未保存的更改？"
+      />
+
+      <ConfirmationDialog
+        cancelLabel="返回应用"
+        confirmLabel="重试退出"
+        description={
+          termination.state === 'termination-failed'
+            ? `原生窗口未能完成退出：${termination.message}`
+            : ''
+        }
+        onCancel={runtime.termination.cancel}
+        onConfirm={runtime.termination.retry}
+        open={termination.state === 'termination-failed'}
+        title="应用退出失败"
+      />
+    </EditorProvider>    </EditorProvider>
   )
 }
 

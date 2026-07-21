@@ -17,6 +17,11 @@ export type ApplicationTerminationSnapshot =
       readonly state: 'terminating'
       readonly intent: ApplicationTerminationIntent
     }
+  | {
+      readonly state: 'termination-failed'
+      readonly intent: ApplicationTerminationIntent
+      readonly message: string
+    }
 
 export interface ApplicationTerminator {
   readonly terminate: (intent: ApplicationTerminationIntent) => Promise<void>
@@ -31,6 +36,7 @@ export interface ApplicationTerminationCoordinator {
   readonly request: (intent: ApplicationTerminationIntent) => void
   readonly cancel: () => void
   readonly confirmDiscard: () => void
+  readonly retry: () => void
   readonly getSnapshot: () => ApplicationTerminationSnapshot
   readonly subscribe: (listener: () => void) => () => void
   readonly dispose: () => void
@@ -64,14 +70,33 @@ export function createApplicationTerminationCoordinator(
     evaluate(intent, canvases.planApplicationClose())
   }
 
+  function beginTermination(intent: ApplicationTerminationIntent): void {
+    const currentGeneration = ++generation
+
+    emit({
+      state: 'terminating',
+      intent,
+    })
+
+    void terminator.terminate(intent).catch((error: unknown) => {
+      if (disposed || currentGeneration !== generation) {
+        return
+      }
+
+      emit({
+        state: 'termination-failed',
+        intent,
+        message:
+          error instanceof Error
+            ? error.message
+            : 'UNKNOWN_TERMINATION_ERROR',
+      })
+    })
+  }
+
   function evaluate(intent: ApplicationTerminationIntent, plan: ApplicationClosePlan): void {
     if (plan.kind === 'close-now') {
-      emit({
-        state: 'terminating',
-        intent,
-      })
-
-      void terminator.terminate(intent)
+      beginTermination(intent)
       return
     }
 
@@ -116,6 +141,14 @@ export function createApplicationTerminationCoordinator(
 
       canvases.discardAllAndClose(sessionIds)
       request(intent)
+    },
+
+    retry() {
+      if (snapshot.state !== 'termination-failed') {
+        return
+      }
+
+      beginTermination(snapshot.intent)
     },
 
     getSnapshot: () => snapshot,

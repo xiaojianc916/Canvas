@@ -6,7 +6,11 @@
   "main": "./src/public-api.ts",
   "types": "./src/public-api.ts",
   "exports": {
-    ".": "./src/public-api.ts"
+    ".": "./src/public-api.ts",
+    "./react": {
+      "types": "./src/presentation/public-api.ts",
+      "default": "./src/presentation/public-api.ts"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",

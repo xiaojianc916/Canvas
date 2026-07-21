@@ -1,5 +1,5 @@
 ﻿import { Button, TooltipProvider } from '@hybrid-canvas/design-system'
-import { BotMessageSquare, PanelRightClose, PanelRightOpen, Sparkles, X } from 'lucide-react'
+import { PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WorkspaceShellProps } from '../../contracts/shell-contract'
@@ -7,8 +7,6 @@ import { NoCanvasSurface } from '../empty/NoCanvasSurface'
 import { InspectorHost } from '../inspector/InspectorHost'
 import { StatusBarHost } from '../status/StatusBarHost'
 import { ActivityRail, type CanvasNavigationItemId } from './ActivityRail'
-import { DesktopTitleBar } from './DesktopTitleBar'
-import { CanvasTabs } from './CanvasTabs'
 import { SidebarSplitter } from './SidebarSplitter'
 import { WorkspaceFrame } from './WorkspaceFrame'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
@@ -22,15 +20,16 @@ export function WorkspaceShell({
   model,
   actions,
   pages,
+  renderChrome,
   editor,
   inspector,
   statusLeft,
   statusRight,
+  assistantOverlay,
   overlays,
 }: WorkspaceShellProps) {
   const [isSidebarOpen, setSidebarOpen] = useState(true)
   const [isInspectorOpen, setInspectorOpen] = useState(true)
-  const [isAiChatOpen, setAiChatOpen] = useState(false)
   const [activeNavigationItem, setActiveNavigationItem] = useState<CanvasNavigationItemId>('pages')
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH)
   const [isResizingSidebar, setResizingSidebar] = useState(false)
@@ -87,26 +86,19 @@ export function WorkspaceShell({
           : 'col-span-full row-1 min-h-0 min-w-0 border-b border-divider bg-chrome'
       }
     >
-      <DesktopTitleBar
-        onClose={actions.closeWindow}
-        onMaximize={actions.maximizeWindow}
-        onMinimize={actions.minimizeWindow}
-        onStartDragging={actions.startWindowDragging}
-        onSidebarToggle={() => setSidebarOpen((open) => !open)}
-        isSidebarOpen={isSidebarOpen}
-        sidebarWidth={sidebarWidth}
-      >
-        <CanvasTabs
-          onActivate={actions.activateCanvas}
-          onClose={actions.closeCanvas}
-          onCreate={actions.createCanvas}
-          tabs={model.tabs}
-        />
-      </DesktopTitleBar>
+      {renderChrome({
+        isSidebarOpen,
+        sidebarWidth,
+        tabs: model.tabs,
+        onSidebarToggle: () => setSidebarOpen((open) => !open),
+        onActivateCanvas: actions.activateCanvas,
+        onCloseCanvas: actions.closeCanvas,
+        onCreateCanvas: actions.createCanvas,
+      })}
     </header>
   )
 
-  const rail = (
+  const rail = (  const rail = (
     <div
       className="row-[2/-1] min-h-0 border-r border-divider bg-sidebar"
       style={{ gridColumn: 1 }}
@@ -216,6 +208,7 @@ export function WorkspaceShell({
   return (
     <TooltipProvider delayDuration={450}>
       <WorkspaceFrame
+        rootRef={rootRef}
         chrome={chrome}
         rail={rail}
         sidebar={sidebar}
@@ -224,7 +217,7 @@ export function WorkspaceShell({
         statusBar={statusBar}
         overlays={
           <>
-            <AiChatWidget open={isAiChatOpen} onOpenChange={setAiChatOpen} />
+            {assistantOverlay}
             {overlays}
           </>
         }
@@ -232,59 +225,5 @@ export function WorkspaceShell({
         gridTemplateRows={gridTemplateRows}
       />
     </TooltipProvider>
-  )
-}
-
-function AiChatWidget({
-  open,
-  onOpenChange,
-}: {
-  readonly open: boolean
-  readonly onOpenChange: (open: boolean) => void
-}) {
-  return (
-    <div className="pointer-events-none absolute bottom-4 right-4 z-50">
-      {open ? (
-        <div className="pointer-events-auto mb-3 w-90 overflow-hidden rounded-2xl border border-divider bg-popover shadow-2xl">
-          <div className="flex items-center justify-between border-b border-divider px-4 py-3">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <BotMessageSquare className="size-4" />
-              AI Chat
-            </div>
-            <Button
-              aria-label="关闭 AI Chat"
-              onClick={() => onOpenChange(false)}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <X className="size-4" />
-            </Button>
-          </div>
-          <div className="space-y-3 p-4">
-            <div className="rounded-xl bg-muted/40 p-3 text-sm leading-6 text-muted-foreground">
-              这里可以接入你的 AI 对话能力，支持基于当前画布上下文进行问答、总结和生成操作。
-            </div>
-            <div className="flex items-center gap-2 rounded-xl border border-divider bg-background px-3 py-2">
-              <Sparkles className="size-4 shrink-0 text-muted-foreground" />
-              <input
-                aria-label="输入 AI 问题"
-                className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                placeholder="问我任何关于画布的问题…"
-                type="text"
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
-      <Button
-        aria-label="打开 AI Chat"
-        className="pointer-events-auto size-14 rounded-full shadow-xl"
-        onClick={() => onOpenChange(!open)}
-        type="button"
-      >
-        <BotMessageSquare className="size-5" />
-      </Button>
-    </div>
   )
 }

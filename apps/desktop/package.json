@@ -23,6 +23,7 @@
     "@hybrid-canvas/file": "workspace:*",
     "@hybrid-canvas/flowchart": "workspace:*",
     "@hybrid-canvas/platforms-desktop-runtime": "workspace:*",
+    "@hybrid-canvas/settings": "workspace:*",
     "@hybrid-canvas/workspace": "workspace:*",
     "@tauri-apps/api": "catalog:tauri",
     "lucide-react": "catalog:",

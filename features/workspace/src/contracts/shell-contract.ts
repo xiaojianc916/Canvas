@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react'
 
-import type { CanvasSessionId, WorkbenchViewModel } from './public-api'
+import type {
+  CanvasSessionId,
+  CanvasTabViewModel,
+  WorkbenchViewModel,
+} from './public-api'
 
 export interface CanvasPageViewModel {
   readonly id: string
@@ -17,19 +21,29 @@ export interface WorkspaceShellActions {
   readonly createPage: () => void
   readonly openCommandPalette: () => void
   readonly openSettingsWindow: () => void
-  readonly minimizeWindow: () => void
-  readonly maximizeWindow: () => void
-  readonly closeWindow: () => void
-  readonly startWindowDragging: () => void
+}
+
+export interface WorkspaceChromeRenderProps {
+  readonly isSidebarOpen: boolean
+  readonly sidebarWidth: number
+  readonly tabs: readonly CanvasTabViewModel[]
+  readonly onSidebarToggle: () => void
+  readonly onActivateCanvas: (sessionId: CanvasSessionId) => void
+  readonly onCloseCanvas: (sessionId: CanvasSessionId) => void
+  readonly onCreateCanvas: () => void
 }
 
 export interface WorkspaceShellProps {
   readonly model: WorkbenchViewModel
   readonly actions: WorkspaceShellActions
   readonly pages: readonly CanvasPageViewModel[]
+  readonly renderChrome: (
+    props: WorkspaceChromeRenderProps,
+  ) => ReactNode
   readonly editor: ReactNode
   readonly inspector: ReactNode
   readonly statusLeft: ReactNode
   readonly statusRight?: ReactNode
+  readonly assistantOverlay?: ReactNode
   readonly overlays?: ReactNode
 }
