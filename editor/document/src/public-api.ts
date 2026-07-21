@@ -1,13 +1,15 @@
 export {
   type ApplicationClosePlan,
   type CanvasCloseDecision,
+  type CanvasDocumentService,
   type CanvasEditorSessionRegistryPort,
   type CanvasFileSelectionPort,
+  type CanvasId,
   type CanvasPersistenceState,
-  type CanvasService,
+  type CanvasSessionId,
   type CanvasSessionSnapshot,
-  type CanvasWorkspacePort,
-  type CreateCanvasServiceDependencies,
-  createCanvasService,
+  type CreateCanvasDocumentServiceDependencies,
   type DrawPersistencePort,
-} from './application/canvas-session-service'
+  type OpenedCanvasSession,
+  createCanvasDocumentService,
+} from './application/canvas-document-service'

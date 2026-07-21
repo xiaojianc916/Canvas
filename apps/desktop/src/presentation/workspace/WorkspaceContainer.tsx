@@ -16,7 +16,7 @@ import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
 
 const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({ pages: Object.freeze([]) })
-const EMPTY_SUBSCRIBE = () => () => { }
+const EMPTY_SUBSCRIBE = () => () => {}
 const EMPTY_EDITOR_SNAPSHOT = () => EMPTY_EDITOR_SESSION_SNAPSHOT
 
 export interface WorkspaceCanvasUIPort {
@@ -25,12 +25,12 @@ export interface WorkspaceCanvasUIPort {
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
   readonly requestClose: (
     sessionId: CanvasSessionId,
-  ) => import('@hybrid-canvas/canvas-session').CanvasCloseDecision
+  ) => import('@hybrid-canvas/document').CanvasCloseDecision
   readonly discardAndClose: (sessionId: CanvasSessionId) => void
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (
     sessionId: CanvasSessionId,
-  ) => import('@hybrid-canvas/canvas-session').CanvasSessionSnapshot | null
+  ) => import('@hybrid-canvas/document').CanvasSessionSnapshot | null
   readonly subscribe: (listener: () => void) => () => void
 }
 

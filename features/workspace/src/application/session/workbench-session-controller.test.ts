@@ -34,10 +34,7 @@ describe('workbench session controller', () => {
     store.closeCanvas('session-2')
 
     expect(store.getSnapshot().activeSessionId).toBe('session-3')
-    expect(store.getSnapshot().tabs.map((tab) => tab.sessionId)).toEqual([
-      'session-1',
-      'session-3',
-    ])
+    expect(store.getSnapshot().tabs.map((tab) => tab.sessionId)).toEqual(['session-1', 'session-3'])
   })
 
   it('publishes changes and returns to the canonical empty snapshot', () => {

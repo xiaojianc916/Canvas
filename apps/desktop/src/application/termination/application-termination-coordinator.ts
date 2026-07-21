@@ -1,4 +1,4 @@
-import type { ApplicationClosePlan, CanvasService } from '@hybrid-canvas/canvas-session'
+import type { ApplicationClosePlan, CanvasSessionId } from '@hybrid-canvas/document'
 
 export type ApplicationTerminationIntent = 'window-close' | 'update-restart' | 'application-exit'
 
@@ -7,13 +7,24 @@ export type ApplicationTerminationSnapshot =
   | {
       readonly state: 'confirmation-required'
       readonly intent: ApplicationTerminationIntent
-      readonly sessionIds: readonly string[]
+      readonly sessionIds: readonly CanvasSessionId[]
     }
-  | { readonly state: 'waiting-for-saves'; readonly intent: ApplicationTerminationIntent }
-  | { readonly state: 'terminating'; readonly intent: ApplicationTerminationIntent }
+  | {
+      readonly state: 'waiting-for-saves'
+      readonly intent: ApplicationTerminationIntent
+    }
+  | {
+      readonly state: 'terminating'
+      readonly intent: ApplicationTerminationIntent
+    }
 
 export interface ApplicationTerminator {
   readonly terminate: (intent: ApplicationTerminationIntent) => Promise<void>
+}
+
+export interface ApplicationClosePort {
+  readonly planApplicationClose: () => ApplicationClosePlan
+  readonly discardAllAndClose: (sessionIds: readonly CanvasSessionId[]) => void
 }
 
 export interface ApplicationTerminationCoordinator {
@@ -26,58 +37,94 @@ export interface ApplicationTerminationCoordinator {
 }
 
 export function createApplicationTerminationCoordinator(
-  canvases: CanvasService,
+  canvases: ApplicationClosePort,
   terminator: ApplicationTerminator,
 ): ApplicationTerminationCoordinator {
-  let snapshot: ApplicationTerminationSnapshot = { state: 'idle' }
+  let snapshot: ApplicationTerminationSnapshot = {
+    state: 'idle',
+  }
+
   let generation = 0
   let disposed = false
   const listeners = new Set<() => void>()
 
   function emit(next: ApplicationTerminationSnapshot): void {
     snapshot = next
-    for (const listener of listeners) listener()
+
+    for (const listener of listeners) {
+      listener()
+    }
   }
 
   function request(intent: ApplicationTerminationIntent): void {
-    if (disposed || snapshot.state === 'terminating') return
+    if (disposed || snapshot.state === 'terminating') {
+      return
+    }
+
     evaluate(intent, canvases.planApplicationClose())
   }
 
   function evaluate(intent: ApplicationTerminationIntent, plan: ApplicationClosePlan): void {
     if (plan.kind === 'close-now') {
-      emit({ state: 'terminating', intent })
+      emit({
+        state: 'terminating',
+        intent,
+      })
+
       void terminator.terminate(intent)
       return
     }
+
     if (plan.kind === 'confirm-discard') {
-      emit({ state: 'confirmation-required', intent, sessionIds: plan.sessionIds })
+      emit({
+        state: 'confirmation-required',
+        intent,
+        sessionIds: plan.sessionIds,
+      })
+
       return
     }
+
     const currentGeneration = ++generation
-    emit({ state: 'waiting-for-saves', intent })
+
+    emit({
+      state: 'waiting-for-saves',
+      intent,
+    })
+
     void Promise.allSettled(plan.operations).then(() => {
-      if (!disposed && currentGeneration === generation) request(intent)
+      if (!disposed && currentGeneration === generation) {
+        request(intent)
+      }
     })
   }
 
   return {
     request,
+
     cancel() {
       generation += 1
       emit({ state: 'idle' })
     },
+
     confirmDiscard() {
-      if (snapshot.state !== 'confirmation-required') return
+      if (snapshot.state !== 'confirmation-required') {
+        return
+      }
+
       const { intent, sessionIds } = snapshot
+
       canvases.discardAllAndClose(sessionIds)
       request(intent)
     },
+
     getSnapshot: () => snapshot,
+
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+
     dispose() {
       disposed = true
       generation += 1

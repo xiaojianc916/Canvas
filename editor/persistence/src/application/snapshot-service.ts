@@ -47,10 +47,7 @@ export function parseDrawDocument(json: string): DrawFileContainer {
     )
   }
 
-  if (
-    typeof header['createdAt'] !== 'string' ||
-    Number.isNaN(Date.parse(header['createdAt']))
-  ) {
+  if (typeof header['createdAt'] !== 'string' || Number.isNaN(Date.parse(header['createdAt']))) {
     throw new Error('DRAW_INVALID_CREATED_AT')
   }
 

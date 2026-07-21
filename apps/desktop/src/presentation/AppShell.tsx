@@ -4,7 +4,7 @@ import { EditorProvider } from '@hybrid-canvas/canvas/react'
 import { CommandPalette } from '@hybrid-canvas/workspace/react'
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
-import type { CanvasService } from '@hybrid-canvas/canvas-session'
+import type { CanvasWorkflow } from '../application/canvas/canvas-workflow'
 import type { MainWindowController } from '@hybrid-canvas/platforms-desktop-runtime'
 import type { CommandRegistry, WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
 
@@ -17,7 +17,7 @@ import { WorkspaceContainer } from './workspace/WorkspaceContainer'
 export interface AppShellRuntime {
   readonly workspace: WorkbenchSessionStore
   readonly commands: CommandRegistry
-  readonly canvases: CanvasService
+  readonly canvases: CanvasWorkflow
   readonly termination: ApplicationTerminationCoordinator
   readonly mainWindow: MainWindowController
 }

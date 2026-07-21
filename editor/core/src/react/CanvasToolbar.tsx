@@ -106,8 +106,16 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
       })}
       <Separator className="mx-1 h-5" orientation="vertical" />
       <ToolbarAction icon={Grid2X2} label="网格" onClick={() => undefined} />
-      <ToolbarAction icon={Copy} label="复制样式" onClick={() => editor?.duplicateShapes(editor.getSelectedShapeIds())} />
-      <ToolbarAction icon={Eraser} label="删除" onClick={() => editor?.deleteShapes(editor.getSelectedShapeIds())} />
+      <ToolbarAction
+        icon={Copy}
+        label="复制样式"
+        onClick={() => editor?.duplicateShapes(editor.getSelectedShapeIds())}
+      />
+      <ToolbarAction
+        icon={Eraser}
+        label="删除"
+        onClick={() => editor?.deleteShapes(editor.getSelectedShapeIds())}
+      />
       <ToolbarAction icon={MoreHorizontal} label="更多" onClick={() => undefined} />
       {onSave ? (
         <>

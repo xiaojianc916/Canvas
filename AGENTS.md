@@ -30,7 +30,8 @@ hybrid-canvas/
 ├── editor/             # 编辑器内核与扩展 API
 │   ├── core/           #   tldraw Editor Runtime, TLSchema, TLStore, ExtensionRegistry
 │   ├── assets/         #   TLAssetStore, 资产引用与存取
-│   ├── persistence/    #   TLStore snapshot, .draw container, 文件 I/O
+│   ├── persistence/    #   TLStore snapshot, .draw container, 文件格式
+│   ├── document/       #   文档会话、保存状态与生命周期
 │   ├── collaboration/  #   @tldraw/sync 配置, Presence, Auth
 │   └── extensions/     #   插件声明与生命周期管理
 ├── features/           # 产品功能——tldraw-native Editor Extensions
@@ -68,12 +69,16 @@ foundations ───────── no dependencies on editor/features/platf
 ```
 
 - `editor/core` 是唯一可以创建 TLSchema、TLStore、控制 Editor 生命周期的包。
+- `editor/document` 拥有文档会话、文件路径、revision、保存状态和关闭计划。
+- `editor/document` 不得依赖 Workspace、React、Tauri 或平台 adapter。
+- 跨 editor 与 workspace 的协调只能位于 apps composition root。
 - Feature 只能贡献 `EditorExtension`（shapes, bindings, tools, records, commands, panels 等）。
 - `platforms/*` 只实现平台能力，不拥有业务规则或编辑器状态。
 - `foundations/*` 只接收无业务语义、已被多个包稳定复用的基础能力。
 - 跨包只能依赖 `public-api.ts`；禁止 deep import、循环依赖和共享可变 Store。
 - 禁止根级 `components`、`services`、`utils`、`stores`、`types`、`managers`。
-- 不为假想需求创建抽象、空目录、兼容层或第二套实现。
+- 不为假想需求创建抽象、兼容层或第二套实现。
+- 允许通过 architecture.scaffolds.json 登记预留脚手架；每项必须声明所有者、激活条件、删除条件和依赖约束。
 
 ## 状态与写入
 

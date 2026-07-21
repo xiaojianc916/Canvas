@@ -29,11 +29,7 @@ export function EditorProvider({ children }: { readonly children: ReactNode }) {
   }>({ editor: null, registration: null })
   const activeOwner = useRef<symbol | null>(null)
   const bindSession = useCallback(
-    (
-      nextOwner: symbol,
-      editor: Editor | null,
-      registration: ExtensionRegistration | null,
-    ) => {
+    (nextOwner: symbol, editor: Editor | null, registration: ExtensionRegistration | null) => {
       activeOwner.current = nextOwner
       setSession({ editor, registration })
     },

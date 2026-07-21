@@ -1,7 +1,10 @@
 {
-  "version": 1,
+  "version": 2,
   "scaffolds": [
     {
+      "owner": "editor",
+      "removalCondition": "Remove the scaffold if the activation condition is not expected within two release milestones.",
+      "allowedDependencies": ["foundations/"],
       "path": "editor/assets/native",
       "stage": "reserved",
       "role": "Native asset storage capability",
@@ -9,6 +12,9 @@
       "forbiddenDependencies": ["apps/", "features/"]
     },
     {
+      "owner": "editor",
+      "removalCondition": "Remove the scaffold if the activation condition is not expected within two release milestones.",
+      "allowedDependencies": ["foundations/"],
       "path": "editor/extensions/native",
       "stage": "reserved",
       "role": "Native extension installation capability",
@@ -16,6 +22,9 @@
       "forbiddenDependencies": ["apps/", "features/"]
     },
     {
+      "owner": "desktop-platform",
+      "removalCondition": "Remove the scaffold if the activation condition is not expected within two release milestones.",
+      "allowedDependencies": ["editor/", "foundations/"],
       "path": "platforms/desktop-runtime/native",
       "stage": "partial",
       "role": "Desktop OS capability wrappers",
@@ -23,6 +32,9 @@
       "forbiddenDependencies": ["apps/", "features/"]
     },
     {
+      "owner": "features/freehand",
+      "removalCondition": "Remove the scaffold if the activation condition is not expected within two release milestones.",
+      "allowedDependencies": ["editor/", "foundations/"],
       "path": "features/freehand",
       "stage": "domain-only",
       "role": "Freehand domain and future canvas extension",
@@ -30,6 +42,9 @@
       "forbiddenDependencies": ["apps/", "platforms/"]
     },
     {
+      "owner": "features/scientific-plot",
+      "removalCondition": "Remove the scaffold if the activation condition is not expected within two release milestones.",
+      "allowedDependencies": ["editor/", "foundations/"],
       "path": "features/scientific-plot",
       "stage": "domain-only",
       "role": "Scientific plotting domain and future canvas extension",
@@ -37,11 +52,27 @@
       "forbiddenDependencies": ["apps/", "platforms/"]
     },
     {
+      "owner": "features/import-export",
+      "removalCondition": "Remove the scaffold if the activation condition is not expected within two release milestones.",
+      "allowedDependencies": ["editor/", "foundations/"],
       "path": "features/import-export",
       "stage": "domain-only",
       "role": "Import and export contracts",
       "activationCondition": "Application orchestration binds format contributors",
       "forbiddenDependencies": ["apps/", "platforms/"]
     }
-  ]
+  ],
+  "policy": {
+    "purpose": "Reserved scaffolds are allowed only when ownership, activation and removal rules are explicit.",
+    "requiredFields": [
+      "path",
+      "stage",
+      "role",
+      "owner",
+      "activationCondition",
+      "removalCondition",
+      "allowedDependencies",
+      "forbiddenDependencies"
+    ]
+  }
 }

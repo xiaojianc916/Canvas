@@ -1,5 +1,5 @@
 {
-  "name": "@hybrid-canvas/canvas-session",
+  "name": "@hybrid-canvas/document",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,13 +14,12 @@
     "build": "tsc --project tsconfig.json --noEmit",
     "check": "tsc --project tsconfig.json --noEmit",
     "typecheck": "tsc --project tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "clean": "rimraf .turbo *.tsbuildinfo"
   },
   "dependencies": {
     "@hybrid-canvas/canvas": "workspace:*",
     "@hybrid-canvas/file": "workspace:*",
-    "@hybrid-canvas/workspace": "workspace:*",
     "tldraw": "catalog:"
   },
   "devDependencies": {

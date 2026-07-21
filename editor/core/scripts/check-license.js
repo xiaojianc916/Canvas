@@ -30,4 +30,3 @@ if (!licenseKey || licenseKey.trim() === '') {
 if (licenseKey.startsWith('DEV-') || licenseKey.startsWith('TEST-')) {
   console.warn('⚠️  Using development/test license key. Not valid for production.')
 }
-

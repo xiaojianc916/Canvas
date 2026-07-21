@@ -2,10 +2,7 @@ import { Button, cn } from '@hybrid-canvas/design-system'
 import { Plus, X } from 'lucide-react'
 import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 
-import type {
-  CanvasSessionId,
-  CanvasTabViewModel,
-} from '../../contracts/workbench-contract'
+import type { CanvasSessionId, CanvasTabViewModel } from '../../contracts/workbench-contract'
 
 export interface CanvasTabsProps {
   readonly tabs: readonly CanvasTabViewModel[]
