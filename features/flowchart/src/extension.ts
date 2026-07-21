@@ -1,4 +1,4 @@
-import type { HybridCanvasExtension } from '@hybrid-canvas/canvas/application'
+import type { HybridCanvasExtension } from '@hybrid-canvas/canvas/extensions'
 import { FlowNodeShapeUtil } from './shapes/FlowNodeShapeUtil'
 
 export const flowchartExtension: HybridCanvasExtension = {

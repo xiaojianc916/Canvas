@@ -1,4 +1,4 @@
-import type { EditorSession, EditorSessionRegistry } from '@hybrid-canvas/canvas/application'
+import type { EditorSession, EditorSessionRegistry } from '@hybrid-canvas/canvas/extensions'
 import type { HybridCanvasExtension } from '@hybrid-canvas/canvas/extensions'
 import { parseDrawDocument, serializeDrawDocument } from '@hybrid-canvas/file'
 import type { TLEditorSnapshot } from 'tldraw'
@@ -418,3 +418,4 @@ function getFileTitle(filePath: string): string {
 
   return fileName.toLowerCase().endsWith('.draw') ? fileName.slice(0, -5) : fileName
 }
+
