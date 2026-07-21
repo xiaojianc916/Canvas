@@ -65,6 +65,16 @@ function check(path) {
 
   const rel = relative(root, path).replaceAll('\\', '/')
   const text = readFileSync(path, 'utf8')
+
+  if (
+    !rel.startsWith('editor/core/') &&
+    /\bHybridCanvasExtension\b/.test(text) &&
+    /from\s+['"]@hybrid-canvas\/canvas\/(?!extensions['"])[^'"]+['"]/.test(text)
+  ) {
+    violations.push(
+      \`${rel}: HybridCanvasExtension 必须从 @hybrid-canvas/canvas/extensions 导入\`,
+    )
+  }
   const scaffold = scaffoldManifest.scaffolds.find((entry) => rel.startsWith(`${entry.path}/`))
   if (scaffold) {
     for (const forbidden of scaffold.forbiddenDependencies ?? []) {
@@ -186,6 +196,15 @@ function check(path) {
     /(?:parseDrawDocument|serializeDrawDocument|createTLStore)\s*\(/.test(text)
   ) {
     violations.push(`${rel}: composition root 承载文档或编辑器业务逻辑`)
+  }
+
+  if (
+    rel.startsWith('apps/desktop/src/presentation/') &&
+    /from\s+['"][^'"]*\/application\/canvas\//.test(text)
+  ) {
+    violations.push(
+      \`${rel}: presentation 不得依赖 CanvasWorkflow application 实现\`,
+    )
   }
 
   if (rel.startsWith('apps/desktop/src/presentation/') && /\bApplicationRuntime\b/.test(text)) {

@@ -6,7 +6,7 @@
 
 ## 背景
 
-原有 \`features/canvas-session\` 同时依赖：
+原有 \`editor/document\` 同时依赖：
 
 - editor/core；
 - editor/persistence；

@@ -418,4 +418,3 @@ function getFileTitle(filePath: string): string {
 
   return fileName.toLowerCase().endsWith('.draw') ? fileName.slice(0, -5) : fileName
 }
-
