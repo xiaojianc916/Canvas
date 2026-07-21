@@ -29,6 +29,7 @@ pub fn build() -> tauri::Builder<Wry> {
             commands::window::window_show,
             commands::window::window_focus,
             commands::window::window_close,
+            commands::window::window_destroy,
             commands::window::window_minimize,
             commands::window::window_maximize,
             commands::window::window_set_title,

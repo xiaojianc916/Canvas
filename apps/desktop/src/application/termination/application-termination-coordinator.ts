@@ -1,44 +1,74 @@
-import type { ApplicationClosePlan, CanvasSessionId } from '@hybrid-canvas/document'
+import type {
+  ApplicationClosePlan,
+  CanvasSessionId,
+} from '@hybrid-canvas/document'
 
-export type ApplicationTerminationIntent = 'window-close' | 'update-restart' | 'application-exit'
+export type ApplicationTerminationIntent =
+  | 'window-close'
+  | 'update-restart'
+  | 'application-exit'
 
 export type ApplicationTerminationSnapshot =
-  | { readonly state: 'idle' }
   | {
-      readonly state: 'confirmation-required'
-      readonly intent: ApplicationTerminationIntent
-      readonly sessionIds: readonly CanvasSessionId[]
+      readonly state: 'idle'
     }
   | {
-      readonly state: 'waiting-for-saves'
-      readonly intent: ApplicationTerminationIntent
+      readonly state:
+        'confirmation-required'
+      readonly intent:
+        ApplicationTerminationIntent
+      readonly sessionIds:
+        readonly CanvasSessionId[]
+    }
+  | {
+      readonly state:
+        'waiting-for-saves'
+      readonly intent:
+        ApplicationTerminationIntent
     }
   | {
       readonly state: 'terminating'
-      readonly intent: ApplicationTerminationIntent
-    }
-  | {
-      readonly state: 'termination-failed'
-      readonly intent: ApplicationTerminationIntent
-      readonly message: string
+      readonly intent:
+        ApplicationTerminationIntent
     }
 
 export interface ApplicationTerminator {
-  readonly terminate: (intent: ApplicationTerminationIntent) => Promise<void>
+  /**
+   * Dispatches a one-way native termination command.
+   *
+   * The renderer cannot reliably await an acknowledgement because the
+   * renderer itself is destroyed by a successful termination.
+   */
+  readonly terminate: (
+    intent: ApplicationTerminationIntent,
+  ) => void
 }
 
 export interface ApplicationClosePort {
-  readonly planApplicationClose: () => ApplicationClosePlan
-  readonly discardAllAndClose: (sessionIds: readonly CanvasSessionId[]) => void
+  readonly planApplicationClose:
+    () => ApplicationClosePlan
+
+  readonly discardAllAndClose: (
+    sessionIds:
+      readonly CanvasSessionId[],
+  ) => void
 }
 
 export interface ApplicationTerminationCoordinator {
-  readonly request: (intent: ApplicationTerminationIntent) => void
+  readonly request: (
+    intent: ApplicationTerminationIntent,
+  ) => void
+
   readonly cancel: () => void
   readonly confirmDiscard: () => void
-  readonly retry: () => void
-  readonly getSnapshot: () => ApplicationTerminationSnapshot
-  readonly subscribe: (listener: () => void) => () => void
+
+  readonly getSnapshot:
+    () => ApplicationTerminationSnapshot
+
+  readonly subscribe: (
+    listener: () => void,
+  ) => () => void
+
   readonly dispose: () => void
 }
 
@@ -46,15 +76,21 @@ export function createApplicationTerminationCoordinator(
   canvases: ApplicationClosePort,
   terminator: ApplicationTerminator,
 ): ApplicationTerminationCoordinator {
-  let snapshot: ApplicationTerminationSnapshot = {
-    state: 'idle',
-  }
+  let snapshot:
+    ApplicationTerminationSnapshot = {
+      state: 'idle',
+    }
 
   let generation = 0
   let disposed = false
-  const listeners = new Set<() => void>()
 
-  function emit(next: ApplicationTerminationSnapshot): void {
+  const listeners =
+    new Set<() => void>()
+
+  function emit(
+    next:
+      ApplicationTerminationSnapshot,
+  ): void {
     snapshot = next
 
     for (const listener of listeners) {
@@ -62,63 +98,81 @@ export function createApplicationTerminationCoordinator(
     }
   }
 
-  function request(intent: ApplicationTerminationIntent): void {
-    if (disposed || snapshot.state === 'terminating') {
+  function request(
+    intent:
+      ApplicationTerminationIntent,
+  ): void {
+    if (
+      disposed ||
+      snapshot.state === 'terminating'
+    ) {
       return
     }
 
-    evaluate(intent, canvases.planApplicationClose())
+    evaluate(
+      intent,
+      canvases.planApplicationClose(),
+    )
   }
 
-  function beginTermination(intent: ApplicationTerminationIntent): void {
-    const currentGeneration = ++generation
+  function beginTermination(
+    intent:
+      ApplicationTerminationIntent,
+  ): void {
+    generation += 1
 
     emit({
       state: 'terminating',
       intent,
     })
 
-    void terminator.terminate(intent).catch((error: unknown) => {
-      if (disposed || currentGeneration !== generation) {
-        return
-      }
-
-      emit({
-        state: 'termination-failed',
-        intent,
-        message:
-          error instanceof Error
-            ? error.message
-            : 'UNKNOWN_TERMINATION_ERROR',
-      })
-    })
+    // A successful native termination destroys this JavaScript context.
+    // Therefore this operation must not be modeled as a Promise whose
+    // rejection controls user-facing state.
+    terminator.terminate(intent)
   }
 
-  function evaluate(intent: ApplicationTerminationIntent, plan: ApplicationClosePlan): void {
+  function evaluate(
+    intent:
+      ApplicationTerminationIntent,
+    plan: ApplicationClosePlan,
+  ): void {
     if (plan.kind === 'close-now') {
       beginTermination(intent)
       return
     }
 
-    if (plan.kind === 'confirm-discard') {
+    if (
+      plan.kind ===
+      'confirm-discard'
+    ) {
       emit({
-        state: 'confirmation-required',
+        state:
+          'confirmation-required',
         intent,
-        sessionIds: plan.sessionIds,
+        sessionIds:
+          plan.sessionIds,
       })
 
       return
     }
 
-    const currentGeneration = ++generation
+    const currentGeneration =
+      ++generation
 
     emit({
       state: 'waiting-for-saves',
       intent,
     })
 
-    void Promise.allSettled(plan.operations).then(() => {
-      if (!disposed && currentGeneration === generation) {
+    void Promise.allSettled(
+      plan.operations,
+    ).then(() => {
+      if (
+        !disposed &&
+        currentGeneration ===
+          generation
+      ) {
         request(intent)
       }
     })
@@ -128,34 +182,45 @@ export function createApplicationTerminationCoordinator(
     request,
 
     cancel() {
+      if (
+        snapshot.state ===
+        'terminating'
+      ) {
+        return
+      }
+
       generation += 1
       emit({ state: 'idle' })
     },
 
     confirmDiscard() {
-      if (snapshot.state !== 'confirmation-required') {
+      if (
+        snapshot.state !==
+        'confirmation-required'
+      ) {
         return
       }
 
-      const { intent, sessionIds } = snapshot
+      const {
+        intent,
+        sessionIds,
+      } = snapshot
 
-      canvases.discardAllAndClose(sessionIds)
-      request(intent)
-    },
+      canvases.discardAllAndClose(
+        sessionIds,
+      )
 
-    retry() {
-      if (snapshot.state !== 'termination-failed') {
-        return
-      }
-
-      beginTermination(snapshot.intent)
+      beginTermination(intent)
     },
 
     getSnapshot: () => snapshot,
 
     subscribe(listener) {
       listeners.add(listener)
-      return () => listeners.delete(listener)
+
+      return () => {
+        listeners.delete(listener)
+      }
     },
 
     dispose() {

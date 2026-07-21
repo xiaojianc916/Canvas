@@ -112,6 +112,17 @@ pub async fn window_close(app: AppHandle, label: String) -> Result<()> {
 }
 
 #[command]
+pub async fn window_destroy(app: AppHandle, label: String) -> Result<()> {
+    if let Some(window) = app.get_webview_window(&label) {
+        // destroy bypasses CloseRequested. The application layer has already
+        // completed dirty-document confirmation before invoking this command.
+        window.destroy()?;
+    }
+
+    Ok(())
+}
+
+#[command]
 pub async fn window_minimize(app: AppHandle, label: String) -> Result<()> {
     if let Some(window) = app.get_webview_window(&label) {
         window.minimize()?;

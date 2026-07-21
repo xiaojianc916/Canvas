@@ -234,28 +234,6 @@ export function AppShell({
         }
         title="退出并放弃未保存的更改？"
       />
-
-      <ConfirmationDialog
-        cancelLabel="返回应用"
-        confirmLabel="重试退出"
-        description={
-          termination.state ===
-          'termination-failed'
-            ? `原生窗口未能完成退出：${termination.message}`
-            : ''
-        }
-        onCancel={
-          runtime.termination.cancel
-        }
-        onConfirm={
-          runtime.termination.retry
-        }
-        open={
-          termination.state ===
-          'termination-failed'
-        }
-        title="应用退出失败"
-      />
     </EditorProvider>
   )
 }
