@@ -36,6 +36,7 @@ export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasP
       return
     }
     if (isActive) {
+      editor.updateInstanceState({ isGridMode: true })
       session.attachEditor(editor)
       return () => session.detachEditor(editor)
     }

@@ -67,135 +67,134 @@ export function WorkspaceShell({
     }
   }, [isResizingSidebar])
 
+  const chrome = (
+    <header className={hasActiveDocument
+      ? 'col-span-full row-1 min-h-0 min-w-0 bg-chrome'
+      : 'col-span-full row-1 min-h-0 min-w-0 border-b border-divider bg-chrome'}>
+      <DesktopTitleBar
+        onClose={actions.closeWindow}
+        onMaximize={actions.maximizeWindow}
+        onMinimize={actions.minimizeWindow}
+        onStartDragging={actions.startWindowDragging}
+        onSidebarToggle={() => setSidebarOpen((open) => !open)}
+        isSidebarOpen={isSidebarOpen}
+        sidebarWidth={sidebarWidth}
+      >
+        <DocumentTabs
+          onActivate={actions.activateDocument}
+          onClose={actions.closeDocument}
+          onCreate={actions.createDocument}
+          tabs={model.tabs}
+        />
+      </DesktopTitleBar>
+    </header>
+  )
+
+  const rail = (
+    <div className="row-[2/-1] min-h-0 border-r border-divider bg-sidebar" style={{ gridColumn: 1 }}>
+      <ActivityRail
+        activeItemId={activeNavigationItem}
+        onItemActivate={(itemId) => {
+          setActiveNavigationItem(itemId)
+          setSidebarOpen(true)
+        }}
+        onSettingsOpen={actions.openSettingsWindow}
+      />
+    </div>
+  )
+
+  const sidebar = (
+    <div
+      className={isSidebarOpen
+        ? 'relative row-[2/-1] min-h-0 min-w-0 border-r border-divider bg-sidebar'
+        : 'relative row-[2/-1] min-h-0 min-w-0 bg-sidebar'}
+      style={{ gridColumn: 2 }}
+    >
+      {isSidebarOpen ? (
+        <WorkspaceSidebar
+          activeNavigationItem={activeNavigationItem}
+          onActivatePage={actions.activatePage}
+          onClose={() => setSidebarOpen(false)}
+          onCreatePage={actions.createPage}
+          pages={model.activeDocument?.pages ?? []}
+        />
+      ) : null}
+      {isSidebarOpen ? (
+        <SidebarSplitter
+          onCollapse={() => setSidebarOpen(false)}
+          onResizeStart={() => setResizingSidebar(true)}
+        />
+      ) : null}
+    </div>
+  )
+
+  const canvas = (
+    <section aria-label="内容区" className="row-2 min-h-0 min-w-0 overflow-hidden" style={{ gridColumn: 3 }}>
+      <main className="relative h-full min-h-0 min-w-0 overflow-hidden">
+        {hasActiveDocument ? (
+          editor
+        ) : (
+          <NoDocumentSurface onCreateDocument={actions.createDocument} onOpenDocument={actions.openDocument} />
+        )}
+      </main>
+    </section>
+  )
+
+  const inspectorDock = hasActiveDocument ? (
+    <aside
+      aria-label="属性检查器"
+      className={isInspectorOpen ? 'row-[2/-1] min-h-0 min-w-0 border-l border-divider' : 'pointer-events-none'}
+      style={{ gridColumn: 4 }}
+    >
+      {isInspectorOpen ? (
+        <div className="relative h-full">
+          <Button
+            aria-label="收起属性面板"
+            className="absolute -left-8 top-3 z-30 size-7 rounded-l-md rounded-r-none border border-r-0 bg-background/95 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground"
+            onClick={() => setInspectorOpen(false)}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <PanelRightClose className="size-3.5" />
+          </Button>
+          <InspectorHost>{inspector}</InspectorHost>
+        </div>
+      ) : (
+        <Button
+          aria-label="展开属性面板"
+          className="pointer-events-auto absolute right-0 top-(--chrome-height) z-30 size-8 rounded-l-md rounded-r-none border border-r-0 bg-background/95 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground"
+          onClick={() => setInspectorOpen(true)}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <PanelRightOpen className="size-4" />
+        </Button>
+      )}
+    </aside>
+  ) : null
+
+  const statusBar = hasActiveDocument ? (
+    <div className="min-w-0" style={{ gridColumn: 3, gridRow: 3 }}>
+      <StatusBarHost left={statusLeft} right={statusRight} />
+    </div>
+  ) : null
+
   return (
     <TooltipProvider delayDuration={450}>
       <WorkspaceFrame
-        chrome={
-          <div className="col-span-full row-1 min-w-0 border-b border-divider">
-            <DesktopTitleBar
-              onClose={actions.closeWindow}
-              onMaximize={actions.maximizeWindow}
-              onMinimize={actions.minimizeWindow}
-              onStartDragging={actions.startWindowDragging}
-              onSidebarToggle={() => setSidebarOpen((open) => !open)}
-              isSidebarOpen={isSidebarOpen}
-            >
-              <DocumentTabs
-                onActivate={actions.activateDocument}
-                onClose={actions.closeDocument}
-                onCreate={actions.createDocument}
-                tabs={model.tabs}
-              />
-            </DesktopTitleBar>
-          </div>
-        }
-        canvas={
-          <section aria-label="内容区" className="row-2 min-h-0 min-w-0 overflow-hidden" style={{ gridColumn: 3 }}>
-            <main className="relative min-h-0 min-w-0 overflow-hidden">
-              {hasActiveDocument ? (
-                editor
-              ) : (
-                <NoDocumentSurface onCreateDocument={actions.createDocument} onOpenDocument={actions.openDocument} />
-              )}
-            </main>
-          </section>
-        }
+        chrome={chrome}
+        rail={rail}
+        sidebar={sidebar}
+        canvas={canvas}
+        inspector={inspectorDock}
+        statusBar={statusBar}
+        overlays={<AiChatWidget open={isAiChatOpen} onOpenChange={setAiChatOpen} />}
         gridTemplateColumns={gridTemplateColumns}
         gridTemplateRows={gridTemplateRows}
-        inspector={
-          hasActiveDocument ? (
-            <aside
-              aria-label="属性检查器"
-              className={isInspectorOpen ? 'row-[2/-1] min-h-0 min-w-0 border-l border-divider' : 'pointer-events-none'}
-              style={{ gridColumn: 4 }}
-            >
-              {isInspectorOpen ? (
-                <div className="relative h-full">
-                  <Button
-                    aria-label="收起属性面板"
-                    className="absolute -left-8 top-3 z-30 size-7 rounded-l-md rounded-r-none border border-r-0 bg-background/95 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground"
-                    onClick={() => setInspectorOpen(false)}
-                    size="icon"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <PanelRightClose className="size-3.5" />
-                  </Button>
-                  <InspectorHost>{inspector}</InspectorHost>
-                </div>
-              ) : (
-                <Button
-                  aria-label="展开属性面板"
-                  className="pointer-events-auto absolute right-0 top-(--chrome-height) z-30 size-8 rounded-l-md rounded-r-none border border-r-0 bg-background/95 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground"
-                  onClick={() => setInspectorOpen(true)}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  <PanelRightOpen className="size-4" />
-                </Button>
-              )}
-            </aside>
-          ) : null
-        }
-        overlays={<AiChatWidget open={isAiChatOpen} onOpenChange={setAiChatOpen} />}
-        rail={
-          <div className="row-[2/-1] min-h-0 border-r border-divider" style={{ gridColumn: 1 }}>
-            <ActivityRail
-              activeItemId={activeNavigationItem}
-              onItemActivate={(itemId) => {
-                setActiveNavigationItem(itemId)
-                setSidebarOpen(true)
-              }}
-              onSettingsOpen={actions.openSettingsWindow}
-            />
-          </div>
-        }
-        sidebar={
-          <div className="relative row-[2/-1] min-h-0 min-w-0 border-r border-divider" style={{ gridColumn: 2 }}>
-            {isSidebarOpen ? (
-              <WorkspaceSidebar
-                activeNavigationItem={activeNavigationItem}
-                onActivatePage={actions.activatePage}
-                onClose={() => setSidebarOpen(false)}
-                onCreatePage={actions.createPage}
-                pages={model.activeDocument?.pages ?? []}
-              />
-            ) : (
-              <CollapsedSidebarHandle onOpen={() => setSidebarOpen(true)} />
-            )}
-            {isSidebarOpen ? (
-              <SidebarSplitter
-                onCollapse={() => setSidebarOpen(false)}
-                onResizeStart={() => setResizingSidebar(true)}
-              />
-            ) : null}
-          </div>
-        }
-        statusBar={
-          hasActiveDocument ? (
-            <div className="min-w-0 border-t border-divider" style={{ gridColumn: '1 / -1', gridRow: 3 }}>
-              <StatusBarHost left={statusLeft} right={statusRight} />
-            </div>
-          ) : null
-        }
       />
     </TooltipProvider>
-  )
-}
-
-function CollapsedSidebarHandle({ onOpen }: { readonly onOpen: () => void }) {
-  return (
-    <Button
-      aria-label="展开侧边栏"
-      className="absolute left-0 top-3 -translate-x-1/2 size-7 rounded-full border bg-background shadow-sm"
-      onClick={onOpen}
-      size="icon"
-      type="button"
-      variant="ghost"
-    >
-      <PanelRightOpen className="size-3.5" />
-    </Button>
   )
 }
 

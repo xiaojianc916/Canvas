@@ -1,16 +1,20 @@
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@hybrid-canvas/design-system'
 import {
+  BookOpen,
   Boxes,
   ChartNoAxesCombined,
   CircleHelp,
+  ExternalLink,
   Files,
   Grid2X2,
   Image,
+  MessageCircle,
   Network,
+  RefreshCcw,
   Search,
   Settings,
 } from 'lucide-react'
-import type { ComponentType } from 'react'
+import { useEffect, useRef, useState, type ComponentType } from 'react'
 
 export type CanvasNavigationItemId =
   | 'pages'
@@ -51,6 +55,32 @@ export function ActivityRail({
   onItemActivate,
   onSettingsOpen,
 }: ActivityRailProps) {
+  const [isHelpOpen, setHelpOpen] = useState(false)
+  const helpMenuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!isHelpOpen) return
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!helpMenuRef.current?.contains(event.target as Node)) {
+        setHelpOpen(false)
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setHelpOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isHelpOpen])
+
   return (
     <nav aria-label="主导航" className="flex h-full min-h-0 flex-col items-center bg-sidebar py-2">
       <div className="flex flex-col gap-1">
@@ -67,7 +97,10 @@ export function ActivityRail({
       <div className="flex-1" />
       <div className="flex flex-col gap-1">
         <RailButton icon={Settings} label="设置" onClick={onSettingsOpen} />
-        <RailButton icon={CircleHelp} label="帮助" />
+        <div className="relative" ref={helpMenuRef}>
+          <RailButton icon={CircleHelp} label="帮助" onClick={() => setHelpOpen((open) => !open)} />
+          {isHelpOpen ? <HelpMenu /> : null}
+        </div>
       </div>
     </nav>
   )
@@ -92,8 +125,8 @@ function RailButton({
           aria-label={label}
           className={
             active
-              ? 'relative size-8 bg-sidebar-accent text-primary'
-              : 'size-8 text-muted-foreground'
+              ? 'relative size-8 bg-sidebar-accent text-primary hover:bg-sidebar-accent hover:text-primary'
+              : 'size-8 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
           }
           onClick={onClick}
           size="icon"
@@ -106,5 +139,33 @@ function RailButton({
       </TooltipTrigger>
       <TooltipContent side="right">{label}</TooltipContent>
     </Tooltip>
+  )
+}
+
+function HelpMenu() {
+  const helpItems = [
+    { label: '文档', icon: BookOpen },
+    { label: '更新日志', icon: RefreshCcw },
+    { label: 'Discord', icon: MessageCircle },
+    { label: '反馈', icon: MessageCircle },
+  ] satisfies readonly { label: string; icon: ComponentType<{ className?: string }> }[]
+
+  return (
+    <div className="absolute bottom-0 left-10 z-50 w-60 rounded-2xl border border-black/5 bg-white p-3 text-foreground shadow-2xl shadow-black/15">
+      <div className="flex flex-col gap-1">
+        {helpItems.map(({ icon: Icon, label }) => (
+          <button
+            aria-label={label}
+            className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-xl leading-none hover:bg-sidebar-accent"
+            key={label}
+            type="button"
+          >
+            <Icon className="size-5 shrink-0 stroke-[2.2] text-black" />
+            <span className="min-w-0 flex-1">{label}</span>
+            {label === '反馈' ? null : <ExternalLink className="size-4 shrink-0 text-muted-foreground" />}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }

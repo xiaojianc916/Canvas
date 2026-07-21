@@ -13,6 +13,7 @@ import { EMPTY_WORKBENCH_VIEW_MODEL } from '../../contracts/public-api'
 
 export function createWorkbenchSessionController(): WorkbenchSessionStore {
   let snapshot = EMPTY_WORKBENCH_VIEW_MODEL
+  const documents = new Map<DocumentSessionId, ActiveDocumentViewModel>()
   const listeners = new Set<() => void>()
 
   function emit(nextSnapshot: WorkbenchViewModel): void {
@@ -54,6 +55,8 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
       ],
     }
 
+    documents.set(sessionId, activeDocument)
+
     const previousTabs = snapshot.tabs.map(
       (tab): DocumentTabViewModel => ({
         ...tab,
@@ -87,11 +90,9 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
       return
     }
 
-    const activeDocument: ActiveDocumentViewModel = {
-      sessionId: targetTab.sessionId,
-      documentId: targetTab.documentId,
-      title: targetTab.title,
-      pages: [],
+    const activeDocument = documents.get(sessionId)
+    if (!activeDocument) {
+      throw new Error('WORKBENCH_DOCUMENT_NOT_FOUND')
     }
 
     emit({
@@ -111,6 +112,7 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
     }
 
     const remainingTabs = snapshot.tabs.filter((tab) => tab.sessionId !== sessionId)
+    documents.delete(sessionId)
 
     if (snapshot.activeSessionId !== sessionId) {
       emit({ ...snapshot, tabs: remainingTabs })
@@ -124,14 +126,14 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
       return
     }
 
+    const nextActiveDocument = documents.get(nextActiveTab.sessionId)
+    if (!nextActiveDocument) {
+      throw new Error('WORKBENCH_DOCUMENT_NOT_FOUND')
+    }
+
     emit({
       activeSessionId: nextActiveTab.sessionId,
-      activeDocument: {
-        sessionId: nextActiveTab.sessionId,
-        documentId: nextActiveTab.documentId,
-        title: nextActiveTab.title,
-        pages: [],
-      },
+      activeDocument: nextActiveDocument,
       tabs: remainingTabs.map((tab) => ({
         ...tab,
         isActive: tab.sessionId === nextActiveTab.sessionId,
@@ -151,12 +153,14 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
       isActive: false,
       isArchived: false,
     }
+    const nextDocument = {
+      ...activeDocument,
+      pages: [...activeDocument.pages, page],
+    }
+    documents.set(sessionId, nextDocument)
     emit({
       ...snapshot,
-      activeDocument: {
-        ...activeDocument,
-        pages: [...activeDocument.pages, page],
-      },
+      activeDocument: nextDocument,
     })
   }
 
@@ -168,22 +172,21 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
     if (!activeDocument.pages.some((page) => page.pageId === pageId)) {
       return
     }
+    const nextDocument = {
+      ...activeDocument,
+      pages: activeDocument.pages.map((page) => ({
+        ...page,
+        isActive: page.pageId === pageId,
+      })),
+    }
+    documents.set(sessionId, nextDocument)
     emit({
       ...snapshot,
-      activeDocument: {
-        ...activeDocument,
-        pages: activeDocument.pages.map((page) => ({
-          ...page,
-          isActive: page.pageId === pageId,
-        })),
-      },
+      activeDocument: nextDocument,
     })
   }
 
-  function setLocalPersistence(
-    sessionId: DocumentSessionId,
-    state: LocalPersistenceState,
-  ): void {
+  function setLocalPersistence(sessionId: DocumentSessionId, state: LocalPersistenceState): void {
     const tab = snapshot.tabs.find((candidate) => candidate.sessionId === sessionId)
     if (!tab || tab.persistence.local === state) {
       return

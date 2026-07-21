@@ -8,6 +8,7 @@ export interface DesktopTitleBarProps {
   readonly onStartDragging: () => void
   readonly onSidebarToggle: () => void
   readonly isSidebarOpen: boolean
+  readonly sidebarWidth: number
 }
 
 export function DesktopTitleBar({
@@ -18,6 +19,7 @@ export function DesktopTitleBar({
   onStartDragging,
   onSidebarToggle,
   isSidebarOpen,
+  sidebarWidth,
 }: DesktopTitleBarProps) {
   function handleDragMouseDown(event: React.MouseEvent<HTMLElement>) {
     if (event.button !== 0 || (event.target as HTMLElement).closest('button')) {
@@ -31,11 +33,11 @@ export function DesktopTitleBar({
   }
 
   return (
-    <div className="flex h-(--chrome-height) min-w-0 bg-chrome" data-tauri-drag-region>
-      {/* The chrome handles the full-window drag region; child regions only opt out for buttons. */}
-      <div className="flex h-full w-full" onMouseDown={handleDragMouseDown}>
+    <div className="flex h-full min-h-0 min-w-0 bg-chrome" data-tauri-drag-region>
+      {/* Chrome owns drag behavior; only button elements opt out. */}
+      <div className="flex h-full min-h-0 w-full items-stretch" onMouseDown={handleDragMouseDown}>
         <div
-          className="flex w-(--activity-rail-width) shrink-0 items-center justify-center border-r border-divider"
+          className="flex w-(--activity-rail-width) shrink-0 items-center justify-center border-b border-divider"
           data-tauri-drag-region
         >
           <button
@@ -47,10 +49,15 @@ export function DesktopTitleBar({
             {isSidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
           </button>
         </div>
-        <div className="min-w-0 flex-1" data-tauri-drag-region>
+        <div
+          className="shrink-0 border-b border-r border-divider"
+          data-tauri-drag-region
+          style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
+        />
+        <div className="flex min-w-0 flex-1 items-stretch" data-tauri-drag-region>
           {children}
         </div>
-        <div className="flex shrink-0" data-tauri-drag-region>
+        <div className="flex shrink-0 items-stretch border-b border-divider" data-tauri-drag-region>
           <button
             aria-label="最小化"
             className="grid w-11 place-items-center text-muted-foreground hover:bg-black/5 hover:text-foreground"
