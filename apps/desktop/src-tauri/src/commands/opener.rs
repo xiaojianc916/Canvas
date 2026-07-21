@@ -16,7 +16,7 @@ pub async fn opener_show_in_folder(
     // Delegates to desktop-runtime/native when implemented.
     // For now let the OS handle it via the opener plugin.
     let path = std::path::Path::new(&options.path);
-    if let Some(parent) = path.parent() {
+    if let Some(_parent) = path.parent() {
         #[cfg(target_os = "windows")]
         std::process::Command::new("explorer")
             .args(["/select,", &options.path])
@@ -26,7 +26,7 @@ pub async fn opener_show_in_folder(
             .args(["-R", &options.path])
             .spawn()?;
         #[cfg(target_os = "linux")]
-        std::process::Command::new("xdg-open").arg(parent).spawn()?;
+        std::process::Command::new("xdg-open").arg(_parent).spawn()?;
     }
     Ok(())
 }
