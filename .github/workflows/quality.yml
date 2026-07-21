@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   frontend:
-    name: Frontend quality
+    name: Frontend
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -38,7 +38,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Format check
+      - name: Format
         run: pnpm format:check
 
       - name: Lint
@@ -50,14 +50,14 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Unit tests
-        run: pnpm turbo run test --filter='!@hybrid-canvas/desktop-e2e'
+      - name: JavaScript tests
+        run: pnpm turbo run test
 
       - name: Build
         run: pnpm build
 
   rust:
-    name: Rust quality
+    name: Rust
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -68,16 +68,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: rustfmt, clippy
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Format check
+      - name: Format
         run: cargo fmt --check
 
-      - name: Cargo check
+      - name: Check
         run: cargo check --workspace --all-targets --all-features
 
       - name: Clippy

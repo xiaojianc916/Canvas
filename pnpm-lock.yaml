@@ -132,6 +132,9 @@ importers:
       '@hybrid-canvas/platforms-desktop-runtime':
         specifier: workspace:*
         version: link:../../platforms/desktop-runtime
+      '@hybrid-canvas/settings':
+        specifier: workspace:*
+        version: link:../../features/settings
       '@hybrid-canvas/workspace':
         specifier: workspace:*
         version: link:../../features/workspace

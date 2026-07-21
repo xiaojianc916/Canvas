@@ -1,3 +1,4 @@
+import { error as reportError } from '@hybrid-canvas/observability'
 import type { ApplicationRuntime } from './application'
 import type { MountedReactApplication } from './react-root'
 
@@ -22,7 +23,18 @@ export function installApplicationLifecycle(
   }
 
   const handleBeforeUnload = () => {
-    void runtime.mainWindow.saveState().catch(() => undefined)
+    void runtime.mainWindow
+      .saveState()
+      .catch((cause: unknown) => {
+        reportError(
+          'main window state save failed during unload',
+          {
+            scope: 'application-lifecycle',
+            operation: 'save-window-state',
+            cause,
+          },
+        )
+      })
   }
 
   window.addEventListener('pagehide', dispose, { once: true })

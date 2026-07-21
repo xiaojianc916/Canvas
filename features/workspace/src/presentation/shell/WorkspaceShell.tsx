@@ -98,7 +98,7 @@ export function WorkspaceShell({
     </header>
   )
 
-  const rail = (  const rail = (
+  const rail = (
     <div
       className="row-[2/-1] min-h-0 border-r border-divider bg-sidebar"
       style={{ gridColumn: 1 }}

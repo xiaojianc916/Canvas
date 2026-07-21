@@ -4,8 +4,6 @@ import {
   cp,
   mkdir,
   readFile,
-  rename,
-  rm,
   stat,
   writeFile,
 } from 'node:fs/promises'
@@ -14,10 +12,7 @@ import process from 'node:process'
 
 const root = process.cwd()
 const shouldWrite = process.argv.includes('--write')
-
 const writes = new Map()
-const deletions = new Set()
-const moves = []
 
 function absolute(relativePath) {
   return resolve(root, relativePath)
@@ -34,6 +29,21 @@ async function exists(relativePath) {
 
 async function read(relativePath) {
   return readFile(absolute(relativePath), 'utf8')
+}
+
+function write(relativePath, content) {
+  writes.set(relativePath, content)
+}
+
+async function edit(relativePath, transform) {
+  const original = await read(relativePath)
+  const updated = transform(original)
+
+  if (updated === original) {
+    throw new Error(`文件没有产生修改：${relativePath}`)
+  }
+
+  writes.set(relativePath, updated)
 }
 
 function replaceOnce(content, oldText, newText, description) {
@@ -59,586 +69,551 @@ function replaceOnce(content, oldText, newText, description) {
   )
 }
 
-function replaceRange(
-  content,
-  startMarker,
-  endMarker,
-  replacement,
-  description,
-) {
-  const startIndex = content.indexOf(startMarker)
-
-  if (startIndex < 0) {
-    throw new Error(`找不到范围起点：${description}`)
-  }
-
-  const endIndex = content.indexOf(
-    endMarker,
-    startIndex + startMarker.length,
+async function updateJson(relativePath, transform) {
+  const content = await read(relativePath)
+  const hasBom = content.startsWith('\uFEFF')
+  const json = JSON.parse(
+    hasBom ? content.slice(1) : content,
   )
 
-  if (endIndex < 0) {
-    throw new Error(`找不到范围终点：${description}`)
-  }
+  const updated = transform(json) ?? json
 
-  return (
-    content.slice(0, startIndex) +
-    replacement +
-    content.slice(endIndex)
+  write(
+    relativePath,
+    `${hasBom ? '\uFEFF' : ''}${JSON.stringify(updated, null, 2)}\n`,
   )
 }
 
-async function edit(relativePath, transform) {
-  const original = await read(relativePath)
-  const updated = transform(original)
+async function preflight() {
+  const expectedPaths = [
+    'apps/desktop/src/presentation/AppShell.tsx',
+    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+    'apps/desktop/src/application/canvas/canvas-workflow.ts',
+    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
+    'foundations/observability/src/public-api.ts',
+  ]
 
-  if (updated === original) {
-    throw new Error(`文件没有产生修改：${relativePath}`)
+  for (const relativePath of expectedPaths) {
+    if (!(await exists(relativePath))) {
+      throw new Error(`缺少目标文件：${relativePath}`)
+    }
   }
 
-  writes.set(relativePath, updated)
+  const appShell = await read(
+    'apps/desktop/src/presentation/AppShell.tsx',
+  )
+
+  const workspaceContainer = await read(
+    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+  )
+
+  const workspaceShell = await read(
+    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
+  )
+
+  if (
+    !appShell.includes(
+      '</EditorProvider>    </EditorProvider>',
+    )
+  ) {
+    console.warn(
+      '警告：AppShell 不包含已知重复闭合标签，将仍以完整安全版本覆盖。',
+    )
+  }
+
+  if (
+    !workspaceContainer.includes(
+      '/>      }\n    />',
+    )
+  ) {
+    console.warn(
+      '警告：WorkspaceContainer 不包含已知重复 JSX，将仍以完整安全版本覆盖。',
+    )
+  }
+
+  if (
+    !workspaceShell.includes(
+      'const rail = (  const rail = (',
+    )
+  ) {
+    console.warn(
+      '警告：WorkspaceShell 不包含已知重复声明，可能已经被手动修复。',
+    )
+  }
 }
 
-function create(relativePath, content) {
-  writes.set(relativePath, content)
+function createCanvasWorkflow() {
+  write(
+    'apps/desktop/src/application/canvas/canvas-workflow.ts',
+    `import type { EditorSession } from '@hybrid-canvas/canvas/application'
+import type {
+  ApplicationClosePlan,
+  CanvasDocumentService,
+  CanvasSessionId,
+  CanvasSessionSnapshot,
+} from '@hybrid-canvas/document'
+import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
+
+export type CanvasCloseRequestResult =
+  | { readonly kind: 'closed' }
+  | {
+      readonly kind: 'confirmation-required'
+      readonly sessionId: CanvasSessionId
+    }
+  | { readonly kind: 'not-found' }
+
+export interface CanvasWorkflow {
+  readonly create: (title: string) => void
+  readonly open: () => Promise<void>
+  readonly save: (sessionId: CanvasSessionId) => Promise<void>
+  readonly requestClose: (
+    sessionId: CanvasSessionId,
+  ) => Promise<CanvasCloseRequestResult>
+  readonly discardAndClose: (
+    sessionId: CanvasSessionId,
+  ) => void
+  readonly planApplicationClose: () => ApplicationClosePlan
+  readonly discardAllAndClose: (
+    sessionIds: readonly CanvasSessionId[],
+  ) => void
+  readonly getEditorSession: (
+    sessionId: CanvasSessionId,
+  ) => EditorSession | null
+  readonly getSessionSnapshot: (
+    sessionId: CanvasSessionId,
+  ) => CanvasSessionSnapshot | null
+  readonly getVersion: () => number
+  readonly subscribe: (
+    listener: () => void,
+  ) => () => void
+  readonly dispose: () => void
 }
 
-function remove(relativePath) {
-  deletions.add(relativePath)
+export function createCanvasWorkflow(
+  documents: CanvasDocumentService,
+  workspace: WorkbenchSessionStore,
+): CanvasWorkflow {
+  function create(title: string): void {
+    const opened = documents.create(title)
+
+    try {
+      workspace.createCanvas(opened)
+    } catch (error) {
+      documents.discardAndClose(opened.sessionId)
+      throw error
+    }
+  }
+
+  async function open(): Promise<void> {
+    const opened = await documents.open()
+
+    if (!opened) {
+      return
+    }
+
+    try {
+      workspace.createCanvas(opened)
+    } catch (error) {
+      documents.discardAndClose(opened.sessionId)
+      throw error
+    }
+  }
+
+  async function requestClose(
+    sessionId: CanvasSessionId,
+  ): Promise<CanvasCloseRequestResult> {
+    let decision = documents.requestClose(sessionId)
+
+    if (decision.kind === 'wait-for-save') {
+      // 保存失败时 CanvasDocumentService 会进入 failed 状态。
+      // 此处只等待状态稳定，随后重新计算关闭决策。
+      await decision.operation.catch(() => undefined)
+      decision = documents.requestClose(sessionId)
+    }
+
+    switch (decision.kind) {
+      case 'close-now':
+        workspace.closeCanvas(sessionId)
+        return { kind: 'closed' }
+
+      case 'confirm-discard':
+        return {
+          kind: 'confirmation-required',
+          sessionId,
+        }
+
+      case 'not-found':
+        return { kind: 'not-found' }
+
+      case 'wait-for-save':
+        // 理论上不会进入：同一 saveOperation 已在上方等待。
+        // 保留防御性处理，避免未来文档实现改变后静默关闭。
+        return {
+          kind: 'confirmation-required',
+          sessionId,
+        }
+    }
+  }
+
+  function discardAndClose(
+    sessionId: CanvasSessionId,
+  ): void {
+    documents.discardAndClose(sessionId)
+    workspace.closeCanvas(sessionId)
+  }
+
+  function discardAllAndClose(
+    sessionIds: readonly CanvasSessionId[],
+  ): void {
+    for (const sessionId of sessionIds) {
+      discardAndClose(sessionId)
+    }
+  }
+
+  return {
+    create,
+    open,
+    save: documents.save,
+    requestClose,
+    discardAndClose,
+    planApplicationClose: documents.planApplicationClose,
+    discardAllAndClose,
+    getEditorSession: documents.getEditorSession,
+    getSessionSnapshot: documents.getSessionSnapshot,
+    getVersion: documents.getVersion,
+    subscribe: documents.subscribe,
+    dispose: documents.dispose,
+  }
+}
+`,
+  )
 }
 
-function move(from, to) {
-  moves.push({ from, to })
-}
-
-function updateJson(relativePath, transform) {
-  return edit(relativePath, (content) => {
-    const hasBom = content.startsWith('\uFEFF')
-    const json = JSON.parse(hasBom ? content.slice(1) : content)
-    const updated = transform(json) ?? json
-    return `${hasBom ? '\uFEFF' : ''}${JSON.stringify(updated, null, 2)}\n`
-  })
-}
-
-async function createConfirmationDialog() {
-  create(
-    'foundations/design-system/src/components/ui/confirmation-dialog.tsx',
-    `import {
-  type KeyboardEvent as ReactKeyboardEvent,
-  useEffect,
-  useId,
-  useRef,
+function createWorkspaceContainer() {
+  write(
+    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+    `import type { EditorSession } from '@hybrid-canvas/canvas/application'
+import { EditorSessionHost } from '@hybrid-canvas/canvas/react'
+import { ConfirmationDialog } from '@hybrid-canvas/design-system'
+import { error as reportError } from '@hybrid-canvas/observability'
+import type {
+  CanvasSessionId,
+  WorkbenchSessionStore,
+  WorkspaceShellActions,
+} from '@hybrid-canvas/workspace/contracts'
+import {
+  CanvasTabs,
+  WorkspaceShell,
+} from '@hybrid-canvas/workspace/react'
+import {
+  useCallback,
+  useMemo,
+  useState,
+  useSyncExternalStore,
 } from 'react'
 
-import { Button } from './button'
+import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
+import { DesktopTitleBar } from '../chrome/DesktopTitleBar'
 
-const FOCUSABLE_SELECTOR = [
-  'button:not([disabled])',
-  '[href]',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',')
+const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({
+  pages: Object.freeze([]),
+})
 
-export interface ConfirmationDialogProps {
-  readonly open: boolean
-  readonly title: string
-  readonly description: string
-  readonly confirmLabel: string
-  readonly cancelLabel?: string
-  readonly destructive?: boolean
-  readonly busy?: boolean
-  readonly onConfirm: () => void
-  readonly onCancel: () => void
+const EMPTY_SUBSCRIBE = () => () => {}
+const EMPTY_EDITOR_SNAPSHOT = () =>
+  EMPTY_EDITOR_SESSION_SNAPSHOT
+
+export type WorkspaceCanvasCloseResult =
+  | { readonly kind: 'closed' }
+  | {
+      readonly kind: 'confirmation-required'
+      readonly sessionId: CanvasSessionId
+    }
+  | { readonly kind: 'not-found' }
+
+export interface WorkspaceCanvasUIPort {
+  readonly create: (title: string) => void
+  readonly open: () => Promise<void>
+  readonly save: (
+    sessionId: CanvasSessionId,
+  ) => Promise<void>
+  readonly requestClose: (
+    sessionId: CanvasSessionId,
+  ) => Promise<WorkspaceCanvasCloseResult>
+  readonly discardAndClose: (
+    sessionId: CanvasSessionId,
+  ) => void
+  readonly getEditorSession: (
+    sessionId: CanvasSessionId,
+  ) => EditorSession | null
+  readonly getSessionSnapshot: (
+    sessionId: CanvasSessionId,
+  ) =>
+    | import('@hybrid-canvas/document').CanvasSessionSnapshot
+    | null
+  readonly getVersion: () => number
+  readonly subscribe: (
+    listener: () => void,
+  ) => () => void
 }
 
-export function ConfirmationDialog({
-  open,
-  title,
-  description,
-  confirmLabel,
-  cancelLabel = '取消',
-  destructive = false,
-  busy = false,
-  onConfirm,
-  onCancel,
-}: ConfirmationDialogProps) {
-  const titleId = useId()
-  const descriptionId = useId()
-  const dialogRef = useRef<HTMLDivElement>(null)
-  const cancelButtonRef = useRef<HTMLButtonElement>(null)
+export interface WorkspaceUIPort {
+  readonly canvases: WorkspaceCanvasUIPort
+  readonly workspace: WorkbenchSessionStore
+}
 
-  useEffect(() => {
-    if (!open) {
-      return
-    }
+export interface WorkspaceContainerProps {
+  readonly port: WorkspaceUIPort
+  readonly onCommandPaletteOpen: () => void
+  readonly onSettingsOpen: () => void
+  readonly onWindowMinimize: () => void
+  readonly onWindowMaximize: () => void
+  readonly onWindowClose: () => void
+  readonly onWindowStartDragging: () => void
+}
 
-    const previouslyFocused = document.activeElement
-    cancelButtonRef.current?.focus()
+export function WorkspaceContainer({
+  port,
+  onCommandPaletteOpen,
+  onSettingsOpen,
+  onWindowMinimize,
+  onWindowMaximize,
+  onWindowClose,
+  onWindowStartDragging,
+}: WorkspaceContainerProps) {
+  const [
+    pendingCloseSessionId,
+    setPendingCloseSessionId,
+  ] = useState<CanvasSessionId | null>(null)
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) {
-        event.preventDefault()
-        onCancel()
-      }
-    }
+  const workbench = useSyncExternalStore(
+    port.workspace.subscribe,
+    port.workspace.getSnapshot,
+    port.workspace.getSnapshot,
+  )
 
-    document.addEventListener('keydown', handleKeyDown)
+  useSyncExternalStore(
+    port.canvases.subscribe,
+    port.canvases.getVersion,
+    port.canvases.getVersion,
+  )
 
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown)
-
-      if (previouslyFocused instanceof HTMLElement) {
-        previouslyFocused.focus()
-      }
-    }
-  }, [busy, onCancel, open])
-
-  if (!open) {
-    return null
-  }
-
-  const trapFocus = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Tab') {
-      return
-    }
-
-    const focusableElements = Array.from(
-      dialogRef.current?.querySelectorAll<HTMLElement>(
-        FOCUSABLE_SELECTOR,
-      ) ?? [],
+  const activeEditorSession =
+    port.canvases.getEditorSession(
+      workbench.activeSessionId ?? '',
     )
 
-    if (focusableElements.length === 0) {
-      event.preventDefault()
-      dialogRef.current?.focus()
-      return
-    }
+  const pages = useSyncExternalStore(
+    activeEditorSession?.subscribe ?? EMPTY_SUBSCRIBE,
+    activeEditorSession?.getSessionSnapshot ??
+      EMPTY_EDITOR_SNAPSHOT,
+    activeEditorSession?.getSessionSnapshot ??
+      EMPTY_EDITOR_SNAPSHOT,
+  ).pages
 
-    const first = focusableElements[0]
-    const last = focusableElements.at(-1)
+  const handleSave = useCallback(
+    (sessionId: string) => {
+      void port.canvases.save(sessionId).catch(
+        (cause: unknown) => {
+          reportError('canvas save failed', {
+            scope: 'workspace',
+            operation: 'save-canvas',
+            sessionId,
+            cause,
+          })
+        },
+      )
+    },
+    [port.canvases],
+  )
 
-    if (!first || !last) {
-      return
-    }
+  const handleCloseCanvas = useCallback(
+    (sessionId: CanvasSessionId) => {
+      void port.canvases
+        .requestClose(sessionId)
+        .then((result) => {
+          if (
+            result.kind ===
+            'confirmation-required'
+          ) {
+            setPendingCloseSessionId(
+              result.sessionId,
+            )
+          }
+        })
+        .catch((cause: unknown) => {
+          reportError('canvas close request failed', {
+            scope: 'workspace',
+            operation: 'request-close-canvas',
+            sessionId,
+            cause,
+          })
+        })
+    },
+    [port.canvases],
+  )
 
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault()
-      last.focus()
-      return
-    }
+  const actions = useMemo<WorkspaceShellActions>(
+    () => ({
+      createCanvas() {
+        port.canvases.create(
+          createUntitledCanvasTitle(
+            workbench.tabs.map(
+              (tab) => tab.title,
+            ),
+          ),
+        )
+      },
 
-    if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault()
-      first.focus()
-    }
+      openCanvas() {
+        void port.canvases.open().catch(
+          (cause: unknown) => {
+            reportError('canvas open failed', {
+              scope: 'workspace',
+              operation: 'open-canvas',
+              cause,
+            })
+          },
+        )
+      },
+
+      activateCanvas(sessionId) {
+        port.workspace.activateCanvas(sessionId)
+      },
+
+      closeCanvas: handleCloseCanvas,
+
+      activatePage(pageId) {
+        activeEditorSession?.activatePage(pageId)
+      },
+
+      createPage() {
+        activeEditorSession?.createPage(
+          \`画板 \${pages.length + 1}\`,
+        )
+      },
+
+      openCommandPalette:
+        onCommandPaletteOpen,
+
+      openSettingsWindow: onSettingsOpen,
+    }),
+    [
+      activeEditorSession,
+      handleCloseCanvas,
+      onCommandPaletteOpen,
+      onSettingsOpen,
+      pages.length,
+      port.canvases,
+      port.workspace,
+      workbench.tabs,
+    ],
+  )
+
+  const tabs = workbench.tabs.map((tab) => {
+    const status =
+      port.canvases.getSessionSnapshot(
+        tab.sessionId,
+      )?.persistence
+
+    return status
+      ? { ...tab, status }
+      : tab
+  })
+
+  const workbenchWithCanvasStatus = {
+    ...workbench,
+    tabs,
   }
+
+  const hostedSessions = useMemo(
+    () =>
+      workbench.tabs.flatMap((tab) => {
+        const session =
+          port.canvases.getEditorSession(
+            tab.sessionId,
+          )
+
+        return session
+          ? [
+              {
+                sessionId: tab.sessionId,
+                session,
+              },
+            ]
+          : []
+      }),
+    [port.canvases, workbench.tabs],
+  )
 
   return (
-    <div
-      className="fixed inset-0 z-100 grid place-items-center bg-black/35 p-6 backdrop-blur-[1px]"
-      onMouseDown={(event) => {
-        if (
-          event.target === event.currentTarget &&
-          !busy
-        ) {
-          onCancel()
-        }
-      }}
-      role="presentation"
-    >
-      <div
-        aria-describedby={descriptionId}
-        aria-labelledby={titleId}
-        aria-modal="true"
-        className="w-full max-w-md rounded-xl border border-divider bg-background p-5 shadow-2xl outline-none"
-        onKeyDown={trapFocus}
-        ref={dialogRef}
-        role="alertdialog"
-        tabIndex={-1}
-      >
-        <h2
-          className="text-base font-semibold"
-          id={titleId}
-        >
-          {title}
-        </h2>
-
-        <p
-          className="mt-2 text-sm leading-6 text-muted-foreground"
-          id={descriptionId}
-        >
-          {description}
-        </p>
-
-        <div className="mt-5 flex justify-end gap-2">
-          <Button
-            disabled={busy}
-            onClick={onCancel}
-            ref={cancelButtonRef}
-            type="button"
-            variant="ghost"
-          >
-            {cancelLabel}
-          </Button>
-
-          <Button
-            disabled={busy}
-            onClick={onConfirm}
-            type="button"
-            variant={destructive ? 'destructive' : 'default'}
-          >
-            {confirmLabel}
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
-}
-`,
-  )
-
-  await edit(
-    'foundations/design-system/src/public-api.ts',
-    (content) =>
-      replaceOnce(
-        content,
-        `export { Button, type ButtonProps, buttonVariants } from './components/ui/button'\n`,
-        `export { Button, type ButtonProps, buttonVariants } from './components/ui/button'\nexport {\n  ConfirmationDialog,\n  type ConfirmationDialogProps,\n} from './components/ui/confirmation-dialog'\n`,
-        '导出 ConfirmationDialog',
-      ),
-  )
-}
-
-async function moveDesktopTitleBar() {
-  const oldPath =
-    'features/workspace/src/presentation/shell/DesktopTitleBar.tsx'
-  const newPath =
-    'apps/desktop/src/presentation/chrome/DesktopTitleBar.tsx'
-
-  if (!(await exists(oldPath))) {
-    throw new Error(`找不到 DesktopTitleBar：${oldPath}`)
-  }
-
-  move(oldPath, newPath)
-}
-
-async function refactorWorkspaceContracts() {
-  await edit(
-    'features/workspace/src/contracts/shell-contract.ts',
-    (content) => {
-      let updated = content
-
-      updated = replaceOnce(
-        updated,
-        `import type { CanvasSessionId, WorkbenchViewModel } from './public-api'`,
-        `import type {
-  CanvasSessionId,
-  CanvasTabViewModel,
-  WorkbenchViewModel,
-} from './public-api'`,
-        '扩展 Workspace chrome render 类型导入',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `  readonly openSettingsWindow: () => void
-  readonly minimizeWindow: () => void
-  readonly maximizeWindow: () => void
-  readonly closeWindow: () => void
-  readonly startWindowDragging: () => void
-}
-
-export interface WorkspaceShellProps {`,
-        `  readonly openSettingsWindow: () => void
-}
-
-export interface WorkspaceChromeRenderProps {
-  readonly isSidebarOpen: boolean
-  readonly sidebarWidth: number
-  readonly tabs: readonly CanvasTabViewModel[]
-  readonly onSidebarToggle: () => void
-  readonly onActivateCanvas: (sessionId: CanvasSessionId) => void
-  readonly onCloseCanvas: (sessionId: CanvasSessionId) => void
-  readonly onCreateCanvas: () => void
-}
-
-export interface WorkspaceShellProps {`,
-        '移除 Workspace action 中的 Desktop window 语义',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `  readonly pages: readonly CanvasPageViewModel[]
-  readonly editor: ReactNode`,
-        `  readonly pages: readonly CanvasPageViewModel[]
-  readonly renderChrome: (
-    props: WorkspaceChromeRenderProps,
-  ) => ReactNode
-  readonly editor: ReactNode`,
-        '添加平台无关的 chrome render prop',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `  readonly statusRight?: ReactNode
-  readonly overlays?: ReactNode`,
-        `  readonly statusRight?: ReactNode
-  readonly assistantOverlay?: ReactNode
-  readonly overlays?: ReactNode`,
-        '添加可选 assistant overlay 插槽',
-      )
-
-      return updated
-    },
-  )
-
-  await edit(
-    'features/workspace/src/contracts-entry.ts',
-    (content) =>
-      replaceOnce(
-        content,
-        `  CanvasPageViewModel,
-  WorkspaceShellActions,
-  WorkspaceShellProps,`,
-        `  CanvasPageViewModel,
-  WorkspaceChromeRenderProps,
-  WorkspaceShellActions,
-  WorkspaceShellProps,`,
-        '导出 WorkspaceChromeRenderProps',
-      ),
-  )
-}
-
-async function refactorWorkspaceFrame() {
-  await edit(
-    'features/workspace/src/presentation/shell/WorkspaceFrame.tsx',
-    (content) => {
-      let updated = content
-
-      updated = replaceOnce(
-        updated,
-        `import type { ReactNode } from 'react'`,
-        `import type { ReactNode, Ref } from 'react'`,
-        '导入 WorkspaceFrame ref 类型',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `export interface WorkspaceFrameProps {
-  readonly chrome: ReactNode`,
-        `export interface WorkspaceFrameProps {
-  readonly rootRef?: Ref<HTMLDivElement>
-  readonly chrome: ReactNode`,
-        'WorkspaceFrame 接收根 DOM ref',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `export function WorkspaceFrame({
-  chrome,`,
-        `export function WorkspaceFrame({
-  rootRef,
-  chrome,`,
-        '解构 WorkspaceFrame rootRef',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `    <div
-      className="workspace-shell`,
-        `    <div
-      ref={rootRef}
-      className="workspace-shell`,
-        '将 rootRef 挂载到 Workspace 根元素',
-      )
-
-      return updated
-    },
-  )
-}
-
-async function refactorWorkspaceShell() {
-  await edit(
-    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
-    (content) => {
-      let updated = content
-
-      updated = replaceOnce(
-        updated,
-        `import { Button, TooltipProvider } from '@hybrid-canvas/design-system'
-import { BotMessageSquare, PanelRightClose, PanelRightOpen, Sparkles, X } from 'lucide-react'`,
-        `import { Button, TooltipProvider } from '@hybrid-canvas/design-system'
-import { PanelRightClose, PanelRightOpen } from 'lucide-react'`,
-        '移除 Workspace 中硬编码 AI Chat 图标',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `import { DesktopTitleBar } from './DesktopTitleBar'
-import { CanvasTabs } from './CanvasTabs'
-`,
-        '',
-        '移除 Workspace 对 DesktopTitleBar 和 CanvasTabs 的直接组合',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `  pages,
-  editor,`,
-        `  pages,
-  renderChrome,
-  editor,`,
-        '解构 renderChrome',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `  statusRight,
-  overlays,`,
-        `  statusRight,
-  assistantOverlay,
-  overlays,`,
-        '解构 assistantOverlay',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `  const [isInspectorOpen, setInspectorOpen] = useState(true)
-  const [isAiChatOpen, setAiChatOpen] = useState(false)
-  const [activeNavigationItem`,
-        `  const [isInspectorOpen, setInspectorOpen] = useState(true)
-  const [activeNavigationItem`,
-        '删除硬编码 AI Chat 本地状态',
-      )
-
-      const chromeStart = `  const chrome = (
-    <header`
-      const chromeEnd = `  const rail = (`
-
-      updated = replaceRange(
-        updated,
-        chromeStart,
-        chromeEnd,
-        `  const chrome = (
-    <header
-      className={
-        hasActiveCanvas
-          ? 'col-span-full row-1 min-h-0 min-w-0 bg-chrome'
-          : 'col-span-full row-1 min-h-0 min-w-0 border-b border-divider bg-chrome'
+    <WorkspaceShell
+      actions={actions}
+      editor={
+        workbench.activeCanvas ? (
+          <UiErrorBoundary area="画布编辑器">
+            <EditorSessionHost
+              activeSessionId={
+                workbench.activeSessionId
+              }
+              onSave={handleSave}
+              sessions={hostedSessions}
+            />
+          </UiErrorBoundary>
+        ) : null
       }
-    >
-      {renderChrome({
-        isSidebarOpen,
-        sidebarWidth,
-        tabs: model.tabs,
-        onSidebarToggle: () => setSidebarOpen((open) => !open),
-        onActivateCanvas: actions.activateCanvas,
-        onCloseCanvas: actions.closeCanvas,
-        onCreateCanvas: actions.createCanvas,
-      })}
-    </header>
-  )
-
-  const rail = (`,
-        '使用 renderChrome 替代 DesktopTitleBar',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `      <WorkspaceFrame
-        chrome={chrome}`,
-        `      <WorkspaceFrame
-        rootRef={rootRef}
-        chrome={chrome}`,
-        '把 Workspace rootRef 传给 WorkspaceFrame',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `        overlays={
-          <>
-            <AiChatWidget open={isAiChatOpen} onOpenChange={setAiChatOpen} />
-            {overlays}
-          </>
-        }`,
-        `        overlays={
-          <>
-            {assistantOverlay}
-            {overlays}
-          </>
-        }`,
-        '使用 assistant overlay 插槽',
-      )
-
-      const aiFunctionStart = `\nfunction AiChatWidget(`
-
-      if (!updated.includes(aiFunctionStart)) {
-        throw new Error('找不到 WorkspaceShell 中的 AiChatWidget')
+      inspector={
+        <CanvasInspectorContent
+          hasActiveCanvas={
+            workbench.activeCanvas !== null
+          }
+        />
       }
+      model={workbenchWithCanvasStatus}
+      overlays={
+        <ConfirmationDialog
+          confirmLabel="放弃并关闭"
+          description="关闭画布会丢失自上次保存后的更改，此操作无法撤销。"
+          destructive
+          onCancel={() =>
+            setPendingCloseSessionId(null)
+          }
+          onConfirm={() => {
+            if (!pendingCloseSessionId) {
+              return
+            }
 
-      updated = updated.slice(0, updated.indexOf(aiFunctionStart))
-      updated = `${updated.trimEnd()}\n`
+            try {
+              port.canvases.discardAndClose(
+                pendingCloseSessionId,
+              )
+            } catch (cause) {
+              reportError(
+                'discard and close canvas failed',
+                {
+                  scope: 'workspace',
+                  operation:
+                    'discard-and-close-canvas',
+                  sessionId:
+                    pendingCloseSessionId,
+                  cause,
+                },
+              )
 
-      return updated
-    },
-  )
-}
+              return
+            }
 
-async function refactorWorkspaceContainer() {
-  await edit(
-    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
-    (content) => {
-      let updated = content
-
-      updated = replaceOnce(
-        updated,
-        `import type { EditorSession } from '@hybrid-canvas/canvas/application'
-import { EditorSessionHost } from '@hybrid-canvas/canvas/react'`,
-        `import type { EditorSession } from '@hybrid-canvas/canvas/application'
-import { EditorSessionHost } from '@hybrid-canvas/canvas/react'
-import { ConfirmationDialog } from '@hybrid-canvas/design-system'`,
-        '导入 ConfirmationDialog',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `import { WorkspaceShell } from '@hybrid-canvas/workspace/react'`,
-        `import { CanvasTabs, WorkspaceShell } from '@hybrid-canvas/workspace/react'`,
-        '导入 CanvasTabs',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'`,
-        `import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
-import { DesktopTitleBar } from '../chrome/DesktopTitleBar'`,
-        '导入 Desktop app 自己的 DesktopTitleBar',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `      openCommandPalette: onCommandPaletteOpen,
-      openSettingsWindow: onSettingsOpen,
-      minimizeWindow: onWindowMinimize,
-      maximizeWindow: onWindowMaximize,
-      closeWindow: onWindowClose,
-      startWindowDragging: onWindowStartDragging,`,
-        `      openCommandPalette: onCommandPaletteOpen,
-      openSettingsWindow: onSettingsOpen,`,
-        '从 Workspace actions 移除原生窗口操作',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `      pages={pages}
-      statusLeft=`,
-        `      pages={pages}
+            setPendingCloseSessionId(null)
+          }}
+          open={pendingCloseSessionId !== null}
+          title="放弃未保存的更改？"
+        />
+      }
+      pages={pages}
       renderChrome={({
         isSidebarOpen,
         sidebarWidth,
-        tabs,
+        tabs: chromeTabs,
         onSidebarToggle,
         onActivateCanvas,
         onCloseCanvas,
@@ -650,291 +625,380 @@ import { DesktopTitleBar } from '../chrome/DesktopTitleBar'`,
           onMaximize={onWindowMaximize}
           onMinimize={onWindowMinimize}
           onSidebarToggle={onSidebarToggle}
-          onStartDragging={onWindowStartDragging}
+          onStartDragging={
+            onWindowStartDragging
+          }
           sidebarWidth={sidebarWidth}
         >
           <CanvasTabs
             onActivate={onActivateCanvas}
             onClose={onCloseCanvas}
             onCreate={onCreateCanvas}
-            tabs={tabs}
+            tabs={chromeTabs}
           />
         </DesktopTitleBar>
       )}
-      statusLeft=`,
-        '在 Desktop composition 层组装窗口 chrome',
-      )
-
-      const overlaysStart = `      overlays={
-        pendingCloseSessionId ? (`
-      const overlaysEnd = `      }
-    />`
-
-      updated = replaceRange(
-        updated,
-        overlaysStart,
-        overlaysEnd,
-        `      overlays={
-        <ConfirmationDialog
-          confirmLabel="放弃并关闭"
-          description="关闭画布会丢失自上次保存后的更改，此操作无法撤销。"
-          destructive
-          onCancel={() => setPendingCloseSessionId(null)}
-          onConfirm={() => {
-            if (!pendingCloseSessionId) {
-              return
-            }
-
-            port.canvases.discardAndClose(pendingCloseSessionId)
-            setPendingCloseSessionId(null)
-          }}
-          open={pendingCloseSessionId !== null}
-          title="放弃未保存的更改？"
+      statusLeft={
+        <CanvasStatusLeftContent
+          hasActiveCanvas={
+            workbench.activeCanvas !== null
+          }
         />
       }
-    />`,
-        '使用统一 ConfirmationDialog 替换画布关闭弹窗',
-      )
-
-      return updated
-    },
+      statusRight={
+        <CanvasStatusRightContent
+          pageCount={pages.length}
+        />
+      }
+    />
   )
 }
 
-async function migrateSettingsPresentation() {
-  const oldPath =
-    'apps/desktop/src/presentation/settings/SettingsDialog.tsx'
-  const newPath =
-    'features/settings/src/presentation/SettingsDialog.tsx'
-
-  if (!(await exists(oldPath))) {
-    throw new Error(`找不到待迁移的 SettingsDialog：${oldPath}`)
+function CanvasInspectorContent({
+  hasActiveCanvas,
+}: {
+  readonly hasActiveCanvas: boolean
+}) {
+  if (!hasActiveCanvas) {
+    return (
+      <div className="py-10 text-center text-xs text-muted-foreground">
+        打开或新建画布后可查看属性
+      </div>
+    )
   }
 
-  move(oldPath, newPath)
+  return (
+    <div className="space-y-3">
+      <section className="rounded-md border border-divider p-3">
+        <h3 className="text-xs font-medium">
+          画布属性
+        </h3>
 
-  create(
-    'features/settings/src/presentation/public-api.ts',
-    `export {
-  SettingsDialog,
-  type SettingsDialogProps,
-} from './SettingsDialog'
+        <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+          选择画布中的对象后，可在这里编辑对应属性。
+        </p>
+      </section>
+    </div>
+  )
+}
+
+function CanvasStatusLeftContent({
+  hasActiveCanvas,
+}: {
+  readonly hasActiveCanvas: boolean
+}) {
+  return (
+    <span>
+      {hasActiveCanvas
+        ? '本地画布'
+        : '没有打开的画布'}
+    </span>
+  )
+}
+
+function CanvasStatusRightContent({
+  pageCount,
+}: {
+  readonly pageCount: number
+}) {
+  if (pageCount === 0) {
+    return null
+  }
+
+  return <span>{pageCount} 个页面</span>
+}
+
+function createUntitledCanvasTitle(
+  existingTitles: readonly string[],
+): string {
+  const baseTitle = '未命名画板'
+
+  if (!existingTitles.includes(baseTitle)) {
+    return baseTitle
+  }
+
+  let suffix = 2
+
+  while (
+    existingTitles.includes(
+      \`\${baseTitle} \${suffix}\`,
+    )
+  ) {
+    suffix += 1
+  }
+
+  return \`\${baseTitle} \${suffix}\`
+}
 `,
   )
-
-  await updateJson('features/settings/package.json', (json) => {
-    json.exports ??= {}
-
-    json.exports['./react'] = {
-      types: './src/presentation/public-api.ts',
-      default: './src/presentation/public-api.ts',
-    }
-
-    return json
-  })
-
-  await updateJson('apps/desktop/package.json', (json) => {
-    json.dependencies ??= {}
-    json.dependencies['@hybrid-canvas/settings'] = 'workspace:*'
-
-    json.dependencies = Object.fromEntries(
-      Object.entries(json.dependencies).sort(([a], [b]) =>
-        a.localeCompare(b),
-      ),
-    )
-
-    return json
-  })
-
-  await edit(
-    'apps/desktop/src/presentation/AppShell.tsx',
-    (content) =>
-      replaceOnce(
-        content,
-        `import { SettingsDialog } from './settings/SettingsDialog'`,
-        `import { SettingsDialog } from '@hybrid-canvas/settings/react'`,
-        '从 settings feature 导入 SettingsDialog',
-      ),
-  )
 }
 
-async function refactorTerminationCoordinator() {
-  await edit(
-    'apps/desktop/src/application/termination/application-termination-coordinator.ts',
+function repairWorkspaceShell() {
+  return edit(
+    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
     (content) => {
       let updated = content
 
-      updated = replaceOnce(
-        updated,
-        `  | {
-      readonly state: 'terminating'
-      readonly intent: ApplicationTerminationIntent
-    }
-
-export interface ApplicationTerminator`,
-        `  | {
-      readonly state: 'terminating'
-      readonly intent: ApplicationTerminationIntent
-    }
-  | {
-      readonly state: 'termination-failed'
-      readonly intent: ApplicationTerminationIntent
-      readonly message: string
-    }
-
-export interface ApplicationTerminator`,
-        '增加 termination-failed 状态',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `  readonly confirmDiscard: () => void
-  readonly getSnapshot`,
-        `  readonly confirmDiscard: () => void
-  readonly retry: () => void
-  readonly getSnapshot`,
-        '增加 termination retry API',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `  function request(intent: ApplicationTerminationIntent): void {
-    if (disposed || snapshot.state === 'terminating') {
-      return
-    }
-
-    evaluate(intent, canvases.planApplicationClose())
-  }
-
-  function evaluate`,
-        `  function request(intent: ApplicationTerminationIntent): void {
-    if (disposed || snapshot.state === 'terminating') {
-      return
-    }
-
-    evaluate(intent, canvases.planApplicationClose())
-  }
-
-  function beginTermination(intent: ApplicationTerminationIntent): void {
-    const currentGeneration = ++generation
-
-    emit({
-      state: 'terminating',
-      intent,
-    })
-
-    void terminator.terminate(intent).catch((error: unknown) => {
-      if (disposed || currentGeneration !== generation) {
-        return
+      if (
+        updated.includes(
+          '  const rail = (  const rail = (',
+        )
+      ) {
+        updated = updated.replace(
+          '  const rail = (  const rail = (',
+          '  const rail = (',
+        )
       }
 
-      emit({
-        state: 'termination-failed',
-        intent,
-        message:
-          error instanceof Error
-            ? error.message
-            : 'UNKNOWN_TERMINATION_ERROR',
-      })
-    })
-  }
-
-  function evaluate`,
-        '增加可恢复的原生终止操作',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `    if (plan.kind === 'close-now') {
-      emit({
-        state: 'terminating',
-        intent,
-      })
-
-      void terminator.terminate(intent)
-      return
-    }`,
-        `    if (plan.kind === 'close-now') {
-      beginTermination(intent)
-      return
-    }`,
-        '统一通过 beginTermination 执行退出',
-      )
-
-      updated = replaceOnce(
-        updated,
-        `    confirmDiscard() {
-      if (snapshot.state !== 'confirmation-required') {
-        return
+      if (
+        updated.includes(
+          '<WorkspaceFrame\n        rootRef={rootRef}',
+        )
+      ) {
+        return updated
       }
 
-      const { intent, sessionIds } = snapshot
-
-      canvases.discardAllAndClose(sessionIds)
-      request(intent)
-    },
-
-    getSnapshot: () => snapshot,`,
-        `    confirmDiscard() {
-      if (snapshot.state !== 'confirmation-required') {
-        return
-      }
-
-      const { intent, sessionIds } = snapshot
-
-      canvases.discardAllAndClose(sessionIds)
-      request(intent)
-    },
-
-    retry() {
-      if (snapshot.state !== 'termination-failed') {
-        return
-      }
-
-      beginTermination(snapshot.intent)
-    },
-
-    getSnapshot: () => snapshot,`,
-        '实现退出失败重试',
+      throw new Error(
+        'WorkspaceShell 缺少 WorkspaceFrame rootRef，请检查上一阶段修改。',
       )
-
-      return updated
     },
   )
 }
 
-async function refactorAppShellDialogs() {
-  await edit(
+function createAppShell() {
+  write(
     'apps/desktop/src/presentation/AppShell.tsx',
-    (content) => {
-      let updated = content
+    `import { EditorProvider } from '@hybrid-canvas/canvas/react'
+import { ConfirmationDialog } from '@hybrid-canvas/design-system'
+import { error as reportError } from '@hybrid-canvas/observability'
+import type { MainWindowController } from '@hybrid-canvas/platforms-desktop-runtime'
+import { SettingsDialog } from '@hybrid-canvas/settings/react'
+import type { CommandRegistry } from '@hybrid-canvas/workspace/application'
+import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
+import { CommandPalette } from '@hybrid-canvas/workspace/react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 
-      updated = replaceOnce(
-        updated,
-        `import { EditorProvider } from '@hybrid-canvas/canvas/react'`,
-        `import { EditorProvider } from '@hybrid-canvas/canvas/react'
-import { ConfirmationDialog } from '@hybrid-canvas/design-system'`,
-        '导入应用级 ConfirmationDialog',
+import type { ApplicationTerminationCoordinator } from '../application/termination/application-termination-coordinator'
+import { UiErrorBoundary } from './boundaries/UiErrorBoundary'
+import { useGlobalCommandShortcuts } from './commands/useGlobalCommandShortcuts'
+import {
+  type WorkspaceCanvasUIPort,
+  WorkspaceContainer,
+} from './workspace/WorkspaceContainer'
+
+export interface AppShellRuntime {
+  readonly workspace: WorkbenchSessionStore
+  readonly commands: CommandRegistry
+  readonly canvases: WorkspaceCanvasUIPort
+  readonly termination: ApplicationTerminationCoordinator
+  readonly mainWindow: MainWindowController
+}
+
+export interface AppShellProps {
+  readonly runtime: AppShellRuntime
+}
+
+const GLOBAL_COMMAND_SHORTCUTS = [
+  {
+    key: 'k',
+    commandId:
+      'application.toggle-command-palette',
+    ctrlOrMeta: true,
+  },
+  {
+    key: 'n',
+    commandId: 'workspace.create-canvas',
+    ctrlOrMeta: true,
+  },
+  {
+    key: 'o',
+    commandId: 'workspace.open-canvas',
+    ctrlOrMeta: true,
+  },
+] as const
+
+export function AppShell({
+  runtime,
+}: AppShellProps) {
+  const [
+    isCommandPaletteOpen,
+    setCommandPaletteOpen,
+  ] = useState(false)
+
+  const [
+    isSettingsOpen,
+    setSettingsOpen,
+  ] = useState(false)
+
+  const termination = useSyncExternalStore(
+    runtime.termination.subscribe,
+    runtime.termination.getSnapshot,
+    runtime.termination.getSnapshot,
+  )
+
+  const toggleCommandPalette = useCallback(
+    () => {
+      setCommandPaletteOpen(
+        (open) => !open,
       )
+    },
+    [],
+  )
 
-      const startMarker = `      {termination.state === 'confirmation-required' ? (`
-      const endMarker = `    </EditorProvider>`
+  const openCommandPalette = useCallback(
+    () => setCommandPaletteOpen(true),
+    [],
+  )
 
-      updated = replaceRange(
-        updated,
-        startMarker,
-        endMarker,
-        `      <ConfirmationDialog
+  const openSettings = useCallback(
+    () => setSettingsOpen(true),
+    [],
+  )
+
+  const requestApplicationClose = useCallback(
+    () => {
+      runtime.termination.request(
+        'window-close',
+      )
+    },
+    [runtime.termination],
+  )
+
+  const minimizeWindow = useCallback(() => {
+    void runtime.mainWindow
+      .minimize()
+      .catch((cause: unknown) => {
+        reportError(
+          'main window minimize failed',
+          {
+            scope: 'app-shell',
+            operation: 'minimize-window',
+            cause,
+          },
+        )
+      })
+  }, [runtime.mainWindow])
+
+  const maximizeWindow = useCallback(() => {
+    void runtime.mainWindow
+      .toggleMaximize()
+      .catch((cause: unknown) => {
+        reportError(
+          'main window maximize failed',
+          {
+            scope: 'app-shell',
+            operation: 'toggle-maximize-window',
+            cause,
+          },
+        )
+      })
+  }, [runtime.mainWindow])
+
+  const startWindowDragging =
+    useCallback(() => {
+      void runtime.mainWindow
+        .startDragging()
+        .catch((cause: unknown) => {
+          reportError(
+            'main window drag failed',
+            {
+              scope: 'app-shell',
+              operation:
+                'start-window-dragging',
+              cause,
+            },
+          )
+        })
+    }, [runtime.mainWindow])
+
+  useApplicationCommands(
+    runtime,
+    toggleCommandPalette,
+  )
+
+  useGlobalCommandShortcuts(
+    runtime.commands,
+    GLOBAL_COMMAND_SHORTCUTS,
+  )
+
+  useMainWindowCloseRequest(
+    runtime.mainWindow,
+    requestApplicationClose,
+  )
+
+  const workspacePort = useMemo(
+    () => ({
+      canvases: runtime.canvases,
+      workspace: runtime.workspace,
+    }),
+    [
+      runtime.canvases,
+      runtime.workspace,
+    ],
+  )
+
+  return (
+    <EditorProvider>
+      <UiErrorBoundary area="工作区">
+        <WorkspaceContainer
+          onCommandPaletteOpen={
+            openCommandPalette
+          }
+          onSettingsOpen={openSettings}
+          onWindowClose={
+            requestApplicationClose
+          }
+          onWindowMaximize={
+            maximizeWindow
+          }
+          onWindowMinimize={
+            minimizeWindow
+          }
+          onWindowStartDragging={
+            startWindowDragging
+          }
+          port={workspacePort}
+        />
+      </UiErrorBoundary>
+
+      <CommandPalette
+        onOpenChange={
+          setCommandPaletteOpen
+        }
+        open={isCommandPaletteOpen}
+        registry={runtime.commands}
+      />
+
+      <SettingsDialog
+        onOpenChange={setSettingsOpen}
+        open={isSettingsOpen}
+      />
+
+      <ConfirmationDialog
         confirmLabel="放弃全部并退出"
         description={
-          termination.state === 'confirmation-required'
+          termination.state ===
+          'confirmation-required'
             ? \`有 \${termination.sessionIds.length} 个画布包含未保存的更改。\`
             : ''
         }
         destructive
-        onCancel={runtime.termination.cancel}
-        onConfirm={runtime.termination.confirmDiscard}
-        open={termination.state === 'confirmation-required'}
+        onCancel={
+          runtime.termination.cancel
+        }
+        onConfirm={
+          runtime.termination.confirmDiscard
+        }
+        open={
+          termination.state ===
+          'confirmation-required'
+        }
         title="退出并放弃未保存的更改？"
       />
 
@@ -942,17 +1006,184 @@ import { ConfirmationDialog } from '@hybrid-canvas/design-system'`,
         cancelLabel="返回应用"
         confirmLabel="重试退出"
         description={
-          termination.state === 'termination-failed'
+          termination.state ===
+          'termination-failed'
             ? \`原生窗口未能完成退出：\${termination.message}\`
             : ''
         }
-        onCancel={runtime.termination.cancel}
-        onConfirm={runtime.termination.retry}
-        open={termination.state === 'termination-failed'}
+        onCancel={
+          runtime.termination.cancel
+        }
+        onConfirm={
+          runtime.termination.retry
+        }
+        open={
+          termination.state ===
+          'termination-failed'
+        }
         title="应用退出失败"
       />
-    </EditorProvider>`,
-        '统一应用退出和退出失败弹窗',
+    </EditorProvider>
+  )
+}
+
+function useMainWindowCloseRequest(
+  mainWindow: MainWindowController,
+  onCloseRequested: () => void,
+): void {
+  useEffect(() => {
+    let disposed = false
+    let unsubscribe:
+      | (() => void)
+      | undefined
+
+    void mainWindow
+      .onCloseRequested(onCloseRequested)
+      .then(
+        (nextUnsubscribe) => {
+          if (disposed) {
+            nextUnsubscribe()
+            return
+          }
+
+          unsubscribe = nextUnsubscribe
+        },
+        (cause: unknown) => {
+          if (!disposed) {
+            reportError(
+              'main window close listener registration failed',
+              {
+                scope: 'app-shell',
+                operation:
+                  'register-close-listener',
+                cause,
+              },
+            )
+          }
+        },
+      )
+
+    return () => {
+      disposed = true
+      unsubscribe?.()
+    }
+  }, [mainWindow, onCloseRequested])
+}
+
+function useApplicationCommands(
+  runtime: AppShellRuntime,
+  toggleCommandPalette: () => void,
+): void {
+  useEffect(() => {
+    const unregister = [
+      runtime.commands.register({
+        id: 'application.toggle-command-palette',
+        label: '切换命令面板',
+        category: '应用',
+        shortcut: 'Ctrl+K',
+        execute: toggleCommandPalette,
+      }),
+
+      runtime.commands.register({
+        id: 'workspace.create-canvas',
+        label: '新建画板',
+        category: '文件',
+        shortcut: 'Ctrl+N',
+        execute() {
+          runtime.canvases.create(
+            '未命名画板',
+          )
+        },
+      }),
+
+      runtime.commands.register({
+        id: 'workspace.open-canvas',
+        label: '打开画板',
+        category: '文件',
+        shortcut: 'Ctrl+O',
+        execute: runtime.canvases.open,
+      }),
+    ]
+
+    return () => {
+      for (
+        let index = unregister.length - 1;
+        index >= 0;
+        index -= 1
+      ) {
+        unregister[index]?.()
+      }
+    }
+  }, [runtime, toggleCommandPalette])
+}
+`,
+  )
+}
+
+async function replaceConsoleErrorBoundaries() {
+  await edit(
+    'apps/desktop/src/presentation/boundaries/UiErrorBoundary.tsx',
+    (content) => {
+      let updated = content
+
+      if (
+        !updated.includes(
+          `from '@hybrid-canvas/observability'`,
+        )
+      ) {
+        updated = replaceOnce(
+          updated,
+          `import { Component, type ErrorInfo, type ReactNode } from 'react'`,
+          `import { error as reportError } from '@hybrid-canvas/observability'
+import { Component, type ErrorInfo, type ReactNode } from 'react'`,
+          '为 UiErrorBoundary 导入 observability',
+        )
+      }
+
+      updated = replaceOnce(
+        updated,
+        `    console.error(\`UI boundary failed: \${this.props.area}\`, error, info.componentStack)`,
+        `    reportError('UI boundary failed', {
+      scope: 'ui-error-boundary',
+      area: this.props.area,
+      error,
+      componentStack: info.componentStack,
+    })`,
+        '替换 UiErrorBoundary console.error',
+      )
+
+      return updated
+    },
+  )
+
+  await edit(
+    'apps/desktop/src/bootstrap/ApplicationErrorBoundary.tsx',
+    (content) => {
+      let updated = content
+
+      if (
+        !updated.includes(
+          `from '@hybrid-canvas/observability'`,
+        )
+      ) {
+        updated = replaceOnce(
+          updated,
+          `import { Button } from '@hybrid-canvas/design-system'`,
+          `import { Button } from '@hybrid-canvas/design-system'
+import { error as reportError } from '@hybrid-canvas/observability'`,
+          '为 ApplicationErrorBoundary 导入 observability',
+        )
+      }
+
+      updated = replaceOnce(
+        updated,
+        `    console.error('Application rendering failed.', error, errorInfo)`,
+        `    reportError('Application rendering failed', {
+      scope: 'application-error-boundary',
+      error,
+      componentStack: errorInfo.componentStack,
+    })`,
+        '替换 ApplicationErrorBoundary console.error',
       )
 
       return updated
@@ -960,182 +1191,78 @@ import { ConfirmationDialog } from '@hybrid-canvas/design-system'`,
   )
 }
 
-async function addTerminationTests() {
-  create(
-    'apps/desktop/src/application/termination/application-termination-coordinator.test.ts',
-    `import { describe, expect, it, vi } from 'vitest'
-
-import {
-  createApplicationTerminationCoordinator,
-  type ApplicationTerminationSnapshot,
-} from './application-termination-coordinator'
-
-function flushMicrotasks(): Promise<void> {
-  return new Promise((resolve) => queueMicrotask(resolve))
-}
-
-describe('ApplicationTerminationCoordinator', () => {
-  it('enters a recoverable failure state when native termination fails', async () => {
-    const terminate = vi.fn().mockRejectedValue(
-      new Error('NATIVE_CLOSE_FAILED'),
-    )
-
-    const coordinator = createApplicationTerminationCoordinator(
-      {
-        planApplicationClose: () => ({ kind: 'close-now' }),
-        discardAllAndClose: vi.fn(),
-      },
-      { terminate },
-    )
-
-    coordinator.request('window-close')
-    await flushMicrotasks()
-
-    expect(coordinator.getSnapshot()).toEqual({
-      state: 'termination-failed',
-      intent: 'window-close',
-      message: 'NATIVE_CLOSE_FAILED',
-    })
-  })
-
-  it('retries the original termination intent', async () => {
-    const terminate = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('FIRST_FAILURE'))
-      .mockResolvedValueOnce(undefined)
-
-    const snapshots: ApplicationTerminationSnapshot[] = []
-
-    const coordinator = createApplicationTerminationCoordinator(
-      {
-        planApplicationClose: () => ({ kind: 'close-now' }),
-        discardAllAndClose: vi.fn(),
-      },
-      { terminate },
-    )
-
-    coordinator.subscribe(() => {
-      snapshots.push(coordinator.getSnapshot())
-    })
-
-    coordinator.request('update-restart')
-    await flushMicrotasks()
-
-    expect(coordinator.getSnapshot().state).toBe(
-      'termination-failed',
-    )
-
-    coordinator.retry()
-    await flushMicrotasks()
-
-    expect(terminate).toHaveBeenNthCalledWith(
-      1,
-      'update-restart',
-    )
-    expect(terminate).toHaveBeenNthCalledWith(
-      2,
-      'update-restart',
-    )
-    expect(
-      snapshots.some(
-        (snapshot) =>
-          snapshot.state === 'terminating' &&
-          snapshot.intent === 'update-restart',
-      ),
-    ).toBe(true)
-  })
-
-  it('ignores a stale failure after cancellation', async () => {
-    let rejectTermination:
-      | ((reason?: unknown) => void)
-      | undefined
-
-    const terminate = vi.fn(
-      () =>
-        new Promise<void>((_resolve, reject) => {
-          rejectTermination = reject
-        }),
-    )
-
-    const coordinator = createApplicationTerminationCoordinator(
-      {
-        planApplicationClose: () => ({ kind: 'close-now' }),
-        discardAllAndClose: vi.fn(),
-      },
-      { terminate },
-    )
-
-    coordinator.request('window-close')
-    coordinator.cancel()
-    rejectTermination?.(new Error('STALE_FAILURE'))
-    await flushMicrotasks()
-
-    expect(coordinator.getSnapshot()).toEqual({
-      state: 'idle',
-    })
-  })
-})
-`,
-  )
-}
-
-async function strengthenArchitectureChecks() {
+async function fixApplicationLifecycleLogging() {
   await edit(
-    'tests/architecture/check.mjs',
-    (content) =>
-      replaceOnce(
-        content,
-        `  if (/from\\s+['"]\\.\\.\\/\\.\\.\\/(?:apps|editor|features|foundations|platforms)\\//.test(text)) {
-    violations.push(\`\${rel}: 使用相对路径跨越顶层包边界\`)
-  }
-}`,
-        `  if (/from\\s+['"]\\.\\.\\/\\.\\.\\/(?:apps|editor|features|foundations|platforms)\\//.test(text)) {
-    violations.push(\`\${rel}: 使用相对路径跨越顶层包边界\`)
-  }
+    'apps/desktop/src/bootstrap/application-lifecycle.ts',
+    (content) => {
+      let updated = content
 
-  if (
-    rel.startsWith('features/workspace/src/contracts/') &&
-    /\\b(?:minimizeWindow|maximizeWindow|closeWindow|startWindowDragging|MainWindow)\\b/.test(text)
-  ) {
-    violations.push(
-      \`\${rel}: Workspace contract 暴露 Desktop window 平台语义\`,
-    )
-  }
+      if (
+        !updated.includes(
+          `from '@hybrid-canvas/observability'`,
+        )
+      ) {
+        updated =
+          `import { error as reportError } from '@hybrid-canvas/observability'\n` +
+          updated
+      }
 
-  if (
-    rel.startsWith('features/workspace/src/') &&
-    /(?:data-tauri-drag-region|@tauri-apps\\/)/.test(text)
-  ) {
-    violations.push(
-      \`\${rel}: Workspace feature 包含 Desktop/Tauri 专属实现\`,
-    )
-  }
+      updated = replaceOnce(
+        updated,
+        `  const handleBeforeUnload = () => {
+    void runtime.mainWindow.saveState().catch(() => undefined)
+  }`,
+        `  const handleBeforeUnload = () => {
+    void runtime.mainWindow
+      .saveState()
+      .catch((cause: unknown) => {
+        reportError(
+          'main window state save failed during unload',
+          {
+            scope: 'application-lifecycle',
+            operation: 'save-window-state',
+            cause,
+          },
+        )
+      })
+  }`,
+        '替换 beforeunload 静默错误',
+      )
 
-  if (
-    rel === 'features/workspace/src/presentation/shell/WorkspaceShell.tsx' &&
-    /\\bAiChatWidget\\b|AI Chat/.test(text)
-  ) {
-    violations.push(
-      \`\${rel}: WorkspaceShell 不得硬编码未接入的 AI 产品能力，应使用 feature slot\`,
-    )
-  }
-
-  if (
-    rel.startsWith('apps/desktop/src/presentation/') &&
-    /<section[^>]+role=["']dialog["']/.test(text)
-  ) {
-    violations.push(
-      \`\${rel}: Desktop presentation 不得复制手写 Dialog，应使用 design-system ConfirmationDialog\`,
-    )
-  }
-}`,
-        '增加平台语义、AI slot 和 Dialog 架构守卫',
-      ),
+      return updated
+    },
   )
 }
 
-async function addCiWorkflow() {
-  create(
+async function updateDependencies() {
+  await updateJson(
+    'apps/desktop/package.json',
+    (json) => {
+      json.dependencies ??= {}
+
+      json.dependencies[
+        '@hybrid-canvas/observability'
+      ] = 'workspace:*'
+
+      json.dependencies[
+        '@hybrid-canvas/settings'
+      ] = 'workspace:*'
+
+      json.dependencies = Object.fromEntries(
+        Object.entries(
+          json.dependencies,
+        ).sort(([left], [right]) =>
+          left.localeCompare(right),
+        ),
+      )
+
+      return json
+    },
+  )
+}
+
+function createQualityWorkflow() {
+  write(
     '.github/workflows/quality.yml',
     `name: Quality
 
@@ -1154,7 +1281,7 @@ permissions:
 
 jobs:
   frontend:
-    name: Frontend quality
+    name: Frontend
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -1177,7 +1304,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Format check
+      - name: Format
         run: pnpm format:check
 
       - name: Lint
@@ -1189,14 +1316,14 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Unit tests
-        run: pnpm turbo run test --filter='!@hybrid-canvas/desktop-e2e'
+      - name: JavaScript tests
+        run: pnpm turbo run test
 
       - name: Build
         run: pnpm build
 
   rust:
-    name: Rust quality
+    name: Rust
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -1207,16 +1334,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: rustfmt, clippy
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Format check
+      - name: Format
         run: cargo fmt --check
 
-      - name: Cargo check
+      - name: Check
         run: cargo check --workspace --all-targets --all-features
 
       - name: Clippy
@@ -1238,13 +1364,7 @@ async function createBackup() {
     `.refactor-backup/${stamp}`,
   )
 
-  const pathsToBackup = new Set([
-    ...writes.keys(),
-    ...deletions,
-    ...moves.map((entry) => entry.from),
-  ])
-
-  for (const relativePath of pathsToBackup) {
+  for (const relativePath of writes.keys()) {
     if (!(await exists(relativePath))) {
       continue
     }
@@ -1268,24 +1388,12 @@ async function createBackup() {
   return backupRoot
 }
 
-async function applyMoves() {
-  for (const { from, to } of moves) {
-    await mkdir(dirname(absolute(to)), {
-      recursive: true,
-    })
-
-    await rename(
-      absolute(from),
-      absolute(to),
-    )
-  }
-}
-
 async function applyWrites() {
   for (const [relativePath, content] of writes) {
-    await mkdir(dirname(absolute(relativePath)), {
-      recursive: true,
-    })
+    await mkdir(
+      dirname(absolute(relativePath)),
+      { recursive: true },
+    )
 
     await writeFile(
       absolute(relativePath),
@@ -1295,78 +1403,56 @@ async function applyWrites() {
   }
 }
 
-async function applyDeletions() {
-  for (const relativePath of deletions) {
-    await rm(absolute(relativePath), {
-      recursive: true,
-      force: true,
-    })
-  }
-}
-
 function printPlan() {
   console.log('')
   console.log(
     shouldWrite
-      ? '结构性重构计划：'
-      : '结构性重构预览（尚未写入）：',
+      ? 'Phase 3 修复与重构：'
+      : 'Phase 3 预览（尚未写入）：',
   )
 
-  for (const { from, to } of moves) {
-    console.log(`  MOVE   ${from}`)
-    console.log(`      -> ${to}`)
-  }
-
   for (const relativePath of writes.keys()) {
-    console.log(`  WRITE  ${relativePath}`)
-  }
-
-  for (const relativePath of deletions) {
-    console.log(`  DELETE ${relativePath}`)
+    console.log(`  WRITE ${relativePath}`)
   }
 
   console.log('')
 }
 
 async function main() {
-  await createConfirmationDialog()
-  await moveDesktopTitleBar()
-  await refactorWorkspaceContracts()
-  await refactorWorkspaceFrame()
-  await refactorWorkspaceShell()
-  await refactorWorkspaceContainer()
-  await migrateSettingsPresentation()
-  await refactorTerminationCoordinator()
-  await refactorAppShellDialogs()
-  await addTerminationTests()
-  await strengthenArchitectureChecks()
-  await addCiWorkflow()
+  await preflight()
+
+  createCanvasWorkflow()
+  createWorkspaceContainer()
+  await repairWorkspaceShell()
+  createAppShell()
+
+  await replaceConsoleErrorBoundaries()
+  await fixApplicationLifecycleLogging()
+  await updateDependencies()
+  createQualityWorkflow()
 
   printPlan()
 
   if (!shouldWrite) {
-    console.log('所有目标代码片段均匹配。')
+    console.log('所有前置文件检查完成。')
     console.log('')
     console.log('执行以下命令实际写入：')
     console.log('')
     console.log(
-      '  node scripts/refactor-architecture-phase2.mjs --write',
+      '  node scripts/refactor-architecture-phase3.mjs --write',
     )
     console.log('')
     return
   }
 
   const backupRoot = await createBackup()
-
-  await applyMoves()
   await applyWrites()
-  await applyDeletions()
 
   console.log(
     `备份目录：${relative(root, backupRoot)}`,
   )
   console.log('')
-  console.log('修改完成，请依次执行：')
+  console.log('修改完成。必须执行：')
   console.log('')
   console.log('  pnpm install')
   console.log('  pnpm format')
@@ -1380,9 +1466,9 @@ async function main() {
 
 main().catch((error) => {
   console.error('')
-  console.error('结构性重构脚本执行失败。')
+  console.error('Phase 3 脚本执行失败。')
   console.error(
-    '如果尚未使用 --write，仓库不会发生变化。',
+    '未传入 --write 时不会修改仓库。',
   )
   console.error(error)
   process.exitCode = 1

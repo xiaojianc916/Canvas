@@ -1,3 +1,4 @@
+import { error as reportError } from '@hybrid-canvas/observability'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
 export interface UiErrorBoundaryProps {
@@ -18,7 +19,12 @@ export class UiErrorBoundary extends Component<UiErrorBoundaryProps, UiErrorBoun
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error(`UI boundary failed: ${this.props.area}`, error, info.componentStack)
+    reportError('UI boundary failed', {
+      scope: 'ui-error-boundary',
+      area: this.props.area,
+      error,
+      componentStack: info.componentStack,
+    })
   }
 
   override render(): ReactNode {

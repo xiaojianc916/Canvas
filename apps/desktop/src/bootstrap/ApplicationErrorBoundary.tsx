@@ -1,4 +1,5 @@
 import { Button } from '@hybrid-canvas/design-system'
+import { error as reportError } from '@hybrid-canvas/observability'
 import { AlertTriangle, RotateCcw } from 'lucide-react'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
@@ -21,7 +22,11 @@ export class ApplicationErrorBoundary extends Component<
   }
 
   override componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error('Application rendering failed.', error, errorInfo)
+    reportError('Application rendering failed', {
+      scope: 'application-error-boundary',
+      error,
+      componentStack: errorInfo.componentStack,
+    })
   }
 
   override render() {
