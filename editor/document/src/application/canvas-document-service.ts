@@ -1,4 +1,4 @@
-import type { EditorSession, EditorSessionRegistry } from '@hybrid-canvas/canvas/extensions'
+import type { EditorSession, EditorSessionRegistry } from '@hybrid-canvas/canvas/application'
 import type { HybridCanvasExtension } from '@hybrid-canvas/canvas/extensions'
 import { parseDrawDocument, serializeDrawDocument } from '@hybrid-canvas/file'
 import type { TLEditorSnapshot } from 'tldraw'
