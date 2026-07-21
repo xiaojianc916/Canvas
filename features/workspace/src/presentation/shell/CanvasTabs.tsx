@@ -27,7 +27,7 @@ const BEZIER_CIRCLE = 0.5522848
 export function CanvasTabs({ tabs, onActivate, onClose, onCreate }: CanvasTabsProps) {
   const shellRef = useRef<HTMLElement | null>(null)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
-  const tabRefs = useRef(new Map<CanvasSessionId, HTMLButtonElement>())
+  const tabRefs = useRef(new Map<CanvasSessionId, HTMLDivElement>())
   const [surface, setSurface] = useState<SurfaceGeometry>(EMPTY_SURFACE)
   const activeSessionId = tabs.find((tab) => tab.isActive)?.sessionId
   const surfaceRef = useRef<SurfaceGeometry>(EMPTY_SURFACE)
@@ -153,12 +153,12 @@ interface DocumentTabProps {
   readonly onClose: (sessionId: CanvasSessionId) => void
 }
 
-const DocumentTab = forwardRef<HTMLButtonElement, DocumentTabProps>(function DocumentTab(
+const DocumentTab = forwardRef<HTMLDivElement, DocumentTabProps>(function DocumentTab(
   { model, onActivate, onClose },
   ref,
 ) {
   return (
-    <button
+    <div
       ref={ref}
       aria-selected={model.isActive}
       className={cn(
@@ -168,10 +168,18 @@ const DocumentTab = forwardRef<HTMLButtonElement, DocumentTabProps>(function Doc
           : 'text-muted-foreground hover:bg-foreground/5.5 hover:text-foreground',
       )}
       onClick={() => onActivate(model.sessionId)}
+      onKeyDown={(event) => {
+        if (
+          event.key === 'Enter' ||
+          event.key === ' '
+        ) {
+          event.preventDefault()
+          onActivate(model.sessionId)
+        }
+      }}
       role="tab"
       style={{ width: TAB_WIDTH }}
       tabIndex={model.isActive ? 0 : -1}
-      type="button"
     >
       <DocumentIcon />
       <span className="min-w-0 flex-1 truncate text-left">{model.title}</span>
@@ -203,7 +211,7 @@ const DocumentTab = forwardRef<HTMLButtonElement, DocumentTabProps>(function Doc
           <X className="size-4" strokeWidth={1.7} />
         </Button>
       ) : null}
-    </button>
+    </div>
   )
 })
 
