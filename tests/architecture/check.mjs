@@ -75,6 +75,20 @@ function check(path) {
     violations.push(`${rel}: feature 直接依赖 Tauri SDK`)
   }
 
+  if (
+    rel.startsWith('features/canvas-session/') &&
+    /@hybrid-canvas\/(?:desktop|desktop-ipc|platforms-desktop-runtime)|@tauri-apps\//.test(text)
+  ) {
+    violations.push(`${rel}: Canvas application 必须保持平台无关`)
+  }
+
+  if (
+    rel.startsWith('features/canvas-session/src/application/') &&
+    /\b(?:DrawFileCommands|FileDialog|ApplicationWindowManager|MainWindowController)\b/.test(text)
+  ) {
+    violations.push(`${rel}: Canvas application 依赖平台 adapter 类型，必须通过最小端口注入`)
+  }
+
   if (rel === 'editor/core/src/public-api.ts' && /from '\.\/runtime\//.test(text)) {
     violations.push(`${rel}: editor core public-api 暴露 runtime 实现`)
   }
@@ -96,6 +110,10 @@ function check(path) {
 
   if (!rel.startsWith('editor/core/') && /createTLStore\s*\(/.test(text)) {
     violations.push(`${rel}: 非 editor/core 创建 TLStore`)
+  }
+
+  if (!rel.startsWith('editor/core/') && /\.store\.listen\s*\(/.test(text)) {
+    violations.push(`${rel}: 非 editor/core 直接监听 TLStore，必须通过 EditorSession API`)
   }
 
   if (

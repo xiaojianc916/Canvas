@@ -117,6 +117,9 @@ importers:
       '@hybrid-canvas/canvas':
         specifier: workspace:*
         version: link:../../editor/core
+      '@hybrid-canvas/canvas-session':
+        specifier: workspace:*
+        version: link:../../features/canvas-session
       '@hybrid-canvas/design-system':
         specifier: workspace:*
         version: link:../../foundations/design-system
@@ -263,6 +266,28 @@ importers:
       '@hybrid-canvas/foundations-test-kit':
         specifier: workspace:*
         version: link:../../foundations/test-kit
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
+
+  features/canvas-session:
+    dependencies:
+      '@hybrid-canvas/canvas':
+        specifier: workspace:*
+        version: link:../../editor/core
+      '@hybrid-canvas/file':
+        specifier: workspace:*
+        version: link:../../editor/persistence
+      '@hybrid-canvas/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      tldraw:
+        specifier: 'catalog:'
+        version: 5.2.5(@floating-ui/dom@1.8.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+    devDependencies:
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -467,6 +492,9 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(jiti@2.7.0))
 
   foundations/design-system:
     dependencies:

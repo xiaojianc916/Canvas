@@ -1,4 +1,4 @@
-import type { ApplicationClosePlan, CanvasService } from '../documents/canvas-session-service'
+import type { ApplicationClosePlan, CanvasService } from '@hybrid-canvas/canvas-session'
 
 export type ApplicationTerminationIntent = 'window-close' | 'update-restart' | 'application-exit'
 

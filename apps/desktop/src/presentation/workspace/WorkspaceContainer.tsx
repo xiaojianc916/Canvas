@@ -12,7 +12,7 @@ import type { CanvasSessionId, WorkbenchSessionStore } from '@hybrid-canvas/work
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
 
 const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({ pages: Object.freeze([]) })
-const EMPTY_SUBSCRIBE = () => () => {}
+const EMPTY_SUBSCRIBE = () => () => { }
 const EMPTY_EDITOR_SNAPSHOT = () => EMPTY_EDITOR_SESSION_SNAPSHOT
 
 export interface WorkspaceCanvasUIPort {
@@ -21,12 +21,12 @@ export interface WorkspaceCanvasUIPort {
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
   readonly requestClose: (
     sessionId: CanvasSessionId,
-  ) => import('../../application/documents/canvas-session-service').CanvasCloseDecision
+  ) => import('@hybrid-canvas/canvas-session').CanvasCloseDecision
   readonly discardAndClose: (sessionId: CanvasSessionId) => void
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (
     sessionId: CanvasSessionId,
-  ) => import('../../application/documents/canvas-session-service').CanvasSessionSnapshot | null
+  ) => import('@hybrid-canvas/canvas-session').CanvasSessionSnapshot | null
   readonly subscribe: (listener: () => void) => () => void
 }
 

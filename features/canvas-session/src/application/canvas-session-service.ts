@@ -4,8 +4,7 @@ import type {
   HybridCanvasExtension,
 } from '@hybrid-canvas/canvas'
 import { parseDrawDocument, serializeDrawDocument } from '@hybrid-canvas/file'
-import type { DrawFileCommands, FileDialog } from '@hybrid-canvas/platforms-desktop-runtime'
-import type { CanvasSessionId, WorkbenchSessionStore } from '@hybrid-canvas/workspace'
+import type { CanvasSessionId } from '@hybrid-canvas/workspace'
 import type { TLEditorSnapshot } from 'tldraw'
 
 export type CanvasPersistenceState = 'clean' | 'dirty' | 'saving' | 'failed'
@@ -40,11 +39,36 @@ export interface CanvasService {
   readonly dispose: () => void
 }
 
+export interface CanvasWorkspacePort {
+  readonly createCanvas: (request: {
+    readonly canvasId: string
+    readonly sessionId: CanvasSessionId
+    readonly title: string
+  }) => void
+  readonly closeCanvas: (sessionId: CanvasSessionId) => void
+}
+
+export interface CanvasEditorSessionRegistryPort {
+  readonly create: EditorSessionRegistry['create']
+  readonly close: EditorSessionRegistry['close']
+  readonly dispose: EditorSessionRegistry['dispose']
+}
+
+export interface DrawPersistencePort {
+  readonly read: (path: string) => Promise<string>
+  readonly write: (path: string, content: string) => Promise<void>
+}
+
+export interface CanvasFileSelectionPort {
+  readonly selectOpenPath: () => Promise<string | null>
+  readonly selectSavePath: (suggestedName: string) => Promise<string | null>
+}
+
 export interface CreateCanvasServiceDependencies {
-  readonly workspace: WorkbenchSessionStore
-  readonly editorSessions: EditorSessionRegistry
-  readonly files: DrawFileCommands
-  readonly dialog: FileDialog
+  readonly workspace: CanvasWorkspacePort
+  readonly editorSessions: CanvasEditorSessionRegistryPort
+  readonly persistence: DrawPersistencePort
+  readonly fileSelection: CanvasFileSelectionPort
   readonly extensions: readonly HybridCanvasExtension[]
 }
 
@@ -72,8 +96,8 @@ const ALLOWED_TRANSITIONS: Readonly<Record<CanvasSessionState, readonly CanvasSe
 export function createCanvasService({
   workspace,
   editorSessions,
-  files,
-  dialog,
+  persistence,
+  fileSelection,
   extensions,
 }: CreateCanvasServiceDependencies): CanvasService {
   const sessions = new Map<CanvasSessionId, OwnedCanvasSession>()
@@ -97,11 +121,9 @@ export function createCanvasService({
   }
 
   async function open(): Promise<void> {
-    const [filePath] = await dialog.open({
-      filters: [{ name: 'Hybrid Canvas 画布', extensions: ['draw'] }],
-    })
+    const filePath = await fileSelection.selectOpenPath()
     if (!filePath) return
-    const initialSnapshot = parseEditorSnapshot(await files.readDraw(filePath))
+    const initialSnapshot = parseEditorSnapshot(await persistence.read(filePath))
     const canvasId = crypto.randomUUID()
     const sessionId = crypto.randomUUID()
     const editor = editorSessions.create({
@@ -137,18 +159,13 @@ export function createCanvasService({
     sessionId: CanvasSessionId,
     session: OwnedCanvasSession,
   ): Promise<void> {
-    const filePath =
-      session.filePath ??
-      (await dialog.save({
-        filters: [{ name: 'Hybrid Canvas 画布', extensions: ['draw'] }],
-        defaultPath: '未命名画板.draw',
-      }))
+    const filePath = session.filePath ?? (await fileSelection.selectSavePath('未命名画板.draw'))
     if (!filePath) return
     const capturedRevision = session.revision
     transition(session, 'saving')
     emit()
     try {
-      await files.saveDraw(filePath, serializeDrawDocument(session.editor.getSnapshot()))
+      await persistence.write(filePath, serializeDrawDocument(session.editor.getSnapshot()))
       session.filePath = filePath
       session.savedRevision = capturedRevision
       const nextState = session.revision === capturedRevision ? 'ready' : 'dirty'
@@ -222,17 +239,14 @@ export function createCanvasService({
       saveOperation: null,
       stopObserving: () => {},
     }
-    session.stopObserving = editor.store.listen(
-      () => {
-        if (session.state === 'closing' || session.state === 'closed') return
-        session.revision += 1
-        if (session.state !== 'saving' && session.state !== 'dirty') {
-          transition(session, 'dirty')
-          emit()
-        }
-      },
-      { scope: 'document', source: 'user' },
-    )
+    session.stopObserving = editor.onUserDocumentChange(() => {
+      if (session.state === 'closing' || session.state === 'closed') return
+      session.revision += 1
+      if (session.state !== 'saving' && session.state !== 'dirty') {
+        transition(session, 'dirty')
+        emit()
+      }
+    })
     return session
   }
 

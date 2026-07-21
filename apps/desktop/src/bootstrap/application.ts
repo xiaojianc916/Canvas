@@ -20,10 +20,7 @@ import {
   createWorkbenchSessionController,
   type WorkbenchSessionStore,
 } from '@hybrid-canvas/workspace'
-import {
-  createCanvasService,
-  type CanvasService,
-} from '../application/documents/canvas-session-service'
+import { createCanvasService, type CanvasService } from '@hybrid-canvas/canvas-session'
 import {
   createApplicationTerminationCoordinator,
   type ApplicationTerminationCoordinator,
@@ -53,8 +50,24 @@ export function createApplicationRuntime(): ApplicationRuntime {
   const canvases = createCanvasService({
     workspace,
     editorSessions: editorRegistry,
-    files: drawFiles,
-    dialog,
+    persistence: {
+      read: drawFiles.readDraw,
+      write: drawFiles.saveDraw,
+    },
+    fileSelection: {
+      async selectOpenPath() {
+        const [path] = await dialog.open({
+          filters: [{ name: 'Hybrid Canvas 画布', extensions: ['draw'] }],
+        })
+        return path ?? null
+      },
+      selectSavePath(suggestedName) {
+        return dialog.save({
+          filters: [{ name: 'Hybrid Canvas 画布', extensions: ['draw'] }],
+          defaultPath: suggestedName,
+        })
+      },
+    },
     extensions: [flowchartExtension],
   })
   const termination = createApplicationTerminationCoordinator(canvases, {

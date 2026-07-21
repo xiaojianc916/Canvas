@@ -38,6 +38,7 @@ export interface EditorSession {
   readonly getSnapshot: () => TLEditorSnapshot
   readonly getSessionSnapshot: () => EditorSessionSnapshot
   readonly subscribe: (listener: () => void) => () => void
+  readonly onUserDocumentChange: (listener: () => void) => () => void
   readonly createPage: (title: string) => void
   readonly activatePage: (pageId: string) => void
   readonly dispose: () => void
@@ -112,6 +113,10 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
+    },
+    onUserDocumentChange(listener) {
+      assertActive()
+      return store.listen(listener, { scope: 'document', source: 'user' })
     },
     createPage(title) {
       assertActive()

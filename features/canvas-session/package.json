@@ -1,5 +1,5 @@
 {
-  "name": "@hybrid-canvas/workspace",
+  "name": "@hybrid-canvas/canvas-session",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,30 +8,23 @@
     ".": {
       "types": "./src/public-api.ts",
       "default": "./src/public-api.ts"
-    },
-    "./react": {
-      "types": "./src/presentation/public-api.ts",
-      "default": "./src/presentation/public-api.ts"
     }
   },
   "scripts": {
     "build": "tsc --project tsconfig.json --noEmit",
     "check": "tsc --project tsconfig.json --noEmit",
     "typecheck": "tsc --project tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "clean": "rimraf .turbo *.tsbuildinfo"
   },
   "dependencies": {
-    "@hybrid-canvas/design-system": "workspace:*",
-    "lucide-react": "catalog:"
+    "@hybrid-canvas/canvas": "workspace:*",
+    "@hybrid-canvas/file": "workspace:*",
+    "@hybrid-canvas/workspace": "workspace:*",
+    "tldraw": "catalog:"
   },
   "devDependencies": {
-    "@types/react": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
-  },
-  "peerDependencies": {
-    "react": "19.2.7",
-    "react-dom": "19.2.7"
   }
 }

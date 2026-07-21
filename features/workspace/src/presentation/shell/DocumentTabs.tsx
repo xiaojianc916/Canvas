@@ -5,7 +5,7 @@ import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 import type {
   CanvasSessionId,
   CanvasTabViewModel,
-} from '../../application/model/workbench-view-model'
+} from '../../contracts/workbench-contract'
 
 export interface CanvasTabsProps {
   readonly tabs: readonly CanvasTabViewModel[]
