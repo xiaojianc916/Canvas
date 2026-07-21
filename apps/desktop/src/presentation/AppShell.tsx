@@ -2,6 +2,7 @@ import { EditorProvider } from '@hybrid-canvas/canvas/react'
 import { ConfirmationDialog } from '@hybrid-canvas/design-system'
 import { error as reportError } from '@hybrid-canvas/observability'
 import type { MainWindowController } from '@hybrid-canvas/platforms-desktop-runtime'
+import type { SettingsStore } from '@hybrid-canvas/settings'
 import { SettingsDialog } from '@hybrid-canvas/settings/react'
 import type { CommandRegistry } from '@hybrid-canvas/workspace/application'
 import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
@@ -28,6 +29,7 @@ export interface AppShellRuntime {
   readonly canvases: WorkspaceCanvasUIPort
   readonly termination: ApplicationTerminationCoordinator
   readonly mainWindow: MainWindowController
+  readonly settings: SettingsStore
 }
 
 export interface AppShellProps {
@@ -208,6 +210,7 @@ export function AppShell({
       <SettingsDialog
         onOpenChange={setSettingsOpen}
         open={isSettingsOpen}
+        store={runtime.settings}
       />
 
       <ConfirmationDialog

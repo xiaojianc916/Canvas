@@ -1,79 +1,198 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import {
+  Button,
+} from '@hybrid-canvas/design-system'
+import type {
+  AppSettings,
+  SettingsStore,
+  ThemeMode,
+} from '@hybrid-canvas/settings'
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react'
 
 export interface SettingsDialogProps {
   readonly open: boolean
-  readonly onOpenChange: (open: boolean) => void
+  readonly store: SettingsStore
+  readonly onOpenChange: (
+    open: boolean,
+  ) => void
 }
 
-type SettingsSection = 'general' | 'canvas' | 'about'
+type SettingsSection =
+  | 'general'
+  | 'canvas'
+  | 'about'
 
-const SETTINGS_SECTIONS: readonly {
-  readonly id: SettingsSection
-  readonly label: string
-  readonly description: string
-}[] = [
+const SETTINGS_SECTIONS = [
   {
     id: 'general',
     label: '常规',
-    description: '主题、语言和应用行为',
   },
   {
     id: 'canvas',
     label: '画布',
-    description: '网格、吸附和画布显示',
   },
   {
     id: 'about',
     label: '关于',
-    description: '应用版本和项目信息',
   },
-]
+] as const
 
 export function SettingsDialog({
   open,
+  store,
   onOpenChange,
 }: SettingsDialogProps) {
-  const [activeSection, setActiveSection] =
-    useState<SettingsSection>('general')
+  const [
+    activeSection,
+    setActiveSection,
+  ] = useState<SettingsSection>('general')
+
+  const [
+    draft,
+    setDraft,
+  ] = useState<AppSettings | null>(null)
+
+  const [loading, setLoading] =
+    useState(false)
+
+  const [saving, setSaving] =
+    useState(false)
+
+  const [
+    errorMessage,
+    setErrorMessage,
+  ] = useState<string | null>(null)
+
   const titleId = useId()
   const descriptionId = useId()
-  const dialogRef = useRef<HTMLDivElement>(null)
+  const dialogRef =
+    useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) {
       return
     }
 
-    const previouslyFocused = document.activeElement
+    let disposed = false
+    const previouslyFocused =
+      document.activeElement
 
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
+    setLoading(true)
+    setErrorMessage(null)
+
+    void store.load().then(
+      (settings) => {
+        if (!disposed) {
+          setDraft(settings)
+          setLoading(false)
+          dialogRef.current?.focus()
+        }
+      },
+      (cause: unknown) => {
+        if (!disposed) {
+          setLoading(false)
+          setErrorMessage(
+            getErrorMessage(cause),
+          )
+        }
+      },
+    )
+
+    const handleKeyDown = (
+      event: KeyboardEvent,
+    ) => {
+      if (
+        event.key === 'Escape' &&
+        !saving
+      ) {
         event.preventDefault()
         onOpenChange(false)
       }
     }
 
-    document.addEventListener('keydown', handleKeyDown)
-    dialogRef.current?.focus()
+    document.addEventListener(
+      'keydown',
+      handleKeyDown,
+    )
 
     return () => {
-      document.removeEventListener('keydown', handleKeyDown)
+      disposed = true
 
-      if (previouslyFocused instanceof HTMLElement) {
+      document.removeEventListener(
+        'keydown',
+        handleKeyDown,
+      )
+
+      if (
+        previouslyFocused instanceof
+        HTMLElement
+      ) {
         previouslyFocused.focus()
       }
     }
-  }, [onOpenChange, open])
+  }, [onOpenChange, open, saving, store])
 
   if (!open) {
     return null
+  }
+
+  const save = () => {
+    if (!draft || saving) {
+      return
+    }
+
+    setSaving(true)
+    setErrorMessage(null)
+
+    void store.save(draft).then(
+      () => {
+        setSaving(false)
+        onOpenChange(false)
+      },
+      (cause: unknown) => {
+        setSaving(false)
+        setErrorMessage(
+          getErrorMessage(cause),
+        )
+      },
+    )
+  }
+
+  const reset = () => {
+    if (saving) {
+      return
+    }
+
+    setSaving(true)
+    setErrorMessage(null)
+
+    void store.reset().then(
+      (settings) => {
+        setDraft(settings)
+        setSaving(false)
+      },
+      (cause: unknown) => {
+        setSaving(false)
+        setErrorMessage(
+          getErrorMessage(cause),
+        )
+      },
+    )
   }
 
   return (
     <div
       className="fixed inset-0 z-100 grid place-items-center bg-black/45 p-6 backdrop-blur-[2px]"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
+        if (
+          event.target ===
+            event.currentTarget &&
+          !saving
+        ) {
           onOpenChange(false)
         }
       }}
@@ -90,9 +209,13 @@ export function SettingsDialog({
       >
         <aside className="w-56 shrink-0 border-r border-divider bg-muted/30 p-4">
           <div className="mb-5 px-2">
-            <h2 className="text-base font-semibold" id={titleId}>
+            <h2
+              className="text-base font-semibold"
+              id={titleId}
+            >
               设置
             </h2>
+
             <p
               className="mt-1 text-xs text-muted-foreground"
               id={descriptionId}
@@ -101,71 +224,146 @@ export function SettingsDialog({
             </p>
           </div>
 
-          <nav aria-label="设置分类" className="space-y-1">
-            {SETTINGS_SECTIONS.map((section) => {
-              const active = section.id === activeSection
-
-              return (
+          <nav
+            aria-label="设置分类"
+            className="space-y-1"
+          >
+            {SETTINGS_SECTIONS.map(
+              (section) => (
                 <button
-                  aria-current={active ? 'page' : undefined}
-                  className={[
-                    'w-full rounded-md px-3 py-2 text-left transition-colors',
-                    active
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                  ].join(' ')}
+                  aria-current={
+                    activeSection ===
+                    section.id
+                      ? 'page'
+                      : undefined
+                  }
+                  className={
+                    activeSection ===
+                    section.id
+                      ? 'w-full rounded-md bg-accent px-3 py-2 text-left text-sm font-medium text-accent-foreground'
+                      : 'w-full rounded-md px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }
                   key={section.id}
-                  onClick={() => setActiveSection(section.id)}
+                  onClick={() =>
+                    setActiveSection(
+                      section.id,
+                    )
+                  }
                   type="button"
                 >
-                  <span className="block text-sm font-medium">
-                    {section.label}
-                  </span>
-                  <span className="mt-0.5 block text-xs opacity-75">
-                    {section.description}
-                  </span>
+                  {section.label}
                 </button>
-              )
-            })}
+              ),
+            )}
           </nav>
         </aside>
 
         <section className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-16 shrink-0 items-center justify-between border-b border-divider px-6">
-            <div>
-              <h3 className="text-sm font-semibold">
-                {
-                  SETTINGS_SECTIONS.find(
-                    (section) => section.id === activeSection,
-                  )?.label
-                }
-              </h3>
-            </div>
+            <h3 className="text-sm font-semibold">
+              {
+                SETTINGS_SECTIONS.find(
+                  (section) =>
+                    section.id ===
+                    activeSection,
+                )?.label
+              }
+            </h3>
 
-            <button
+            <Button
               aria-label="关闭设置"
-              className="grid size-8 place-items-center rounded-md text-xl leading-none text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => onOpenChange(false)}
+              disabled={saving}
+              onClick={() =>
+                onOpenChange(false)
+              }
+              size="icon"
               type="button"
+              variant="ghost"
             >
               ×
-            </button>
+            </Button>
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-6">
-            {activeSection === 'general' ? <GeneralSettings /> : null}
-            {activeSection === 'canvas' ? <CanvasSettings /> : null}
-            {activeSection === 'about' ? <AboutSettings /> : null}
+            {loading ? (
+              <p className="text-sm text-muted-foreground">
+                正在读取设置…
+              </p>
+            ) : null}
+
+            {errorMessage ? (
+              <p
+                className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+                role="alert"
+              >
+                {errorMessage}
+              </p>
+            ) : null}
+
+            {!loading &&
+            draft &&
+            activeSection ===
+              'general' ? (
+              <GeneralSettings
+                settings={draft}
+                onChange={setDraft}
+              />
+            ) : null}
+
+            {!loading &&
+            draft &&
+            activeSection ===
+              'canvas' ? (
+              <CanvasSettingsForm
+                settings={draft}
+                onChange={setDraft}
+              />
+            ) : null}
+
+            {activeSection ===
+            'about' ? (
+              <AboutSettings />
+            ) : null}
           </div>
 
-          <footer className="flex h-16 shrink-0 items-center justify-end border-t border-divider px-6">
-            <button
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-              onClick={() => onOpenChange(false)}
+          <footer className="flex h-16 shrink-0 items-center justify-between border-t border-divider px-6">
+            <Button
+              disabled={
+                loading || saving
+              }
+              onClick={reset}
               type="button"
+              variant="ghost"
             >
-              完成
-            </button>
+              恢复默认
+            </Button>
+
+            <div className="flex gap-2">
+              <Button
+                disabled={saving}
+                onClick={() =>
+                  onOpenChange(false)
+                }
+                type="button"
+                variant="ghost"
+              >
+                取消
+              </Button>
+
+              <Button
+                disabled={
+                  loading ||
+                  saving ||
+                  !draft
+                }
+                onClick={save}
+                type="button"
+              >
+                {saving
+                  ? '正在保存…'
+                  : '保存'}
+              </Button>
+            </div>
           </footer>
         </section>
       </div>
@@ -173,31 +371,44 @@ export function SettingsDialog({
   )
 }
 
-function GeneralSettings() {
+function GeneralSettings({
+  settings,
+  onChange,
+}: {
+  readonly settings: AppSettings
+  readonly onChange: (
+    settings: AppSettings,
+  ) => void
+}) {
   return (
     <div className="space-y-8">
       <SettingsGroup
-        description="选择应用界面使用的颜色模式。"
+        description="选择应用界面的颜色模式。"
         title="外观"
       >
-        <div
+        <select
           aria-label="颜色模式"
-          className="grid grid-cols-3 gap-3"
-          role="group"
+          className="h-9 w-56 rounded-md border border-divider bg-background px-3 text-sm"
+          onChange={(event) =>
+            onChange({
+              ...settings,
+              theme:
+                event.target
+                  .value as ThemeMode,
+            })
+          }
+          value={settings.theme}
         >
-          <AppearanceOption label="浅色" previewClassName="bg-white" />
-          <AppearanceOption
-            label="深色"
-            previewClassName="bg-neutral-900"
-          />
-          <AppearanceOption
-            label="跟随系统"
-            previewClassName="bg-gradient-to-r from-white to-neutral-900"
-          />
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          外观持久化将在 SettingsStore 接入后启用。
-        </p>
+          <option value="light">
+            浅色
+          </option>
+          <option value="dark">
+            深色
+          </option>
+          <option value="system">
+            跟随系统
+          </option>
+        </select>
       </SettingsGroup>
 
       <SettingsGroup
@@ -207,47 +418,114 @@ function GeneralSettings() {
         <select
           aria-label="界面语言"
           className="h-9 w-56 rounded-md border border-divider bg-background px-3 text-sm"
-          defaultValue="zh-CN"
-          disabled
+          onChange={(event) =>
+            onChange({
+              ...settings,
+              language:
+                event.target.value,
+            })
+          }
+          value={settings.language}
         >
-          <option value="zh-CN">简体中文</option>
+          <option value="zh-CN">
+            简体中文
+          </option>
+          <option value="en">
+            English
+          </option>
         </select>
       </SettingsGroup>
+
+      <SettingsToggle
+        checked={settings.autoSave}
+        description="编辑画布时自动保存到当前文件。"
+        label="自动保存"
+        onChange={(checked) =>
+          onChange({
+            ...settings,
+            autoSave: checked,
+          })
+        }
+      />
     </div>
   )
 }
 
-function CanvasSettings() {
+function CanvasSettingsForm({
+  settings,
+  onChange,
+}: {
+  readonly settings: AppSettings
+  readonly onChange: (
+    settings: AppSettings,
+  ) => void
+}) {
   return (
-    <div className="space-y-8">
-      <SettingsGroup
-        description="控制新画布的网格显示方式。"
-        title="网格"
-      >
-        <SettingToggle
-          description="在画布背景中显示辅助网格。"
-          label="显示网格"
-        />
-        <SettingToggle
-          description="移动图形时自动吸附到网格。"
-          label="吸附到网格"
-        />
-      </SettingsGroup>
+    <div className="space-y-6">
+      <SettingsToggle
+        checked={
+          settings.canvas.showGrid
+        }
+        description="在画布背景中显示辅助网格。"
+        label="显示网格"
+        onChange={(checked) =>
+          onChange({
+            ...settings,
+            canvas: {
+              ...settings.canvas,
+              showGrid: checked,
+            },
+          })
+        }
+      />
+
+      <SettingsToggle
+        checked={
+          settings.canvas.snapToGrid
+        }
+        description="移动图形时自动吸附到网格。"
+        label="吸附到网格"
+        onChange={(checked) =>
+          onChange({
+            ...settings,
+            canvas: {
+              ...settings.canvas,
+              snapToGrid: checked,
+            },
+          })
+        }
+      />
 
       <SettingsGroup
-        description="新建或打开画布时使用的默认缩放比例。"
+        description="新建画布时使用的默认缩放比例。"
         title="默认缩放"
       >
         <select
           aria-label="默认缩放比例"
           className="h-9 w-40 rounded-md border border-divider bg-background px-3 text-sm"
-          defaultValue="100"
-          disabled
+          onChange={(event) =>
+            onChange({
+              ...settings,
+              canvas: {
+                ...settings.canvas,
+                defaultZoom:
+                  Number(
+                    event.target.value,
+                  ),
+              },
+            })
+          }
+          value={
+            settings.canvas.defaultZoom
+          }
         >
-          <option value="fit">适应窗口</option>
-          <option value="100">100%</option>
-          <option value="75">75%</option>
-          <option value="50">50%</option>
+          <option value="1">100%</option>
+          <option value="0.75">
+            75%
+          </option>
+          <option value="0.5">
+            50%
+          </option>
         </select>
       </SettingsGroup>
     </div>
@@ -256,21 +534,26 @@ function CanvasSettings() {
 
 function AboutSettings() {
   return (
-    <div className="max-w-xl">
-      <div className="rounded-lg border border-divider p-5">
-        <h4 className="text-base font-semibold">Hybrid Canvas</h4>
-        <p className="mt-2 text-sm text-muted-foreground">
-          基于 tldraw 的本地优先画布应用。
-        </p>
-        <dl className="mt-5 grid grid-cols-[100px_1fr] gap-y-2 text-sm">
-          <dt className="text-muted-foreground">版本</dt>
-          <dd>0.1.0</dd>
-          <dt className="text-muted-foreground">窗口模式</dt>
-          <dd>单主窗口</dd>
-          <dt className="text-muted-foreground">设置界面</dt>
-          <dd>主窗口内模态弹窗</dd>
-        </dl>
-      </div>
+    <div className="max-w-xl rounded-lg border border-divider p-5">
+      <h4 className="text-base font-semibold">
+        Hybrid Canvas
+      </h4>
+
+      <p className="mt-2 text-sm text-muted-foreground">
+        基于 tldraw 的本地优先画布应用。
+      </p>
+
+      <dl className="mt-5 grid grid-cols-[100px_1fr] gap-y-2 text-sm">
+        <dt className="text-muted-foreground">
+          版本
+        </dt>
+        <dd>0.1.0</dd>
+
+        <dt className="text-muted-foreground">
+          设置存储
+        </dt>
+        <dd>Tauri Store</dd>
+      </dl>
     </div>
   )
 }
@@ -280,64 +563,71 @@ function SettingsGroup({
   description,
   title,
 }: {
-  readonly children: React.ReactNode
+  readonly children:
+    React.ReactNode
   readonly description: string
   readonly title: string
 }) {
   return (
     <section>
-      <h4 className="text-sm font-semibold">{title}</h4>
-      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-      <div className="mt-4">{children}</div>
+      <h4 className="text-sm font-semibold">
+        {title}
+      </h4>
+
+      <p className="mt-1 text-sm text-muted-foreground">
+        {description}
+      </p>
+
+      <div className="mt-4">
+        {children}
+      </div>
     </section>
   )
 }
 
-function AppearanceOption({
-  label,
-  previewClassName,
-}: {
-  readonly label: string
-  readonly previewClassName: string
-}) {
-  return (
-    <button
-      aria-disabled="true"
-      className="rounded-lg border border-divider p-2 text-left opacity-70"
-      disabled
-      type="button"
-    >
-      <span
-        className={[
-          'block h-20 rounded-md border border-divider',
-          previewClassName,
-        ].join(' ')}
-      />
-      <span className="mt-2 block text-sm">{label}</span>
-    </button>
-  )
-}
-
-function SettingToggle({
+function SettingsToggle({
+  checked,
   description,
   label,
+  onChange,
 }: {
+  readonly checked: boolean
   readonly description: string
   readonly label: string
+  readonly onChange: (
+    checked: boolean,
+  ) => void
 }) {
   return (
     <label className="flex items-center justify-between gap-5 border-b border-divider py-4 last:border-b-0">
       <span>
-        <span className="block text-sm font-medium">{label}</span>
+        <span className="block text-sm font-medium">
+          {label}
+        </span>
+
         <span className="mt-1 block text-xs text-muted-foreground">
           {description}
         </span>
       </span>
+
       <input
+        checked={checked}
         className="size-4"
-        disabled
+        onChange={(event) =>
+          onChange(
+            event.target.checked,
+          )
+        }
         type="checkbox"
       />
     </label>
   )
+}
+
+function getErrorMessage(
+  cause: unknown,
+): string {
+  return cause instanceof Error
+    ? cause.message
+    : '设置操作失败'
 }

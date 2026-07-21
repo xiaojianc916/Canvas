@@ -18,8 +18,8 @@ This refactor preserves:
 | 1. Runtime correctness | Complete | External-store snapshots, listener cleanup and environment exposure |
 | 2. UI boundaries | Complete after verification | Desktop chrome separated from Workspace; shared confirmation dialog |
 | 3. Workflow and errors | Complete after verification | Close orchestration moved to CanvasWorkflow; observability added |
-| 4. Dependency and performance baselines | In progress | Import graph and Vite bundle manifest |
-| 5. Compatibility and release verification | Pending | File fixtures, native failure recovery and final performance budgets |
+| 4. Dependency and performance baselines | Complete | Import graph and Vite bundle manifest |
+| 5. Compatibility and release verification | In progress | Settings IPC aligned, draw fixtures and native size boundaries added |
 
 ## Architectural invariants
 
@@ -33,9 +33,8 @@ This refactor preserves:
 
 ## Remaining work
 
-- Establish .draw round-trip fixtures and corrupt-file cases.
-- Verify atomic save and crash recovery in the Rust layer.
-- Record initial bundle, startup and multi-canvas memory baselines.
+- Add path capability tokens so draw commands cannot receive arbitrary paths.
+- Add crash-recovery integration tests around atomic_write.
+- Record startup and multi-canvas memory baselines.
 - Add explicit performance budgets after the first stable baseline.
-- Complete settings persistence wiring.
 - Run desktop E2E coverage for title-bar drag, close and recovery paths.

@@ -58,7 +58,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             theme: "system".into(),
-            language: "en".into(),
+            language: "zh-CN".into(),
             auto_save: true,
             auto_save_interval: 30000,
             shortcuts: HashMap::new(),

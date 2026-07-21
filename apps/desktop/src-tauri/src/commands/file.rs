@@ -8,6 +8,8 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_fs::FilePath;
 use tauri_plugin_store::StoreExt;
 
+const MAX_DRAW_FILE_BYTES: u64 = 32 * 1024 * 1024;
+
 #[derive(Debug, Deserialize, Type)]
 pub struct OpenFileOptions {
     pub title: Option<String>,
@@ -181,6 +183,14 @@ pub struct DrawReadResult {
 
 #[command]
 pub async fn file_save_draw(request: DrawSaveRequest) -> Result<()> {
+    if request.content.len() as u64 > MAX_DRAW_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "DRAW_FILE_TOO_LARGE",
+        )
+        .into());
+    }
+
     let path = PathBuf::from(&request.path);
 
     if let Some(parent) = path.parent() {
@@ -193,12 +203,30 @@ pub async fn file_save_draw(request: DrawSaveRequest) -> Result<()> {
 
 #[command]
 pub async fn file_read_draw(path: String) -> Result<DrawReadResult> {
+    let metadata = std::fs::metadata(&path)?;
+
+    if metadata.len() > MAX_DRAW_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "DRAW_FILE_TOO_LARGE",
+        )
+        .into());
+    }
+
     let content = std::fs::read_to_string(&path)?;
     Ok(DrawReadResult { content })
 }
 
 #[command]
 pub async fn file_create_draw(path: String, content: String) -> Result<DrawReadResult> {
+    if content.len() as u64 > MAX_DRAW_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "DRAW_FILE_TOO_LARGE",
+        )
+        .into());
+    }
+
     let file_path = PathBuf::from(&path);
 
     if let Some(parent) = file_path.parent() {

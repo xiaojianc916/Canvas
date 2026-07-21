@@ -46,56 +46,64 @@ async function edit(relativePath, transform) {
   write(relativePath, updated)
 }
 
-async function updateJson(relativePath, transform) {
-  const content = await read(relativePath)
-  const hasBom = content.startsWith('\uFEFF')
-  const json = JSON.parse(
-    hasBom ? content.slice(1) : content,
+function replaceOnce(
+  content,
+  oldText,
+  newText,
+  description,
+) {
+  const firstIndex = content.indexOf(oldText)
+
+  if (firstIndex < 0) {
+    throw new Error(`找不到待修改内容：${description}`)
+  }
+
+  const secondIndex = content.indexOf(
+    oldText,
+    firstIndex + oldText.length,
   )
 
-  const updated = transform(json) ?? json
+  if (secondIndex >= 0) {
+    throw new Error(`待修改内容不唯一：${description}`)
+  }
 
-  write(
-    relativePath,
-    `${hasBom ? '\uFEFF' : ''}${JSON.stringify(updated, null, 2)}\n`,
+  return (
+    content.slice(0, firstIndex) +
+    newText +
+    content.slice(firstIndex + oldText.length)
   )
 }
 
-async function assertPhase3Completed() {
-  const appShellPath =
-    'apps/desktop/src/presentation/AppShell.tsx'
-
-  const workspaceContainerPath =
-    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx'
-
-  const workspaceShellPath =
-    'features/workspace/src/presentation/shell/WorkspaceShell.tsx'
-
-  const canvasWorkflowPath =
-    'apps/desktop/src/application/canvas/canvas-workflow.ts'
-
-  const [
-    appShell,
-    workspaceContainer,
-    workspaceShell,
-    canvasWorkflow,
-  ] = await Promise.all([
-    read(appShellPath),
-    read(workspaceContainerPath),
-    read(workspaceShellPath),
-    read(canvasWorkflowPath),
-  ])
+async function assertPhase4Completed() {
+  const requiredPaths = [
+    'tests/architecture/check-import-graph.mjs',
+    'tests/performance/report-bundle.mjs',
+    'docs/architecture/refactor-progress.md',
+    '.github/workflows/quality.yml',
+  ]
 
   const failures = []
+
+  for (const relativePath of requiredPaths) {
+    if (!(await exists(relativePath))) {
+      failures.push(`缺少 ${relativePath}`)
+    }
+  }
+
+  const appShell = await read(
+    'apps/desktop/src/presentation/AppShell.tsx',
+  )
+
+  const workspaceContainer = await read(
+    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+  )
 
   if (
     appShell.includes(
       '</EditorProvider>    </EditorProvider>',
     )
   ) {
-    failures.push(
-      `${appShellPath}: 仍存在重复 EditorProvider 闭合标签`,
-    )
+    failures.push('AppShell 仍存在重复闭合标签')
   }
 
   if (
@@ -104,27 +112,7 @@ async function assertPhase3Completed() {
     )
   ) {
     failures.push(
-      `${workspaceContainerPath}: 仍存在重复 WorkspaceShell JSX`,
-    )
-  }
-
-  if (
-    workspaceShell.includes(
-      'const rail = (  const rail = (',
-    )
-  ) {
-    failures.push(
-      `${workspaceShellPath}: 仍存在重复 rail 声明`,
-    )
-  }
-
-  if (
-    !canvasWorkflow.includes(
-      'Promise<CanvasCloseRequestResult>',
-    )
-  ) {
-    failures.push(
-      `${canvasWorkflowPath}: 关闭流程尚未下沉到 CanvasWorkflow`,
+      'WorkspaceContainer 仍存在重复 JSX',
     )
   }
 
@@ -133,807 +121,1356 @@ async function assertPhase3Completed() {
       `from '@hybrid-canvas/observability'`,
     )
   ) {
-    failures.push(
-      `${appShellPath}: observability 治理尚未落地`,
-    )
-  }
-
-  if (
-    !appShell.includes(
-      `from '@hybrid-canvas/settings/react'`,
-    )
-  ) {
-    failures.push(
-      `${appShellPath}: Settings UI 仍未从 feature 入口导入`,
-    )
+    failures.push('Phase 3 observability 尚未落地')
   }
 
   if (failures.length > 0) {
     throw new Error(
       [
-        'Phase 3 尚未完成，拒绝继续叠加 Phase 4。',
-        '',
+        'Phase 4 前置状态不满足：',
         ...failures.map(
           (failure) => `- ${failure}`,
         ),
-        '',
-        '请先执行：',
-        'node scripts/refactor-architecture-phase3.mjs --write',
-        'pnpm format',
-        'pnpm lint',
-        'pnpm typecheck',
       ].join('\n'),
     )
   }
 }
 
-function createImportGraphCheck() {
+function createSettingsDomain() {
   write(
-    'tests/architecture/check-import-graph.mjs',
-    `#!/usr/bin/env node
+    'features/settings/src/domain/settings.ts',
+    `export type ThemeMode =
+  | 'light'
+  | 'dark'
+  | 'system'
 
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-} from 'node:fs'
-import {
-  dirname,
-  extname,
-  join,
-  normalize,
-  relative,
-  resolve,
-} from 'node:path'
-
-const root = resolve(import.meta.dirname, '../..')
-
-const workspaceRoots = [
-  'apps',
-  'editor',
-  'features',
-  'foundations',
-  'platforms',
-  'tooling',
-]
-
-const ignoredDirectories = new Set([
-  '.git',
-  '.refactor-backup',
-  '.turbo',
-  'build',
-  'coverage',
-  'dist',
-  'generated',
-  'node_modules',
-  'target',
-  'test-results',
-])
-
-const sourceExtensions = [
-  '.ts',
-  '.tsx',
-  '.mts',
-  '.cts',
-]
-
-const importPattern =
-  /(?:import|export)\\s+(?:type\\s+)?(?:[^'"]*?\\sfrom\\s*)?['"]([^'"]+)['"]|import\\s*\\(\\s*['"]([^'"]+)['"]\\s*\\)/g
-
-const packages = loadWorkspacePackages()
-const packageByName = new Map(
-  packages.map((pkg) => [
-    pkg.manifest.name,
-    pkg,
-  ]),
-)
-
-const sourceFiles = collectSourceFiles()
-const sourceFileSet = new Set(sourceFiles)
-const fileGraph = new Map()
-const packageGraph = new Map()
-
-for (const pkg of packages) {
-  packageGraph.set(pkg.manifest.name, new Set())
-
-  const dependencyGroups = [
-    pkg.manifest.dependencies,
-    pkg.manifest.devDependencies,
-    pkg.manifest.peerDependencies,
-    pkg.manifest.optionalDependencies,
-  ]
-
-  for (const dependencies of dependencyGroups) {
-    for (const dependencyName of Object.keys(
-      dependencies ?? {},
-    )) {
-      if (packageByName.has(dependencyName)) {
-        packageGraph
-          .get(pkg.manifest.name)
-          .add(dependencyName)
-      }
-    }
-  }
+export interface CanvasSettings {
+  readonly defaultZoom: number
+  readonly showGrid: boolean
+  readonly snapToGrid: boolean
+  readonly gridSize: number
+  readonly showRulers: boolean
+  readonly infiniteCanvas: boolean
 }
 
-for (const file of sourceFiles) {
-  const imports = extractImports(
-    readFileSync(file, 'utf8'),
+export interface EditorSettings {
+  readonly fontFamily: string
+  readonly fontSize: number
+  readonly lineHeight: number
+  readonly tabSize: number
+  readonly insertSpaces: boolean
+  readonly wordWrap: boolean
+  readonly minimap: boolean
+}
+
+export interface ExportSettings {
+  readonly defaultFormat: string
+  readonly pngDpi: number
+  readonly pdfQuality: number
+  readonly includeMetadata: boolean
+}
+
+export interface PrivacySettings {
+  readonly telemetry: boolean
+  readonly crashReporting: boolean
+  readonly updateCheck: boolean
+}
+
+export interface AppSettings {
+  readonly theme: ThemeMode
+  readonly language: string
+  readonly autoSave: boolean
+  readonly autoSaveIntervalMs: number
+  readonly shortcuts: Readonly<
+    Record<string, string>
+  >
+  readonly canvas: CanvasSettings
+  readonly editor: EditorSettings
+  readonly export: ExportSettings
+  readonly privacy: PrivacySettings
+}
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  theme: 'system',
+  language: 'zh-CN',
+  autoSave: true,
+  autoSaveIntervalMs: 30_000,
+  shortcuts: {},
+  canvas: {
+    defaultZoom: 1,
+    showGrid: false,
+    snapToGrid: false,
+    gridSize: 20,
+    showRulers: false,
+    infiniteCanvas: true,
+  },
+  editor: {
+    fontFamily:
+      'JetBrains Mono, Consolas, monospace',
+    fontSize: 14,
+    lineHeight: 1.5,
+    tabSize: 2,
+    insertSpaces: true,
+    wordWrap: true,
+    minimap: false,
+  },
+  export: {
+    defaultFormat: 'svg',
+    pngDpi: 300,
+    pdfQuality: 90,
+    includeMetadata: true,
+  },
+  privacy: {
+    telemetry: false,
+    crashReporting: true,
+    updateCheck: true,
+  },
+}
+`,
   )
 
-  const dependencies = new Set()
+  write(
+    'features/settings/src/ports/settings-store.ts',
+    `import type { AppSettings } from '../domain/settings'
 
-  for (const specifier of imports) {
-    const resolvedFile = resolveImport(
-      file,
-      specifier,
-    )
-
-    if (resolvedFile) {
-      dependencies.add(resolvedFile)
-    }
-  }
-
-  fileGraph.set(file, dependencies)
+export interface SettingsStore {
+  readonly load: () => Promise<AppSettings>
+  readonly save: (
+    settings: AppSettings,
+  ) => Promise<void>
+  readonly reset: () => Promise<AppSettings>
 }
-
-const packageCycles = findCycles(packageGraph)
-const fileCycles = findCycles(fileGraph)
-
-const violations = []
-
-for (const cycle of packageCycles) {
-  violations.push(
-    'Package cycle: ' +
-      cycle.join(' -> '),
+`,
   )
-}
 
-for (const cycle of fileCycles) {
-  violations.push(
-    'Source cycle: ' +
-      cycle
-        .map((file) =>
-          relative(root, file).replaceAll(
-            '\\\\',
-            '/',
-          ),
-        )
-        .join(' -> '),
+  write(
+    'features/settings/src/public-api.ts',
+    `export {
+  DEFAULT_APP_SETTINGS,
+  type AppSettings,
+  type CanvasSettings,
+  type EditorSettings,
+  type ExportSettings,
+  type PrivacySettings,
+  type ThemeMode,
+} from './domain/settings'
+
+export type {
+  SettingsStore,
+} from './ports/settings-store'
+`,
   )
 }
 
-if (violations.length > 0) {
-  console.error(
-    violations.join('\\n'),
-  )
-  process.exit(1)
-}
+function createDesktopSettingsAdapter() {
+  write(
+    'platforms/desktop-runtime/src/adapters/settings/settings-store.ts',
+    `import { invoke } from '@hybrid-canvas/desktop-ipc'
+import type {
+  AppSettings,
+  SettingsStore,
+  ThemeMode,
+} from '@hybrid-canvas/settings'
 
-console.log(
-  \`Import graph OK: \${packages.length} packages, \${sourceFiles.length} source files\`,
-)
-
-function loadWorkspacePackages() {
-  const result = []
-
-  for (const workspaceRoot of workspaceRoots) {
-    const absoluteRoot = join(
-      root,
-      workspaceRoot,
-    )
-
-    if (!existsSync(absoluteRoot)) {
-      continue
-    }
-
-    for (const entry of readdirSync(
-      absoluteRoot,
-    )) {
-      const packageRoot = join(
-        absoluteRoot,
-        entry,
-      )
-
-      if (
-        !statSync(packageRoot).isDirectory()
-      ) {
-        continue
-      }
-
-      const manifestPath = join(
-        packageRoot,
-        'package.json',
-      )
-
-      if (!existsSync(manifestPath)) {
-        continue
-      }
-
-      const manifest = JSON.parse(
-        readFileSync(
-          manifestPath,
-          'utf8',
-        ).replace(/^\\uFEFF/, ''),
-      )
-
-      if (!manifest.name) {
-        continue
-      }
-
-      result.push({
-        root: packageRoot,
-        manifest,
-      })
-    }
+interface AppSettingsDto {
+  readonly theme: string
+  readonly language: string
+  readonly auto_save: boolean
+  readonly auto_save_interval: number
+  readonly shortcuts: Record<string, string>
+  readonly canvas: {
+    readonly default_zoom: number
+    readonly show_grid: boolean
+    readonly snap_to_grid: boolean
+    readonly grid_size: number
+    readonly show_rulers: boolean
+    readonly infinite_canvas: boolean
   }
-
-  return result
-}
-
-function collectSourceFiles() {
-  const result = []
-
-  for (const pkg of packages) {
-    const sourceRoot = join(
-      pkg.root,
-      'src',
-    )
-
-    if (existsSync(sourceRoot)) {
-      walk(sourceRoot, result)
-    }
+  readonly editor: {
+    readonly font_family: string
+    readonly font_size: number
+    readonly line_height: number
+    readonly tab_size: number
+    readonly insert_spaces: boolean
+    readonly word_wrap: boolean
+    readonly minimap: boolean
   }
-
-  return result
-}
-
-function walk(directory, result) {
-  for (const entry of readdirSync(directory)) {
-    if (ignoredDirectories.has(entry)) {
-      continue
-    }
-
-    const path = join(directory, entry)
-    const info = statSync(path)
-
-    if (info.isDirectory()) {
-      walk(path, result)
-      continue
-    }
-
-    if (
-      !sourceExtensions.includes(
-        extname(path),
-      )
-    ) {
-      continue
-    }
-
-    if (
-      /\\.(?:test|spec)\\.[cm]?tsx?$/.test(
-        path,
-      )
-    ) {
-      continue
-    }
-
-    result.push(normalize(path))
+  readonly export: {
+    readonly default_format: string
+    readonly png_dpi: number
+    readonly pdf_quality: number
+    readonly include_metadata: boolean
+  }
+  readonly privacy: {
+    readonly telemetry: boolean
+    readonly crash_reporting: boolean
+    readonly update_check: boolean
   }
 }
 
-function extractImports(content) {
-  const imports = []
-  importPattern.lastIndex = 0
-
-  let match
-
-  while (
-    (match = importPattern.exec(content))
-  ) {
-    const specifier =
-      match[1] ?? match[2]
-
-    if (specifier) {
-      imports.push(specifier)
-    }
-  }
-
-  return imports
-}
-
-function resolveImport(importer, specifier) {
-  if (specifier.startsWith('.')) {
-    return resolveSourcePath(
-      resolve(
-        dirname(importer),
-        specifier,
-      ),
-    )
-  }
-
-  const matchingPackage = packages
-    .filter((pkg) =>
-      specifier === pkg.manifest.name ||
-      specifier.startsWith(
-        pkg.manifest.name + '/',
-      ),
-    )
-    .sort(
-      (left, right) =>
-        right.manifest.name.length -
-        left.manifest.name.length,
-    )[0]
-
-  if (!matchingPackage) {
-    return null
-  }
-
-  const subpath =
-    specifier ===
-    matchingPackage.manifest.name
-      ? '.'
-      : '.' +
-        specifier.slice(
-          matchingPackage.manifest.name
-            .length,
+export function createDesktopSettingsStore(): SettingsStore {
+  return {
+    async load() {
+      const dto =
+        await invoke<AppSettingsDto>(
+          'settings_get',
         )
 
-  const exportTarget = getExportTarget(
-    matchingPackage.manifest.exports,
-    subpath,
-  )
+      return fromDto(dto)
+    },
 
-  if (exportTarget) {
-    return resolveSourcePath(
-      join(
-        matchingPackage.root,
-        exportTarget,
-      ),
-    )
-  }
-
-  return resolveSourcePath(
-    join(
-      matchingPackage.root,
-      'src/public-api',
-    ),
-  )
-}
-
-function getExportTarget(exportsField, subpath) {
-  if (!exportsField) {
-    return null
-  }
-
-  if (
-    typeof exportsField === 'string' &&
-    subpath === '.'
-  ) {
-    return exportsField
-  }
-
-  const entry = exportsField[subpath]
-
-  if (typeof entry === 'string') {
-    return entry
-  }
-
-  if (
-    entry &&
-    typeof entry === 'object'
-  ) {
-    return (
-      entry.default ??
-      entry.import ??
-      entry.types ??
-      null
-    )
-  }
-
-  return null
-}
-
-function resolveSourcePath(candidate) {
-  const normalizedCandidate =
-    candidate.replace(
-      /\\.[cm]?[jt]sx?$/,
-      '',
-    )
-
-  const candidates = [
-    candidate,
-    ...sourceExtensions.map(
-      (extension) =>
-        normalizedCandidate + extension,
-    ),
-    ...sourceExtensions.map(
-      (extension) =>
-        join(
-          normalizedCandidate,
-          'index' + extension,
-        ),
-    ),
-  ]
-
-  for (const path of candidates) {
-    const normalizedPath = normalize(path)
-
-    if (
-      sourceFileSet.has(normalizedPath)
-    ) {
-      return normalizedPath
-    }
-
-    if (
-      existsSync(normalizedPath) &&
-      statSync(normalizedPath).isFile() &&
-      sourceExtensions.includes(
-        extname(normalizedPath),
+    save(settings) {
+      return invoke<void>(
+        'settings_set',
+        {
+          settings: toDto(settings),
+        },
       )
-    ) {
-      return normalizedPath
-    }
-  }
+    },
 
-  return null
+    async reset() {
+      const dto =
+        await invoke<AppSettingsDto>(
+          'settings_reset',
+        )
+
+      return fromDto(dto)
+    },
+  }
 }
 
-function findCycles(graph) {
-  const cycles = []
-  const state = new Map()
-  const stack = []
-  const stackIndex = new Map()
-  const signatures = new Set()
-
-  function visit(node) {
-    const currentState = state.get(node)
-
-    if (currentState === 'visited') {
-      return
-    }
-
-    if (currentState === 'visiting') {
-      const start =
-        stackIndex.get(node)
-
-      if (start === undefined) {
-        return
-      }
-
-      const cycle = [
-        ...stack.slice(start),
-        node,
-      ]
-
-      const signature = canonicalizeCycle(
-        cycle,
-      )
-
-      if (!signatures.has(signature)) {
-        signatures.add(signature)
-        cycles.push(cycle)
-      }
-
-      return
-    }
-
-    state.set(node, 'visiting')
-    stackIndex.set(node, stack.length)
-    stack.push(node)
-
-    for (const dependency of graph.get(
-      node,
-    ) ?? []) {
-      if (graph.has(dependency)) {
-        visit(dependency)
-      }
-    }
-
-    stack.pop()
-    stackIndex.delete(node)
-    state.set(node, 'visited')
+function fromDto(
+  dto: AppSettingsDto,
+): AppSettings {
+  return {
+    theme: parseTheme(dto.theme),
+    language: dto.language,
+    autoSave: dto.auto_save,
+    autoSaveIntervalMs:
+      dto.auto_save_interval,
+    shortcuts: dto.shortcuts,
+    canvas: {
+      defaultZoom:
+        dto.canvas.default_zoom,
+      showGrid:
+        dto.canvas.show_grid,
+      snapToGrid:
+        dto.canvas.snap_to_grid,
+      gridSize:
+        dto.canvas.grid_size,
+      showRulers:
+        dto.canvas.show_rulers,
+      infiniteCanvas:
+        dto.canvas.infinite_canvas,
+    },
+    editor: {
+      fontFamily:
+        dto.editor.font_family,
+      fontSize:
+        dto.editor.font_size,
+      lineHeight:
+        dto.editor.line_height,
+      tabSize:
+        dto.editor.tab_size,
+      insertSpaces:
+        dto.editor.insert_spaces,
+      wordWrap:
+        dto.editor.word_wrap,
+      minimap:
+        dto.editor.minimap,
+    },
+    export: {
+      defaultFormat:
+        dto.export.default_format,
+      pngDpi:
+        dto.export.png_dpi,
+      pdfQuality:
+        dto.export.pdf_quality,
+      includeMetadata:
+        dto.export.include_metadata,
+    },
+    privacy: {
+      telemetry:
+        dto.privacy.telemetry,
+      crashReporting:
+        dto.privacy.crash_reporting,
+      updateCheck:
+        dto.privacy.update_check,
+    },
   }
-
-  for (const node of graph.keys()) {
-    visit(node)
-  }
-
-  return cycles
 }
 
-function canonicalizeCycle(cycle) {
-  const values = cycle.slice(0, -1)
-
-  if (values.length === 0) {
-    return ''
+function toDto(
+  settings: AppSettings,
+): AppSettingsDto {
+  return {
+    theme: settings.theme,
+    language: settings.language,
+    auto_save: settings.autoSave,
+    auto_save_interval:
+      settings.autoSaveIntervalMs,
+    shortcuts: { ...settings.shortcuts },
+    canvas: {
+      default_zoom:
+        settings.canvas.defaultZoom,
+      show_grid:
+        settings.canvas.showGrid,
+      snap_to_grid:
+        settings.canvas.snapToGrid,
+      grid_size:
+        settings.canvas.gridSize,
+      show_rulers:
+        settings.canvas.showRulers,
+      infinite_canvas:
+        settings.canvas.infiniteCanvas,
+    },
+    editor: {
+      font_family:
+        settings.editor.fontFamily,
+      font_size:
+        settings.editor.fontSize,
+      line_height:
+        settings.editor.lineHeight,
+      tab_size:
+        settings.editor.tabSize,
+      insert_spaces:
+        settings.editor.insertSpaces,
+      word_wrap:
+        settings.editor.wordWrap,
+      minimap:
+        settings.editor.minimap,
+    },
+    export: {
+      default_format:
+        settings.export.defaultFormat,
+      png_dpi:
+        settings.export.pngDpi,
+      pdf_quality:
+        settings.export.pdfQuality,
+      include_metadata:
+        settings.export.includeMetadata,
+    },
+    privacy: {
+      telemetry:
+        settings.privacy.telemetry,
+      crash_reporting:
+        settings.privacy.crashReporting,
+      update_check:
+        settings.privacy.updateCheck,
+    },
   }
+}
 
-  const rotations = values.map(
-    (_, index) => [
-      ...values.slice(index),
-      ...values.slice(0, index),
-    ].join('|'),
-  )
-
-  return rotations.sort()[0]
+function parseTheme(
+  value: string,
+): ThemeMode {
+  switch (value) {
+    case 'light':
+    case 'dark':
+    case 'system':
+      return value
+    default:
+      return 'system'
+  }
 }
 `,
   )
 }
 
-function createBundleReport() {
+function createSettingsDialog() {
   write(
-    'tests/performance/report-bundle.mjs',
-    `#!/usr/bin/env node
-
+    'features/settings/src/presentation/SettingsDialog.tsx',
+    `import {
+  Button,
+} from '@hybrid-canvas/design-system'
+import type {
+  AppSettings,
+  SettingsStore,
+  ThemeMode,
+} from '@hybrid-canvas/settings'
 import {
-  existsSync,
-  readFileSync,
-  statSync,
-} from 'node:fs'
-import {
-  dirname,
-  join,
-  relative,
-  resolve,
-} from 'node:path'
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react'
 
-const root = resolve(import.meta.dirname, '../..')
-const manifestPath = join(
-  root,
-  'apps/desktop/dist/.vite/manifest.json',
-)
-
-if (!existsSync(manifestPath)) {
-  console.error(
-    'Vite manifest not found. Run pnpm build:desktop first.',
-  )
-  process.exit(1)
+export interface SettingsDialogProps {
+  readonly open: boolean
+  readonly store: SettingsStore
+  readonly onOpenChange: (
+    open: boolean,
+  ) => void
 }
 
-const manifest = JSON.parse(
-  readFileSync(manifestPath, 'utf8'),
-)
+type SettingsSection =
+  | 'general'
+  | 'canvas'
+  | 'about'
 
-const distRoot = resolve(
-  dirname(manifestPath),
-  '..',
-)
-
-const assets = new Map()
-
-for (const entry of Object.values(manifest)) {
-  collect(entry.file, 'js')
-
-  for (const cssFile of entry.css ?? []) {
-    collect(cssFile, 'css')
-  }
-
-  for (const asset of entry.assets ?? []) {
-    collect(asset, 'asset')
-  }
-}
-
-const rows = [...assets.values()].sort(
-  (left, right) =>
-    right.bytes - left.bytes,
-)
-
-const totals = rows.reduce(
-  (result, row) => {
-    result[row.kind] ??= 0
-    result[row.kind] += row.bytes
-    result.total += row.bytes
-    return result
+const SETTINGS_SECTIONS = [
+  {
+    id: 'general',
+    label: '常规',
   },
-  { total: 0 },
-)
+  {
+    id: 'canvas',
+    label: '画布',
+  },
+  {
+    id: 'about',
+    label: '关于',
+  },
+] as const
 
-console.log('')
-console.log('Desktop bundle report')
-console.log('=====================')
-console.log('')
+export function SettingsDialog({
+  open,
+  store,
+  onOpenChange,
+}: SettingsDialogProps) {
+  const [
+    activeSection,
+    setActiveSection,
+  ] = useState<SettingsSection>('general')
 
-for (const row of rows) {
-  console.log(
-    \`\${formatBytes(row.bytes).padStart(10)}  \${row.kind.padEnd(5)}  \${row.path}\`,
+  const [
+    draft,
+    setDraft,
+  ] = useState<AppSettings | null>(null)
+
+  const [loading, setLoading] =
+    useState(false)
+
+  const [saving, setSaving] =
+    useState(false)
+
+  const [
+    errorMessage,
+    setErrorMessage,
+  ] = useState<string | null>(null)
+
+  const titleId = useId()
+  const descriptionId = useId()
+  const dialogRef =
+    useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    let disposed = false
+    const previouslyFocused =
+      document.activeElement
+
+    setLoading(true)
+    setErrorMessage(null)
+
+    void store.load().then(
+      (settings) => {
+        if (!disposed) {
+          setDraft(settings)
+          setLoading(false)
+          dialogRef.current?.focus()
+        }
+      },
+      (cause: unknown) => {
+        if (!disposed) {
+          setLoading(false)
+          setErrorMessage(
+            getErrorMessage(cause),
+          )
+        }
+      },
+    )
+
+    const handleKeyDown = (
+      event: KeyboardEvent,
+    ) => {
+      if (
+        event.key === 'Escape' &&
+        !saving
+      ) {
+        event.preventDefault()
+        onOpenChange(false)
+      }
+    }
+
+    document.addEventListener(
+      'keydown',
+      handleKeyDown,
+    )
+
+    return () => {
+      disposed = true
+
+      document.removeEventListener(
+        'keydown',
+        handleKeyDown,
+      )
+
+      if (
+        previouslyFocused instanceof
+        HTMLElement
+      ) {
+        previouslyFocused.focus()
+      }
+    }
+  }, [onOpenChange, open, saving, store])
+
+  if (!open) {
+    return null
+  }
+
+  const save = () => {
+    if (!draft || saving) {
+      return
+    }
+
+    setSaving(true)
+    setErrorMessage(null)
+
+    void store.save(draft).then(
+      () => {
+        setSaving(false)
+        onOpenChange(false)
+      },
+      (cause: unknown) => {
+        setSaving(false)
+        setErrorMessage(
+          getErrorMessage(cause),
+        )
+      },
+    )
+  }
+
+  const reset = () => {
+    if (saving) {
+      return
+    }
+
+    setSaving(true)
+    setErrorMessage(null)
+
+    void store.reset().then(
+      (settings) => {
+        setDraft(settings)
+        setSaving(false)
+      },
+      (cause: unknown) => {
+        setSaving(false)
+        setErrorMessage(
+          getErrorMessage(cause),
+        )
+      },
+    )
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-100 grid place-items-center bg-black/45 p-6 backdrop-blur-[2px]"
+      onMouseDown={(event) => {
+        if (
+          event.target ===
+            event.currentTarget &&
+          !saving
+        ) {
+          onOpenChange(false)
+        }
+      }}
+      role="presentation"
+    >
+      <div
+        aria-describedby={descriptionId}
+        aria-labelledby={titleId}
+        aria-modal="true"
+        className="flex h-[min(680px,calc(100vh-48px))] w-[min(920px,calc(100vw-48px))] overflow-hidden rounded-xl border border-divider bg-background shadow-2xl outline-none"
+        ref={dialogRef}
+        role="dialog"
+        tabIndex={-1}
+      >
+        <aside className="w-56 shrink-0 border-r border-divider bg-muted/30 p-4">
+          <div className="mb-5 px-2">
+            <h2
+              className="text-base font-semibold"
+              id={titleId}
+            >
+              设置
+            </h2>
+
+            <p
+              className="mt-1 text-xs text-muted-foreground"
+              id={descriptionId}
+            >
+              调整 Hybrid Canvas 的使用体验
+            </p>
+          </div>
+
+          <nav
+            aria-label="设置分类"
+            className="space-y-1"
+          >
+            {SETTINGS_SECTIONS.map(
+              (section) => (
+                <button
+                  aria-current={
+                    activeSection ===
+                    section.id
+                      ? 'page'
+                      : undefined
+                  }
+                  className={
+                    activeSection ===
+                    section.id
+                      ? 'w-full rounded-md bg-accent px-3 py-2 text-left text-sm font-medium text-accent-foreground'
+                      : 'w-full rounded-md px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }
+                  key={section.id}
+                  onClick={() =>
+                    setActiveSection(
+                      section.id,
+                    )
+                  }
+                  type="button"
+                >
+                  {section.label}
+                </button>
+              ),
+            )}
+          </nav>
+        </aside>
+
+        <section className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-16 shrink-0 items-center justify-between border-b border-divider px-6">
+            <h3 className="text-sm font-semibold">
+              {
+                SETTINGS_SECTIONS.find(
+                  (section) =>
+                    section.id ===
+                    activeSection,
+                )?.label
+              }
+            </h3>
+
+            <Button
+              aria-label="关闭设置"
+              disabled={saving}
+              onClick={() =>
+                onOpenChange(false)
+              }
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              ×
+            </Button>
+          </header>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-6">
+            {loading ? (
+              <p className="text-sm text-muted-foreground">
+                正在读取设置…
+              </p>
+            ) : null}
+
+            {errorMessage ? (
+              <p
+                className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+                role="alert"
+              >
+                {errorMessage}
+              </p>
+            ) : null}
+
+            {!loading &&
+            draft &&
+            activeSection ===
+              'general' ? (
+              <GeneralSettings
+                settings={draft}
+                onChange={setDraft}
+              />
+            ) : null}
+
+            {!loading &&
+            draft &&
+            activeSection ===
+              'canvas' ? (
+              <CanvasSettingsForm
+                settings={draft}
+                onChange={setDraft}
+              />
+            ) : null}
+
+            {activeSection ===
+            'about' ? (
+              <AboutSettings />
+            ) : null}
+          </div>
+
+          <footer className="flex h-16 shrink-0 items-center justify-between border-t border-divider px-6">
+            <Button
+              disabled={
+                loading || saving
+              }
+              onClick={reset}
+              type="button"
+              variant="ghost"
+            >
+              恢复默认
+            </Button>
+
+            <div className="flex gap-2">
+              <Button
+                disabled={saving}
+                onClick={() =>
+                  onOpenChange(false)
+                }
+                type="button"
+                variant="ghost"
+              >
+                取消
+              </Button>
+
+              <Button
+                disabled={
+                  loading ||
+                  saving ||
+                  !draft
+                }
+                onClick={save}
+                type="button"
+              >
+                {saving
+                  ? '正在保存…'
+                  : '保存'}
+              </Button>
+            </div>
+          </footer>
+        </section>
+      </div>
+    </div>
   )
 }
 
-console.log('')
-console.log(
-  \`JavaScript: \${formatBytes(totals.js ?? 0)}\`,
-)
-console.log(
-  \`CSS:        \${formatBytes(totals.css ?? 0)}\`,
-)
-console.log(
-  \`Assets:     \${formatBytes(totals.asset ?? 0)}\`,
-)
-console.log(
-  \`Total:      \${formatBytes(totals.total)}\`,
-)
-console.log('')
+function GeneralSettings({
+  settings,
+  onChange,
+}: {
+  readonly settings: AppSettings
+  readonly onChange: (
+    settings: AppSettings,
+  ) => void
+}) {
+  return (
+    <div className="space-y-8">
+      <SettingsGroup
+        description="选择应用界面的颜色模式。"
+        title="外观"
+      >
+        <select
+          aria-label="颜色模式"
+          className="h-9 w-56 rounded-md border border-divider bg-background px-3 text-sm"
+          onChange={(event) =>
+            onChange({
+              ...settings,
+              theme:
+                event.target
+                  .value as ThemeMode,
+            })
+          }
+          value={settings.theme}
+        >
+          <option value="light">
+            浅色
+          </option>
+          <option value="dark">
+            深色
+          </option>
+          <option value="system">
+            跟随系统
+          </option>
+        </select>
+      </SettingsGroup>
 
-function collect(file, kind) {
-  if (!file || assets.has(file)) {
-    return
-  }
+      <SettingsGroup
+        description="控制应用界面使用的语言。"
+        title="语言"
+      >
+        <select
+          aria-label="界面语言"
+          className="h-9 w-56 rounded-md border border-divider bg-background px-3 text-sm"
+          onChange={(event) =>
+            onChange({
+              ...settings,
+              language:
+                event.target.value,
+            })
+          }
+          value={settings.language}
+        >
+          <option value="zh-CN">
+            简体中文
+          </option>
+          <option value="en">
+            English
+          </option>
+        </select>
+      </SettingsGroup>
 
-  const absolutePath = join(
-    distRoot,
-    file,
+      <SettingsToggle
+        checked={settings.autoSave}
+        description="编辑画布时自动保存到当前文件。"
+        label="自动保存"
+        onChange={(checked) =>
+          onChange({
+            ...settings,
+            autoSave: checked,
+          })
+        }
+      />
+    </div>
+  )
+}
+
+function CanvasSettingsForm({
+  settings,
+  onChange,
+}: {
+  readonly settings: AppSettings
+  readonly onChange: (
+    settings: AppSettings,
+  ) => void
+}) {
+  return (
+    <div className="space-y-6">
+      <SettingsToggle
+        checked={
+          settings.canvas.showGrid
+        }
+        description="在画布背景中显示辅助网格。"
+        label="显示网格"
+        onChange={(checked) =>
+          onChange({
+            ...settings,
+            canvas: {
+              ...settings.canvas,
+              showGrid: checked,
+            },
+          })
+        }
+      />
+
+      <SettingsToggle
+        checked={
+          settings.canvas.snapToGrid
+        }
+        description="移动图形时自动吸附到网格。"
+        label="吸附到网格"
+        onChange={(checked) =>
+          onChange({
+            ...settings,
+            canvas: {
+              ...settings.canvas,
+              snapToGrid: checked,
+            },
+          })
+        }
+      />
+
+      <SettingsGroup
+        description="新建画布时使用的默认缩放比例。"
+        title="默认缩放"
+      >
+        <select
+          aria-label="默认缩放比例"
+          className="h-9 w-40 rounded-md border border-divider bg-background px-3 text-sm"
+          onChange={(event) =>
+            onChange({
+              ...settings,
+              canvas: {
+                ...settings.canvas,
+                defaultZoom:
+                  Number(
+                    event.target.value,
+                  ),
+              },
+            })
+          }
+          value={
+            settings.canvas.defaultZoom
+          }
+        >
+          <option value="1">100%</option>
+          <option value="0.75">
+            75%
+          </option>
+          <option value="0.5">
+            50%
+          </option>
+        </select>
+      </SettingsGroup>
+    </div>
+  )
+}
+
+function AboutSettings() {
+  return (
+    <div className="max-w-xl rounded-lg border border-divider p-5">
+      <h4 className="text-base font-semibold">
+        Hybrid Canvas
+      </h4>
+
+      <p className="mt-2 text-sm text-muted-foreground">
+        基于 tldraw 的本地优先画布应用。
+      </p>
+
+      <dl className="mt-5 grid grid-cols-[100px_1fr] gap-y-2 text-sm">
+        <dt className="text-muted-foreground">
+          版本
+        </dt>
+        <dd>0.1.0</dd>
+
+        <dt className="text-muted-foreground">
+          设置存储
+        </dt>
+        <dd>Tauri Store</dd>
+      </dl>
+    </div>
+  )
+}
+
+function SettingsGroup({
+  children,
+  description,
+  title,
+}: {
+  readonly children:
+    React.ReactNode
+  readonly description: string
+  readonly title: string
+}) {
+  return (
+    <section>
+      <h4 className="text-sm font-semibold">
+        {title}
+      </h4>
+
+      <p className="mt-1 text-sm text-muted-foreground">
+        {description}
+      </p>
+
+      <div className="mt-4">
+        {children}
+      </div>
+    </section>
+  )
+}
+
+function SettingsToggle({
+  checked,
+  description,
+  label,
+  onChange,
+}: {
+  readonly checked: boolean
+  readonly description: string
+  readonly label: string
+  readonly onChange: (
+    checked: boolean,
+  ) => void
+}) {
+  return (
+    <label className="flex items-center justify-between gap-5 border-b border-divider py-4 last:border-b-0">
+      <span>
+        <span className="block text-sm font-medium">
+          {label}
+        </span>
+
+        <span className="mt-1 block text-xs text-muted-foreground">
+          {description}
+        </span>
+      </span>
+
+      <input
+        checked={checked}
+        className="size-4"
+        onChange={(event) =>
+          onChange(
+            event.target.checked,
+          )
+        }
+        type="checkbox"
+      />
+    </label>
+  )
+}
+
+function getErrorMessage(
+  cause: unknown,
+): string {
+  return cause instanceof Error
+    ? cause.message
+    : '设置操作失败'
+}
+`,
+  )
+}
+
+async function wireApplicationRuntime() {
+  await edit(
+    'apps/desktop/src/bootstrap/application.ts',
+    (content) => {
+      let updated = content
+
+      updated = replaceOnce(
+        updated,
+        `  createDrawFileCommands,
+  createFileDialog,
+  createMainWindowController,
+  type MainWindowController,`,
+        `  createDesktopSettingsStore,
+  createDrawFileCommands,
+  createFileDialog,
+  createMainWindowController,
+  type MainWindowController,
+  type SettingsStore,`,
+        '导入 Desktop SettingsStore',
+      )
+
+      updated = replaceOnce(
+        updated,
+        `  readonly mainWindow: MainWindowController
+  readonly dispose: () => void`,
+        `  readonly mainWindow: MainWindowController
+  readonly settings: SettingsStore
+  readonly dispose: () => void`,
+        'ApplicationRuntime 暴露 SettingsStore',
+      )
+
+      updated = replaceOnce(
+        updated,
+        `  const mainWindow = createMainWindowController()
+  const editorSessions = createEditorSessionRegistry()`,
+        `  const mainWindow = createMainWindowController()
+  const settings = createDesktopSettingsStore()
+  const editorSessions = createEditorSessionRegistry()`,
+        '创建 SettingsStore',
+      )
+
+      updated = replaceOnce(
+        updated,
+        `    termination,
+    mainWindow,
+
+    dispose()`,
+        `    termination,
+    mainWindow,
+    settings,
+
+    dispose()`,
+        '返回 SettingsStore',
+      )
+
+      return updated
+    },
   )
 
-  if (!existsSync(absolutePath)) {
-    return
-  }
+  await edit(
+    'apps/desktop/src/presentation/AppShell.tsx',
+    (content) => {
+      let updated = content
 
-  assets.set(file, {
-    path: relative(
-      distRoot,
-      absolutePath,
-    ).replaceAll('\\\\', '/'),
-    kind,
-    bytes: statSync(
-      absolutePath,
-    ).size,
+      updated = replaceOnce(
+        updated,
+        `import { SettingsDialog } from '@hybrid-canvas/settings/react'`,
+        `import type { SettingsStore } from '@hybrid-canvas/settings'
+import { SettingsDialog } from '@hybrid-canvas/settings/react'`,
+        '导入 SettingsStore 类型',
+      )
+
+      updated = replaceOnce(
+        updated,
+        `  readonly mainWindow: MainWindowController
+}`,
+        `  readonly mainWindow: MainWindowController
+  readonly settings: SettingsStore
+}`,
+        'AppShellRuntime 增加 settings',
+      )
+
+      updated = replaceOnce(
+        updated,
+        `      <SettingsDialog
+        onOpenChange={setSettingsOpen}
+        open={isSettingsOpen}
+      />`,
+        `      <SettingsDialog
+        onOpenChange={setSettingsOpen}
+        open={isSettingsOpen}
+        store={runtime.settings}
+      />`,
+        'SettingsDialog 注入 SettingsStore',
+      )
+
+      return updated
+    },
+  )
+}
+
+function addDrawFileTests() {
+  write(
+    'editor/persistence/src/application/snapshot-service.test.ts',
+    `import {
+  describe,
+  expect,
+  it,
+} from 'vitest'
+
+import {
+  createDrawFileHeader,
+  parseDrawDocument,
+  serializeDrawDocument,
+} from './snapshot-service'
+
+function createValidJson(): string {
+  return JSON.stringify({
+    header: createDrawFileHeader(
+      '2026-01-01T00:00:00.000Z',
+    ),
+    content: {
+      document: {},
+      session: {},
+    },
   })
 }
 
-function formatBytes(bytes) {
-  if (bytes < 1024) {
-    return \`\${bytes} B\`
-  }
+describe('draw snapshot service', () => {
+  it('parses and serializes a valid draw container', () => {
+    const parsed = parseDrawDocument(
+      createValidJson(),
+    )
 
-  if (bytes < 1024 * 1024) {
-    return \`\${(
-      bytes / 1024
-    ).toFixed(1)} KiB\`
-  }
+    const serialized =
+      serializeDrawDocument(
+        parsed.content,
+      )
 
-  return \`\${(
-    bytes /
-    1024 /
-    1024
-  ).toFixed(2)} MiB\`
-}
+    const reparsed =
+      parseDrawDocument(serialized)
+
+    expect(reparsed.header.format).toBe(
+      'hybrid-canvas/draw',
+    )
+
+    expect(reparsed.header.version).toBe(1)
+
+    expect(reparsed.content).toEqual(
+      parsed.content,
+    )
+  })
+
+  it('rejects a future file version', () => {
+    const json = JSON.stringify({
+      header: {
+        format: 'hybrid-canvas/draw',
+        version: 999,
+        createdAt:
+          '2026-01-01T00:00:00.000Z',
+      },
+      content: {
+        document: {},
+        session: {},
+      },
+    })
+
+    expect(() =>
+      parseDrawDocument(json),
+    ).toThrow('DRAW_FUTURE_VERSION')
+  })
+
+  it('rejects an invalid format identifier', () => {
+    const json = JSON.stringify({
+      header: {
+        format: 'unknown/draw',
+        version: 1,
+        createdAt:
+          '2026-01-01T00:00:00.000Z',
+      },
+      content: {},
+    })
+
+    expect(() =>
+      parseDrawDocument(json),
+    ).toThrow('DRAW_INVALID_HEADER')
+  })
+
+  it('rejects invalid creation timestamps', () => {
+    const json = JSON.stringify({
+      header: {
+        format: 'hybrid-canvas/draw',
+        version: 1,
+        createdAt: 'not-a-date',
+      },
+      content: {},
+    })
+
+    expect(() =>
+      parseDrawDocument(json),
+    ).toThrow('DRAW_INVALID_CREATED_AT')
+  })
+
+  it('rejects excessive nesting', () => {
+    let value = {}
+
+    for (let index = 0; index < 140; index += 1) {
+      value = { child: value }
+    }
+
+    const json = JSON.stringify({
+      header: createDrawFileHeader(),
+      content: value,
+    })
+
+    expect(() =>
+      parseDrawDocument(json),
+    ).toThrow('DRAW_DEPTH_EXCEEDED')
+  })
+})
 `,
   )
 }
 
-async function enableViteManifest() {
+async function addNativeFileSizeBoundary() {
   await edit(
-    'apps/desktop/vite.config.ts',
+    'apps/desktop/src-tauri/src/commands/file.rs',
     (content) => {
-      if (
-        content.includes(
-          'manifest: true',
-        )
-      ) {
-        throw new Error(
-          'Vite manifest 已经启用，请不要重复运行 Phase 4。',
-        )
-      }
+      let updated = content
 
-      return content.replace(
-        `  build: {
-    target:`,
-        `  build: {
-    manifest: true,
-    target:`,
+      updated = replaceOnce(
+        updated,
+        `use tauri_plugin_store::StoreExt;
+
+#[derive(Debug, Deserialize, Type)]`,
+        `use tauri_plugin_store::StoreExt;
+
+const MAX_DRAW_FILE_BYTES: u64 = 32 * 1024 * 1024;
+
+#[derive(Debug, Deserialize, Type)]`,
+        '增加原生 draw 文件大小上限',
       )
+
+      updated = replaceOnce(
+        updated,
+        `pub async fn file_save_draw(request: DrawSaveRequest) -> Result<()> {
+    let path = PathBuf::from(&request.path);
+
+    if let Some(parent) = path.parent() {`,
+        `pub async fn file_save_draw(request: DrawSaveRequest) -> Result<()> {
+    if request.content.len() as u64 > MAX_DRAW_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "DRAW_FILE_TOO_LARGE",
+        )
+        .into());
+    }
+
+    let path = PathBuf::from(&request.path);
+
+    if let Some(parent) = path.parent() {`,
+        '保存前检查 draw 文件大小',
+      )
+
+      updated = replaceOnce(
+        updated,
+        `pub async fn file_read_draw(path: String) -> Result<DrawReadResult> {
+    let content = std::fs::read_to_string(&path)?;
+    Ok(DrawReadResult { content })
+}`,
+        `pub async fn file_read_draw(path: String) -> Result<DrawReadResult> {
+    let metadata = std::fs::metadata(&path)?;
+
+    if metadata.len() > MAX_DRAW_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "DRAW_FILE_TOO_LARGE",
+        )
+        .into());
+    }
+
+    let content = std::fs::read_to_string(&path)?;
+    Ok(DrawReadResult { content })
+}`,
+        '读取前检查 draw 文件大小',
+      )
+
+      updated = replaceOnce(
+        updated,
+        `pub async fn file_create_draw(path: String, content: String) -> Result<DrawReadResult> {
+    let file_path = PathBuf::from(&path);`,
+        `pub async fn file_create_draw(path: String, content: String) -> Result<DrawReadResult> {
+    if content.len() as u64 > MAX_DRAW_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "DRAW_FILE_TOO_LARGE",
+        )
+        .into());
+    }
+
+    let file_path = PathBuf::from(&path);`,
+        '创建前检查 draw 文件大小',
+      )
+
+      return updated
     },
   )
 }
 
-async function updateRootScripts() {
-  await updateJson(
-    'package.json',
-    (json) => {
-      json.scripts ??= {}
-
-      json.scripts[
-        'test:architecture'
-      ] =
-        'node tests/architecture/check.mjs && node tests/architecture/check-import-graph.mjs'
-
-      json.scripts[
-        'analyze:bundle'
-      ] =
-        'node tests/performance/report-bundle.mjs'
-
-      return json
-    },
-  )
-}
-
-async function updateCi() {
+async function alignRustSettingsDefaults() {
   await edit(
-    '.github/workflows/quality.yml',
-    (content) => {
-      if (
-        content.includes(
-          'Bundle report',
-        )
-      ) {
-        throw new Error(
-          'CI 已包含 Bundle report，请不要重复执行。',
-        )
-      }
-
-      const oldBlock = `      - name: Build
-        run: pnpm build
-`
-
-      const newBlock = `      - name: Build
-        run: pnpm build
-
-      - name: Bundle report
-        run: pnpm analyze:bundle
-`
-
-      if (!content.includes(oldBlock)) {
-        throw new Error(
-          '找不到 CI Build 步骤。',
-        )
-      }
-
-      return content.replace(
-        oldBlock,
-        newBlock,
-      )
-    },
+    'apps/desktop/src-tauri/src/commands/settings.rs',
+    (content) =>
+      replaceOnce(
+        content,
+        `            language: "en".into(),`,
+        `            language: "zh-CN".into(),`,
+        '统一 Rust 和前端默认语言',
+      ),
   )
 }
 
-function createProgressDocument() {
-  write(
+async function updateProgressDocument() {
+  await edit(
     'docs/architecture/refactor-progress.md',
-    `# Frontend Architecture Refactor Progress
+    (content) => {
+      let updated = content
 
-## Scope
+      updated = updated.replace(
+        `| 4. Dependency and performance baselines | In progress | Import graph and Vite bundle manifest |`,
+        `| 4. Dependency and performance baselines | Complete | Import graph and Vite bundle manifest |`,
+      )
 
-This refactor preserves:
+      updated = updated.replace(
+        `| 5. Compatibility and release verification | Pending | File fixtures, native failure recovery and final performance budgets |`,
+        `| 5. Compatibility and release verification | In progress | Settings IPC aligned, draw fixtures and native size boundaries added |`,
+      )
 
-- tldraw Editor and TLStore as the canonical canvas runtime
-- the existing scaffold-first package strategy
-- the current .draw file contract
-- the editor extension model
-- platform-independent editor and document packages
-
-## Progress
-
-| Phase | Status | Notes |
-| --- | --- | --- |
-| 0. Architecture review | Complete | Runtime and dependency model established |
-| 1. Runtime correctness | Complete | External-store snapshots, listener cleanup and environment exposure |
-| 2. UI boundaries | Complete after verification | Desktop chrome separated from Workspace; shared confirmation dialog |
-| 3. Workflow and errors | Complete after verification | Close orchestration moved to CanvasWorkflow; observability added |
-| 4. Dependency and performance baselines | In progress | Import graph and Vite bundle manifest |
-| 5. Compatibility and release verification | Pending | File fixtures, native failure recovery and final performance budgets |
-
-## Architectural invariants
-
-1. TLStore records are the only persistent canvas source of truth.
-2. Canvas document writes go through Editor or Store transactions.
-3. Workspace does not expose Tauri or native-window semantics.
-4. Presentation does not orchestrate document save promises.
-5. Cross-package imports use package exports.
-6. Reserved scaffolds remain registered in architecture.scaffolds.json.
-7. Performance optimizations require a recorded baseline.
-
-## Remaining work
-
-- Establish .draw round-trip fixtures and corrupt-file cases.
+      updated = updated.replace(
+        `- Establish .draw round-trip fixtures and corrupt-file cases.
 - Verify atomic save and crash recovery in the Rust layer.
 - Record initial bundle, startup and multi-canvas memory baselines.
 - Add explicit performance budgets after the first stable baseline.
 - Complete settings persistence wiring.
-- Run desktop E2E coverage for title-bar drag, close and recovery paths.
-`,
+- Run desktop E2E coverage for title-bar drag, close and recovery paths.`,
+        `- Add path capability tokens so draw commands cannot receive arbitrary paths.
+- Add crash-recovery integration tests around atomic_write.
+- Record startup and multi-canvas memory baselines.
+- Add explicit performance budgets after the first stable baseline.
+- Run desktop E2E coverage for title-bar drag, close and recovery paths.`,
+      )
+
+      return updated
+    },
   )
 }
 
@@ -990,8 +1527,8 @@ function printPlan() {
   console.log('')
   console.log(
     shouldWrite
-      ? 'Phase 4 修改计划：'
-      : 'Phase 4 预览（尚未写入）：',
+      ? 'Phase 5 修改：'
+      : 'Phase 5 预览（尚未写入）：',
   )
 
   for (const relativePath of writes.keys()) {
@@ -1002,26 +1539,26 @@ function printPlan() {
 }
 
 async function main() {
-  await assertPhase3Completed()
+  await assertPhase4Completed()
 
-  createImportGraphCheck()
-  createBundleReport()
-  await enableViteManifest()
-  await updateRootScripts()
-  await updateCi()
-  createProgressDocument()
+  createSettingsDomain()
+  createDesktopSettingsAdapter()
+  createSettingsDialog()
+  await wireApplicationRuntime()
+  addDrawFileTests()
+  await addNativeFileSizeBoundary()
+  await alignRustSettingsDefaults()
+  await updateProgressDocument()
 
   printPlan()
 
   if (!shouldWrite) {
-    console.log(
-      'Phase 3 前置条件和 Phase 4 修改均已验证。',
-    )
+    console.log('Phase 5 前置检查通过。')
     console.log('')
     console.log('实际写入：')
     console.log('')
     console.log(
-      '  node scripts/refactor-architecture-phase4.mjs --write',
+      '  node scripts/refactor-architecture-phase5.mjs --write',
     )
     console.log('')
     return
@@ -1036,19 +1573,21 @@ async function main() {
   console.log('')
   console.log('必须执行：')
   console.log('')
+  console.log('  pnpm install')
   console.log('  pnpm format')
   console.log('  pnpm lint')
   console.log('  pnpm test:architecture')
   console.log('  pnpm typecheck')
   console.log('  pnpm test')
-  console.log('  pnpm build:desktop')
-  console.log('  pnpm analyze:bundle')
+  console.log('  cargo fmt --check')
+  console.log('  cargo clippy --workspace --all-targets --all-features -- -D warnings')
+  console.log('  cargo test --workspace --all-features')
   console.log('')
 }
 
 main().catch((error) => {
   console.error('')
-  console.error('Phase 4 执行失败。')
+  console.error('Phase 5 执行失败。')
   console.error(error)
   process.exitCode = 1
 })
