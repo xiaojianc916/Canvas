@@ -1,6 +1,6 @@
 import { Button, cn } from '@hybrid-canvas/design-system'
-import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 import { Plus, X } from 'lucide-react'
+import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 
 import type {
   CanvasSessionId,
@@ -10,7 +10,7 @@ import type {
 export interface CanvasTabsProps {
   readonly tabs: readonly CanvasTabViewModel[]
   readonly onActivate: (sessionId: CanvasSessionId) => void
-  readonly onClose: (sessionId: DocumentSessionId) => void
+  readonly onClose: (sessionId: CanvasSessionId) => void
   readonly onCreate: () => void
 }
 
@@ -30,7 +30,7 @@ const BEZIER_CIRCLE = 0.5522848
 export function DocumentTabs({ tabs, onActivate, onClose, onCreate }: CanvasTabsProps) {
   const shellRef = useRef<HTMLElement | null>(null)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
-  const tabRefs = useRef(new Map<DocumentSessionId, HTMLButtonElement>())
+  const tabRefs = useRef(new Map<CanvasSessionId, HTMLButtonElement>())
   const [surface, setSurface] = useState<SurfaceGeometry>(EMPTY_SURFACE)
   const activeSessionId = tabs.find((tab) => tab.isActive)?.sessionId
   const surfaceRef = useRef<SurfaceGeometry>(EMPTY_SURFACE)
@@ -120,7 +120,7 @@ export function DocumentTabs({ tabs, onActivate, onClose, onCreate }: CanvasTabs
         className="relative z-10 flex h-full min-w-0 items-end overflow-x-auto overflow-y-hidden px-7"
         role="tablist"
       >
-        <div className="flex h-full min-w-max items-end gap-[5px]">
+        <div className="flex h-full min-w-max items-end gap-1.25">
           {tabs.map((tab) => (
             <DocumentTab
               key={tab.sessionId}
@@ -142,7 +142,7 @@ export function DocumentTabs({ tabs, onActivate, onClose, onCreate }: CanvasTabs
             onClick={onCreate}
             type="button"
           >
-            <Plus className="size-[18px]" strokeWidth={1.7} />
+            <Plus className="size-4.5" strokeWidth={1.7} />
           </button>
         </div>
       </div>
@@ -152,8 +152,8 @@ export function DocumentTabs({ tabs, onActivate, onClose, onCreate }: CanvasTabs
 
 interface DocumentTabProps {
   readonly model: CanvasTabViewModel
-  readonly onActivate: (sessionId: DocumentSessionId) => void
-  readonly onClose: (sessionId: DocumentSessionId) => void
+  readonly onActivate: (sessionId: CanvasSessionId) => void
+  readonly onClose: (sessionId: CanvasSessionId) => void
 }
 
 const DocumentTab = forwardRef<HTMLButtonElement, DocumentTabProps>(function DocumentTab(
@@ -168,7 +168,7 @@ const DocumentTab = forwardRef<HTMLButtonElement, DocumentTabProps>(function Doc
         'group mb-0 flex h-[calc(100%-5px)] shrink-0 items-center gap-2.5 rounded-[10px] border-0 bg-transparent px-3.5 text-sm outline-none transition-[color,background-color] duration-150 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-3px]',
         model.isActive
           ? 'text-foreground'
-          : 'text-muted-foreground hover:bg-foreground/[0.055] hover:text-foreground',
+          : 'text-muted-foreground hover:bg-foreground/5.5 hover:text-foreground',
       )}
       onClick={() => onActivate(model.sessionId)}
       role="tab"
@@ -200,12 +200,16 @@ const DocumentTab = forwardRef<HTMLButtonElement, DocumentTabProps>(function Doc
 
 function DocumentIcon() {
   return (
-    <svg aria-hidden="true" className="size-[18px] shrink-0" fill="none" viewBox="0 0 24 24">
+    <svg aria-hidden="true" className="size-4.5 shrink-0" fill="none" viewBox="0 0 24 24">
       <circle cx="6" cy="6" r="2.2" stroke="currentColor" strokeWidth="1.8" />
       <circle cx="18" cy="6" r="2.2" stroke="currentColor" strokeWidth="1.8" />
       <circle cx="12" cy="18" r="2.2" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M8 7.2 10.8 15.8M16 7.2 13.2 15.8M8.3 6h7.4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+      <path
+        d="M8 7.2 10.8 15.8M16 7.2 13.2 15.8M8.3 6h7.4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.8"
+      />
     </svg>
   )
 }
-

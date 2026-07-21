@@ -21,6 +21,7 @@ const RAIL_WIDTH = 'var(--activity-rail-width)'
 export function WorkspaceShell({
   model,
   actions,
+  pages,
   editor,
   inspector,
   statusLeft,
@@ -37,10 +38,16 @@ export function WorkspaceShell({
   const hasActiveCanvas = model.activeCanvas !== null
   const sidebarSize = isSidebarOpen ? sidebarWidth : 0
   const gridTemplateColumns = useMemo(
-    () => [RAIL_WIDTH, `${sidebarSize}px`, 'minmax(0, 1fr)', isInspectorOpen && hasActiveCanvas ? 'var(--inspector-width)' : '0px'].join(' '),
+    () =>
+      [
+        RAIL_WIDTH,
+        `${sidebarSize}px`,
+        'minmax(0, 1fr)',
+        isInspectorOpen && hasActiveCanvas ? 'var(--inspector-width)' : '0px',
+      ].join(' '),
     [hasActiveCanvas, isInspectorOpen, sidebarSize],
   )
-  const gridTemplateRows = hasActiveDocument
+  const gridTemplateRows = hasActiveCanvas
     ? 'var(--chrome-height) minmax(0, 1fr) var(--status-height)'
     : 'var(--chrome-height) minmax(0, 1fr)'
 
@@ -48,7 +55,9 @@ export function WorkspaceShell({
     function handlePointerMove(event: PointerEvent) {
       if (!isResizingSidebar || !rootRef.current) return
       const rootRect = rootRef.current.getBoundingClientRect()
-      const railWidth = Number.parseFloat(getComputedStyle(rootRef.current).getPropertyValue('--activity-rail-width'))
+      const railWidth = Number.parseFloat(
+        getComputedStyle(rootRef.current).getPropertyValue('--activity-rail-width'),
+      )
       const nextWidth = event.clientX - rootRect.left - railWidth
       setSidebarWidth(Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, nextWidth)))
     }
@@ -68,9 +77,13 @@ export function WorkspaceShell({
   }, [isResizingSidebar])
 
   const chrome = (
-    <header className={hasActiveDocument
-      ? 'col-span-full row-1 min-h-0 min-w-0 bg-chrome'
-      : 'col-span-full row-1 min-h-0 min-w-0 border-b border-divider bg-chrome'}>
+    <header
+      className={
+        hasActiveCanvas
+          ? 'col-span-full row-1 min-h-0 min-w-0 bg-chrome'
+          : 'col-span-full row-1 min-h-0 min-w-0 border-b border-divider bg-chrome'
+      }
+    >
       <DesktopTitleBar
         onClose={actions.closeWindow}
         onMaximize={actions.maximizeWindow}
@@ -91,7 +104,10 @@ export function WorkspaceShell({
   )
 
   const rail = (
-    <div className="row-[2/-1] min-h-0 border-r border-divider bg-sidebar" style={{ gridColumn: 1 }}>
+    <div
+      className="row-[2/-1] min-h-0 border-r border-divider bg-sidebar"
+      style={{ gridColumn: 1 }}
+    >
       <ActivityRail
         activeItemId={activeNavigationItem}
         onItemActivate={(itemId) => {
@@ -105,9 +121,11 @@ export function WorkspaceShell({
 
   const sidebar = (
     <div
-      className={isSidebarOpen
-        ? 'relative row-[2/-1] min-h-0 min-w-0 border-r border-divider bg-sidebar'
-        : 'relative row-[2/-1] min-h-0 min-w-0 bg-sidebar'}
+      className={
+        isSidebarOpen
+          ? 'relative row-[2/-1] min-h-0 min-w-0 border-r border-divider bg-sidebar'
+          : 'relative row-[2/-1] min-h-0 min-w-0 bg-sidebar'
+      }
       style={{ gridColumn: 2 }}
     >
       {isSidebarOpen ? (
@@ -116,7 +134,7 @@ export function WorkspaceShell({
           onActivatePage={actions.activatePage}
           onClose={() => setSidebarOpen(false)}
           onCreatePage={actions.createPage}
-          pages={model.activeCanvas?.pages ?? []}
+          pages={pages}
         />
       ) : null}
       {isSidebarOpen ? (
@@ -129,21 +147,32 @@ export function WorkspaceShell({
   )
 
   const canvas = (
-    <section aria-label="内容区" className="row-2 min-h-0 min-w-0 overflow-hidden" style={{ gridColumn: 3 }}>
+    <section
+      aria-label="内容区"
+      className="row-2 min-h-0 min-w-0 overflow-hidden"
+      style={{ gridColumn: 3 }}
+    >
       <main className="relative h-full min-h-0 min-w-0 overflow-hidden">
-        {hasActiveDocument ? (
+        {hasActiveCanvas ? (
           editor
         ) : (
-          <NoDocumentSurface onCreateDocument={actions.createCanvas} onOpenDocument={actions.openCanvas} />
+          <NoDocumentSurface
+            onCreateDocument={actions.createCanvas}
+            onOpenDocument={actions.openCanvas}
+          />
         )}
       </main>
     </section>
   )
 
-  const inspectorDock = hasActiveDocument ? (
+  const inspectorDock = hasActiveCanvas ? (
     <aside
       aria-label="属性检查器"
-      className={isInspectorOpen ? 'row-[2/-1] min-h-0 min-w-0 border-l border-divider' : 'pointer-events-none'}
+      className={
+        isInspectorOpen
+          ? 'row-[2/-1] min-h-0 min-w-0 border-l border-divider'
+          : 'pointer-events-none'
+      }
       style={{ gridColumn: 4 }}
     >
       {isInspectorOpen ? (
@@ -175,7 +204,7 @@ export function WorkspaceShell({
     </aside>
   ) : null
 
-  const statusBar = hasActiveDocument ? (
+  const statusBar = hasActiveCanvas ? (
     <div className="min-w-0" style={{ gridColumn: 3, gridRow: 3 }}>
       <StatusBarHost left={statusLeft} right={statusRight} />
     </div>
@@ -214,7 +243,13 @@ function AiChatWidget({
               <BotMessageSquare className="size-4" />
               AI Chat
             </div>
-            <Button aria-label="关闭 AI Chat" onClick={() => onOpenChange(false)} size="icon" type="button" variant="ghost">
+            <Button
+              aria-label="关闭 AI Chat"
+              onClick={() => onOpenChange(false)}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
               <X className="size-4" />
             </Button>
           </div>

@@ -98,11 +98,23 @@ function check(path) {
     violations.push(`${rel}: 非 editor/core 创建 TLStore`)
   }
 
+  if (
+    rel.startsWith('features/workspace/src/') &&
+    /\b(?:DocumentId|DocumentSessionId|DocumentTabViewModel|ActiveDocumentViewModel|CreateDocumentRequest)\b/.test(
+      text,
+    )
+  ) {
+    violations.push(`${rel}: workspace 领域语言必须使用 Canvas，不得继续引入 Document 模型`)
+  }
+
   if (/from\s+['"]@hybrid-canvas\/[^'"]+\/src\//.test(text)) {
     violations.push(`${rel}: 跨包 deep import，必须使用 package exports`)
   }
 
-  if (/\/src\/contracts\//.test(rel) && /from\s+['"][^'"]*\/(?:application|presentation|runtime)\//.test(text)) {
+  if (
+    /\/src\/contracts\//.test(rel) &&
+    /from\s+['"][^'"]*\/(?:application|presentation|runtime)\//.test(text)
+  ) {
     violations.push(`${rel}: contract 反向依赖实现层`)
   }
 
@@ -110,15 +122,24 @@ function check(path) {
     violations.push(`${rel}: application 反向依赖 presentation`)
   }
 
-  if (rel.startsWith('apps/desktop/src/bootstrap/') && /(?:parseDrawDocument|serializeDrawDocument|createTLStore)\s*\(/.test(text)) {
+  if (
+    rel.startsWith('apps/desktop/src/bootstrap/') &&
+    /(?:parseDrawDocument|serializeDrawDocument|createTLStore)\s*\(/.test(text)
+  ) {
     violations.push(`${rel}: composition root 承载文档或编辑器业务逻辑`)
   }
 
-  if (rel.startsWith('apps/desktop/src/presentation/') && /from\s+['"][^'"]*\/application\//.test(text)) {
+  if (
+    rel.startsWith('apps/desktop/src/presentation/') &&
+    /from\s+['"][^'"]*\/application\//.test(text)
+  ) {
     violations.push(`${rel}: presentation deep import application 实现`)
   }
 
-  if (/\/src\/presentation\//.test(rel) && /create(?:WorkbenchSession|EditorSession|ApplicationRuntime)\s*\(/.test(text)) {
+  if (
+    /\/src\/presentation\//.test(rel) &&
+    /create(?:WorkbenchSession|EditorSession|ApplicationRuntime)\s*\(/.test(text)
+  ) {
     violations.push(`${rel}: presentation 创建 application/runtime 实例`)
   }
 
@@ -137,4 +158,3 @@ if (violations.length) {
   console.error(violations.join('\n'))
   process.exit(1)
 }
-

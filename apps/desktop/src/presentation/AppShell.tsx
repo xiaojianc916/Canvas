@@ -40,7 +40,7 @@ export function AppShell({ runtime }: AppShellProps) {
   const openSettings = useCallback(() => setSettingsOpen(true), [])
   const workspacePort = useMemo(
     () => ({ canvases: runtime.canvases, workspace: runtime.workspace }),
-    [runtime.documents, runtime.workspace],
+    [runtime.canvases, runtime.workspace],
   )
 
   return (
@@ -84,7 +84,7 @@ function useApplicationCommands(
       category: '文件',
       shortcut: 'Ctrl+N',
       execute() {
-        runtime.documents.create('未命名画板', '画板 1')
+        runtime.canvases.create('未命名画板')
       },
     })
     const unregisterOpen = runtime.commands.register({
@@ -92,7 +92,7 @@ function useApplicationCommands(
       label: '打开画板',
       category: '文件',
       shortcut: 'Ctrl+O',
-      execute: runtime.documents.open,
+      execute: runtime.canvases.open,
     })
     return () => {
       unregisterOpen()

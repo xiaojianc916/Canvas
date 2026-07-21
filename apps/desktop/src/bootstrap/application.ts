@@ -20,7 +20,10 @@ import {
   createWorkbenchSessionController,
   type WorkbenchSessionStore,
 } from '@hybrid-canvas/workspace'
-import { createCanvasService, type CanvasService } from '../application/documents/document-session-service'
+import {
+  createCanvasService,
+  type CanvasService,
+} from '../application/documents/document-session-service'
 
 export interface ApplicationRuntime {
   readonly workspace: WorkbenchSessionStore

@@ -8,12 +8,21 @@ import type { DrawFileCommands, FileDialog } from '@hybrid-canvas/platforms-desk
 import type { CanvasSessionId, WorkbenchSessionStore } from '@hybrid-canvas/workspace'
 import type { TLEditorSnapshot } from 'tldraw'
 
+export type CanvasPersistenceState = 'clean' | 'dirty' | 'saving' | 'failed'
+
+export interface CanvasSessionSnapshot {
+  readonly sessionId: CanvasSessionId
+  readonly persistence: CanvasPersistenceState
+}
+
 export interface CanvasService {
-  readonly create: (title: string, initialPageTitle: string) => void
+  readonly create: (title: string) => void
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
   readonly close: (sessionId: CanvasSessionId) => void
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
+  readonly getSessionSnapshot: (sessionId: CanvasSessionId) => CanvasSessionSnapshot | null
+  readonly subscribe: (listener: () => void) => () => void
   readonly dispose: () => void
 }
 
@@ -54,14 +63,19 @@ export function createCanvasService({
   extensions,
 }: CreateCanvasServiceDependencies): CanvasService {
   const sessions = new Map<CanvasSessionId, OwnedCanvasSession>()
+  const listeners = new Set<() => void>()
 
-  function create(title: string, initialPageTitle: string): void {
+  function emit(): void {
+    for (const listener of listeners) listener()
+  }
+
+  function create(title: string): void {
     const canvasId = crypto.randomUUID()
     const sessionId = crypto.randomUUID()
     const editor = editorSessions.create({ documentId: canvasId, sessionId, extensions })
     sessions.set(sessionId, createOwnedSession(editor, null, 'dirty'))
     try {
-      workspace.createCanvas({ canvasId, sessionId, title, initialPageTitle, persistence: 'dirty' })
+      workspace.createCanvas({ canvasId, sessionId, title })
     } catch (error) {
       release(sessionId)
       throw error
@@ -88,8 +102,6 @@ export function createCanvasService({
         canvasId,
         sessionId,
         title: getFileTitle(filePath),
-        initialPageTitle: '画板',
-        persistence: 'clean',
       })
     } catch (error) {
       release(sessionId)
@@ -111,24 +123,26 @@ export function createCanvasService({
     sessionId: CanvasSessionId,
     session: OwnedCanvasSession,
   ): Promise<void> {
-    const filePath = session.filePath ?? await dialog.save({
-      filters: [{ name: 'Hybrid Canvas 画布', extensions: ['draw'] }],
-      defaultPath: '未命名画板.draw',
-    })
+    const filePath =
+      session.filePath ??
+      (await dialog.save({
+        filters: [{ name: 'Hybrid Canvas 画布', extensions: ['draw'] }],
+        defaultPath: '未命名画板.draw',
+      }))
     if (!filePath) return
     const capturedRevision = session.revision
     transition(session, 'saving')
-    workspace.setLocalPersistence(sessionId, 'saving')
+    emit()
     try {
       await files.saveDraw(filePath, serializeDrawDocument(session.editor.getSnapshot()))
       session.filePath = filePath
       session.savedRevision = capturedRevision
       const nextState = session.revision === capturedRevision ? 'ready' : 'dirty'
       transition(session, nextState)
-      workspace.setLocalPersistence(sessionId, nextState === 'ready' ? 'clean' : 'dirty')
+      emit()
     } catch (error) {
       transition(session, 'failed')
-      workspace.setLocalPersistence(sessionId, 'failed')
+      emit()
       throw error
     }
   }
@@ -163,14 +177,17 @@ export function createCanvasService({
       saveOperation: null,
       stopObserving: () => {},
     }
-    session.stopObserving = editor.store.listen(() => {
-      if (session.state === 'closing' || session.state === 'closed') return
-      session.revision += 1
-      if (session.state !== 'saving') {
-        if (session.state !== 'dirty') transition(session, 'dirty')
-        workspace.setLocalPersistence(editor.sessionId, 'dirty')
-      }
-    }, { scope: 'document', source: 'user' })
+    session.stopObserving = editor.store.listen(
+      () => {
+        if (session.state === 'closing' || session.state === 'closed') return
+        session.revision += 1
+        if (session.state !== 'saving' && session.state !== 'dirty') {
+          transition(session, 'dirty')
+          emit()
+        }
+      },
+      { scope: 'document', source: 'user' },
+    )
     return session
   }
 
@@ -186,6 +203,23 @@ export function createCanvasService({
     save,
     close,
     getEditorSession: (sessionId) => sessions.get(sessionId)?.editor ?? null,
+    getSessionSnapshot(sessionId) {
+      const session = sessions.get(sessionId)
+      if (!session) return null
+      return {
+        sessionId,
+        persistence:
+          session.state === 'ready'
+            ? 'clean'
+            : session.state === 'closing' || session.state === 'closed'
+              ? 'clean'
+              : session.state,
+      }
+    },
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
     dispose() {
       for (const session of sessions.values()) session.stopObserving()
       sessions.clear()

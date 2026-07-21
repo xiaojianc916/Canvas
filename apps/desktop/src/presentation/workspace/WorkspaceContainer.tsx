@@ -13,7 +13,7 @@ import type { CanvasSessionId, WorkbenchSessionStore } from '@hybrid-canvas/work
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
 
 export interface WorkspaceCanvasUIPort {
-  readonly create: (title: string, initialPageTitle: string) => void
+  readonly create: (title: string) => void
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
   readonly close: (sessionId: CanvasSessionId) => void
@@ -60,31 +60,25 @@ export function WorkspaceContainer({
   const actions = useMemo<WorkspaceShellActions>(
     () => ({
       createCanvas() {
-        port.canvases.create(
-          createUntitledCanvasTitle(workbench.tabs.map((tab) => tab.title)),
-          '画板 1',
-        )
+        port.canvases.create(createUntitledCanvasTitle(workbench.tabs.map((tab) => tab.title)))
       },
       openCanvas() {
-        void port.documents.open()
+        void port.canvases.open()
       },
       activateCanvas(sessionId) {
         port.workspace.activateCanvas(sessionId)
       },
       closeCanvas(sessionId) {
-        port.documents.close(sessionId)
+        port.canvases.close(sessionId)
       },
       activatePage(pageId) {
-        const activeSessionId = port.workspace.getSnapshot().activeSessionId
-        if (activeSessionId) {
-          port.workspace.activatePage(activeSessionId, pageId)
-        }
+        const editor = port.canvases.getEditorSession(workbench.activeSessionId ?? '')?.editor
+        const page = editor?.getPages().find((candidate) => candidate.id === pageId)
+        if (editor && page) editor.setCurrentPage(page)
       },
       createPage() {
-        const activeSessionId = port.workspace.getSnapshot().activeSessionId
-        if (activeSessionId) {
-          port.workspace.createPage(activeSessionId, `画板 ${(port.workspace.getSnapshot().activeCanvas?.pages.length ?? 0) + 1}`)
-        }
+        const editor = port.canvases.getEditorSession(workbench.activeSessionId ?? '')?.editor
+        if (editor) editor.createPage({ name: `画板 ${editor.getPages().length + 1}` })
       },
       openCommandPalette: onCommandPaletteOpen,
       openSettingsWindow: onSettingsOpen,
@@ -96,13 +90,22 @@ export function WorkspaceContainer({
     [onCommandPaletteOpen, onSettingsOpen, port, workbench.tabs],
   )
 
+  const activeEditor = port.canvases.getEditorSession(workbench.activeSessionId ?? '')?.editor
+  const pages = activeEditor
+    ? activeEditor.getPages().map((page) => ({
+        id: page.id,
+        title: page.name,
+        isActive: page.id === activeEditor.getCurrentPageId(),
+      }))
+    : []
+
   const hostedSessions = useMemo(
     () =>
       workbench.tabs.flatMap((tab) => {
-        const session = port.documents.getEditorSession(tab.sessionId)
+        const session = port.canvases.getEditorSession(tab.sessionId)
         return session ? [{ sessionId: tab.sessionId, session }] : []
       }),
-    [port.documents, workbench.tabs],
+    [port.canvases, workbench.tabs],
   )
 
   return (
@@ -121,6 +124,7 @@ export function WorkspaceContainer({
       }
       inspector={<CanvasInspector />}
       model={workbench}
+      pages={pages}
       statusLeft={<CanvasStatusLeft />}
       statusRight={<CanvasStatusRight />}
     />

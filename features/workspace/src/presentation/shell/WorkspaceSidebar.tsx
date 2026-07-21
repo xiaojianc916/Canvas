@@ -20,14 +20,14 @@ import {
   Search,
 } from 'lucide-react'
 
-import type { PageId, WorkspacePageViewModel } from '../../application/model/workbench-view-model'
+import type { CanvasPageViewModel } from '../../contracts/shell-contract'
 import type { CanvasNavigationItemId } from './ActivityRail'
 
 export interface WorkspaceSidebarProps {
   readonly activeNavigationItem: CanvasNavigationItemId
-  readonly pages: readonly WorkspacePageViewModel[]
+  readonly pages: readonly CanvasPageViewModel[]
   readonly onClose: () => void
-  readonly onActivatePage: (pageId: PageId) => void
+  readonly onActivatePage: (pageId: string) => void
   readonly onCreatePage: () => void
 }
 
@@ -49,11 +49,17 @@ export function WorkspaceSidebar({
           <div className="mb-4 flex h-8 items-center gap-2 rounded-md border border-divider bg-background px-2 text-muted-foreground shadow-[inset_0_1px_1px_rgba(0,0,0,0.02)]">
             <Search className="size-3.5 shrink-0" />
             <span className="text-[11px]">筛选页面</span>
-            <kbd className="ml-auto rounded border bg-muted/30 px-1 py-0.5 text-[9px] opacity-60">⌘ F</kbd>
+            <kbd className="ml-auto rounded border bg-muted/30 px-1 py-0.5 text-[9px] opacity-60">
+              ⌘ F
+            </kbd>
           </div>
           <div className="mb-1.5 flex items-center justify-between px-2 py-1">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">画布</span>
-            <span className="grid size-4 place-items-center rounded-full bg-muted text-[9px] text-muted-foreground">{pages.length}</span>
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              画布
+            </span>
+            <span className="grid size-4 place-items-center rounded-full bg-muted text-[9px] text-muted-foreground">
+              {pages.length}
+            </span>
           </div>
           {pages.length > 0 ? (
             <div className="space-y-0.5">
@@ -62,15 +68,18 @@ export function WorkspaceSidebar({
                   aria-current={page.isActive ? 'page' : undefined}
                   className={cn(
                     'group flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground',
-                    page.isActive && 'bg-sidebar-accent text-foreground shadow-[inset_2px_0_0_var(--color-foreground)]',
+                    page.isActive &&
+                      'bg-sidebar-accent text-foreground shadow-[inset_2px_0_0_var(--color-foreground)]',
                   )}
-                  key={page.pageId}
-                  onClick={() => onActivatePage(page.pageId)}
+                  key={page.id}
+                  onClick={() => onActivatePage(page.id)}
                   type="button"
                 >
                   <PageIcon model={page} />
                   <span className="truncate font-medium">{page.title}</span>
-                  {page.isActive ? <span className="ml-auto size-1.5 rounded-full bg-primary" /> : null}
+                  {page.isActive ? (
+                    <span className="ml-auto size-1.5 rounded-full bg-primary" />
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -80,8 +89,16 @@ export function WorkspaceSidebar({
                 <Grid2X2 className="size-4 text-muted-foreground" />
               </div>
               <p className="mt-3 text-xs font-medium">还没有页面</p>
-              <p className="mt-1 text-[10px] leading-4 text-muted-foreground">创建页面后即可开始绘制</p>
-              <Button className="mt-3" onClick={onCreatePage} size="sm" type="button" variant="outline">
+              <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
+                创建页面后即可开始绘制
+              </p>
+              <Button
+                className="mt-3"
+                onClick={onCreatePage}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
                 <Plus className="size-3.5" />
                 新建页面
               </Button>
@@ -93,11 +110,18 @@ export function WorkspaceSidebar({
   )
 }
 
-const PANEL_DETAILS: Record<Exclude<CanvasNavigationItemId, 'pages'>, { title: string; description: string; icon: typeof Files }> = {
+const PANEL_DETAILS: Record<
+  Exclude<CanvasNavigationItemId, 'pages'>,
+  { title: string; description: string; icon: typeof Files }
+> = {
   search: { title: '搜索', description: '搜索当前工作区中的页面、对象和文本内容。', icon: Search },
   layers: { title: '图层', description: '选择页面后，可在这里浏览和整理图层。', icon: Layers3 },
   relations: { title: '关系', description: '连接画布中的内容，建立可视化关系。', icon: Network },
-  data: { title: '自动化', description: '把重复操作和流程编排成可执行的自动化。', icon: ChartNoAxesCombined },
+  data: {
+    title: '自动化',
+    description: '把重复操作和流程编排成可执行的自动化。',
+    icon: ChartNoAxesCombined,
+  },
   assets: { title: '素材', description: '集中管理图片、附件和可复用素材。', icon: Image },
   extensions: { title: '插件', description: '探索能够增强画布工作流的扩展能力。', icon: Boxes },
   documents: { title: '恢复', description: '在这里恢复最近打开的画板与本地文件。', icon: Files },
@@ -118,8 +142,10 @@ function WorkspacePanel({ kind }: { readonly kind: Exclude<CanvasNavigationItemI
   )
 }
 
-function PageIcon({ model }: { readonly model: WorkspacePageViewModel }) {
-  if (model.isArchived) return <Archive className="size-3.5 shrink-0" />
-  if (model.kind === 'canvas') return <Grid2X2 className="size-3.5 shrink-0" />
-  return <FileText className="size-3.5 shrink-0" />
+function PageIcon({ model }: { readonly model: CanvasPageViewModel }) {
+  return model.isActive ? (
+    <Grid2X2 className="size-3.5 shrink-0" />
+  ) : (
+    <FileText className="size-3.5 shrink-0" />
+  )
 }
