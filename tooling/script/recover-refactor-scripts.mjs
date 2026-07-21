@@ -1,464 +1,465 @@
-// restore-settings-dialog.mjs
-// 在仓库根目录执行：node restore-settings-dialog.mjs
+#!/usr/bin/env node
 
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { cp, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, relative, resolve } from 'node:path'
+import process from 'node:process'
 
 const root = process.cwd()
+const shouldWrite = process.argv.includes('--write')
+const changes = new Map()
 
-function write(relativePath, content) {
-  const filePath = resolve(root, relativePath)
-  mkdirSync(dirname(filePath), { recursive: true })
-  writeFileSync(filePath, content, 'utf8')
-  console.log(`[已写入] ${relativePath}`)
-}
+function replaceOnce(content, oldText, newText, description) {
+  const firstIndex = content.indexOf(oldText)
 
-function update(relativePath, transform) {
-  const filePath = resolve(root, relativePath)
-
-  if (!existsSync(filePath)) {
-    throw new Error(`文件不存在：${relativePath}`)
+  if (firstIndex < 0) {
+    throw new Error(`找不到待修改内容：${description}`)
   }
 
-  const before = readFileSync(filePath, 'utf8')
-  const after = transform(before)
+  const secondIndex = content.indexOf(oldText, firstIndex + oldText.length)
 
-  if (before === after) {
-    console.log(`[无需修改] ${relativePath}`)
+  if (secondIndex >= 0) {
+    throw new Error(`待修改内容不唯一：${description}`)
+  }
+
+  return (
+    content.slice(0, firstIndex) +
+    newText +
+    content.slice(firstIndex + oldText.length)
+  )
+}
+
+async function edit(relativePath, transform) {
+  const absolutePath = resolve(root, relativePath)
+  const original = await readFile(absolutePath, 'utf8')
+  const updated = transform(original)
+
+  if (updated === original) {
+    throw new Error(`文件没有产生修改：${relativePath}`)
+  }
+
+  changes.set(relativePath, {
+    absolutePath,
+    original,
+    updated,
+  })
+}
+
+async function editAppShell() {
+  await edit(
+    'apps/desktop/src/presentation/AppShell.tsx',
+    (original) => {
+      let content = original
+
+      // app.css 已经导入 tldraw 样式，这里不再重复导入。
+      content = replaceOnce(
+        content,
+        `import 'tldraw/tldraw.css'\n\n`,
+        '',
+        '删除 AppShell 中重复的 tldraw CSS 导入',
+      )
+
+      content = replaceOnce(
+        content,
+        `export interface AppShellProps {
+  readonly runtime: AppShellRuntime
+}
+
+export function AppShell({ runtime }: AppShellProps) {`,
+        `export interface AppShellProps {
+  readonly runtime: AppShellRuntime
+}
+
+const GLOBAL_COMMAND_SHORTCUTS = [
+  {
+    key: 'k',
+    commandId: 'application.toggle-command-palette',
+    ctrlOrMeta: true,
+  },
+  {
+    key: 'n',
+    commandId: 'workspace.create-canvas',
+    ctrlOrMeta: true,
+  },
+  {
+    key: 'o',
+    commandId: 'workspace.open-canvas',
+    ctrlOrMeta: true,
+  },
+] as const
+
+export function AppShell({ runtime }: AppShellProps) {`,
+        '添加稳定的全局快捷键配置',
+      )
+
+      content = replaceOnce(
+        content,
+        `  useApplicationCommands(runtime, () => setCommandPaletteOpen((open) => !open))
+  useGlobalCommandShortcuts(runtime.commands, [
+    { key: 'k', commandId: 'application.toggle-command-palette', ctrlOrMeta: true },
+    { key: 'n', commandId: 'workspace.create-canvas', ctrlOrMeta: true },
+    { key: 'o', commandId: 'workspace.open-canvas', ctrlOrMeta: true },
+  ])
+
+  const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), [])`,
+        `  const toggleCommandPalette = useCallback(() => {
+    setCommandPaletteOpen((open) => !open)
+  }, [])
+
+  useApplicationCommands(runtime, toggleCommandPalette)
+  useGlobalCommandShortcuts(runtime.commands, GLOBAL_COMMAND_SHORTCUTS)
+
+  const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), [])`,
+        '稳定命令注册和快捷键 Hook 的依赖',
+      )
+
+      content = replaceOnce(
+        content,
+        `  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    void runtime.mainWindow.onCloseRequested(requestApplicationClose).then((dispose) => {
+      unlisten = dispose
+    })
+    return () => unlisten?.()
+  }, [requestApplicationClose, runtime.mainWindow])`,
+        `  useMainWindowCloseRequest(runtime.mainWindow, requestApplicationClose)`,
+        '替换存在异步清理竞态的窗口关闭监听',
+      )
+
+      content = replaceOnce(
+        content,
+        `function useApplicationCommands(runtime: AppShellRuntime, toggleCommandPalette: () => void): void {`,
+        `function useMainWindowCloseRequest(
+  mainWindow: MainWindowController,
+  onCloseRequested: () => void,
+): void {
+  useEffect(() => {
+    let disposed = false
+    let unsubscribe: (() => void) | undefined
+
+    void mainWindow.onCloseRequested(onCloseRequested).then(
+      (nextUnsubscribe) => {
+        if (disposed) {
+          nextUnsubscribe()
+          return
+        }
+
+        unsubscribe = nextUnsubscribe
+      },
+      (error: unknown) => {
+        if (!disposed) {
+          console.error('Failed to register the main-window close listener.', error)
+        }
+      },
+    )
+
+    return () => {
+      disposed = true
+      unsubscribe?.()
+    }
+  }, [mainWindow, onCloseRequested])
+}
+
+function useApplicationCommands(runtime: AppShellRuntime, toggleCommandPalette: () => void): void {`,
+        '添加可安全清理的窗口关闭监听 Hook',
+      )
+
+      return content
+    },
+  )
+}
+
+async function editCanvasDocumentService() {
+  await edit(
+    'editor/document/src/application/canvas-document-service.ts',
+    (original) => {
+      let content = original
+
+      content = replaceOnce(
+        content,
+        `  readonly subscribe: (listener: () => void) => () => void
+  readonly dispose: () => void`,
+        `  /**
+   * Monotonically increasing external-store snapshot.
+   *
+   * React consumers subscribe through subscribe() and read this value through
+   * useSyncExternalStore(). The value changes whenever a public session
+   * snapshot may have changed.
+   */
+  readonly getVersion: () => number
+  readonly subscribe: (listener: () => void) => () => void
+  readonly dispose: () => void`,
+        '为 CanvasDocumentService 添加稳定版本快照',
+      )
+
+      content = replaceOnce(
+        content,
+        `  const sessions = new Map<CanvasSessionId, OwnedCanvasSession>()
+  const listeners = new Set<() => void>()
+
+  function emit(): void {
+    for (const listener of listeners) {`,
+        `  const sessions = new Map<CanvasSessionId, OwnedCanvasSession>()
+  const listeners = new Set<() => void>()
+  let version = 0
+
+  function emit(): void {
+    version += 1
+
+    for (const listener of listeners) {`,
+        '在文档状态变化时递增版本',
+      )
+
+      content = replaceOnce(
+        content,
+        `    getSessionSnapshot(sessionId) {
+      const session = sessions.get(sessionId)
+
+      if (!session) {
+        return null
+      }
+
+      return {
+        sessionId,
+        persistence: toPersistenceState(session.state),
+      }
+    },
+
+    subscribe(listener) {`,
+        `    getSessionSnapshot(sessionId) {
+      const session = sessions.get(sessionId)
+
+      if (!session) {
+        return null
+      }
+
+      return {
+        sessionId,
+        persistence: toPersistenceState(session.state),
+      }
+    },
+
+    getVersion: () => version,
+
+    subscribe(listener) {`,
+        '暴露文档服务版本快照',
+      )
+
+      return content
+    },
+  )
+}
+
+async function editCanvasWorkflow() {
+  await edit(
+    'apps/desktop/src/application/canvas/canvas-workflow.ts',
+    (original) => {
+      let content = original
+
+      content = replaceOnce(
+        content,
+        `  readonly getSessionSnapshot: (sessionId: CanvasSessionId) => CanvasSessionSnapshot | null
+  readonly subscribe: (listener: () => void) => () => void`,
+        `  readonly getSessionSnapshot: (sessionId: CanvasSessionId) => CanvasSessionSnapshot | null
+  readonly getVersion: () => number
+  readonly subscribe: (listener: () => void) => () => void`,
+        '在 CanvasWorkflow 接口中暴露版本快照',
+      )
+
+      content = replaceOnce(
+        content,
+        `    getEditorSession: documents.getEditorSession,
+    getSessionSnapshot: documents.getSessionSnapshot,
+    subscribe: documents.subscribe,`,
+        `    getEditorSession: documents.getEditorSession,
+    getSessionSnapshot: documents.getSessionSnapshot,
+    getVersion: documents.getVersion,
+    subscribe: documents.subscribe,`,
+        '从 CanvasWorkflow 转发文档服务版本',
+      )
+
+      return content
+    },
+  )
+}
+
+async function editWorkspaceContainer() {
+  await edit(
+    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+    (original) => {
+      let content = original
+
+      content = replaceOnce(
+        content,
+        `  readonly getSessionSnapshot: (
+    sessionId: CanvasSessionId,
+  ) => import('@hybrid-canvas/document').CanvasSessionSnapshot | null
+  readonly subscribe: (listener: () => void) => () => void`,
+        `  readonly getSessionSnapshot: (
+    sessionId: CanvasSessionId,
+  ) => import('@hybrid-canvas/document').CanvasSessionSnapshot | null
+  readonly getVersion: () => number
+  readonly subscribe: (listener: () => void) => () => void`,
+        '在 Workspace canvas UI port 中声明版本快照',
+      )
+
+      content = replaceOnce(
+        content,
+        `  useSyncExternalStore(
+    port.canvases.subscribe,
+    port.workspace.getSnapshot,
+    port.workspace.getSnapshot,
+  )`,
+        `  useSyncExternalStore(
+    port.canvases.subscribe,
+    port.canvases.getVersion,
+    port.canvases.getVersion,
+  )`,
+        '修复 Canvas store 使用错误 Workspace snapshot 的问题',
+      )
+
+      content = replaceOnce(
+        content,
+        `        if (decision.kind === 'wait-for-save') {
+          void decision.operation.then(() => {
+            const nextDecision = port.canvases.requestClose(sessionId)
+            if (nextDecision.kind === 'confirm-discard') setPendingCloseSessionId(sessionId)
+          })
+        }`,
+        `        if (decision.kind === 'wait-for-save') {
+          const continueClose = () => {
+            const nextDecision = port.canvases.requestClose(sessionId)
+
+            if (nextDecision.kind === 'confirm-discard') {
+              setPendingCloseSessionId(sessionId)
+            }
+          }
+
+          // 保存成功和保存失败后都必须重新计算关闭决策。
+          // 保存失败时文档状态会变为 failed，随后进入放弃更改确认流程。
+          void decision.operation.then(continueClose, continueClose)
+        }`,
+        '处理保存失败时的关闭流程和 Promise rejection',
+      )
+
+      return content
+    },
+  )
+}
+
+async function editViteConfig() {
+  await edit(
+    'apps/desktop/vite.config.ts',
+    (original) =>
+      replaceOnce(
+        original,
+        `  envPrefix: ['VITE_', 'TAURI_'],`,
+        `  // Do not expose the complete TAURI_* environment namespace to WebView code.
+  // Build-time Tauri variables remain available here through process.env.
+  envPrefix: ['VITE_'],`,
+        '收窄 Vite 环境变量暴露范围',
+      ),
+  )
+}
+
+async function editWorkspaceShellCleanup() {
+  await edit(
+    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
+    (original) =>
+      replaceOnce(
+        original,
+        `    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [isResizingSidebar])`,
+        `    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      document.body.style.removeProperty('cursor')
+      document.body.style.removeProperty('user-select')
+    }
+  }, [isResizingSidebar])`,
+        '在侧栏拖动 effect 卸载时恢复 body 样式',
+      ),
+  )
+}
+
+async function createBackup() {
+  const stamp = new Date()
+    .toISOString()
+    .replaceAll(':', '-')
+    .replaceAll('.', '-')
+
+  const backupRoot = resolve(root, '.refactor-backup', stamp)
+
+  for (const [relativePath, change] of changes) {
+    const backupPath = resolve(backupRoot, relativePath)
+    await mkdir(dirname(backupPath), { recursive: true })
+    await cp(change.absolutePath, backupPath)
+  }
+
+  return backupRoot
+}
+
+async function applyChanges() {
+  for (const change of changes.values()) {
+    await writeFile(change.absolutePath, change.updated, 'utf8')
+  }
+}
+
+function printPlan() {
+  console.log('')
+  console.log(
+    shouldWrite
+      ? 'Phase 1 重构修改：'
+      : 'Phase 1 重构预览（尚未写入）：',
+  )
+
+  for (const relativePath of changes.keys()) {
+    console.log(`  - ${relativePath}`)
+  }
+
+  console.log('')
+}
+
+async function main() {
+  await editAppShell()
+  await editCanvasDocumentService()
+  await editCanvasWorkflow()
+  await editWorkspaceContainer()
+  await editViteConfig()
+  await editWorkspaceShellCleanup()
+
+  printPlan()
+
+  if (!shouldWrite) {
+    console.log('所有目标代码片段均已匹配。')
+    console.log('执行以下命令实际写入：')
+    console.log('')
+    console.log('  node scripts/refactor-phase1.mjs --write')
+    console.log('')
     return
   }
 
-  writeFileSync(filePath, after, 'utf8')
-  console.log(`[已修改] ${relativePath}`)
+  const backupRoot = await createBackup()
+  await applyChanges()
+
+  console.log(`已写入 ${changes.size} 个文件。`)
+  console.log(`备份目录：${relative(root, backupRoot)}`)
+  console.log('')
+  console.log('请继续执行：')
+  console.log('')
+  console.log('  pnpm format')
+  console.log('  pnpm lint')
+  console.log('  pnpm typecheck')
+  console.log('  pnpm test:architecture')
+  console.log('  pnpm test')
+  console.log('')
 }
 
-const settingsDialog = String.raw`import { useEffect, useId, useRef, useState } from 'react'
-
-export interface SettingsDialogProps {
-  readonly open: boolean
-  readonly onOpenChange: (open: boolean) => void
-}
-
-type SettingsSection = 'general' | 'canvas' | 'about'
-
-const SETTINGS_SECTIONS: readonly {
-  readonly id: SettingsSection
-  readonly label: string
-  readonly description: string
-}[] = [
-  {
-    id: 'general',
-    label: '常规',
-    description: '主题、语言和应用行为',
-  },
-  {
-    id: 'canvas',
-    label: '画布',
-    description: '网格、吸附和画布显示',
-  },
-  {
-    id: 'about',
-    label: '关于',
-    description: '应用版本和项目信息',
-  },
-]
-
-export function SettingsDialog({
-  open,
-  onOpenChange,
-}: SettingsDialogProps) {
-  const [activeSection, setActiveSection] =
-    useState<SettingsSection>('general')
-  const titleId = useId()
-  const descriptionId = useId()
-  const dialogRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-
-    const previouslyFocused = document.activeElement
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onOpenChange(false)
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    dialogRef.current?.focus()
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown)
-
-      if (previouslyFocused instanceof HTMLElement) {
-        previouslyFocused.focus()
-      }
-    }
-  }, [onOpenChange, open])
-
-  if (!open) {
-    return null
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-100 grid place-items-center bg-black/45 p-6 backdrop-blur-[2px]"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onOpenChange(false)
-        }
-      }}
-      role="presentation"
-    >
-      <div
-        aria-describedby={descriptionId}
-        aria-labelledby={titleId}
-        aria-modal="true"
-        className="flex h-[min(680px,calc(100vh-48px))] w-[min(920px,calc(100vw-48px))] overflow-hidden rounded-xl border border-divider bg-background shadow-2xl outline-none"
-        ref={dialogRef}
-        role="dialog"
-        tabIndex={-1}
-      >
-        <aside className="w-56 shrink-0 border-r border-divider bg-muted/30 p-4">
-          <div className="mb-5 px-2">
-            <h2 className="text-base font-semibold" id={titleId}>
-              设置
-            </h2>
-            <p
-              className="mt-1 text-xs text-muted-foreground"
-              id={descriptionId}
-            >
-              调整 Hybrid Canvas 的使用体验
-            </p>
-          </div>
-
-          <nav aria-label="设置分类" className="space-y-1">
-            {SETTINGS_SECTIONS.map((section) => {
-              const active = section.id === activeSection
-
-              return (
-                <button
-                  aria-current={active ? 'page' : undefined}
-                  className={[
-                    'w-full rounded-md px-3 py-2 text-left transition-colors',
-                    active
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                  ].join(' ')}
-                  key={section.id}
-                  onClick={() => setActiveSection(section.id)}
-                  type="button"
-                >
-                  <span className="block text-sm font-medium">
-                    {section.label}
-                  </span>
-                  <span className="mt-0.5 block text-xs opacity-75">
-                    {section.description}
-                  </span>
-                </button>
-              )
-            })}
-          </nav>
-        </aside>
-
-        <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-16 shrink-0 items-center justify-between border-b border-divider px-6">
-            <div>
-              <h3 className="text-sm font-semibold">
-                {
-                  SETTINGS_SECTIONS.find(
-                    (section) => section.id === activeSection,
-                  )?.label
-                }
-              </h3>
-            </div>
-
-            <button
-              aria-label="关闭设置"
-              className="grid size-8 place-items-center rounded-md text-xl leading-none text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => onOpenChange(false)}
-              type="button"
-            >
-              ×
-            </button>
-          </header>
-
-          <div className="min-h-0 flex-1 overflow-y-auto p-6">
-            {activeSection === 'general' ? <GeneralSettings /> : null}
-            {activeSection === 'canvas' ? <CanvasSettings /> : null}
-            {activeSection === 'about' ? <AboutSettings /> : null}
-          </div>
-
-          <footer className="flex h-16 shrink-0 items-center justify-end border-t border-divider px-6">
-            <button
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-              onClick={() => onOpenChange(false)}
-              type="button"
-            >
-              完成
-            </button>
-          </footer>
-        </section>
-      </div>
-    </div>
-  )
-}
-
-function GeneralSettings() {
-  return (
-    <div className="space-y-8">
-      <SettingsGroup
-        description="选择应用界面使用的颜色模式。"
-        title="外观"
-      >
-        <div
-          aria-label="颜色模式"
-          className="grid grid-cols-3 gap-3"
-          role="group"
-        >
-          <AppearanceOption label="浅色" previewClassName="bg-white" />
-          <AppearanceOption
-            label="深色"
-            previewClassName="bg-neutral-900"
-          />
-          <AppearanceOption
-            label="跟随系统"
-            previewClassName="bg-gradient-to-r from-white to-neutral-900"
-          />
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          外观持久化将在 SettingsStore 接入后启用。
-        </p>
-      </SettingsGroup>
-
-      <SettingsGroup
-        description="控制应用界面使用的语言。"
-        title="语言"
-      >
-        <select
-          aria-label="界面语言"
-          className="h-9 w-56 rounded-md border border-divider bg-background px-3 text-sm"
-          defaultValue="zh-CN"
-          disabled
-        >
-          <option value="zh-CN">简体中文</option>
-        </select>
-      </SettingsGroup>
-    </div>
-  )
-}
-
-function CanvasSettings() {
-  return (
-    <div className="space-y-8">
-      <SettingsGroup
-        description="控制新画布的网格显示方式。"
-        title="网格"
-      >
-        <SettingToggle
-          description="在画布背景中显示辅助网格。"
-          label="显示网格"
-        />
-        <SettingToggle
-          description="移动图形时自动吸附到网格。"
-          label="吸附到网格"
-        />
-      </SettingsGroup>
-
-      <SettingsGroup
-        description="新建或打开画布时使用的默认缩放比例。"
-        title="默认缩放"
-      >
-        <select
-          aria-label="默认缩放比例"
-          className="h-9 w-40 rounded-md border border-divider bg-background px-3 text-sm"
-          defaultValue="100"
-          disabled
-        >
-          <option value="fit">适应窗口</option>
-          <option value="100">100%</option>
-          <option value="75">75%</option>
-          <option value="50">50%</option>
-        </select>
-      </SettingsGroup>
-    </div>
-  )
-}
-
-function AboutSettings() {
-  return (
-    <div className="max-w-xl">
-      <div className="rounded-lg border border-divider p-5">
-        <h4 className="text-base font-semibold">Hybrid Canvas</h4>
-        <p className="mt-2 text-sm text-muted-foreground">
-          基于 tldraw 的本地优先画布应用。
-        </p>
-        <dl className="mt-5 grid grid-cols-[100px_1fr] gap-y-2 text-sm">
-          <dt className="text-muted-foreground">版本</dt>
-          <dd>0.1.0</dd>
-          <dt className="text-muted-foreground">窗口模式</dt>
-          <dd>单主窗口</dd>
-          <dt className="text-muted-foreground">设置界面</dt>
-          <dd>主窗口内模态弹窗</dd>
-        </dl>
-      </div>
-    </div>
-  )
-}
-
-function SettingsGroup({
-  children,
-  description,
-  title,
-}: {
-  readonly children: React.ReactNode
-  readonly description: string
-  readonly title: string
-}) {
-  return (
-    <section>
-      <h4 className="text-sm font-semibold">{title}</h4>
-      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-      <div className="mt-4">{children}</div>
-    </section>
-  )
-}
-
-function AppearanceOption({
-  label,
-  previewClassName,
-}: {
-  readonly label: string
-  readonly previewClassName: string
-}) {
-  return (
-    <button
-      aria-disabled="true"
-      className="rounded-lg border border-divider p-2 text-left opacity-70"
-      disabled
-      type="button"
-    >
-      <span
-        className={[
-          'block h-20 rounded-md border border-divider',
-          previewClassName,
-        ].join(' ')}
-      />
-      <span className="mt-2 block text-sm">{label}</span>
-    </button>
-  )
-}
-
-function SettingToggle({
-  description,
-  label,
-}: {
-  readonly description: string
-  readonly label: string
-}) {
-  return (
-    <label className="flex items-center justify-between gap-5 border-b border-divider py-4 last:border-b-0">
-      <span>
-        <span className="block text-sm font-medium">{label}</span>
-        <span className="mt-1 block text-xs text-muted-foreground">
-          {description}
-        </span>
-      </span>
-      <input
-        className="size-4"
-        disabled
-        type="checkbox"
-      />
-    </label>
-  )
-}
-`
-
-write(
-  'apps/desktop/src/presentation/settings/SettingsDialog.tsx',
-  settingsDialog,
-)
-
-update('apps/desktop/src/presentation/AppShell.tsx', (source) => {
-  // 删除所有旧 SettingsShell/SettingsDialog 导入。
-  source = source.replace(
-    /^import\s+\{[^}]*Settings(?:Shell|Dialog)[^}]*\}\s+from\s+['"][^'"]*SettingsShell['"]\s*\r?\n/gm,
-    '',
-  )
-
-  source = source.replace(
-    /^import\s+Settings(?:Shell|Dialog)\s+from\s+['"][^'"]*SettingsShell['"]\s*\r?\n/gm,
-    '',
-  )
-
-  source = source.replace(
-    /^import\s+\{[^}]*Settings(?:Shell|Dialog)[^}]*\}\s+from\s+['"][^'"]*SettingsDialog['"]\s*\r?\n/gm,
-    '',
-  )
-
-  const boundaryImport =
-    "import { UiErrorBoundary } from './boundaries/UiErrorBoundary'"
-
-  const newImports = [
-    boundaryImport,
-    "import { SettingsDialog } from './settings/SettingsDialog'",
-  ].join('\n')
-
-  if (!source.includes("./settings/SettingsDialog")) {
-    if (!source.includes(boundaryImport)) {
-      throw new Error('无法确定 SettingsDialog 导入位置')
-    }
-
-    source = source.replace(boundaryImport, newImports)
-  }
-
-  // 兼容旧组件名。
-  source = source.replaceAll('<SettingsShell ', '<SettingsDialog ')
-  source = source.replaceAll('</SettingsShell>', '</SettingsDialog>')
-
-  // 保证组件受 AppShell 的 open 状态控制。
-  const dialogPattern =
-    /<SettingsDialog\b[^>]*\/>/
-
-  const controlledDialog =
-    '<SettingsDialog onOpenChange={setSettingsOpen} open={isSettingsOpen} />'
-
-  if (dialogPattern.test(source)) {
-    source = source.replace(dialogPattern, controlledDialog)
-  } else if (!source.includes(controlledDialog)) {
-    const commandPaletteEnd = /(<\/CommandPalette>|<CommandPalette[\s\S]*?\/>)/
-
-    if (!commandPaletteEnd.test(source)) {
-      throw new Error('未找到插入 SettingsDialog 的位置')
-    }
-
-    source = source.replace(
-      commandPaletteEnd,
-      `$1\n      ${controlledDialog}`,
-    )
-  }
-
-  return source
+main().catch((error) => {
+  console.error('')
+  console.error('重构脚本执行失败。没有执行后续写入步骤。')
+  console.error(error)
+  process.exitCode = 1
 })
-
-console.log(`
-设置界面已恢复并重构为单主窗口内弹窗。
-
-架构结果：
-- 唯一软件级窗口：Tauri 主窗口
-- 设置界面：AppShell 内受控模态层
-- 不创建 WebviewWindow
-- 不使用 windows/settings 路径
-- 打开状态由 AppShell 统一持有
-
-请执行：
-  pnpm typecheck
-`)

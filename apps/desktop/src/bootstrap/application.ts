@@ -11,8 +11,8 @@ import {
   type CommandRegistry,
   createCommandRegistry,
   createWorkbenchSessionController,
-  type WorkbenchSessionStore,
-} from '@hybrid-canvas/workspace/contracts'
+} from '@hybrid-canvas/workspace/application'
+import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
 
 import {
   createApplicationTerminationCoordinator,

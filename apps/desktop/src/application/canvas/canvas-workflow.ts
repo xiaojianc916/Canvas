@@ -18,6 +18,7 @@ export interface CanvasWorkflow {
   readonly discardAllAndClose: (sessionIds: readonly CanvasSessionId[]) => void
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (sessionId: CanvasSessionId) => CanvasSessionSnapshot | null
+  readonly getVersion: () => number
   readonly subscribe: (listener: () => void) => () => void
   readonly dispose: () => void
 }
@@ -83,6 +84,7 @@ export function createCanvasWorkflow(
     discardAllAndClose,
     getEditorSession: documents.getEditorSession,
     getSessionSnapshot: documents.getSessionSnapshot,
+    getVersion: documents.getVersion,
     subscribe: documents.subscribe,
     dispose: documents.dispose,
   }

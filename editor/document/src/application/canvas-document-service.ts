@@ -51,6 +51,14 @@ export interface CanvasDocumentService {
   readonly planApplicationClose: () => ApplicationClosePlan
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (sessionId: CanvasSessionId) => CanvasSessionSnapshot | null
+  /**
+   * Monotonically increasing external-store snapshot.
+   *
+   * React consumers subscribe through subscribe() and read this value through
+   * useSyncExternalStore(). The value changes whenever a public session
+   * snapshot may have changed.
+   */
+  readonly getVersion: () => number
   readonly subscribe: (listener: () => void) => () => void
   readonly dispose: () => void
 }
@@ -107,8 +115,11 @@ export function createCanvasDocumentService({
 }: CreateCanvasDocumentServiceDependencies): CanvasDocumentService {
   const sessions = new Map<CanvasSessionId, OwnedCanvasSession>()
   const listeners = new Set<() => void>()
+  let version = 0
 
   function emit(): void {
+    version += 1
+
     for (const listener of listeners) {
       listener()
     }
@@ -347,6 +358,8 @@ export function createCanvasDocumentService({
         persistence: toPersistenceState(session.state),
       }
     },
+
+    getVersion: () => version,
 
     subscribe(listener) {
       listeners.add(listener)

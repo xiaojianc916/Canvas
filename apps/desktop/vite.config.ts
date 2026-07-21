@@ -9,7 +9,9 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
   },
-  envPrefix: ['VITE_', 'TAURI_'],
+  // Do not expose the complete TAURI_* environment namespace to WebView code.
+  // Build-time Tauri variables remain available here through process.env.
+  envPrefix: ['VITE_'],
   build: {
     target: process.env.TAURI_PLATFORM === 'windows' ? 'chrome105' : 'safari13',
     minify: !process.env.TAURI_DEBUG ? 'esbuild' : false,

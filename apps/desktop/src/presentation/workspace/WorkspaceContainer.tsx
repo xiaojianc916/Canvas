@@ -1,10 +1,5 @@
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
-import {
-  CanvasInspector,
-  CanvasStatusLeft,
-  CanvasStatusRight,
-  EditorSessionHost,
-} from '@hybrid-canvas/canvas/react'
+import { EditorSessionHost } from '@hybrid-canvas/canvas/react'
 import type {
   CanvasSessionId,
   WorkbenchSessionStore,
@@ -31,6 +26,7 @@ export interface WorkspaceCanvasUIPort {
   readonly getSessionSnapshot: (
     sessionId: CanvasSessionId,
   ) => import('@hybrid-canvas/document').CanvasSessionSnapshot | null
+  readonly getVersion: () => number
   readonly subscribe: (listener: () => void) => () => void
 }
 
@@ -87,10 +83,17 @@ export function WorkspaceContainer({
         const decision = port.canvases.requestClose(sessionId)
         if (decision.kind === 'confirm-discard') setPendingCloseSessionId(sessionId)
         if (decision.kind === 'wait-for-save') {
-          void decision.operation.then(() => {
+          const continueClose = () => {
             const nextDecision = port.canvases.requestClose(sessionId)
-            if (nextDecision.kind === 'confirm-discard') setPendingCloseSessionId(sessionId)
-          })
+
+            if (nextDecision.kind === 'confirm-discard') {
+              setPendingCloseSessionId(sessionId)
+            }
+          }
+
+          // 保存成功和保存失败后都必须重新计算关闭决策。
+          // 保存失败时文档状态会变为 failed，随后进入放弃更改确认流程。
+          void decision.operation.then(continueClose, continueClose)
         }
       },
       activatePage(pageId) {
@@ -111,8 +114,8 @@ export function WorkspaceContainer({
 
   useSyncExternalStore(
     port.canvases.subscribe,
-    port.workspace.getSnapshot,
-    port.workspace.getSnapshot,
+    port.canvases.getVersion,
+    port.canvases.getVersion,
   )
   const tabs = workbench.tabs.map((tab) => {
     const status = port.canvases.getSessionSnapshot(tab.sessionId)?.persistence
@@ -150,11 +153,11 @@ export function WorkspaceContainer({
           </UiErrorBoundary>
         ) : null
       }
-      inspector={<CanvasInspector />}
+      inspector={<CanvasInspectorContent hasActiveCanvas={workbench.activeCanvas !== null} />}
       model={workbenchWithCanvasStatus}
       pages={pages}
-      statusLeft={<CanvasStatusLeft />}
-      statusRight={<CanvasStatusRight />}
+      statusLeft={<CanvasStatusLeftContent hasActiveCanvas={workbench.activeCanvas !== null} />}
+      statusRight={<CanvasStatusRightContent pageCount={pages.length} />}
       overlays={
         pendingCloseSessionId ? (
           <div
@@ -198,6 +201,55 @@ export function WorkspaceContainer({
       }
     />
   )
+}
+
+function CanvasInspectorContent({
+  hasActiveCanvas,
+}: {
+  readonly hasActiveCanvas: boolean
+}) {
+  if (!hasActiveCanvas) {
+    return (
+      <div className="py-10 text-center text-xs text-muted-foreground">
+        打开或新建画布后可查看属性
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <section className="rounded-md border border-divider p-3">
+        <h3 className="text-xs font-medium">画布属性</h3>
+        <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+          选择画布中的对象后，可在这里编辑对应属性。
+        </p>
+      </section>
+    </div>
+  )
+}
+
+function CanvasStatusLeftContent({
+  hasActiveCanvas,
+}: {
+  readonly hasActiveCanvas: boolean
+}) {
+  return (
+    <span>
+      {hasActiveCanvas ? '本地画布' : '没有打开的画布'}
+    </span>
+  )
+}
+
+function CanvasStatusRightContent({
+  pageCount,
+}: {
+  readonly pageCount: number
+}) {
+  if (pageCount === 0) {
+    return null
+  }
+
+  return <span>{pageCount} 个页面</span>
 }
 
 function createUntitledCanvasTitle(existingTitles: readonly string[]): string {

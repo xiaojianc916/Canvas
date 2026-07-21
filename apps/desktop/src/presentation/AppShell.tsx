@@ -1,5 +1,3 @@
-import 'tldraw/tldraw.css'
-
 import { EditorProvider } from '@hybrid-canvas/canvas/react'
 import { CommandPalette } from '@hybrid-canvas/workspace/react'
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
@@ -26,6 +24,24 @@ export interface AppShellProps {
   readonly runtime: AppShellRuntime
 }
 
+const GLOBAL_COMMAND_SHORTCUTS = [
+  {
+    key: 'k',
+    commandId: 'application.toggle-command-palette',
+    ctrlOrMeta: true,
+  },
+  {
+    key: 'n',
+    commandId: 'workspace.create-canvas',
+    ctrlOrMeta: true,
+  },
+  {
+    key: 'o',
+    commandId: 'workspace.open-canvas',
+    ctrlOrMeta: true,
+  },
+] as const
+
 export function AppShell({ runtime }: AppShellProps) {
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [isSettingsOpen, setSettingsOpen] = useState(false)
@@ -35,25 +51,19 @@ export function AppShell({ runtime }: AppShellProps) {
     runtime.termination.getSnapshot,
   )
 
-  useApplicationCommands(runtime, () => setCommandPaletteOpen((open) => !open))
-  useGlobalCommandShortcuts(runtime.commands, [
-    { key: 'k', commandId: 'application.toggle-command-palette', ctrlOrMeta: true },
-    { key: 'n', commandId: 'workspace.create-canvas', ctrlOrMeta: true },
-    { key: 'o', commandId: 'workspace.open-canvas', ctrlOrMeta: true },
-  ])
+  const toggleCommandPalette = useCallback(() => {
+    setCommandPaletteOpen((open) => !open)
+  }, [])
+
+  useApplicationCommands(runtime, toggleCommandPalette)
+  useGlobalCommandShortcuts(runtime.commands, GLOBAL_COMMAND_SHORTCUTS)
 
   const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), [])
   const openSettings = useCallback(() => setSettingsOpen(true), [])
   const requestApplicationClose = useCallback(() => {
     runtime.termination.request('window-close')
   }, [runtime.termination])
-  useEffect(() => {
-    let unlisten: (() => void) | undefined
-    void runtime.mainWindow.onCloseRequested(requestApplicationClose).then((dispose) => {
-      unlisten = dispose
-    })
-    return () => unlisten?.()
-  }, [requestApplicationClose, runtime.mainWindow])
+  useMainWindowCloseRequest(runtime.mainWindow, requestApplicationClose)
 
   const workspacePort = useMemo(
     () => ({ canvases: runtime.canvases, workspace: runtime.workspace }),
@@ -117,6 +127,37 @@ export function AppShell({ runtime }: AppShellProps) {
       ) : null}
     </EditorProvider>
   )
+}
+
+function useMainWindowCloseRequest(
+  mainWindow: MainWindowController,
+  onCloseRequested: () => void,
+): void {
+  useEffect(() => {
+    let disposed = false
+    let unsubscribe: (() => void) | undefined
+
+    void mainWindow.onCloseRequested(onCloseRequested).then(
+      (nextUnsubscribe) => {
+        if (disposed) {
+          nextUnsubscribe()
+          return
+        }
+
+        unsubscribe = nextUnsubscribe
+      },
+      (error: unknown) => {
+        if (!disposed) {
+          console.error('Failed to register the main-window close listener.', error)
+        }
+      },
+    )
+
+    return () => {
+      disposed = true
+      unsubscribe?.()
+    }
+  }, [mainWindow, onCloseRequested])
 }
 
 function useApplicationCommands(runtime: AppShellRuntime, toggleCommandPalette: () => void): void {
