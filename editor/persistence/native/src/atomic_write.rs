@@ -64,3 +64,49 @@ fn sync_parent(parent: &Path) -> Result<()> {
     let _ = parent;
     Ok(())
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_write_creates_and_replaces_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("canvas.draw");
+
+        atomic_write(&path, b"first").unwrap();
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            b"first"
+        );
+
+        atomic_write(&path, b"second").unwrap();
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            b"second"
+        );
+    }
+
+    #[test]
+    fn successful_write_leaves_no_temporary_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("canvas.draw");
+
+        atomic_write(&path, b"content").unwrap();
+
+        let temporary_count =
+            std::fs::read_dir(directory.path())
+                .unwrap()
+                .filter_map(std::result::Result::ok)
+                .filter(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(".hybrid-canvas-")
+                })
+                .count();
+
+        assert_eq!(temporary_count, 0);
+    }
+}

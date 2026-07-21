@@ -19,7 +19,8 @@ This refactor preserves:
 | 2. UI boundaries | Complete after verification | Desktop chrome separated from Workspace; shared confirmation dialog |
 | 3. Workflow and errors | Complete after verification | Close orchestration moved to CanvasWorkflow; observability added |
 | 4. Dependency and performance baselines | Complete | Import graph and Vite bundle manifest |
-| 5. Compatibility and release verification | In progress | Settings IPC aligned, draw fixtures and native size boundaries added |
+| 5. Compatibility and release verification | Complete | Settings IPC aligned, draw fixtures and native size boundaries added |
+| 6. Security and release gates | Complete after verification | Approved-path registry, recovery tests and measured bundle budgets |
 
 ## Architectural invariants
 
@@ -38,3 +39,10 @@ This refactor preserves:
 - Record startup and multi-canvas memory baselines.
 - Add explicit performance budgets after the first stable baseline.
 - Run desktop E2E coverage for title-bar drag, close and recovery paths.
+
+
+## Completion criteria
+
+The architecture refactor is complete when the automated release verification
+passes. Native desktop release acceptance remains a per-release activity and
+must be recorded using tests/desktop-e2e/release-checklist.md.

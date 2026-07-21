@@ -1,9 +1,10 @@
 use crate::error::Result;
+use crate::security::ApprovedPathRegistry;
 use hybrid_canvas_file_native::atomic_write;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::path::PathBuf;
-use tauri::{AppHandle, command};
+use std::path::{Path, PathBuf};
+use tauri::{AppHandle, State, command};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_fs::FilePath;
 use tauri_plugin_store::StoreExt;
@@ -32,7 +33,11 @@ pub struct OpenFileResult {
 }
 
 #[command]
-pub async fn file_open(app: AppHandle, options: Option<OpenFileOptions>) -> Result<OpenFileResult> {
+pub async fn file_open(
+    app: AppHandle,
+    registry: State<'_, ApprovedPathRegistry>,
+    options: Option<OpenFileOptions>,
+) -> Result<OpenFileResult> {
     let mut dialog = app.dialog().file();
 
     if let Some(ref opts) = options {
@@ -66,10 +71,22 @@ pub async fn file_open(app: AppHandle, options: Option<OpenFileOptions>) -> Resu
     };
 
     match result {
-        Some(paths) => Ok(OpenFileResult {
-            paths: paths.into_iter().map(file_path_to_string).collect(),
-            cancelled: false,
-        }),
+        Some(paths) => {
+            let mut approved_paths = Vec::with_capacity(paths.len());
+
+            for path in paths {
+                if let FilePath::Path(ref native_path) = path {
+                    registry.approve(native_path)?;
+                }
+
+                approved_paths.push(file_path_to_string(path));
+            }
+
+            Ok(OpenFileResult {
+                paths: approved_paths,
+                cancelled: false,
+            })
+        }
         None => Ok(OpenFileResult {
             paths: vec![],
             cancelled: true,
@@ -99,7 +116,11 @@ pub struct SaveFileResult {
 }
 
 #[command]
-pub async fn file_save(app: AppHandle, options: Option<SaveFileOptions>) -> Result<SaveFileResult> {
+pub async fn file_save(
+    app: AppHandle,
+    registry: State<'_, ApprovedPathRegistry>,
+    options: Option<SaveFileOptions>,
+) -> Result<SaveFileResult> {
     let mut dialog = app.dialog().file();
 
     if let Some(ref opts) = options {
@@ -123,10 +144,16 @@ pub async fn file_save(app: AppHandle, options: Option<SaveFileOptions>) -> Resu
     let result = dialog.blocking_save_file();
 
     match result {
-        Some(path) => Ok(SaveFileResult {
-            path: Some(file_path_to_string(path)),
-            cancelled: false,
-        }),
+        Some(path) => {
+            if let FilePath::Path(ref native_path) = path {
+                registry.approve(native_path)?;
+            }
+
+            Ok(SaveFileResult {
+                path: Some(file_path_to_string(path)),
+                cancelled: false,
+            })
+        }
         None => Ok(SaveFileResult {
             path: None,
             cancelled: true,
@@ -135,8 +162,12 @@ pub async fn file_save(app: AppHandle, options: Option<SaveFileOptions>) -> Resu
 }
 
 #[command]
-pub async fn file_save_as(app: AppHandle, options: SaveFileOptions) -> Result<SaveFileResult> {
-    file_save(app, Some(options)).await
+pub async fn file_save_as(
+    app: AppHandle,
+    registry: State<'_, ApprovedPathRegistry>,
+    options: SaveFileOptions,
+) -> Result<SaveFileResult> {
+    file_save(app, registry, Some(options)).await
 }
 
 #[derive(Debug, Deserialize, Serialize, Type)]
@@ -182,7 +213,10 @@ pub struct DrawReadResult {
 }
 
 #[command]
-pub async fn file_save_draw(request: DrawSaveRequest) -> Result<()> {
+pub async fn file_save_draw(
+    registry: State<'_, ApprovedPathRegistry>,
+    request: DrawSaveRequest,
+) -> Result<()> {
     if request.content.len() as u64 > MAX_DRAW_FILE_BYTES {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -191,7 +225,8 @@ pub async fn file_save_draw(request: DrawSaveRequest) -> Result<()> {
         .into());
     }
 
-    let path = PathBuf::from(&request.path);
+    let path = registry.require(Path::new(&request.path))?;
+    ensure_draw_path(&path)?;
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -202,7 +237,12 @@ pub async fn file_save_draw(request: DrawSaveRequest) -> Result<()> {
 }
 
 #[command]
-pub async fn file_read_draw(path: String) -> Result<DrawReadResult> {
+pub async fn file_read_draw(
+    registry: State<'_, ApprovedPathRegistry>,
+    path: String,
+) -> Result<DrawReadResult> {
+    let path = registry.require(Path::new(&path))?;
+    ensure_draw_path(&path)?;
     let metadata = std::fs::metadata(&path)?;
 
     if metadata.len() > MAX_DRAW_FILE_BYTES {
@@ -218,7 +258,11 @@ pub async fn file_read_draw(path: String) -> Result<DrawReadResult> {
 }
 
 #[command]
-pub async fn file_create_draw(path: String, content: String) -> Result<DrawReadResult> {
+pub async fn file_create_draw(
+    registry: State<'_, ApprovedPathRegistry>,
+    path: String,
+    content: String,
+) -> Result<DrawReadResult> {
     if content.len() as u64 > MAX_DRAW_FILE_BYTES {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -227,7 +271,8 @@ pub async fn file_create_draw(path: String, content: String) -> Result<DrawReadR
         .into());
     }
 
-    let file_path = PathBuf::from(&path);
+    let file_path = registry.require(Path::new(&path))?;
+    ensure_draw_path(&file_path)?;
 
     if let Some(parent) = file_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -236,4 +281,21 @@ pub async fn file_create_draw(path: String, content: String) -> Result<DrawReadR
     atomic_write(&file_path, content.as_bytes())?;
 
     Ok(DrawReadResult { content })
+}
+
+
+fn ensure_draw_path(path: &Path) -> Result<()> {
+    let is_draw = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("draw"));
+
+    if is_draw {
+        return Ok(());
+    }
+
+    Err(crate::Error::Validation(format!(
+        "expected a .draw file path: {}",
+        path.display()
+    )))
 }

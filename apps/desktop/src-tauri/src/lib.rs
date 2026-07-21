@@ -9,6 +9,7 @@ pub mod error;
 
 pub mod bootstrap;
 pub mod ipc;
+pub mod security;
 
 pub use bootstrap::app;
 pub use error::{Error, Result};

@@ -3,9 +3,11 @@ use tauri_plugin_store::StoreExt;
 
 use super::logging;
 use crate::commands;
+use crate::security::ApprovedPathRegistry;
 
 pub fn build() -> tauri::Builder<Wry> {
     tauri::Builder::<Wry>::default()
+        .manage(ApprovedPathRegistry::default())
         .plugin(logging::plugin().build())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())

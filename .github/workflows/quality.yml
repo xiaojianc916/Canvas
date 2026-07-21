@@ -56,8 +56,8 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Bundle report
-        run: pnpm analyze:bundle
+      - name: Bundle budget
+        run: pnpm analyze:bundle:check
 
   rust:
     name: Rust
