@@ -17,11 +17,9 @@ pub fn system_theme() -> Result<Theme> {
 }
 
 /// Subscribe to system theme changes. The returned handle unsubscribes when dropped.
-pub fn on_theme_change(_callback: Box<dyn Fn(Theme) + Send>) -> Result<Box<dyn Drop>> {
-    Ok(Box::new(NoopHandle))
+pub fn on_theme_change(_callback: Box<dyn Fn(Theme) + Send>) -> Result<ThemeSubscription> {
+    Ok(ThemeSubscription)
 }
 
-struct NoopHandle;
-impl Drop for NoopHandle {
-    fn drop(&mut self) {}
-}
+#[derive(Debug)]
+pub struct ThemeSubscription;

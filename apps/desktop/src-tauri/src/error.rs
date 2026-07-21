@@ -1,4 +1,5 @@
 use serde::Serialize;
+use specta::Type;
 use std::fmt;
 
 #[derive(Debug)]
@@ -30,12 +31,86 @@ pub enum Error {
     File(String),
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum IpcErrorCode {
+    Validation,
+    NotFound,
+    PermissionDenied,
+    Persistence,
+    Plugin,
+    Asset,
+    ImportExport,
+    Platform,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum IpcOperation {
+    File,
+    Plugin,
+    Asset,
+    ImportExport,
+    Platform,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct IpcError {
+    pub code: IpcErrorCode,
+    pub message: String,
+    pub operation: IpcOperation,
+    pub recoverable: bool,
+}
+
+impl Error {
+    fn code(&self) -> IpcErrorCode {
+        match self {
+            Self::Validation(_) => IpcErrorCode::Validation,
+            Self::NotFound(_) => IpcErrorCode::NotFound,
+            Self::PermissionDenied(_) => IpcErrorCode::PermissionDenied,
+            Self::Persistence(_) | Self::File(_) | Self::Io(_) => IpcErrorCode::Persistence,
+            Self::Plugin(_) => IpcErrorCode::Plugin,
+            Self::Asset(_) => IpcErrorCode::Asset,
+            Self::Import(_) | Self::Export(_) => IpcErrorCode::ImportExport,
+            _ => IpcErrorCode::Platform,
+        }
+    }
+
+    fn operation(&self) -> IpcOperation {
+        match self {
+            Self::Persistence(_) | Self::File(_) | Self::Io(_) => IpcOperation::File,
+            Self::Plugin(_) => IpcOperation::Plugin,
+            Self::Asset(_) => IpcOperation::Asset,
+            Self::Import(_) | Self::Export(_) => IpcOperation::ImportExport,
+            _ => IpcOperation::Platform,
+        }
+    }
+
+    fn recoverable(&self) -> bool {
+        matches!(
+            self,
+            Self::Io(_)
+                | Self::Persistence(_)
+                | Self::PermissionDenied(_)
+                | Self::File(_)
+                | Self::NotFound(_)
+        )
+    }
+}
+
 impl Serialize for Error {
     fn serialize<S: serde::Serializer>(
         &self,
         serializer: S,
     ) -> std::result::Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.to_string())
+        IpcError {
+            code: self.code(),
+            message: self.to_string(),
+            operation: self.operation(),
+            recoverable: self.recoverable(),
+        }
+        .serialize(serializer)
     }
 }
 

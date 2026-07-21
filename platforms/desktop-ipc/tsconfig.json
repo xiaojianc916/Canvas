@@ -3,5 +3,7 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.cache/typescript/desktop-ipc.tsbuildinfo"
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts"
+  ]
 }

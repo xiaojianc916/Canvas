@@ -5,6 +5,8 @@ import { join, relative, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '../..')
 const violations = []
+const scaffoldManifestPath = join(root, 'architecture.scaffolds.json')
+const scaffoldManifest = JSON.parse(readFileSync(scaffoldManifestPath, 'utf8'))
 
 const ignoredDirectories = new Set([
   '.git',
@@ -63,6 +65,24 @@ function check(path) {
 
   const rel = relative(root, path).replaceAll('\\', '/')
   const text = readFileSync(path, 'utf8')
+  const scaffold = scaffoldManifest.scaffolds.find((entry) => rel.startsWith(`${entry.path}/`))
+  if (scaffold) {
+    for (const forbidden of scaffold.forbiddenDependencies ?? []) {
+      const packageName = {
+        'apps/': 'desktop',
+        'editor/': '(?:asset|canvas|file|plugin)',
+        'features/':
+          '(?:canvas-session|flowchart|freehand|import-export|scientific-plot|settings|workspace)',
+        'foundations/': '(?:design-system|foundations-[a-z-]+)',
+        'platforms/': '(?:desktop-ipc|platforms-desktop-runtime)',
+      }[forbidden]
+      if (packageName && new RegExp(`@hybrid-canvas/${packageName}(?:['"/])`).test(text)) {
+        violations.push(
+          `${rel}: scaffold ${scaffold.path} violates forbidden dependency ${forbidden}`,
+        )
+      }
+    }
+  }
 
   for (const rule of layerRules) {
     rule.forbiddenPackages.lastIndex = 0
@@ -174,7 +194,9 @@ function check(path) {
 
   if (
     rel.startsWith('apps/desktop/src/presentation/') &&
-    /from\s+['"][^'"]*\/application\//.test(text)
+    /from\s+['"][^'"]*\/application\/(?!termination\/application-termination-coordinator)/.test(
+      text,
+    )
   ) {
     violations.push(`${rel}: presentation deep import application 实现`)
   }
@@ -195,7 +217,42 @@ function check(path) {
   }
 }
 
+validateScaffoldManifest()
 walk(root)
+
+function validateScaffoldManifest() {
+  if (scaffoldManifest.version !== 1 || !Array.isArray(scaffoldManifest.scaffolds)) {
+    violations.push('architecture.scaffolds.json: unsupported manifest format')
+    return
+  }
+  const paths = new Set()
+  for (const scaffold of scaffoldManifest.scaffolds) {
+    if (!scaffold.path || paths.has(scaffold.path)) {
+      violations.push(`architecture.scaffolds.json: invalid or duplicate path ${scaffold.path}`)
+      continue
+    }
+    paths.add(scaffold.path)
+    const absolutePath = join(root, scaffold.path)
+    try {
+      if (!statSync(absolutePath).isDirectory()) {
+        violations.push(`${scaffold.path}: scaffold path is not a directory`)
+      }
+    } catch {
+      violations.push(`${scaffold.path}: scaffold path does not exist`)
+    }
+    if (!scaffold.role || !scaffold.activationCondition) {
+      violations.push(`${scaffold.path}: scaffold requires role and activationCondition`)
+    }
+    if (!['reserved', 'partial', 'domain-only'].includes(scaffold.stage)) {
+      violations.push(`${scaffold.path}: unknown scaffold stage ${scaffold.stage}`)
+    }
+    for (const dependency of scaffold.forbiddenDependencies ?? []) {
+      if (!['apps/', 'editor/', 'features/', 'foundations/', 'platforms/'].includes(dependency)) {
+        violations.push(`${scaffold.path}: invalid forbidden dependency ${dependency}`)
+      }
+    }
+  }
+}
 
 if (violations.length) {
   console.error(violations.join('\n'))

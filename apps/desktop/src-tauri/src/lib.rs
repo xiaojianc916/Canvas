@@ -1,3 +1,9 @@
+#![allow(
+    clippy::needless_pass_by_value,
+    clippy::unused_async,
+    reason = "Tauri command signatures are consumed by generated IPC handlers"
+)]
+
 pub mod commands;
 pub mod error;
 
