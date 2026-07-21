@@ -31,7 +31,8 @@
     "tauri": "pnpm --filter @hybrid-canvas/desktop tauri",
     "tauri:dev": "pnpm --filter @hybrid-canvas/desktop tauri dev",
     "tauri:build": "pnpm --filter @hybrid-canvas/desktop tauri build",
-    "test:architecture": "node tests/architecture/check.mjs"
+    "test:architecture": "node tests/architecture/check.mjs && node tests/architecture/check-import-graph.mjs",
+    "analyze:bundle": "node tests/performance/report-bundle.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.4",

@@ -36,37 +36,14 @@ function write(relativePath, content) {
 }
 
 async function edit(relativePath, transform) {
-  const original = await read(relativePath)
-  const updated = transform(original)
+  const content = await read(relativePath)
+  const updated = transform(content)
 
-  if (updated === original) {
+  if (updated === content) {
     throw new Error(`文件没有产生修改：${relativePath}`)
   }
 
-  writes.set(relativePath, updated)
-}
-
-function replaceOnce(content, oldText, newText, description) {
-  const firstIndex = content.indexOf(oldText)
-
-  if (firstIndex < 0) {
-    throw new Error(`找不到待修改内容：${description}`)
-  }
-
-  const secondIndex = content.indexOf(
-    oldText,
-    firstIndex + oldText.length,
-  )
-
-  if (secondIndex >= 0) {
-    throw new Error(`待修改内容不唯一：${description}`)
-  }
-
-  return (
-    content.slice(0, firstIndex) +
-    newText +
-    content.slice(firstIndex + oldText.length)
-  )
+  write(relativePath, updated)
 }
 
 async function updateJson(relativePath, transform) {
@@ -84,1272 +61,878 @@ async function updateJson(relativePath, transform) {
   )
 }
 
-async function preflight() {
-  const expectedPaths = [
-    'apps/desktop/src/presentation/AppShell.tsx',
-    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
-    'apps/desktop/src/application/canvas/canvas-workflow.ts',
-    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
-    'foundations/observability/src/public-api.ts',
-  ]
+async function assertPhase3Completed() {
+  const appShellPath =
+    'apps/desktop/src/presentation/AppShell.tsx'
 
-  for (const relativePath of expectedPaths) {
-    if (!(await exists(relativePath))) {
-      throw new Error(`缺少目标文件：${relativePath}`)
-    }
-  }
+  const workspaceContainerPath =
+    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx'
 
-  const appShell = await read(
-    'apps/desktop/src/presentation/AppShell.tsx',
-  )
+  const workspaceShellPath =
+    'features/workspace/src/presentation/shell/WorkspaceShell.tsx'
 
-  const workspaceContainer = await read(
-    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
-  )
+  const canvasWorkflowPath =
+    'apps/desktop/src/application/canvas/canvas-workflow.ts'
 
-  const workspaceShell = await read(
-    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
-  )
+  const [
+    appShell,
+    workspaceContainer,
+    workspaceShell,
+    canvasWorkflow,
+  ] = await Promise.all([
+    read(appShellPath),
+    read(workspaceContainerPath),
+    read(workspaceShellPath),
+    read(canvasWorkflowPath),
+  ])
+
+  const failures = []
 
   if (
-    !appShell.includes(
+    appShell.includes(
       '</EditorProvider>    </EditorProvider>',
     )
   ) {
-    console.warn(
-      '警告：AppShell 不包含已知重复闭合标签，将仍以完整安全版本覆盖。',
+    failures.push(
+      `${appShellPath}: 仍存在重复 EditorProvider 闭合标签`,
     )
   }
 
   if (
-    !workspaceContainer.includes(
+    workspaceContainer.includes(
       '/>      }\n    />',
     )
   ) {
-    console.warn(
-      '警告：WorkspaceContainer 不包含已知重复 JSX，将仍以完整安全版本覆盖。',
+    failures.push(
+      `${workspaceContainerPath}: 仍存在重复 WorkspaceShell JSX`,
     )
   }
 
   if (
-    !workspaceShell.includes(
+    workspaceShell.includes(
       'const rail = (  const rail = (',
     )
   ) {
-    console.warn(
-      '警告：WorkspaceShell 不包含已知重复声明，可能已经被手动修复。',
+    failures.push(
+      `${workspaceShellPath}: 仍存在重复 rail 声明`,
+    )
+  }
+
+  if (
+    !canvasWorkflow.includes(
+      'Promise<CanvasCloseRequestResult>',
+    )
+  ) {
+    failures.push(
+      `${canvasWorkflowPath}: 关闭流程尚未下沉到 CanvasWorkflow`,
+    )
+  }
+
+  if (
+    !appShell.includes(
+      `from '@hybrid-canvas/observability'`,
+    )
+  ) {
+    failures.push(
+      `${appShellPath}: observability 治理尚未落地`,
+    )
+  }
+
+  if (
+    !appShell.includes(
+      `from '@hybrid-canvas/settings/react'`,
+    )
+  ) {
+    failures.push(
+      `${appShellPath}: Settings UI 仍未从 feature 入口导入`,
+    )
+  }
+
+  if (failures.length > 0) {
+    throw new Error(
+      [
+        'Phase 3 尚未完成，拒绝继续叠加 Phase 4。',
+        '',
+        ...failures.map(
+          (failure) => `- ${failure}`,
+        ),
+        '',
+        '请先执行：',
+        'node scripts/refactor-architecture-phase3.mjs --write',
+        'pnpm format',
+        'pnpm lint',
+        'pnpm typecheck',
+      ].join('\n'),
     )
   }
 }
 
-function createCanvasWorkflow() {
+function createImportGraphCheck() {
   write(
-    'apps/desktop/src/application/canvas/canvas-workflow.ts',
-    `import type { EditorSession } from '@hybrid-canvas/canvas/application'
-import type {
-  ApplicationClosePlan,
-  CanvasDocumentService,
-  CanvasSessionId,
-  CanvasSessionSnapshot,
-} from '@hybrid-canvas/document'
-import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
+    'tests/architecture/check-import-graph.mjs',
+    `#!/usr/bin/env node
 
-export type CanvasCloseRequestResult =
-  | { readonly kind: 'closed' }
-  | {
-      readonly kind: 'confirmation-required'
-      readonly sessionId: CanvasSessionId
-    }
-  | { readonly kind: 'not-found' }
-
-export interface CanvasWorkflow {
-  readonly create: (title: string) => void
-  readonly open: () => Promise<void>
-  readonly save: (sessionId: CanvasSessionId) => Promise<void>
-  readonly requestClose: (
-    sessionId: CanvasSessionId,
-  ) => Promise<CanvasCloseRequestResult>
-  readonly discardAndClose: (
-    sessionId: CanvasSessionId,
-  ) => void
-  readonly planApplicationClose: () => ApplicationClosePlan
-  readonly discardAllAndClose: (
-    sessionIds: readonly CanvasSessionId[],
-  ) => void
-  readonly getEditorSession: (
-    sessionId: CanvasSessionId,
-  ) => EditorSession | null
-  readonly getSessionSnapshot: (
-    sessionId: CanvasSessionId,
-  ) => CanvasSessionSnapshot | null
-  readonly getVersion: () => number
-  readonly subscribe: (
-    listener: () => void,
-  ) => () => void
-  readonly dispose: () => void
-}
-
-export function createCanvasWorkflow(
-  documents: CanvasDocumentService,
-  workspace: WorkbenchSessionStore,
-): CanvasWorkflow {
-  function create(title: string): void {
-    const opened = documents.create(title)
-
-    try {
-      workspace.createCanvas(opened)
-    } catch (error) {
-      documents.discardAndClose(opened.sessionId)
-      throw error
-    }
-  }
-
-  async function open(): Promise<void> {
-    const opened = await documents.open()
-
-    if (!opened) {
-      return
-    }
-
-    try {
-      workspace.createCanvas(opened)
-    } catch (error) {
-      documents.discardAndClose(opened.sessionId)
-      throw error
-    }
-  }
-
-  async function requestClose(
-    sessionId: CanvasSessionId,
-  ): Promise<CanvasCloseRequestResult> {
-    let decision = documents.requestClose(sessionId)
-
-    if (decision.kind === 'wait-for-save') {
-      // 保存失败时 CanvasDocumentService 会进入 failed 状态。
-      // 此处只等待状态稳定，随后重新计算关闭决策。
-      await decision.operation.catch(() => undefined)
-      decision = documents.requestClose(sessionId)
-    }
-
-    switch (decision.kind) {
-      case 'close-now':
-        workspace.closeCanvas(sessionId)
-        return { kind: 'closed' }
-
-      case 'confirm-discard':
-        return {
-          kind: 'confirmation-required',
-          sessionId,
-        }
-
-      case 'not-found':
-        return { kind: 'not-found' }
-
-      case 'wait-for-save':
-        // 理论上不会进入：同一 saveOperation 已在上方等待。
-        // 保留防御性处理，避免未来文档实现改变后静默关闭。
-        return {
-          kind: 'confirmation-required',
-          sessionId,
-        }
-    }
-  }
-
-  function discardAndClose(
-    sessionId: CanvasSessionId,
-  ): void {
-    documents.discardAndClose(sessionId)
-    workspace.closeCanvas(sessionId)
-  }
-
-  function discardAllAndClose(
-    sessionIds: readonly CanvasSessionId[],
-  ): void {
-    for (const sessionId of sessionIds) {
-      discardAndClose(sessionId)
-    }
-  }
-
-  return {
-    create,
-    open,
-    save: documents.save,
-    requestClose,
-    discardAndClose,
-    planApplicationClose: documents.planApplicationClose,
-    discardAllAndClose,
-    getEditorSession: documents.getEditorSession,
-    getSessionSnapshot: documents.getSessionSnapshot,
-    getVersion: documents.getVersion,
-    subscribe: documents.subscribe,
-    dispose: documents.dispose,
-  }
-}
-`,
-  )
-}
-
-function createWorkspaceContainer() {
-  write(
-    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
-    `import type { EditorSession } from '@hybrid-canvas/canvas/application'
-import { EditorSessionHost } from '@hybrid-canvas/canvas/react'
-import { ConfirmationDialog } from '@hybrid-canvas/design-system'
-import { error as reportError } from '@hybrid-canvas/observability'
-import type {
-  CanvasSessionId,
-  WorkbenchSessionStore,
-  WorkspaceShellActions,
-} from '@hybrid-canvas/workspace/contracts'
 import {
-  CanvasTabs,
-  WorkspaceShell,
-} from '@hybrid-canvas/workspace/react'
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+} from 'node:fs'
 import {
-  useCallback,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from 'react'
+  dirname,
+  extname,
+  join,
+  normalize,
+  relative,
+  resolve,
+} from 'node:path'
 
-import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
-import { DesktopTitleBar } from '../chrome/DesktopTitleBar'
+const root = resolve(import.meta.dirname, '../..')
 
-const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({
-  pages: Object.freeze([]),
-})
+const workspaceRoots = [
+  'apps',
+  'editor',
+  'features',
+  'foundations',
+  'platforms',
+  'tooling',
+]
 
-const EMPTY_SUBSCRIBE = () => () => {}
-const EMPTY_EDITOR_SNAPSHOT = () =>
-  EMPTY_EDITOR_SESSION_SNAPSHOT
+const ignoredDirectories = new Set([
+  '.git',
+  '.refactor-backup',
+  '.turbo',
+  'build',
+  'coverage',
+  'dist',
+  'generated',
+  'node_modules',
+  'target',
+  'test-results',
+])
 
-export type WorkspaceCanvasCloseResult =
-  | { readonly kind: 'closed' }
-  | {
-      readonly kind: 'confirmation-required'
-      readonly sessionId: CanvasSessionId
+const sourceExtensions = [
+  '.ts',
+  '.tsx',
+  '.mts',
+  '.cts',
+]
+
+const importPattern =
+  /(?:import|export)\\s+(?:type\\s+)?(?:[^'"]*?\\sfrom\\s*)?['"]([^'"]+)['"]|import\\s*\\(\\s*['"]([^'"]+)['"]\\s*\\)/g
+
+const packages = loadWorkspacePackages()
+const packageByName = new Map(
+  packages.map((pkg) => [
+    pkg.manifest.name,
+    pkg,
+  ]),
+)
+
+const sourceFiles = collectSourceFiles()
+const sourceFileSet = new Set(sourceFiles)
+const fileGraph = new Map()
+const packageGraph = new Map()
+
+for (const pkg of packages) {
+  packageGraph.set(pkg.manifest.name, new Set())
+
+  const dependencyGroups = [
+    pkg.manifest.dependencies,
+    pkg.manifest.devDependencies,
+    pkg.manifest.peerDependencies,
+    pkg.manifest.optionalDependencies,
+  ]
+
+  for (const dependencies of dependencyGroups) {
+    for (const dependencyName of Object.keys(
+      dependencies ?? {},
+    )) {
+      if (packageByName.has(dependencyName)) {
+        packageGraph
+          .get(pkg.manifest.name)
+          .add(dependencyName)
+      }
     }
-  | { readonly kind: 'not-found' }
-
-export interface WorkspaceCanvasUIPort {
-  readonly create: (title: string) => void
-  readonly open: () => Promise<void>
-  readonly save: (
-    sessionId: CanvasSessionId,
-  ) => Promise<void>
-  readonly requestClose: (
-    sessionId: CanvasSessionId,
-  ) => Promise<WorkspaceCanvasCloseResult>
-  readonly discardAndClose: (
-    sessionId: CanvasSessionId,
-  ) => void
-  readonly getEditorSession: (
-    sessionId: CanvasSessionId,
-  ) => EditorSession | null
-  readonly getSessionSnapshot: (
-    sessionId: CanvasSessionId,
-  ) =>
-    | import('@hybrid-canvas/document').CanvasSessionSnapshot
-    | null
-  readonly getVersion: () => number
-  readonly subscribe: (
-    listener: () => void,
-  ) => () => void
+  }
 }
 
-export interface WorkspaceUIPort {
-  readonly canvases: WorkspaceCanvasUIPort
-  readonly workspace: WorkbenchSessionStore
-}
-
-export interface WorkspaceContainerProps {
-  readonly port: WorkspaceUIPort
-  readonly onCommandPaletteOpen: () => void
-  readonly onSettingsOpen: () => void
-  readonly onWindowMinimize: () => void
-  readonly onWindowMaximize: () => void
-  readonly onWindowClose: () => void
-  readonly onWindowStartDragging: () => void
-}
-
-export function WorkspaceContainer({
-  port,
-  onCommandPaletteOpen,
-  onSettingsOpen,
-  onWindowMinimize,
-  onWindowMaximize,
-  onWindowClose,
-  onWindowStartDragging,
-}: WorkspaceContainerProps) {
-  const [
-    pendingCloseSessionId,
-    setPendingCloseSessionId,
-  ] = useState<CanvasSessionId | null>(null)
-
-  const workbench = useSyncExternalStore(
-    port.workspace.subscribe,
-    port.workspace.getSnapshot,
-    port.workspace.getSnapshot,
+for (const file of sourceFiles) {
+  const imports = extractImports(
+    readFileSync(file, 'utf8'),
   )
 
-  useSyncExternalStore(
-    port.canvases.subscribe,
-    port.canvases.getVersion,
-    port.canvases.getVersion,
-  )
+  const dependencies = new Set()
 
-  const activeEditorSession =
-    port.canvases.getEditorSession(
-      workbench.activeSessionId ?? '',
+  for (const specifier of imports) {
+    const resolvedFile = resolveImport(
+      file,
+      specifier,
     )
 
-  const pages = useSyncExternalStore(
-    activeEditorSession?.subscribe ?? EMPTY_SUBSCRIBE,
-    activeEditorSession?.getSessionSnapshot ??
-      EMPTY_EDITOR_SNAPSHOT,
-    activeEditorSession?.getSessionSnapshot ??
-      EMPTY_EDITOR_SNAPSHOT,
-  ).pages
+    if (resolvedFile) {
+      dependencies.add(resolvedFile)
+    }
+  }
 
-  const handleSave = useCallback(
-    (sessionId: string) => {
-      void port.canvases.save(sessionId).catch(
-        (cause: unknown) => {
-          reportError('canvas save failed', {
-            scope: 'workspace',
-            operation: 'save-canvas',
-            sessionId,
-            cause,
-          })
-        },
-      )
-    },
-    [port.canvases],
+  fileGraph.set(file, dependencies)
+}
+
+const packageCycles = findCycles(packageGraph)
+const fileCycles = findCycles(fileGraph)
+
+const violations = []
+
+for (const cycle of packageCycles) {
+  violations.push(
+    'Package cycle: ' +
+      cycle.join(' -> '),
   )
+}
 
-  const handleCloseCanvas = useCallback(
-    (sessionId: CanvasSessionId) => {
-      void port.canvases
-        .requestClose(sessionId)
-        .then((result) => {
-          if (
-            result.kind ===
-            'confirmation-required'
-          ) {
-            setPendingCloseSessionId(
-              result.sessionId,
-            )
-          }
-        })
-        .catch((cause: unknown) => {
-          reportError('canvas close request failed', {
-            scope: 'workspace',
-            operation: 'request-close-canvas',
-            sessionId,
-            cause,
-          })
-        })
-    },
-    [port.canvases],
-  )
-
-  const actions = useMemo<WorkspaceShellActions>(
-    () => ({
-      createCanvas() {
-        port.canvases.create(
-          createUntitledCanvasTitle(
-            workbench.tabs.map(
-              (tab) => tab.title,
-            ),
+for (const cycle of fileCycles) {
+  violations.push(
+    'Source cycle: ' +
+      cycle
+        .map((file) =>
+          relative(root, file).replaceAll(
+            '\\\\',
+            '/',
           ),
         )
-      },
-
-      openCanvas() {
-        void port.canvases.open().catch(
-          (cause: unknown) => {
-            reportError('canvas open failed', {
-              scope: 'workspace',
-              operation: 'open-canvas',
-              cause,
-            })
-          },
-        )
-      },
-
-      activateCanvas(sessionId) {
-        port.workspace.activateCanvas(sessionId)
-      },
-
-      closeCanvas: handleCloseCanvas,
-
-      activatePage(pageId) {
-        activeEditorSession?.activatePage(pageId)
-      },
-
-      createPage() {
-        activeEditorSession?.createPage(
-          \`画板 \${pages.length + 1}\`,
-        )
-      },
-
-      openCommandPalette:
-        onCommandPaletteOpen,
-
-      openSettingsWindow: onSettingsOpen,
-    }),
-    [
-      activeEditorSession,
-      handleCloseCanvas,
-      onCommandPaletteOpen,
-      onSettingsOpen,
-      pages.length,
-      port.canvases,
-      port.workspace,
-      workbench.tabs,
-    ],
-  )
-
-  const tabs = workbench.tabs.map((tab) => {
-    const status =
-      port.canvases.getSessionSnapshot(
-        tab.sessionId,
-      )?.persistence
-
-    return status
-      ? { ...tab, status }
-      : tab
-  })
-
-  const workbenchWithCanvasStatus = {
-    ...workbench,
-    tabs,
-  }
-
-  const hostedSessions = useMemo(
-    () =>
-      workbench.tabs.flatMap((tab) => {
-        const session =
-          port.canvases.getEditorSession(
-            tab.sessionId,
-          )
-
-        return session
-          ? [
-              {
-                sessionId: tab.sessionId,
-                session,
-              },
-            ]
-          : []
-      }),
-    [port.canvases, workbench.tabs],
-  )
-
-  return (
-    <WorkspaceShell
-      actions={actions}
-      editor={
-        workbench.activeCanvas ? (
-          <UiErrorBoundary area="画布编辑器">
-            <EditorSessionHost
-              activeSessionId={
-                workbench.activeSessionId
-              }
-              onSave={handleSave}
-              sessions={hostedSessions}
-            />
-          </UiErrorBoundary>
-        ) : null
-      }
-      inspector={
-        <CanvasInspectorContent
-          hasActiveCanvas={
-            workbench.activeCanvas !== null
-          }
-        />
-      }
-      model={workbenchWithCanvasStatus}
-      overlays={
-        <ConfirmationDialog
-          confirmLabel="放弃并关闭"
-          description="关闭画布会丢失自上次保存后的更改，此操作无法撤销。"
-          destructive
-          onCancel={() =>
-            setPendingCloseSessionId(null)
-          }
-          onConfirm={() => {
-            if (!pendingCloseSessionId) {
-              return
-            }
-
-            try {
-              port.canvases.discardAndClose(
-                pendingCloseSessionId,
-              )
-            } catch (cause) {
-              reportError(
-                'discard and close canvas failed',
-                {
-                  scope: 'workspace',
-                  operation:
-                    'discard-and-close-canvas',
-                  sessionId:
-                    pendingCloseSessionId,
-                  cause,
-                },
-              )
-
-              return
-            }
-
-            setPendingCloseSessionId(null)
-          }}
-          open={pendingCloseSessionId !== null}
-          title="放弃未保存的更改？"
-        />
-      }
-      pages={pages}
-      renderChrome={({
-        isSidebarOpen,
-        sidebarWidth,
-        tabs: chromeTabs,
-        onSidebarToggle,
-        onActivateCanvas,
-        onCloseCanvas,
-        onCreateCanvas,
-      }) => (
-        <DesktopTitleBar
-          isSidebarOpen={isSidebarOpen}
-          onClose={onWindowClose}
-          onMaximize={onWindowMaximize}
-          onMinimize={onWindowMinimize}
-          onSidebarToggle={onSidebarToggle}
-          onStartDragging={
-            onWindowStartDragging
-          }
-          sidebarWidth={sidebarWidth}
-        >
-          <CanvasTabs
-            onActivate={onActivateCanvas}
-            onClose={onCloseCanvas}
-            onCreate={onCreateCanvas}
-            tabs={chromeTabs}
-          />
-        </DesktopTitleBar>
-      )}
-      statusLeft={
-        <CanvasStatusLeftContent
-          hasActiveCanvas={
-            workbench.activeCanvas !== null
-          }
-        />
-      }
-      statusRight={
-        <CanvasStatusRightContent
-          pageCount={pages.length}
-        />
-      }
-    />
+        .join(' -> '),
   )
 }
 
-function CanvasInspectorContent({
-  hasActiveCanvas,
-}: {
-  readonly hasActiveCanvas: boolean
-}) {
-  if (!hasActiveCanvas) {
-    return (
-      <div className="py-10 text-center text-xs text-muted-foreground">
-        打开或新建画布后可查看属性
-      </div>
+if (violations.length > 0) {
+  console.error(
+    violations.join('\\n'),
+  )
+  process.exit(1)
+}
+
+console.log(
+  \`Import graph OK: \${packages.length} packages, \${sourceFiles.length} source files\`,
+)
+
+function loadWorkspacePackages() {
+  const result = []
+
+  for (const workspaceRoot of workspaceRoots) {
+    const absoluteRoot = join(
+      root,
+      workspaceRoot,
+    )
+
+    if (!existsSync(absoluteRoot)) {
+      continue
+    }
+
+    for (const entry of readdirSync(
+      absoluteRoot,
+    )) {
+      const packageRoot = join(
+        absoluteRoot,
+        entry,
+      )
+
+      if (
+        !statSync(packageRoot).isDirectory()
+      ) {
+        continue
+      }
+
+      const manifestPath = join(
+        packageRoot,
+        'package.json',
+      )
+
+      if (!existsSync(manifestPath)) {
+        continue
+      }
+
+      const manifest = JSON.parse(
+        readFileSync(
+          manifestPath,
+          'utf8',
+        ).replace(/^\\uFEFF/, ''),
+      )
+
+      if (!manifest.name) {
+        continue
+      }
+
+      result.push({
+        root: packageRoot,
+        manifest,
+      })
+    }
+  }
+
+  return result
+}
+
+function collectSourceFiles() {
+  const result = []
+
+  for (const pkg of packages) {
+    const sourceRoot = join(
+      pkg.root,
+      'src',
+    )
+
+    if (existsSync(sourceRoot)) {
+      walk(sourceRoot, result)
+    }
+  }
+
+  return result
+}
+
+function walk(directory, result) {
+  for (const entry of readdirSync(directory)) {
+    if (ignoredDirectories.has(entry)) {
+      continue
+    }
+
+    const path = join(directory, entry)
+    const info = statSync(path)
+
+    if (info.isDirectory()) {
+      walk(path, result)
+      continue
+    }
+
+    if (
+      !sourceExtensions.includes(
+        extname(path),
+      )
+    ) {
+      continue
+    }
+
+    if (
+      /\\.(?:test|spec)\\.[cm]?tsx?$/.test(
+        path,
+      )
+    ) {
+      continue
+    }
+
+    result.push(normalize(path))
+  }
+}
+
+function extractImports(content) {
+  const imports = []
+  importPattern.lastIndex = 0
+
+  let match
+
+  while (
+    (match = importPattern.exec(content))
+  ) {
+    const specifier =
+      match[1] ?? match[2]
+
+    if (specifier) {
+      imports.push(specifier)
+    }
+  }
+
+  return imports
+}
+
+function resolveImport(importer, specifier) {
+  if (specifier.startsWith('.')) {
+    return resolveSourcePath(
+      resolve(
+        dirname(importer),
+        specifier,
+      ),
     )
   }
 
-  return (
-    <div className="space-y-3">
-      <section className="rounded-md border border-divider p-3">
-        <h3 className="text-xs font-medium">
-          画布属性
-        </h3>
+  const matchingPackage = packages
+    .filter((pkg) =>
+      specifier === pkg.manifest.name ||
+      specifier.startsWith(
+        pkg.manifest.name + '/',
+      ),
+    )
+    .sort(
+      (left, right) =>
+        right.manifest.name.length -
+        left.manifest.name.length,
+    )[0]
 
-        <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-          选择画布中的对象后，可在这里编辑对应属性。
-        </p>
-      </section>
-    </div>
-  )
-}
-
-function CanvasStatusLeftContent({
-  hasActiveCanvas,
-}: {
-  readonly hasActiveCanvas: boolean
-}) {
-  return (
-    <span>
-      {hasActiveCanvas
-        ? '本地画布'
-        : '没有打开的画布'}
-    </span>
-  )
-}
-
-function CanvasStatusRightContent({
-  pageCount,
-}: {
-  readonly pageCount: number
-}) {
-  if (pageCount === 0) {
+  if (!matchingPackage) {
     return null
   }
 
-  return <span>{pageCount} 个页面</span>
-}
+  const subpath =
+    specifier ===
+    matchingPackage.manifest.name
+      ? '.'
+      : '.' +
+        specifier.slice(
+          matchingPackage.manifest.name
+            .length,
+        )
 
-function createUntitledCanvasTitle(
-  existingTitles: readonly string[],
-): string {
-  const baseTitle = '未命名画板'
+  const exportTarget = getExportTarget(
+    matchingPackage.manifest.exports,
+    subpath,
+  )
 
-  if (!existingTitles.includes(baseTitle)) {
-    return baseTitle
-  }
-
-  let suffix = 2
-
-  while (
-    existingTitles.includes(
-      \`\${baseTitle} \${suffix}\`,
+  if (exportTarget) {
+    return resolveSourcePath(
+      join(
+        matchingPackage.root,
+        exportTarget,
+      ),
     )
-  ) {
-    suffix += 1
   }
 
-  return \`\${baseTitle} \${suffix}\`
-}
-`,
+  return resolveSourcePath(
+    join(
+      matchingPackage.root,
+      'src/public-api',
+    ),
   )
 }
 
-function repairWorkspaceShell() {
-  return edit(
-    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
-    (content) => {
-      let updated = content
+function getExportTarget(exportsField, subpath) {
+  if (!exportsField) {
+    return null
+  }
 
-      if (
-        updated.includes(
-          '  const rail = (  const rail = (',
-        )
-      ) {
-        updated = updated.replace(
-          '  const rail = (  const rail = (',
-          '  const rail = (',
-        )
-      }
+  if (
+    typeof exportsField === 'string' &&
+    subpath === '.'
+  ) {
+    return exportsField
+  }
 
-      if (
-        updated.includes(
-          '<WorkspaceFrame\n        rootRef={rootRef}',
-        )
-      ) {
-        return updated
-      }
+  const entry = exportsField[subpath]
 
-      throw new Error(
-        'WorkspaceShell 缺少 WorkspaceFrame rootRef，请检查上一阶段修改。',
-      )
-    },
-  )
+  if (typeof entry === 'string') {
+    return entry
+  }
+
+  if (
+    entry &&
+    typeof entry === 'object'
+  ) {
+    return (
+      entry.default ??
+      entry.import ??
+      entry.types ??
+      null
+    )
+  }
+
+  return null
 }
 
-function createAppShell() {
-  write(
-    'apps/desktop/src/presentation/AppShell.tsx',
-    `import { EditorProvider } from '@hybrid-canvas/canvas/react'
-import { ConfirmationDialog } from '@hybrid-canvas/design-system'
-import { error as reportError } from '@hybrid-canvas/observability'
-import type { MainWindowController } from '@hybrid-canvas/platforms-desktop-runtime'
-import { SettingsDialog } from '@hybrid-canvas/settings/react'
-import type { CommandRegistry } from '@hybrid-canvas/workspace/application'
-import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
-import { CommandPalette } from '@hybrid-canvas/workspace/react'
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from 'react'
+function resolveSourcePath(candidate) {
+  const normalizedCandidate =
+    candidate.replace(
+      /\\.[cm]?[jt]sx?$/,
+      '',
+    )
 
-import type { ApplicationTerminationCoordinator } from '../application/termination/application-termination-coordinator'
-import { UiErrorBoundary } from './boundaries/UiErrorBoundary'
-import { useGlobalCommandShortcuts } from './commands/useGlobalCommandShortcuts'
-import {
-  type WorkspaceCanvasUIPort,
-  WorkspaceContainer,
-} from './workspace/WorkspaceContainer'
-
-export interface AppShellRuntime {
-  readonly workspace: WorkbenchSessionStore
-  readonly commands: CommandRegistry
-  readonly canvases: WorkspaceCanvasUIPort
-  readonly termination: ApplicationTerminationCoordinator
-  readonly mainWindow: MainWindowController
-}
-
-export interface AppShellProps {
-  readonly runtime: AppShellRuntime
-}
-
-const GLOBAL_COMMAND_SHORTCUTS = [
-  {
-    key: 'k',
-    commandId:
-      'application.toggle-command-palette',
-    ctrlOrMeta: true,
-  },
-  {
-    key: 'n',
-    commandId: 'workspace.create-canvas',
-    ctrlOrMeta: true,
-  },
-  {
-    key: 'o',
-    commandId: 'workspace.open-canvas',
-    ctrlOrMeta: true,
-  },
-] as const
-
-export function AppShell({
-  runtime,
-}: AppShellProps) {
-  const [
-    isCommandPaletteOpen,
-    setCommandPaletteOpen,
-  ] = useState(false)
-
-  const [
-    isSettingsOpen,
-    setSettingsOpen,
-  ] = useState(false)
-
-  const termination = useSyncExternalStore(
-    runtime.termination.subscribe,
-    runtime.termination.getSnapshot,
-    runtime.termination.getSnapshot,
-  )
-
-  const toggleCommandPalette = useCallback(
-    () => {
-      setCommandPaletteOpen(
-        (open) => !open,
-      )
-    },
-    [],
-  )
-
-  const openCommandPalette = useCallback(
-    () => setCommandPaletteOpen(true),
-    [],
-  )
-
-  const openSettings = useCallback(
-    () => setSettingsOpen(true),
-    [],
-  )
-
-  const requestApplicationClose = useCallback(
-    () => {
-      runtime.termination.request(
-        'window-close',
-      )
-    },
-    [runtime.termination],
-  )
-
-  const minimizeWindow = useCallback(() => {
-    void runtime.mainWindow
-      .minimize()
-      .catch((cause: unknown) => {
-        reportError(
-          'main window minimize failed',
-          {
-            scope: 'app-shell',
-            operation: 'minimize-window',
-            cause,
-          },
-        )
-      })
-  }, [runtime.mainWindow])
-
-  const maximizeWindow = useCallback(() => {
-    void runtime.mainWindow
-      .toggleMaximize()
-      .catch((cause: unknown) => {
-        reportError(
-          'main window maximize failed',
-          {
-            scope: 'app-shell',
-            operation: 'toggle-maximize-window',
-            cause,
-          },
-        )
-      })
-  }, [runtime.mainWindow])
-
-  const startWindowDragging =
-    useCallback(() => {
-      void runtime.mainWindow
-        .startDragging()
-        .catch((cause: unknown) => {
-          reportError(
-            'main window drag failed',
-            {
-              scope: 'app-shell',
-              operation:
-                'start-window-dragging',
-              cause,
-            },
-          )
-        })
-    }, [runtime.mainWindow])
-
-  useApplicationCommands(
-    runtime,
-    toggleCommandPalette,
-  )
-
-  useGlobalCommandShortcuts(
-    runtime.commands,
-    GLOBAL_COMMAND_SHORTCUTS,
-  )
-
-  useMainWindowCloseRequest(
-    runtime.mainWindow,
-    requestApplicationClose,
-  )
-
-  const workspacePort = useMemo(
-    () => ({
-      canvases: runtime.canvases,
-      workspace: runtime.workspace,
-    }),
-    [
-      runtime.canvases,
-      runtime.workspace,
-    ],
-  )
-
-  return (
-    <EditorProvider>
-      <UiErrorBoundary area="工作区">
-        <WorkspaceContainer
-          onCommandPaletteOpen={
-            openCommandPalette
-          }
-          onSettingsOpen={openSettings}
-          onWindowClose={
-            requestApplicationClose
-          }
-          onWindowMaximize={
-            maximizeWindow
-          }
-          onWindowMinimize={
-            minimizeWindow
-          }
-          onWindowStartDragging={
-            startWindowDragging
-          }
-          port={workspacePort}
-        />
-      </UiErrorBoundary>
-
-      <CommandPalette
-        onOpenChange={
-          setCommandPaletteOpen
-        }
-        open={isCommandPaletteOpen}
-        registry={runtime.commands}
-      />
-
-      <SettingsDialog
-        onOpenChange={setSettingsOpen}
-        open={isSettingsOpen}
-      />
-
-      <ConfirmationDialog
-        confirmLabel="放弃全部并退出"
-        description={
-          termination.state ===
-          'confirmation-required'
-            ? \`有 \${termination.sessionIds.length} 个画布包含未保存的更改。\`
-            : ''
-        }
-        destructive
-        onCancel={
-          runtime.termination.cancel
-        }
-        onConfirm={
-          runtime.termination.confirmDiscard
-        }
-        open={
-          termination.state ===
-          'confirmation-required'
-        }
-        title="退出并放弃未保存的更改？"
-      />
-
-      <ConfirmationDialog
-        cancelLabel="返回应用"
-        confirmLabel="重试退出"
-        description={
-          termination.state ===
-          'termination-failed'
-            ? \`原生窗口未能完成退出：\${termination.message}\`
-            : ''
-        }
-        onCancel={
-          runtime.termination.cancel
-        }
-        onConfirm={
-          runtime.termination.retry
-        }
-        open={
-          termination.state ===
-          'termination-failed'
-        }
-        title="应用退出失败"
-      />
-    </EditorProvider>
-  )
-}
-
-function useMainWindowCloseRequest(
-  mainWindow: MainWindowController,
-  onCloseRequested: () => void,
-): void {
-  useEffect(() => {
-    let disposed = false
-    let unsubscribe:
-      | (() => void)
-      | undefined
-
-    void mainWindow
-      .onCloseRequested(onCloseRequested)
-      .then(
-        (nextUnsubscribe) => {
-          if (disposed) {
-            nextUnsubscribe()
-            return
-          }
-
-          unsubscribe = nextUnsubscribe
-        },
-        (cause: unknown) => {
-          if (!disposed) {
-            reportError(
-              'main window close listener registration failed',
-              {
-                scope: 'app-shell',
-                operation:
-                  'register-close-listener',
-                cause,
-              },
-            )
-          }
-        },
-      )
-
-    return () => {
-      disposed = true
-      unsubscribe?.()
-    }
-  }, [mainWindow, onCloseRequested])
-}
-
-function useApplicationCommands(
-  runtime: AppShellRuntime,
-  toggleCommandPalette: () => void,
-): void {
-  useEffect(() => {
-    const unregister = [
-      runtime.commands.register({
-        id: 'application.toggle-command-palette',
-        label: '切换命令面板',
-        category: '应用',
-        shortcut: 'Ctrl+K',
-        execute: toggleCommandPalette,
-      }),
-
-      runtime.commands.register({
-        id: 'workspace.create-canvas',
-        label: '新建画板',
-        category: '文件',
-        shortcut: 'Ctrl+N',
-        execute() {
-          runtime.canvases.create(
-            '未命名画板',
-          )
-        },
-      }),
-
-      runtime.commands.register({
-        id: 'workspace.open-canvas',
-        label: '打开画板',
-        category: '文件',
-        shortcut: 'Ctrl+O',
-        execute: runtime.canvases.open,
-      }),
-    ]
-
-    return () => {
-      for (
-        let index = unregister.length - 1;
-        index >= 0;
-        index -= 1
-      ) {
-        unregister[index]?.()
-      }
-    }
-  }, [runtime, toggleCommandPalette])
-}
-`,
-  )
-}
-
-async function replaceConsoleErrorBoundaries() {
-  await edit(
-    'apps/desktop/src/presentation/boundaries/UiErrorBoundary.tsx',
-    (content) => {
-      let updated = content
-
-      if (
-        !updated.includes(
-          `from '@hybrid-canvas/observability'`,
-        )
-      ) {
-        updated = replaceOnce(
-          updated,
-          `import { Component, type ErrorInfo, type ReactNode } from 'react'`,
-          `import { error as reportError } from '@hybrid-canvas/observability'
-import { Component, type ErrorInfo, type ReactNode } from 'react'`,
-          '为 UiErrorBoundary 导入 observability',
-        )
-      }
-
-      updated = replaceOnce(
-        updated,
-        `    console.error(\`UI boundary failed: \${this.props.area}\`, error, info.componentStack)`,
-        `    reportError('UI boundary failed', {
-      scope: 'ui-error-boundary',
-      area: this.props.area,
-      error,
-      componentStack: info.componentStack,
-    })`,
-        '替换 UiErrorBoundary console.error',
-      )
-
-      return updated
-    },
-  )
-
-  await edit(
-    'apps/desktop/src/bootstrap/ApplicationErrorBoundary.tsx',
-    (content) => {
-      let updated = content
-
-      if (
-        !updated.includes(
-          `from '@hybrid-canvas/observability'`,
-        )
-      ) {
-        updated = replaceOnce(
-          updated,
-          `import { Button } from '@hybrid-canvas/design-system'`,
-          `import { Button } from '@hybrid-canvas/design-system'
-import { error as reportError } from '@hybrid-canvas/observability'`,
-          '为 ApplicationErrorBoundary 导入 observability',
-        )
-      }
-
-      updated = replaceOnce(
-        updated,
-        `    console.error('Application rendering failed.', error, errorInfo)`,
-        `    reportError('Application rendering failed', {
-      scope: 'application-error-boundary',
-      error,
-      componentStack: errorInfo.componentStack,
-    })`,
-        '替换 ApplicationErrorBoundary console.error',
-      )
-
-      return updated
-    },
-  )
-}
-
-async function fixApplicationLifecycleLogging() {
-  await edit(
-    'apps/desktop/src/bootstrap/application-lifecycle.ts',
-    (content) => {
-      let updated = content
-
-      if (
-        !updated.includes(
-          `from '@hybrid-canvas/observability'`,
-        )
-      ) {
-        updated =
-          `import { error as reportError } from '@hybrid-canvas/observability'\n` +
-          updated
-      }
-
-      updated = replaceOnce(
-        updated,
-        `  const handleBeforeUnload = () => {
-    void runtime.mainWindow.saveState().catch(() => undefined)
-  }`,
-        `  const handleBeforeUnload = () => {
-    void runtime.mainWindow
-      .saveState()
-      .catch((cause: unknown) => {
-        reportError(
-          'main window state save failed during unload',
-          {
-            scope: 'application-lifecycle',
-            operation: 'save-window-state',
-            cause,
-          },
-        )
-      })
-  }`,
-        '替换 beforeunload 静默错误',
-      )
-
-      return updated
-    },
-  )
-}
-
-async function updateDependencies() {
-  await updateJson(
-    'apps/desktop/package.json',
-    (json) => {
-      json.dependencies ??= {}
-
-      json.dependencies[
-        '@hybrid-canvas/observability'
-      ] = 'workspace:*'
-
-      json.dependencies[
-        '@hybrid-canvas/settings'
-      ] = 'workspace:*'
-
-      json.dependencies = Object.fromEntries(
-        Object.entries(
-          json.dependencies,
-        ).sort(([left], [right]) =>
-          left.localeCompare(right),
+  const candidates = [
+    candidate,
+    ...sourceExtensions.map(
+      (extension) =>
+        normalizedCandidate + extension,
+    ),
+    ...sourceExtensions.map(
+      (extension) =>
+        join(
+          normalizedCandidate,
+          'index' + extension,
         ),
+    ),
+  ]
+
+  for (const path of candidates) {
+    const normalizedPath = normalize(path)
+
+    if (
+      sourceFileSet.has(normalizedPath)
+    ) {
+      return normalizedPath
+    }
+
+    if (
+      existsSync(normalizedPath) &&
+      statSync(normalizedPath).isFile() &&
+      sourceExtensions.includes(
+        extname(normalizedPath),
       )
+    ) {
+      return normalizedPath
+    }
+  }
+
+  return null
+}
+
+function findCycles(graph) {
+  const cycles = []
+  const state = new Map()
+  const stack = []
+  const stackIndex = new Map()
+  const signatures = new Set()
+
+  function visit(node) {
+    const currentState = state.get(node)
+
+    if (currentState === 'visited') {
+      return
+    }
+
+    if (currentState === 'visiting') {
+      const start =
+        stackIndex.get(node)
+
+      if (start === undefined) {
+        return
+      }
+
+      const cycle = [
+        ...stack.slice(start),
+        node,
+      ]
+
+      const signature = canonicalizeCycle(
+        cycle,
+      )
+
+      if (!signatures.has(signature)) {
+        signatures.add(signature)
+        cycles.push(cycle)
+      }
+
+      return
+    }
+
+    state.set(node, 'visiting')
+    stackIndex.set(node, stack.length)
+    stack.push(node)
+
+    for (const dependency of graph.get(
+      node,
+    ) ?? []) {
+      if (graph.has(dependency)) {
+        visit(dependency)
+      }
+    }
+
+    stack.pop()
+    stackIndex.delete(node)
+    state.set(node, 'visited')
+  }
+
+  for (const node of graph.keys()) {
+    visit(node)
+  }
+
+  return cycles
+}
+
+function canonicalizeCycle(cycle) {
+  const values = cycle.slice(0, -1)
+
+  if (values.length === 0) {
+    return ''
+  }
+
+  const rotations = values.map(
+    (_, index) => [
+      ...values.slice(index),
+      ...values.slice(0, index),
+    ].join('|'),
+  )
+
+  return rotations.sort()[0]
+}
+`,
+  )
+}
+
+function createBundleReport() {
+  write(
+    'tests/performance/report-bundle.mjs',
+    `#!/usr/bin/env node
+
+import {
+  existsSync,
+  readFileSync,
+  statSync,
+} from 'node:fs'
+import {
+  dirname,
+  join,
+  relative,
+  resolve,
+} from 'node:path'
+
+const root = resolve(import.meta.dirname, '../..')
+const manifestPath = join(
+  root,
+  'apps/desktop/dist/.vite/manifest.json',
+)
+
+if (!existsSync(manifestPath)) {
+  console.error(
+    'Vite manifest not found. Run pnpm build:desktop first.',
+  )
+  process.exit(1)
+}
+
+const manifest = JSON.parse(
+  readFileSync(manifestPath, 'utf8'),
+)
+
+const distRoot = resolve(
+  dirname(manifestPath),
+  '..',
+)
+
+const assets = new Map()
+
+for (const entry of Object.values(manifest)) {
+  collect(entry.file, 'js')
+
+  for (const cssFile of entry.css ?? []) {
+    collect(cssFile, 'css')
+  }
+
+  for (const asset of entry.assets ?? []) {
+    collect(asset, 'asset')
+  }
+}
+
+const rows = [...assets.values()].sort(
+  (left, right) =>
+    right.bytes - left.bytes,
+)
+
+const totals = rows.reduce(
+  (result, row) => {
+    result[row.kind] ??= 0
+    result[row.kind] += row.bytes
+    result.total += row.bytes
+    return result
+  },
+  { total: 0 },
+)
+
+console.log('')
+console.log('Desktop bundle report')
+console.log('=====================')
+console.log('')
+
+for (const row of rows) {
+  console.log(
+    \`\${formatBytes(row.bytes).padStart(10)}  \${row.kind.padEnd(5)}  \${row.path}\`,
+  )
+}
+
+console.log('')
+console.log(
+  \`JavaScript: \${formatBytes(totals.js ?? 0)}\`,
+)
+console.log(
+  \`CSS:        \${formatBytes(totals.css ?? 0)}\`,
+)
+console.log(
+  \`Assets:     \${formatBytes(totals.asset ?? 0)}\`,
+)
+console.log(
+  \`Total:      \${formatBytes(totals.total)}\`,
+)
+console.log('')
+
+function collect(file, kind) {
+  if (!file || assets.has(file)) {
+    return
+  }
+
+  const absolutePath = join(
+    distRoot,
+    file,
+  )
+
+  if (!existsSync(absolutePath)) {
+    return
+  }
+
+  assets.set(file, {
+    path: relative(
+      distRoot,
+      absolutePath,
+    ).replaceAll('\\\\', '/'),
+    kind,
+    bytes: statSync(
+      absolutePath,
+    ).size,
+  })
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) {
+    return \`\${bytes} B\`
+  }
+
+  if (bytes < 1024 * 1024) {
+    return \`\${(
+      bytes / 1024
+    ).toFixed(1)} KiB\`
+  }
+
+  return \`\${(
+    bytes /
+    1024 /
+    1024
+  ).toFixed(2)} MiB\`
+}
+`,
+  )
+}
+
+async function enableViteManifest() {
+  await edit(
+    'apps/desktop/vite.config.ts',
+    (content) => {
+      if (
+        content.includes(
+          'manifest: true',
+        )
+      ) {
+        throw new Error(
+          'Vite manifest 已经启用，请不要重复运行 Phase 4。',
+        )
+      }
+
+      return content.replace(
+        `  build: {
+    target:`,
+        `  build: {
+    manifest: true,
+    target:`,
+      )
+    },
+  )
+}
+
+async function updateRootScripts() {
+  await updateJson(
+    'package.json',
+    (json) => {
+      json.scripts ??= {}
+
+      json.scripts[
+        'test:architecture'
+      ] =
+        'node tests/architecture/check.mjs && node tests/architecture/check-import-graph.mjs'
+
+      json.scripts[
+        'analyze:bundle'
+      ] =
+        'node tests/performance/report-bundle.mjs'
 
       return json
     },
   )
 }
 
-function createQualityWorkflow() {
-  write(
+async function updateCi() {
+  await edit(
     '.github/workflows/quality.yml',
-    `name: Quality
+    (content) => {
+      if (
+        content.includes(
+          'Bundle report',
+        )
+      ) {
+        throw new Error(
+          'CI 已包含 Bundle report，请不要重复执行。',
+        )
+      }
 
-on:
-  pull_request:
-  push:
-    branches:
-      - main
+      const oldBlock = `      - name: Build
+        run: pnpm build
+`
 
-concurrency:
-  group: quality-\${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-
-jobs:
-  frontend:
-    name: Frontend
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.15.0
-          run_install: false
-
-      - name: Install Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Format
-        run: pnpm format:check
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Architecture
-        run: pnpm test:architecture
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: JavaScript tests
-        run: pnpm turbo run test
-
-      - name: Build
+      const newBlock = `      - name: Build
         run: pnpm build
 
-  rust:
-    name: Rust
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+      - name: Bundle report
+        run: pnpm analyze:bundle
+`
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      if (!content.includes(oldBlock)) {
+        throw new Error(
+          '找不到 CI Build 步骤。',
+        )
+      }
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      return content.replace(
+        oldBlock,
+        newBlock,
+      )
+    },
+  )
+}
 
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
+function createProgressDocument() {
+  write(
+    'docs/architecture/refactor-progress.md',
+    `# Frontend Architecture Refactor Progress
 
-      - name: Format
-        run: cargo fmt --check
+## Scope
 
-      - name: Check
-        run: cargo check --workspace --all-targets --all-features
+This refactor preserves:
 
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+- tldraw Editor and TLStore as the canonical canvas runtime
+- the existing scaffold-first package strategy
+- the current .draw file contract
+- the editor extension model
+- platform-independent editor and document packages
 
-      - name: Tests
-        run: cargo test --workspace --all-features
+## Progress
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| 0. Architecture review | Complete | Runtime and dependency model established |
+| 1. Runtime correctness | Complete | External-store snapshots, listener cleanup and environment exposure |
+| 2. UI boundaries | Complete after verification | Desktop chrome separated from Workspace; shared confirmation dialog |
+| 3. Workflow and errors | Complete after verification | Close orchestration moved to CanvasWorkflow; observability added |
+| 4. Dependency and performance baselines | In progress | Import graph and Vite bundle manifest |
+| 5. Compatibility and release verification | Pending | File fixtures, native failure recovery and final performance budgets |
+
+## Architectural invariants
+
+1. TLStore records are the only persistent canvas source of truth.
+2. Canvas document writes go through Editor or Store transactions.
+3. Workspace does not expose Tauri or native-window semantics.
+4. Presentation does not orchestrate document save promises.
+5. Cross-package imports use package exports.
+6. Reserved scaffolds remain registered in architecture.scaffolds.json.
+7. Performance optimizations require a recorded baseline.
+
+## Remaining work
+
+- Establish .draw round-trip fixtures and corrupt-file cases.
+- Verify atomic save and crash recovery in the Rust layer.
+- Record initial bundle, startup and multi-canvas memory baselines.
+- Add explicit performance budgets after the first stable baseline.
+- Complete settings persistence wiring.
+- Run desktop E2E coverage for title-bar drag, close and recovery paths.
 `,
   )
 }
@@ -1407,8 +990,8 @@ function printPlan() {
   console.log('')
   console.log(
     shouldWrite
-      ? 'Phase 3 修复与重构：'
-      : 'Phase 3 预览（尚未写入）：',
+      ? 'Phase 4 修改计划：'
+      : 'Phase 4 预览（尚未写入）：',
   )
 
   for (const relativePath of writes.keys()) {
@@ -1419,27 +1002,26 @@ function printPlan() {
 }
 
 async function main() {
-  await preflight()
+  await assertPhase3Completed()
 
-  createCanvasWorkflow()
-  createWorkspaceContainer()
-  await repairWorkspaceShell()
-  createAppShell()
-
-  await replaceConsoleErrorBoundaries()
-  await fixApplicationLifecycleLogging()
-  await updateDependencies()
-  createQualityWorkflow()
+  createImportGraphCheck()
+  createBundleReport()
+  await enableViteManifest()
+  await updateRootScripts()
+  await updateCi()
+  createProgressDocument()
 
   printPlan()
 
   if (!shouldWrite) {
-    console.log('所有前置文件检查完成。')
+    console.log(
+      'Phase 3 前置条件和 Phase 4 修改均已验证。',
+    )
     console.log('')
-    console.log('执行以下命令实际写入：')
+    console.log('实际写入：')
     console.log('')
     console.log(
-      '  node scripts/refactor-architecture-phase3.mjs --write',
+      '  node scripts/refactor-architecture-phase4.mjs --write',
     )
     console.log('')
     return
@@ -1452,24 +1034,21 @@ async function main() {
     `备份目录：${relative(root, backupRoot)}`,
   )
   console.log('')
-  console.log('修改完成。必须执行：')
+  console.log('必须执行：')
   console.log('')
-  console.log('  pnpm install')
   console.log('  pnpm format')
   console.log('  pnpm lint')
   console.log('  pnpm test:architecture')
   console.log('  pnpm typecheck')
   console.log('  pnpm test')
-  console.log('  pnpm build')
+  console.log('  pnpm build:desktop')
+  console.log('  pnpm analyze:bundle')
   console.log('')
 }
 
 main().catch((error) => {
   console.error('')
-  console.error('Phase 3 脚本执行失败。')
-  console.error(
-    '未传入 --write 时不会修改仓库。',
-  )
+  console.error('Phase 4 执行失败。')
   console.error(error)
   process.exitCode = 1
 })

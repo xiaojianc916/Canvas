@@ -56,6 +56,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Bundle report
+        run: pnpm analyze:bundle
+
   rust:
     name: Rust
     runs-on: ubuntu-latest
