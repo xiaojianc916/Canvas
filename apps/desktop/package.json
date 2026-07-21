@@ -22,7 +22,7 @@
     "@hybrid-canvas/document": "workspace:*",
     "@hybrid-canvas/file": "workspace:*",
     "@hybrid-canvas/flowchart": "workspace:*",
-    "@hybrid-canvas/observability": "workspace:*",
+    "@hybrid-canvas/foundations-observability": "workspace:*",
     "@hybrid-canvas/platforms-desktop-runtime": "workspace:*",
     "@hybrid-canvas/settings": "workspace:*",
     "@hybrid-canvas/workspace": "workspace:*",

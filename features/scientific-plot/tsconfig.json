@@ -5,7 +5,7 @@
     "paths": {
       "@hybrid-canvas/kernel": ["../../foundations/kernel/src/public-api.ts"],
       "@hybrid-canvas/geometry": ["../../foundations/geometry/src/public-api.ts"],
-      "@hybrid-canvas/observability": ["../../foundations/observability/src/public-api.ts"],
+      "@hybrid-canvas/foundations-observability": ["../../foundations/observability/src/public-api.ts"],
       "@hybrid-canvas/asset": ["../../editor/assets/src/public-api.ts"]
     }
   },

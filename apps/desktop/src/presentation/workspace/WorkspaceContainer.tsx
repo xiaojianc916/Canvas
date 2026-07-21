@@ -1,7 +1,7 @@
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
 import { EditorSessionHost } from '@hybrid-canvas/canvas/react'
 import { ConfirmationDialog } from '@hybrid-canvas/design-system'
-import { error as reportError } from '@hybrid-canvas/observability'
+import { error as reportError } from '@hybrid-canvas/foundations-observability'
 import type {
   CanvasSessionId,
   WorkbenchSessionStore,

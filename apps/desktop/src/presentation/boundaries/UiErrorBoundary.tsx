@@ -1,4 +1,4 @@
-import { error as reportError } from '@hybrid-canvas/observability'
+import { error as reportError } from '@hybrid-canvas/foundations-observability'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
 export interface UiErrorBoundaryProps {

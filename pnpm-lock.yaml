@@ -129,6 +129,9 @@ importers:
       '@hybrid-canvas/flowchart':
         specifier: workspace:*
         version: link:../../features/flowchart
+      '@hybrid-canvas/foundations-observability':
+        specifier: workspace:*
+        version: link:../../foundations/observability
       '@hybrid-canvas/platforms-desktop-runtime':
         specifier: workspace:*
         version: link:../../platforms/desktop-runtime

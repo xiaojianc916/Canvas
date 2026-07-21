@@ -1,5 +1,5 @@
 import { Button } from '@hybrid-canvas/design-system'
-import { error as reportError } from '@hybrid-canvas/observability'
+import { error as reportError } from '@hybrid-canvas/foundations-observability'
 import { AlertTriangle, RotateCcw } from 'lucide-react'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
