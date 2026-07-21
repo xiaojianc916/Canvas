@@ -1,6 +1,6 @@
 export {
-  type ActiveDocumentViewModel,
-  type DocumentId,
+  type ActiveCanvasViewModel,
+  type CanvasId,
   type DocumentPersistenceViewModel,
   type DocumentSessionId,
   type DocumentTabViewModel,

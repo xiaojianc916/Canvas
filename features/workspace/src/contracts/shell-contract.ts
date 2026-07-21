@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react'
 
-import type { DocumentSessionId, PageId, WorkbenchViewModel } from './public-api'
+import type { CanvasSessionId, PageId, WorkbenchViewModel } from './public-api'
 
 export interface WorkspaceShellActions {
-  readonly createDocument: () => void
-  readonly openDocument: () => void
-  readonly activateDocument: (sessionId: DocumentSessionId) => void
-  readonly closeDocument: (sessionId: DocumentSessionId) => void
+  readonly createCanvas: () => void
+  readonly openCanvas: () => void
+  readonly activateCanvas: (sessionId: CanvasSessionId) => void
+  readonly closeCanvas: (sessionId: CanvasSessionId) => void
   readonly activatePage: (pageId: PageId) => void
   readonly createPage: () => void
   readonly openCommandPalette: () => void

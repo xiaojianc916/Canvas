@@ -9,19 +9,19 @@ import {
 import { WorkspaceShell, type WorkspaceShellActions } from '@hybrid-canvas/workspace'
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 
-import type { DocumentSessionId, WorkbenchSessionStore } from '@hybrid-canvas/workspace'
+import type { CanvasSessionId, WorkbenchSessionStore } from '@hybrid-canvas/workspace'
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
 
-export interface WorkspaceDocumentUIPort {
+export interface WorkspaceCanvasUIPort {
   readonly create: (title: string, initialPageTitle: string) => void
   readonly open: () => Promise<void>
-  readonly save: (sessionId: DocumentSessionId) => Promise<void>
-  readonly close: (sessionId: DocumentSessionId) => void
-  readonly getEditorSession: (sessionId: DocumentSessionId) => EditorSession | null
+  readonly save: (sessionId: CanvasSessionId) => Promise<void>
+  readonly close: (sessionId: CanvasSessionId) => void
+  readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
 }
 
 export interface WorkspaceUIPort {
-  readonly documents: WorkspaceDocumentUIPort
+  readonly canvases: WorkspaceCanvasUIPort
   readonly workspace: WorkbenchSessionStore
 }
 
@@ -52,26 +52,26 @@ export function WorkspaceContainer({
 
   const handleSave = useCallback(
     (sessionId: string) => {
-      void port.documents.save(sessionId)
+      void port.canvases.save(sessionId)
     },
-    [port.documents],
+    [port.canvases],
   )
 
   const actions = useMemo<WorkspaceShellActions>(
     () => ({
-      createDocument() {
-        port.documents.create(
-          createUntitledDocumentTitle(workbench.tabs.map((tab) => tab.title)),
+      createCanvas() {
+        port.canvases.create(
+          createUntitledCanvasTitle(workbench.tabs.map((tab) => tab.title)),
           '画板 1',
         )
       },
-      openDocument() {
+      openCanvas() {
         void port.documents.open()
       },
-      activateDocument(sessionId) {
-        port.workspace.activateDocument(sessionId)
+      activateCanvas(sessionId) {
+        port.workspace.activateCanvas(sessionId)
       },
-      closeDocument(sessionId) {
+      closeCanvas(sessionId) {
         port.documents.close(sessionId)
       },
       activatePage(pageId) {
@@ -83,7 +83,7 @@ export function WorkspaceContainer({
       createPage() {
         const activeSessionId = port.workspace.getSnapshot().activeSessionId
         if (activeSessionId) {
-          port.workspace.createPage(activeSessionId, `画板 ${(port.workspace.getSnapshot().activeDocument?.pages.length ?? 0) + 1}`)
+          port.workspace.createPage(activeSessionId, `画板 ${(port.workspace.getSnapshot().activeCanvas?.pages.length ?? 0) + 1}`)
         }
       },
       openCommandPalette: onCommandPaletteOpen,
@@ -109,7 +109,7 @@ export function WorkspaceContainer({
     <WorkspaceShell
       actions={actions}
       editor={
-        workbench.activeDocument ? (
+        workbench.activeCanvas ? (
           <UiErrorBoundary area="画布编辑器">
             <EditorSessionHost
               activeSessionId={workbench.activeSessionId}
@@ -137,7 +137,7 @@ async function invokeWindowAction(
   await getCurrentWindow()[action]()
 }
 
-function createUntitledDocumentTitle(existingTitles: readonly string[]): string {
+function createUntitledCanvasTitle(existingTitles: readonly string[]): string {
   const baseTitle = '未命名画板'
   if (!existingTitles.includes(baseTitle)) {
     return baseTitle

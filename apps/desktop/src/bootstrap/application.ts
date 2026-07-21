@@ -20,12 +20,12 @@ import {
   createWorkbenchSessionController,
   type WorkbenchSessionStore,
 } from '@hybrid-canvas/workspace'
-import { createDocumentService, type DocumentService } from '../application/documents/document-session-service'
+import { createCanvasService, type CanvasService } from '../application/documents/document-session-service'
 
 export interface ApplicationRuntime {
   readonly workspace: WorkbenchSessionStore
   readonly commands: CommandRegistry
-  readonly documents: DocumentService
+  readonly canvases: CanvasService
   readonly mainWindow: MainWindowController
   readonly drawFiles: DrawFileCommands
   readonly settings: SettingsStore
@@ -42,7 +42,7 @@ export function createApplicationRuntime(): ApplicationRuntime {
   const dialog = createFileDialog()
   const mainWindow = createMainWindowController()
   const editorRegistry = createEditorSessionRegistry()
-  const documents = createDocumentService({
+  const canvases = createCanvasService({
     workspace,
     editorSessions: editorRegistry,
     files: drawFiles,
@@ -53,7 +53,7 @@ export function createApplicationRuntime(): ApplicationRuntime {
   return {
     workspace,
     commands,
-    documents,
+    canvases,
     mainWindow,
     drawFiles,
     settings: createDesktopSettingsStore(),
@@ -61,7 +61,7 @@ export function createApplicationRuntime(): ApplicationRuntime {
     opener: createExternalOpener(),
     theme: createSystemTheme(),
     dispose() {
-      documents.dispose()
+      canvases.dispose()
     },
   }
 }

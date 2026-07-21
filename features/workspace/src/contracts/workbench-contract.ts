@@ -1,5 +1,5 @@
-export type DocumentId = string
-export type DocumentSessionId = string
+export type CanvasId = string
+export type CanvasSessionId = string
 export type PageId = string
 
 export type LocalPersistenceState = 'clean' | 'dirty' | 'saving' | 'failed'
@@ -11,16 +11,16 @@ export type RemoteSynchronizationState =
   | 'synced'
   | 'conflicted'
 
-export interface DocumentPersistenceViewModel {
+export interface CanvasPersistenceViewModel {
   readonly local: LocalPersistenceState
   readonly remote: RemoteSynchronizationState
 }
 
-export interface DocumentTabViewModel {
-  readonly sessionId: DocumentSessionId
-  readonly documentId: DocumentId
+export interface CanvasTabViewModel {
+  readonly sessionId: CanvasSessionId
+  readonly canvasId: CanvasId
   readonly title: string
-  readonly persistence: DocumentPersistenceViewModel
+  readonly persistence: CanvasPersistenceViewModel
   readonly isActive: boolean
   readonly canClose: boolean
 }
@@ -28,40 +28,40 @@ export interface DocumentTabViewModel {
 export interface WorkspacePageViewModel {
   readonly pageId: PageId
   readonly title: string
-  readonly kind: 'canvas' | 'document'
+  readonly kind: 'canvas'
   readonly isActive: boolean
   readonly isArchived: boolean
 }
 
-export interface ActiveDocumentViewModel {
-  readonly sessionId: DocumentSessionId
-  readonly documentId: DocumentId
+export interface ActiveCanvasViewModel {
+  readonly sessionId: CanvasSessionId
+  readonly canvasId: CanvasId
   readonly title: string
   readonly pages: readonly WorkspacePageViewModel[]
 }
 
 export interface WorkbenchViewModel {
-  readonly activeSessionId: DocumentSessionId | null
-  readonly tabs: readonly DocumentTabViewModel[]
-  readonly activeDocument: ActiveDocumentViewModel | null
+  readonly activeSessionId: CanvasSessionId | null
+  readonly tabs: readonly CanvasTabViewModel[]
+  readonly activeCanvas: ActiveCanvasViewModel | null
 }
 
-export interface CreateDocumentRequest {
+export interface CreateCanvasRequest {
   readonly title: string
   readonly initialPageTitle: string
-  readonly documentId?: DocumentId
-  readonly sessionId?: DocumentSessionId
+  readonly canvasId?: CanvasId
+  readonly sessionId?: CanvasSessionId
   readonly persistence?: LocalPersistenceState
 }
 
 export interface WorkbenchSessionCommands {
-  readonly createDocument: (request: CreateDocumentRequest) => void
-  readonly activateDocument: (sessionId: DocumentSessionId) => void
-  readonly closeDocument: (sessionId: DocumentSessionId) => void
-  readonly createPage: (sessionId: DocumentSessionId, title: string) => void
-  readonly activatePage: (sessionId: DocumentSessionId, pageId: PageId) => void
+  readonly createCanvas: (request: CreateCanvasRequest) => void
+  readonly activateCanvas: (sessionId: CanvasSessionId) => void
+  readonly closeCanvas: (sessionId: CanvasSessionId) => void
+  readonly createPage: (sessionId: CanvasSessionId, title: string) => void
+  readonly activatePage: (sessionId: CanvasSessionId, pageId: PageId) => void
   readonly setLocalPersistence: (
-    sessionId: DocumentSessionId,
+    sessionId: CanvasSessionId,
     state: LocalPersistenceState,
   ) => void
 }
@@ -74,5 +74,5 @@ export interface WorkbenchSessionStore extends WorkbenchSessionCommands {
 export const EMPTY_WORKBENCH_VIEW_MODEL: WorkbenchViewModel = Object.freeze({
   activeSessionId: null,
   tabs: Object.freeze([]),
-  activeDocument: null,
+  activeCanvas: null,
 })

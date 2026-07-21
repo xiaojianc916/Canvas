@@ -3,13 +3,13 @@ import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 import { Plus, X } from 'lucide-react'
 
 import type {
-  DocumentSessionId,
-  DocumentTabViewModel,
+  CanvasSessionId,
+  CanvasTabViewModel,
 } from '../../application/model/workbench-view-model'
 
-export interface DocumentTabsProps {
-  readonly tabs: readonly DocumentTabViewModel[]
-  readonly onActivate: (sessionId: DocumentSessionId) => void
+export interface CanvasTabsProps {
+  readonly tabs: readonly CanvasTabViewModel[]
+  readonly onActivate: (sessionId: CanvasSessionId) => void
   readonly onClose: (sessionId: DocumentSessionId) => void
   readonly onCreate: () => void
 }
@@ -27,7 +27,7 @@ const TOP_RADIUS = 12
 const OUTER_RADIUS = 15
 const BEZIER_CIRCLE = 0.5522848
 
-export function DocumentTabs({ tabs, onActivate, onClose, onCreate }: DocumentTabsProps) {
+export function DocumentTabs({ tabs, onActivate, onClose, onCreate }: CanvasTabsProps) {
   const shellRef = useRef<HTMLElement | null>(null)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const tabRefs = useRef(new Map<DocumentSessionId, HTMLButtonElement>())
@@ -151,7 +151,7 @@ export function DocumentTabs({ tabs, onActivate, onClose, onCreate }: DocumentTa
 }
 
 interface DocumentTabProps {
-  readonly model: DocumentTabViewModel
+  readonly model: CanvasTabViewModel
   readonly onActivate: (sessionId: DocumentSessionId) => void
   readonly onClose: (sessionId: DocumentSessionId) => void
 }

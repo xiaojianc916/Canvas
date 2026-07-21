@@ -32,14 +32,14 @@ export function AppShell({ runtime }: AppShellProps) {
   useApplicationCommands(runtime, () => setCommandPaletteOpen((open) => !open))
   useGlobalCommandShortcuts(runtime.commands, [
     { key: 'k', commandId: 'application.toggle-command-palette', ctrlOrMeta: true },
-    { key: 'n', commandId: 'workspace.create-document', ctrlOrMeta: true },
-    { key: 'o', commandId: 'workspace.open-document', ctrlOrMeta: true },
+    { key: 'n', commandId: 'workspace.create-canvas', ctrlOrMeta: true },
+    { key: 'o', commandId: 'workspace.open-canvas', ctrlOrMeta: true },
   ])
 
   const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), [])
   const openSettings = useCallback(() => setSettingsOpen(true), [])
   const workspacePort = useMemo(
-    () => ({ documents: runtime.documents, workspace: runtime.workspace }),
+    () => ({ canvases: runtime.canvases, workspace: runtime.workspace }),
     [runtime.documents, runtime.workspace],
   )
 

@@ -34,11 +34,11 @@ export function WorkspaceShell({
   const [isResizingSidebar, setResizingSidebar] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
-  const hasActiveDocument = model.activeDocument !== null
+  const hasActiveCanvas = model.activeCanvas !== null
   const sidebarSize = isSidebarOpen ? sidebarWidth : 0
   const gridTemplateColumns = useMemo(
-    () => [RAIL_WIDTH, `${sidebarSize}px`, 'minmax(0, 1fr)', isInspectorOpen && hasActiveDocument ? 'var(--inspector-width)' : '0px'].join(' '),
-    [hasActiveDocument, isInspectorOpen, sidebarSize],
+    () => [RAIL_WIDTH, `${sidebarSize}px`, 'minmax(0, 1fr)', isInspectorOpen && hasActiveCanvas ? 'var(--inspector-width)' : '0px'].join(' '),
+    [hasActiveCanvas, isInspectorOpen, sidebarSize],
   )
   const gridTemplateRows = hasActiveDocument
     ? 'var(--chrome-height) minmax(0, 1fr) var(--status-height)'
@@ -81,9 +81,9 @@ export function WorkspaceShell({
         sidebarWidth={sidebarWidth}
       >
         <DocumentTabs
-          onActivate={actions.activateDocument}
-          onClose={actions.closeDocument}
-          onCreate={actions.createDocument}
+          onActivate={actions.activateCanvas}
+          onClose={actions.closeCanvas}
+          onCreate={actions.createCanvas}
           tabs={model.tabs}
         />
       </DesktopTitleBar>
@@ -116,7 +116,7 @@ export function WorkspaceShell({
           onActivatePage={actions.activatePage}
           onClose={() => setSidebarOpen(false)}
           onCreatePage={actions.createPage}
-          pages={model.activeDocument?.pages ?? []}
+          pages={model.activeCanvas?.pages ?? []}
         />
       ) : null}
       {isSidebarOpen ? (
@@ -134,7 +134,7 @@ export function WorkspaceShell({
         {hasActiveDocument ? (
           editor
         ) : (
-          <NoDocumentSurface onCreateDocument={actions.createDocument} onOpenDocument={actions.openDocument} />
+          <NoDocumentSurface onCreateDocument={actions.createCanvas} onOpenDocument={actions.openCanvas} />
         )}
       </main>
     </section>

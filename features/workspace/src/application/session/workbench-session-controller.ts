@@ -1,8 +1,8 @@
 import type {
-  ActiveDocumentViewModel,
-  CreateDocumentRequest,
-  DocumentSessionId,
-  DocumentTabViewModel,
+  ActiveCanvasViewModel,
+  CanvasSessionId,
+  CanvasTabViewModel,
+  CreateCanvasRequest,
   LocalPersistenceState,
   PageId,
   WorkbenchSessionStore,
@@ -13,201 +13,125 @@ import { EMPTY_WORKBENCH_VIEW_MODEL } from '../../contracts/public-api'
 
 export function createWorkbenchSessionController(): WorkbenchSessionStore {
   let snapshot = EMPTY_WORKBENCH_VIEW_MODEL
-  const documents = new Map<DocumentSessionId, ActiveDocumentViewModel>()
+  const canvases = new Map<CanvasSessionId, ActiveCanvasViewModel>()
   const listeners = new Set<() => void>()
 
   function emit(nextSnapshot: WorkbenchViewModel): void {
     assertWorkbenchInvariants(nextSnapshot)
     snapshot = nextSnapshot
-    for (const listener of listeners) {
-      listener()
-    }
+    for (const listener of listeners) listener()
   }
 
-  function getSnapshot(): WorkbenchViewModel {
-    return snapshot
-  }
-
-  function subscribe(listener: () => void): () => void {
-    listeners.add(listener)
-    return () => {
-      listeners.delete(listener)
-    }
-  }
-
-  function createDocument(request: CreateDocumentRequest): void {
-    const documentId = request.documentId ?? crypto.randomUUID()
+  function createCanvas(request: CreateCanvasRequest): void {
+    const canvasId = request.canvasId ?? crypto.randomUUID()
     const sessionId = request.sessionId ?? crypto.randomUUID()
-    const pageId = crypto.randomUUID()
-
-    const activeDocument: ActiveDocumentViewModel = {
-      documentId,
+    const activeCanvas: ActiveCanvasViewModel = {
+      canvasId,
       sessionId,
       title: request.title,
-      pages: [
-        {
-          pageId,
-          title: request.initialPageTitle,
-          kind: 'canvas',
-          isActive: true,
-          isArchived: false,
-        },
-      ],
+      pages: [{
+        pageId: crypto.randomUUID(),
+        title: request.initialPageTitle,
+        kind: 'canvas',
+        isActive: true,
+        isArchived: false,
+      }],
     }
-
-    documents.set(sessionId, activeDocument)
-
-    const previousTabs = snapshot.tabs.map(
-      (tab): DocumentTabViewModel => ({
-        ...tab,
-        isActive: false,
-      }),
-    )
-
+    canvases.set(sessionId, activeCanvas)
+    const tabs = snapshot.tabs.map((tab): CanvasTabViewModel => ({ ...tab, isActive: false }))
     emit({
       activeSessionId: sessionId,
-      activeDocument,
-      tabs: [
-        ...previousTabs,
-        {
-          sessionId,
-          documentId,
-          title: request.title,
-          persistence: {
-            local: request.persistence ?? 'dirty',
-            remote: 'not-configured',
-          },
-          isActive: true,
-          canClose: true,
-        },
-      ],
+      activeCanvas,
+      tabs: [...tabs, {
+        sessionId,
+        canvasId,
+        title: request.title,
+        persistence: { local: request.persistence ?? 'dirty', remote: 'not-configured' },
+        isActive: true,
+        canClose: true,
+      }],
     })
   }
 
-  function activateDocument(sessionId: DocumentSessionId): void {
-    const targetTab = snapshot.tabs.find((tab) => tab.sessionId === sessionId)
-    if (!targetTab || targetTab.isActive) {
-      return
-    }
-
-    const activeDocument = documents.get(sessionId)
-    if (!activeDocument) {
-      throw new Error('WORKBENCH_DOCUMENT_NOT_FOUND')
-    }
-
+  function activateCanvas(sessionId: CanvasSessionId): void {
+    const target = snapshot.tabs.find((tab) => tab.sessionId === sessionId)
+    if (!target || target.isActive) return
+    const activeCanvas = canvases.get(sessionId)
+    if (!activeCanvas) throw new Error('WORKBENCH_CANVAS_NOT_FOUND')
     emit({
       activeSessionId: sessionId,
-      activeDocument,
-      tabs: snapshot.tabs.map((tab) => ({
-        ...tab,
-        isActive: tab.sessionId === sessionId,
-      })),
+      activeCanvas,
+      tabs: snapshot.tabs.map((tab) => ({ ...tab, isActive: tab.sessionId === sessionId })),
     })
   }
 
-  function closeDocument(sessionId: DocumentSessionId): void {
+  function closeCanvas(sessionId: CanvasSessionId): void {
     const closingIndex = snapshot.tabs.findIndex((tab) => tab.sessionId === sessionId)
-    if (closingIndex < 0) {
-      return
-    }
-
+    if (closingIndex < 0) return
     const remainingTabs = snapshot.tabs.filter((tab) => tab.sessionId !== sessionId)
-    documents.delete(sessionId)
-
+    canvases.delete(sessionId)
     if (snapshot.activeSessionId !== sessionId) {
       emit({ ...snapshot, tabs: remainingTabs })
       return
     }
-
-    const nextActiveTab = remainingTabs[Math.min(closingIndex, remainingTabs.length - 1)] ?? null
-
-    if (!nextActiveTab) {
+    const nextTab = remainingTabs[Math.min(closingIndex, remainingTabs.length - 1)] ?? null
+    if (!nextTab) {
       emit(EMPTY_WORKBENCH_VIEW_MODEL)
       return
     }
-
-    const nextActiveDocument = documents.get(nextActiveTab.sessionId)
-    if (!nextActiveDocument) {
-      throw new Error('WORKBENCH_DOCUMENT_NOT_FOUND')
-    }
-
+    const activeCanvas = canvases.get(nextTab.sessionId)
+    if (!activeCanvas) throw new Error('WORKBENCH_CANVAS_NOT_FOUND')
     emit({
-      activeSessionId: nextActiveTab.sessionId,
-      activeDocument: nextActiveDocument,
-      tabs: remainingTabs.map((tab) => ({
-        ...tab,
-        isActive: tab.sessionId === nextActiveTab.sessionId,
-      })),
+      activeSessionId: nextTab.sessionId,
+      activeCanvas,
+      tabs: remainingTabs.map((tab) => ({ ...tab, isActive: tab.sessionId === nextTab.sessionId })),
     })
   }
 
-  function createPage(sessionId: DocumentSessionId, title: string): void {
-    const activeDocument = snapshot.activeDocument
-    if (!activeDocument || activeDocument.sessionId !== sessionId) {
-      return
-    }
+  function createPage(sessionId: CanvasSessionId, title: string): void {
+    const activeCanvas = snapshot.activeCanvas
+    if (!activeCanvas || activeCanvas.sessionId !== sessionId) return
     const page: WorkspacePageViewModel = {
-      pageId: crypto.randomUUID(),
-      title,
-      kind: 'canvas',
-      isActive: false,
-      isArchived: false,
+      pageId: crypto.randomUUID(), title, kind: 'canvas', isActive: false, isArchived: false,
     }
-    const nextDocument = {
-      ...activeDocument,
-      pages: [...activeDocument.pages, page],
-    }
-    documents.set(sessionId, nextDocument)
-    emit({
-      ...snapshot,
-      activeDocument: nextDocument,
+    updateActiveCanvas({ ...activeCanvas, pages: [...activeCanvas.pages, page] })
+  }
+
+  function activatePage(sessionId: CanvasSessionId, pageId: PageId): void {
+    const activeCanvas = snapshot.activeCanvas
+    if (!activeCanvas || activeCanvas.sessionId !== sessionId) return
+    if (!activeCanvas.pages.some((page) => page.pageId === pageId)) return
+    updateActiveCanvas({
+      ...activeCanvas,
+      pages: activeCanvas.pages.map((page) => ({ ...page, isActive: page.pageId === pageId })),
     })
   }
 
-  function activatePage(sessionId: DocumentSessionId, pageId: PageId): void {
-    const activeDocument = snapshot.activeDocument
-    if (!activeDocument || activeDocument.sessionId !== sessionId) {
-      return
-    }
-    if (!activeDocument.pages.some((page) => page.pageId === pageId)) {
-      return
-    }
-    const nextDocument = {
-      ...activeDocument,
-      pages: activeDocument.pages.map((page) => ({
-        ...page,
-        isActive: page.pageId === pageId,
-      })),
-    }
-    documents.set(sessionId, nextDocument)
-    emit({
-      ...snapshot,
-      activeDocument: nextDocument,
-    })
+  function updateActiveCanvas(canvas: ActiveCanvasViewModel): void {
+    canvases.set(canvas.sessionId, canvas)
+    emit({ ...snapshot, activeCanvas: canvas })
   }
 
-  function setLocalPersistence(sessionId: DocumentSessionId, state: LocalPersistenceState): void {
+  function setLocalPersistence(sessionId: CanvasSessionId, state: LocalPersistenceState): void {
     const tab = snapshot.tabs.find((candidate) => candidate.sessionId === sessionId)
-    if (!tab || tab.persistence.local === state) {
-      return
-    }
-
+    if (!tab || tab.persistence.local === state) return
     emit({
       ...snapshot,
-      tabs: snapshot.tabs.map((candidate) =>
-        candidate.sessionId === sessionId
-          ? { ...candidate, persistence: { ...candidate.persistence, local: state } }
-          : candidate,
-      ),
+      tabs: snapshot.tabs.map((candidate) => candidate.sessionId === sessionId
+        ? { ...candidate, persistence: { ...candidate.persistence, local: state } }
+        : candidate),
     })
   }
 
   return {
-    getSnapshot,
-    subscribe,
-    createDocument,
-    activateDocument,
-    closeDocument,
+    getSnapshot: () => snapshot,
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    createCanvas,
+    activateCanvas,
+    closeCanvas,
     createPage,
     activatePage,
     setLocalPersistence,
@@ -217,26 +141,13 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
 function assertWorkbenchInvariants(snapshot: WorkbenchViewModel): void {
   const activeTabs = snapshot.tabs.filter((tab) => tab.isActive)
   const sessionIds = new Set(snapshot.tabs.map((tab) => tab.sessionId))
-
-  if (sessionIds.size !== snapshot.tabs.length) {
-    throw new Error('WORKBENCH_DUPLICATE_SESSION_ID')
-  }
-  if (activeTabs.length > 1) {
-    throw new Error('WORKBENCH_MULTIPLE_ACTIVE_SESSIONS')
-  }
+  if (sessionIds.size !== snapshot.tabs.length) throw new Error('WORKBENCH_DUPLICATE_SESSION_ID')
+  if (activeTabs.length > 1) throw new Error('WORKBENCH_MULTIPLE_ACTIVE_SESSIONS')
   if (snapshot.activeSessionId === null) {
-    if (activeTabs.length !== 0 || snapshot.activeDocument !== null) {
-      throw new Error('WORKBENCH_EMPTY_STATE_INCONSISTENT')
-    }
+    if (activeTabs.length !== 0 || snapshot.activeCanvas !== null) throw new Error('WORKBENCH_EMPTY_STATE_INCONSISTENT')
     return
   }
-  if (!sessionIds.has(snapshot.activeSessionId)) {
-    throw new Error('WORKBENCH_ACTIVE_SESSION_NOT_FOUND')
-  }
-  if (activeTabs[0]?.sessionId !== snapshot.activeSessionId) {
-    throw new Error('WORKBENCH_ACTIVE_TAB_INCONSISTENT')
-  }
-  if (snapshot.activeDocument?.sessionId !== snapshot.activeSessionId) {
-    throw new Error('WORKBENCH_ACTIVE_DOCUMENT_INCONSISTENT')
-  }
+  if (!sessionIds.has(snapshot.activeSessionId)) throw new Error('WORKBENCH_ACTIVE_SESSION_NOT_FOUND')
+  if (activeTabs[0]?.sessionId !== snapshot.activeSessionId) throw new Error('WORKBENCH_ACTIVE_TAB_INCONSISTENT')
+  if (snapshot.activeCanvas?.sessionId !== snapshot.activeSessionId) throw new Error('WORKBENCH_ACTIVE_CANVAS_INCONSISTENT')
 }
