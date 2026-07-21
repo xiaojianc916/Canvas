@@ -32,6 +32,7 @@ export function DesktopTitleBar({
 
   return (
     <div className="flex h-(--chrome-height) min-w-0 bg-chrome" data-tauri-drag-region>
+      {/* The chrome handles the full-window drag region; child regions only opt out for buttons. */}
       <div className="flex h-full w-full" onMouseDown={handleDragMouseDown}>
         <div
           className="flex w-(--activity-rail-width) shrink-0 items-center justify-center border-r border-divider"

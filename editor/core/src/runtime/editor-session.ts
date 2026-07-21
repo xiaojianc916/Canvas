@@ -1,4 +1,8 @@
-import { createTLStore, getSnapshot as getStoreEditorSnapshot } from '@tldraw/editor'
+import {
+  createTLStore,
+  getSnapshot as getStoreEditorSnapshot,
+  loadSnapshot,
+} from '@tldraw/editor'
 import type { Editor, TLStore, TLEditorSnapshot } from 'tldraw'
 
 import {
@@ -32,10 +36,12 @@ export interface EditorSession {
 export function createEditorSession(options: CreateEditorSessionOptions): EditorSession {
   const registration = buildExtensionRegistration(options.extensions)
   const store = createTLStore({
-    ...(registration.shapeUtils.length > 0 ? { shapeUtils: registration.shapeUtils } : {}),
-    ...(registration.bindingUtils.length > 0 ? { bindingUtils: registration.bindingUtils } : {}),
-    ...(options.initialSnapshot ? { snapshot: options.initialSnapshot } : {}),
+    shapeUtils: registration.shapeUtils,
+    bindingUtils: registration.bindingUtils,
   })
+  if (options.initialSnapshot) {
+    loadSnapshot(store, options.initialSnapshot)
+  }
   let attachedEditor: Editor | null = null
   let state: EditorSessionState = 'created'
 

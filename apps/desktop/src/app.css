@@ -1,9 +1,4 @@
 ﻿@import "tailwindcss";
-@source "../../../foundations/design-system/src/**/*.{ts,tsx}";
-@source "../../../features/workspace/src/**/*.{ts,tsx}";
-@source "../../../editor/core/src/**/*.{ts,tsx}";
-@source "../../../features/*/src/**/*.{ts,tsx}";
-@source "./**/*.{ts,tsx}";
 
 :root {
   --activity-rail-width: 48px;
@@ -24,6 +19,14 @@
   --font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+
+* {
+  box-sizing: border-box;
+  border-color: var(--color-divider);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 @theme {
   --color-background: var(--color-background);
   --color-foreground: var(--color-foreground);
@@ -35,13 +38,6 @@
   --color-sidebar-accent-foreground: var(--color-sidebar-accent-foreground);
   --color-divider: var(--color-divider);
   --font-family-sans: var(--font-family);
-}
-
-* {
-  box-sizing: border-box;
-  border-color: var(--color-divider);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 html,

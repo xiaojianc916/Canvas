@@ -6,7 +6,6 @@ import {
   Files,
   Grid2X2,
   Image,
-  Layers3,
   Network,
   Search,
   Settings,
@@ -37,14 +36,13 @@ export interface ActivityRailProps {
 }
 
 const DEFAULT_NAVIGATION: readonly CanvasNavigationItem[] = [
-  { id: 'pages', label: '页面', icon: Grid2X2 },
-  { id: 'documents', label: '文档', icon: Files },
+  { id: 'pages', label: '画布', icon: Grid2X2 },
   { id: 'search', label: '搜索', icon: Search },
-  { id: 'layers', label: '图层', icon: Layers3 },
   { id: 'relations', label: '关系', icon: Network },
-  { id: 'data', label: '数据', icon: ChartNoAxesCombined },
-  { id: 'assets', label: '资源', icon: Image },
-  { id: 'extensions', label: '扩展', icon: Boxes },
+  { id: 'assets', label: '素材', icon: Image },
+  { id: 'extensions', label: '插件', icon: Boxes },
+  { id: 'data', label: '自动化', icon: ChartNoAxesCombined },
+  { id: 'documents', label: '恢复', icon: Files },
 ]
 
 export function ActivityRail({

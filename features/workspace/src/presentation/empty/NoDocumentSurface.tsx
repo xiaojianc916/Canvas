@@ -9,7 +9,7 @@ export interface NoDocumentSurfaceProps {
 export function NoDocumentSurface({ onCreateDocument, onOpenDocument }: NoDocumentSurfaceProps) {
   return (
     <div className="relative grid h-full place-items-center overflow-hidden bg-canvas px-8">
-      <div aria-hidden="true" className="absolute inset-0 opacity-45 [background-image:radial-gradient(var(--color-divider)_0.7px,transparent_0.7px)] [background-size:18px_18px]" />
+      <div aria-hidden="true" className="absolute inset-0 opacity-45 bg-[radial-gradient(var(--color-divider)_0.7px,transparent_0.7px)] bg-size-[18px_18px]" />
       <section className="relative text-center">
         <div className="mx-auto grid size-10 place-items-center rounded-lg border border-divider bg-background shadow-sm">
           <FilePlus2 className="size-4 text-muted-foreground" />

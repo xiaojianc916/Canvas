@@ -16,10 +16,10 @@ export interface DocumentTabsProps {
 
 export function DocumentTabs({ tabs, onActivate, onClose, onCreate }: DocumentTabsProps) {
   return (
-    <header className="flex min-w-0 items-end border-b bg-chrome">
+    <header className="flex h-full min-w-0 items-end bg-chrome">
       <div
         aria-label="已打开文档"
-        className="flex h-11 min-w-0 flex-1 items-end gap-1 overflow-x-auto px-2"
+        className="flex h-full min-w-0 flex-1 items-end gap-1 overflow-x-auto px-2"
         role="tablist"
       >
         {tabs.map((tab) => (

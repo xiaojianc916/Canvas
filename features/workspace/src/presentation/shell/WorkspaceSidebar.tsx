@@ -16,7 +16,6 @@ import {
   Image,
   Layers3,
   Network,
-  PanelLeftClose,
   Plus,
   Search,
 } from 'lucide-react'
@@ -53,7 +52,7 @@ export function WorkspaceSidebar({
             <kbd className="ml-auto rounded border bg-muted/30 px-1 py-0.5 text-[9px] opacity-60">⌘ F</kbd>
           </div>
           <div className="mb-1.5 flex items-center justify-between px-2 py-1">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">画布</span>
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">画布</span>
             <span className="grid size-4 place-items-center rounded-full bg-muted text-[9px] text-muted-foreground">{pages.length}</span>
           </div>
           {pages.length > 0 ? (
@@ -95,20 +94,26 @@ export function WorkspaceSidebar({
 }
 
 const PANEL_DETAILS: Record<Exclude<CanvasNavigationItemId, 'pages'>, { title: string; description: string; icon: typeof Files }> = {
-  documents: { title: '文档', description: '在这里管理最近打开的画板与本地文件。', icon: Files },
   search: { title: '搜索', description: '搜索当前工作区中的页面、对象和文本内容。', icon: Search },
   layers: { title: '图层', description: '选择页面后，可在这里浏览和整理图层。', icon: Layers3 },
   relations: { title: '关系', description: '连接画布中的内容，建立可视化关系。', icon: Network },
-  data: { title: '数据', description: '连接数据源，将信息带入你的画布。', icon: ChartNoAxesCombined },
-  assets: { title: '资源', description: '集中管理图片、附件和可复用素材。', icon: Image },
-  extensions: { title: '扩展', description: '探索能够增强画布工作流的扩展能力。', icon: Boxes },
+  data: { title: '自动化', description: '把重复操作和流程编排成可执行的自动化。', icon: ChartNoAxesCombined },
+  assets: { title: '素材', description: '集中管理图片、附件和可复用素材。', icon: Image },
+  extensions: { title: '插件', description: '探索能够增强画布工作流的扩展能力。', icon: Boxes },
+  documents: { title: '恢复', description: '在这里恢复最近打开的画板与本地文件。', icon: Files },
 }
 
 function WorkspacePanel({ kind }: { readonly kind: Exclude<CanvasNavigationItemId, 'pages'> }) {
   const { title, description, icon: Icon } = PANEL_DETAILS[kind]
   return (
     <section className="grid h-full min-h-0 place-items-center bg-sidebar px-6 text-center">
-      <div className="max-w-44"><div className="mx-auto grid size-10 place-items-center rounded-xl border border-divider bg-background shadow-sm"><Icon className="size-4 text-muted-foreground" /></div><p className="mt-3 text-xs font-medium">{title}</p><p className="mt-1 text-[10px] leading-5 text-muted-foreground">{description}</p></div>
+      <div className="max-w-44">
+        <div className="mx-auto grid size-10 place-items-center rounded-xl border border-divider bg-background shadow-sm">
+          <Icon className="size-4 text-muted-foreground" />
+        </div>
+        <p className="mt-3 text-xs font-medium">{title}</p>
+        <p className="mt-1 text-[10px] leading-5 text-muted-foreground">{description}</p>
+      </div>
     </section>
   )
 }

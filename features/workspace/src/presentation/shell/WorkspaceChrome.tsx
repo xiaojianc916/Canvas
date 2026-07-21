@@ -26,7 +26,7 @@ export function CanvasChrome({
   return (
     <>
       <div className="row-[2/-1] min-h-0 border-r border-divider" style={{ gridColumn: 1 }}>{rail}</div>
-      <div className="col-span-full row-1 min-w-0">
+      <div className="row-1 min-w-0" style={{ gridColumn: '1 / -1' }}>
         <DesktopTitleBar
           onClose={onWindowClose}
           onMaximize={onWindowMaximize}
