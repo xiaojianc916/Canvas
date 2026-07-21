@@ -162,7 +162,9 @@ function HelpMenu() {
           >
             <Icon className="size-5 shrink-0 stroke-[2.2] text-black" />
             <span className="min-w-0 flex-1">{label}</span>
-            {label === '反馈' ? null : <ExternalLink className="size-4 shrink-0 text-muted-foreground" />}
+            {label === '反馈' ? null : (
+              <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
+            )}
           </button>
         ))}
       </div>

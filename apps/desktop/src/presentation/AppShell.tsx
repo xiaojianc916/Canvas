@@ -2,24 +2,13 @@ import 'tldraw/tldraw.css'
 
 import { EditorProvider } from '@hybrid-canvas/canvas'
 import { CommandPalette } from '@hybrid-canvas/workspace'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
 import type { ApplicationRuntime } from '../bootstrap/application'
 import { SettingsDialog } from '../windows/settings/SettingsShell'
-import { useGlobalCommandShortcuts } from './commands/useGlobalCommandShortcuts'
 import { UiErrorBoundary } from './boundaries/UiErrorBoundary'
+import { useGlobalCommandShortcuts } from './commands/useGlobalCommandShortcuts'
 import { WorkspaceContainer } from './workspace/WorkspaceContainer'
-
-async function invokeWindowAction(
-  action: 'minimize' | 'toggleMaximize' | 'close' | 'startDragging',
-): Promise<void> {
-  const { isTauri } = await import('@tauri-apps/api/core')
-  if (!isTauri()) {
-    return
-  }
-  const { getCurrentWindow } = await import('@tauri-apps/api/window')
-  await getCurrentWindow()[action]()
-}
 
 export interface AppShellProps {
   readonly runtime: ApplicationRuntime
@@ -28,6 +17,11 @@ export interface AppShellProps {
 export function AppShell({ runtime }: AppShellProps) {
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [isSettingsOpen, setSettingsOpen] = useState(false)
+  const termination = useSyncExternalStore(
+    runtime.termination.subscribe,
+    runtime.termination.getSnapshot,
+    runtime.termination.getSnapshot,
+  )
 
   useApplicationCommands(runtime, () => setCommandPaletteOpen((open) => !open))
   useGlobalCommandShortcuts(runtime.commands, [
@@ -38,6 +32,17 @@ export function AppShell({ runtime }: AppShellProps) {
 
   const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), [])
   const openSettings = useCallback(() => setSettingsOpen(true), [])
+  const requestApplicationClose = useCallback(() => {
+    runtime.termination.request('window-close')
+  }, [runtime.termination])
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    void runtime.mainWindow.onCloseRequested(requestApplicationClose).then((dispose) => {
+      unlisten = dispose
+    })
+    return () => unlisten?.()
+  }, [requestApplicationClose, runtime.mainWindow])
+
   const workspacePort = useMemo(
     () => ({ canvases: runtime.canvases, workspace: runtime.workspace }),
     [runtime.canvases, runtime.workspace],
@@ -49,10 +54,10 @@ export function AppShell({ runtime }: AppShellProps) {
         <WorkspaceContainer
           onCommandPaletteOpen={openCommandPalette}
           onSettingsOpen={openSettings}
-          onWindowClose={() => void invokeWindowAction('close')}
-          onWindowMaximize={() => void invokeWindowAction('toggleMaximize')}
-          onWindowMinimize={() => void invokeWindowAction('minimize')}
-          onWindowStartDragging={() => void invokeWindowAction('startDragging')}
+          onWindowClose={requestApplicationClose}
+          onWindowMaximize={() => void runtime.mainWindow.toggleMaximize()}
+          onWindowMinimize={() => void runtime.mainWindow.minimize()}
+          onWindowStartDragging={() => void runtime.mainWindow.startDragging()}
           port={workspacePort}
         />
       </UiErrorBoundary>
@@ -62,6 +67,42 @@ export function AppShell({ runtime }: AppShellProps) {
         registry={runtime.commands}
       />
       <SettingsDialog onOpenChange={setSettingsOpen} open={isSettingsOpen} />
+      {termination.state === 'confirmation-required' ? (
+        <div
+          className="fixed inset-0 z-100 grid place-items-center bg-black/30"
+          role="presentation"
+        >
+          <section
+            aria-labelledby="exit-title"
+            aria-modal="true"
+            className="w-96 rounded-xl border border-divider bg-background p-5 shadow-2xl"
+            role="dialog"
+          >
+            <h2 className="text-base font-semibold" id="exit-title">
+              退出并放弃未保存的更改？
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              有 {termination.sessionIds.length} 个画布包含未保存的更改。
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="rounded-md px-3 py-2 text-sm hover:bg-muted"
+                onClick={() => runtime.termination.cancel()}
+                type="button"
+              >
+                取消
+              </button>
+              <button
+                className="rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground"
+                onClick={runtime.termination.confirmDiscard}
+                type="button"
+              >
+                放弃全部并退出
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </EditorProvider>
   )
 }
@@ -79,7 +120,7 @@ function useApplicationCommands(
       execute: toggleCommandPalette,
     })
     const unregisterCreate = runtime.commands.register({
-      id: 'workspace.create-document',
+      id: 'workspace.create-canvas',
       label: '新建画板',
       category: '文件',
       shortcut: 'Ctrl+N',
@@ -88,7 +129,7 @@ function useApplicationCommands(
       },
     })
     const unregisterOpen = runtime.commands.register({
-      id: 'workspace.open-document',
+      id: 'workspace.open-canvas',
       label: '打开画板',
       category: '文件',
       shortcut: 'Ctrl+O',

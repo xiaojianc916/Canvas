@@ -1,4 +1,4 @@
-﻿#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 //! Native asset capability.
 //!
@@ -9,9 +9,9 @@
 //!
 //! @architecture-stub: Phase 2.
 
-mod store;
 mod content_address;
-mod integrity;
 mod error;
+mod integrity;
+mod store;
 
 pub use error::{Error, Result};

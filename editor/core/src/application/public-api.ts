@@ -9,8 +9,10 @@ export {
 export {
   createEditorSession,
   createEditorSessionRegistry,
+  type CanvasPageSnapshot,
   type CreateEditorSessionOptions,
   type EditorSession,
+  type EditorSessionSnapshot,
   type EditorSessionRegistry,
   type EditorSessionState,
 } from '../runtime/editor-session'

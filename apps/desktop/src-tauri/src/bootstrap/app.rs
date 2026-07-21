@@ -33,7 +33,6 @@ pub fn build() -> tauri::Builder<Wry> {
             commands::window::window_save_state,
             commands::opener::opener_show_in_folder,
             commands::opener::opener_open_external,
-
             commands::asset::asset_store,
             commands::asset::asset_load,
             commands::asset::asset_delete,

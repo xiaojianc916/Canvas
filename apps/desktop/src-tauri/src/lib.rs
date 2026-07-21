@@ -4,8 +4,8 @@ pub mod error;
 pub mod bootstrap;
 pub mod ipc;
 
-pub use error::{Error, Result};
 pub use bootstrap::app;
+pub use error::{Error, Result};
 
 /// Single composition root. Called from main.rs.
 pub fn run() {

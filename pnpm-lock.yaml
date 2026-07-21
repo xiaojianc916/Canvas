@@ -588,6 +588,9 @@ importers:
       '@hybrid-canvas/settings':
         specifier: workspace:*
         version: link:../../features/settings
+      '@tauri-apps/api':
+        specifier: catalog:tauri
+        version: 2.11.1
 
 packages:
 

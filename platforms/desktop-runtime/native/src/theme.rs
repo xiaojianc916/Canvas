@@ -22,4 +22,6 @@ pub fn on_theme_change(_callback: Box<dyn Fn(Theme) + Send>) -> Result<Box<dyn D
 }
 
 struct NoopHandle;
-impl Drop for NoopHandle { fn drop(&mut self) {} }
+impl Drop for NoopHandle {
+    fn drop(&mut self) {}
+}

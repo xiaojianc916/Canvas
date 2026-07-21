@@ -37,6 +37,8 @@ export interface ApplicationWindowManager {
   minimize(label?: string): Promise<void>
   toggleMaximize(label?: string): Promise<void>
   close(label?: string): Promise<void>
+  forceClose(label?: string): Promise<void>
+  onCloseRequested(handler: () => void): Promise<() => void>
   setTitle(title: string, label?: string): Promise<void>
   saveState(label?: string): Promise<void>
 }
@@ -89,6 +91,20 @@ export function createApplicationWindowManager(): ApplicationWindowManager {
     minimize: (label) => invoke('window_minimize', { label: target(label) }),
     toggleMaximize: (label) => invoke('window_maximize', { label: target(label) }),
     close: (label) => invoke('window_close', { label: target(label) }),
+    async forceClose(label) {
+      const { getAllWindows } = await import('@tauri-apps/api/window')
+      const window = (await getAllWindows()).find((candidate) => candidate.label === target(label))
+      await window?.destroy()
+    },
+    async onCloseRequested(handler) {
+      const { isTauri } = await import('@tauri-apps/api/core')
+      if (!isTauri()) return () => {}
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      return getCurrentWindow().onCloseRequested((event) => {
+        event.preventDefault()
+        handler()
+      })
+    },
     setTitle: (title, label) => invoke('window_set_title', { label: target(label), title }),
     saveState: (label) => invoke('window_save_state', { label: target(label) }),
   }

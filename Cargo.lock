@@ -1693,6 +1693,7 @@ version = "0.1.0"
 name = "hybrid-canvas-desktop"
 version = "0.1.0"
 dependencies = [
+ "hybrid-canvas-file-native",
  "log",
  "serde",
  "serde_json",
@@ -1714,9 +1715,11 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
  "tauri-specta",
+ "tempfile",
  "thiserror 2.0.19",
  "tracing",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1731,6 +1734,9 @@ dependencies = [
 [[package]]
 name = "hybrid-canvas-file-native"
 version = "0.1.0"
+dependencies = [
+ "tempfile",
+]
 
 [[package]]
 name = "hybrid-canvas-plugin-native"

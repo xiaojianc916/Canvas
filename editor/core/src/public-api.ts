@@ -19,6 +19,7 @@ export {
 
 export {
   type CanvasBoundsViewModel,
+  type CanvasPageSnapshot,
   type CanvasSelectionViewModel,
   type CanvasSessionViewModel,
   type CanvasToolId,
@@ -27,6 +28,7 @@ export {
   type CreateEditorSessionOptions,
   type EditorSession,
   type EditorSessionRegistry,
+  type EditorSessionSnapshot,
   type EditorSessionState,
   EMPTY_CANVAS_SESSION_VIEW_MODEL,
 } from './application/public-api'

@@ -5,7 +5,9 @@ pub fn plugin() -> tauri_plugin_log::Builder {
     tauri_plugin_log::Builder::new()
         .targets([
             Target::new(TargetKind::Stdout),
-            Target::new(TargetKind::LogDir { file_name: Some("hybrid-canvas".to_string()) }),
+            Target::new(TargetKind::LogDir {
+                file_name: Some("hybrid-canvas".to_string()),
+            }),
             Target::new(TargetKind::Webview),
         ])
         .level(LevelFilter::Info)

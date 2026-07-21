@@ -1,14 +1,14 @@
-﻿import { Button, TooltipProvider } from '@hybrid-canvas/design-system'
+import { Button, TooltipProvider } from '@hybrid-canvas/design-system'
 import { BotMessageSquare, PanelRightClose, PanelRightOpen, Sparkles, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WorkspaceShellProps } from '../../contracts/shell-contract'
-import { NoDocumentSurface } from '../empty/NoDocumentSurface'
+import { NoCanvasSurface } from '../empty/NoCanvasSurface'
 import { InspectorHost } from '../inspector/InspectorHost'
 import { StatusBarHost } from '../status/StatusBarHost'
 import { ActivityRail, type CanvasNavigationItemId } from './ActivityRail'
 import { DesktopTitleBar } from './DesktopTitleBar'
-import { DocumentTabs } from './DocumentTabs'
+import { DocumentTabs } from './CanvasTabs'
 import { SidebarSplitter } from './SidebarSplitter'
 import { WorkspaceFrame } from './WorkspaceFrame'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
@@ -26,6 +26,7 @@ export function WorkspaceShell({
   inspector,
   statusLeft,
   statusRight,
+  overlays,
 }: WorkspaceShellProps) {
   const [isSidebarOpen, setSidebarOpen] = useState(true)
   const [isInspectorOpen, setInspectorOpen] = useState(true)
@@ -156,7 +157,7 @@ export function WorkspaceShell({
         {hasActiveCanvas ? (
           editor
         ) : (
-          <NoDocumentSurface
+          <NoCanvasSurface
             onCreateDocument={actions.createCanvas}
             onOpenDocument={actions.openCanvas}
           />
@@ -219,7 +220,12 @@ export function WorkspaceShell({
         canvas={canvas}
         inspector={inspectorDock}
         statusBar={statusBar}
-        overlays={<AiChatWidget open={isAiChatOpen} onOpenChange={setAiChatOpen} />}
+        overlays={
+          <>
+            <AiChatWidget open={isAiChatOpen} onOpenChange={setAiChatOpen} />
+            {overlays}
+          </>
+        }
         gridTemplateColumns={gridTemplateColumns}
         gridTemplateRows={gridTemplateRows}
       />

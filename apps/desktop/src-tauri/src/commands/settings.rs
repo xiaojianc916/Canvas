@@ -2,7 +2,7 @@ use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
-use tauri::{command, AppHandle};
+use tauri::{AppHandle, command};
 use tauri_plugin_store::StoreExt;
 
 #[derive(Debug, Deserialize, Serialize, Type, Clone)]
@@ -121,7 +121,8 @@ impl Default for PrivacySettings {
 #[command]
 pub async fn settings_get(app: AppHandle) -> Result<AppSettings> {
     let store = app.store("settings.json")?;
-    let settings: AppSettings = store.get("settings")
+    let settings: AppSettings = store
+        .get("settings")
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
     Ok(settings)

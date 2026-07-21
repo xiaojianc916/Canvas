@@ -1,4 +1,4 @@
-﻿#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 //! Native plugin capability.
 //!
@@ -10,10 +10,10 @@
 //!
 //! @architecture-stub: Phase 2–3.
 
+mod error;
+mod integrity;
 mod package;
 mod signature;
-mod integrity;
 mod trust_store;
-mod error;
 
 pub use error::{Error, Result};

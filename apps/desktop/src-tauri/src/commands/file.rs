@@ -1,8 +1,9 @@
 use crate::error::Result;
+use hybrid_canvas_file_native::atomic_write;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
-use tauri::{command, AppHandle};
+use tauri::{AppHandle, command};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_fs::FilePath;
 use tauri_plugin_store::StoreExt;
@@ -147,14 +148,20 @@ pub struct RecentFile {
 #[command]
 pub async fn file_recent_list(app: AppHandle) -> Result<Vec<RecentFile>> {
     let store = app.store("recent-files.json")?;
-    let files: Vec<RecentFile> = store.get("files").and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default();
+    let files: Vec<RecentFile> = store
+        .get("files")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
     Ok(files)
 }
 
 #[command]
 pub async fn file_close(app: AppHandle, path: String) -> Result<()> {
     let store = app.store("recent-files.json")?;
-    let mut files: Vec<RecentFile> = store.get("files").and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default();
+    let mut files: Vec<RecentFile> = store
+        .get("files")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
     files.retain(|f| f.path != path);
     store.set("files", serde_json::to_value(files)?);
     store.save()?;
@@ -180,10 +187,7 @@ pub async fn file_save_draw(request: DrawSaveRequest) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
 
-    let temp_path = path.with_extension("draw.tmp");
-    std::fs::write(&temp_path, &request.content)?;
-    std::fs::rename(&temp_path, &path)?;
-
+    atomic_write(&path, request.content.as_bytes())?;
     Ok(())
 }
 
@@ -201,9 +205,7 @@ pub async fn file_create_draw(path: String, content: String) -> Result<DrawReadR
         std::fs::create_dir_all(parent)?;
     }
 
-    let temp_path = file_path.with_extension("draw.tmp");
-    std::fs::write(&temp_path, &content)?;
-    std::fs::rename(&temp_path, &file_path)?;
+    atomic_write(&file_path, content.as_bytes())?;
 
     Ok(DrawReadResult { content })
 }

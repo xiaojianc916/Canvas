@@ -1,7 +1,7 @@
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use tauri::{command, AppHandle};
+use tauri::{AppHandle, command};
 
 #[derive(Debug, Deserialize, Type)]
 pub struct AssetStoreOptions {

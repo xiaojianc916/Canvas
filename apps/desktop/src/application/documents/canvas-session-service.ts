@@ -15,11 +15,25 @@ export interface CanvasSessionSnapshot {
   readonly persistence: CanvasPersistenceState
 }
 
+export type CanvasCloseDecision =
+  | { readonly kind: 'close-now' }
+  | { readonly kind: 'confirm-discard'; readonly persistence: 'dirty' | 'failed' }
+  | { readonly kind: 'wait-for-save'; readonly operation: Promise<void> }
+  | { readonly kind: 'not-found' }
+
+export type ApplicationClosePlan =
+  | { readonly kind: 'close-now' }
+  | { readonly kind: 'confirm-discard'; readonly sessionIds: readonly CanvasSessionId[] }
+  | { readonly kind: 'wait-for-saves'; readonly operations: readonly Promise<void>[] }
+
 export interface CanvasService {
   readonly create: (title: string) => void
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
-  readonly close: (sessionId: CanvasSessionId) => void
+  readonly requestClose: (sessionId: CanvasSessionId) => CanvasCloseDecision
+  readonly discardAndClose: (sessionId: CanvasSessionId) => void
+  readonly planApplicationClose: () => ApplicationClosePlan
+  readonly discardAllAndClose: (sessionIds: readonly CanvasSessionId[]) => void
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (sessionId: CanvasSessionId) => CanvasSessionSnapshot | null
   readonly subscribe: (listener: () => void) => () => void
@@ -147,14 +161,45 @@ export function createCanvasService({
     }
   }
 
-  function close(sessionId: CanvasSessionId): void {
+  function planApplicationClose(): ApplicationClosePlan {
+    const operations: Promise<void>[] = []
+    const sessionIds: CanvasSessionId[] = []
+    for (const [sessionId, session] of sessions) {
+      if (session.saveOperation) operations.push(session.saveOperation)
+      else if (session.state === 'dirty' || session.state === 'failed') sessionIds.push(sessionId)
+    }
+    if (operations.length > 0) return { kind: 'wait-for-saves', operations }
+    if (sessionIds.length > 0) return { kind: 'confirm-discard', sessionIds }
+    return { kind: 'close-now' }
+  }
+
+  function discardAllAndClose(sessionIds: readonly CanvasSessionId[]): void {
+    for (const sessionId of sessionIds) discardAndClose(sessionId)
+  }
+
+  function requestClose(sessionId: CanvasSessionId): CanvasCloseDecision {
     const session = sessions.get(sessionId)
-    if (!session) return
+    if (!session) return { kind: 'not-found' }
+    if (session.saveOperation) return { kind: 'wait-for-save', operation: session.saveOperation }
+    if (session.state === 'dirty' || session.state === 'failed') {
+      return { kind: 'confirm-discard', persistence: session.state }
+    }
+    closeNow(sessionId, session)
+    return { kind: 'close-now' }
+  }
+
+  function discardAndClose(sessionId: CanvasSessionId): void {
+    const session = requireSession(sessionId)
     if (session.saveOperation) throw new Error('CANVAS_SESSION_SAVE_IN_PROGRESS')
+    closeNow(sessionId, session)
+  }
+
+  function closeNow(sessionId: CanvasSessionId, session: OwnedCanvasSession): void {
     transition(session, 'closing')
     workspace.closeCanvas(sessionId)
     transition(session, 'closed')
     release(sessionId)
+    emit()
   }
 
   function release(sessionId: CanvasSessionId): void {
@@ -201,7 +246,10 @@ export function createCanvasService({
     create,
     open,
     save,
-    close,
+    requestClose,
+    discardAndClose,
+    planApplicationClose,
+    discardAllAndClose,
     getEditorSession: (sessionId) => sessions.get(sessionId)?.editor ?? null,
     getSessionSnapshot(sessionId) {
       const session = sessions.get(sessionId)

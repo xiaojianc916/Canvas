@@ -1,9 +1,12 @@
 export type CanvasId = string
 export type CanvasSessionId = string
+export type CanvasTabStatus = 'clean' | 'dirty' | 'saving' | 'failed'
+
 export interface CanvasTabViewModel {
   readonly sessionId: CanvasSessionId
   readonly canvasId: CanvasId
   readonly title: string
+  readonly status?: CanvasTabStatus
   readonly isActive: boolean
   readonly canClose: boolean
 }

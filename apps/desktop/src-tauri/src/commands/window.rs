@@ -1,7 +1,7 @@
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use tauri::{command, AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow, command};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
 #[derive(Debug, Deserialize, Type)]
@@ -45,13 +45,17 @@ pub async fn window_create(app: AppHandle, options: WindowOptions) -> Result<Win
         return window_info(existing);
     }
 
-    let mut builder = tauri::WebviewWindowBuilder::new(&app, &options.label, tauri::WebviewUrl::default())
-        .title(options.title.unwrap_or_else(|| "Hybrid Canvas".into()))
-        .inner_size(options.width.unwrap_or(800.0), options.height.unwrap_or(600.0))
-        .resizable(options.resizable.unwrap_or(true))
-        .decorations(options.decorations.unwrap_or(true))
-        .always_on_top(options.always_on_top.unwrap_or(false))
-        .visible(options.visible.unwrap_or(true));
+    let mut builder =
+        tauri::WebviewWindowBuilder::new(&app, &options.label, tauri::WebviewUrl::default())
+            .title(options.title.unwrap_or_else(|| "Hybrid Canvas".into()))
+            .inner_size(
+                options.width.unwrap_or(800.0),
+                options.height.unwrap_or(600.0),
+            )
+            .resizable(options.resizable.unwrap_or(true))
+            .decorations(options.decorations.unwrap_or(true))
+            .always_on_top(options.always_on_top.unwrap_or(false))
+            .visible(options.visible.unwrap_or(true));
     if let Some(min_width) = options.min_width {
         builder = builder.min_inner_size(min_width, options.min_height.unwrap_or(min_width));
     }
@@ -68,49 +72,70 @@ pub async fn window_create(app: AppHandle, options: WindowOptions) -> Result<Win
 
 #[command]
 pub async fn window_get(app: AppHandle, label: String) -> Result<Option<WindowInfo>> {
-    Ok(app.get_webview_window(&label).map(window_info).transpose()?)
+    Ok(app
+        .get_webview_window(&label)
+        .map(window_info)
+        .transpose()?)
 }
 
 #[command]
 pub async fn window_list(app: AppHandle) -> Result<Vec<WindowInfo>> {
-    Ok(app.webview_windows().into_values().map(window_info).collect::<Result<Vec<_>>>()?)
+    Ok(app
+        .webview_windows()
+        .into_values()
+        .map(window_info)
+        .collect::<Result<Vec<_>>>()?)
 }
 
 #[command]
 pub async fn window_show(app: AppHandle, label: String) -> Result<()> {
-    if let Some(window) = app.get_webview_window(&label) { window.show()?; }
+    if let Some(window) = app.get_webview_window(&label) {
+        window.show()?;
+    }
     Ok(())
 }
 
 #[command]
 pub async fn window_focus(app: AppHandle, label: String) -> Result<()> {
-    if let Some(window) = app.get_webview_window(&label) { window.set_focus()?; }
+    if let Some(window) = app.get_webview_window(&label) {
+        window.set_focus()?;
+    }
     Ok(())
 }
 
 #[command]
 pub async fn window_close(app: AppHandle, label: String) -> Result<()> {
-    if let Some(window) = app.get_webview_window(&label) { window.close()?; }
+    if let Some(window) = app.get_webview_window(&label) {
+        window.close()?;
+    }
     Ok(())
 }
 
 #[command]
 pub async fn window_minimize(app: AppHandle, label: String) -> Result<()> {
-    if let Some(window) = app.get_webview_window(&label) { window.minimize()?; }
+    if let Some(window) = app.get_webview_window(&label) {
+        window.minimize()?;
+    }
     Ok(())
 }
 
 #[command]
 pub async fn window_maximize(app: AppHandle, label: String) -> Result<()> {
     if let Some(window) = app.get_webview_window(&label) {
-        if window.is_maximized()? { window.unmaximize()?; } else { window.maximize()?; }
+        if window.is_maximized()? {
+            window.unmaximize()?;
+        } else {
+            window.maximize()?;
+        }
     }
     Ok(())
 }
 
 #[command]
 pub async fn window_set_title(app: AppHandle, label: String, title: String) -> Result<()> {
-    if let Some(window) = app.get_webview_window(&label) { window.set_title(&title)?; }
+    if let Some(window) = app.get_webview_window(&label) {
+        window.set_title(&title)?;
+    }
     Ok(())
 }
 

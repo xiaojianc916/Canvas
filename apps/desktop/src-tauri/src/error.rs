@@ -4,6 +4,7 @@ use std::fmt;
 #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
+    Persistence(String),
     SerdeJson(serde_json::Error),
     Tauri(tauri::Error),
     Store(tauri_plugin_store::Error),
@@ -30,7 +31,10 @@ pub enum Error {
 }
 
 impl Serialize for Error {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
         serializer.serialize_str(&self.to_string())
     }
 }
@@ -39,6 +43,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Io(e) => write!(f, "IO error: {}", e),
+            Error::Persistence(e) => write!(f, "Persistence error: {}", e),
             Error::SerdeJson(e) => write!(f, "JSON error: {}", e),
             Error::Tauri(e) => write!(f, "Tauri error: {}", e),
             Error::Store(e) => write!(f, "Store error: {}", e),
@@ -78,60 +83,94 @@ impl std::error::Error for Error {
     }
 }
 
+impl From<hybrid_canvas_file_native::Error> for Error {
+    fn from(error: hybrid_canvas_file_native::Error) -> Self {
+        Self::Persistence(error.to_string())
+    }
+}
+
 impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self { Error::Io(e) }
+    fn from(e: std::io::Error) -> Self {
+        Error::Io(e)
+    }
 }
 
 impl From<serde_json::Error> for Error {
-    fn from(e: serde_json::Error) -> Self { Error::SerdeJson(e) }
+    fn from(e: serde_json::Error) -> Self {
+        Error::SerdeJson(e)
+    }
 }
 
 impl From<tauri::Error> for Error {
-    fn from(e: tauri::Error) -> Self { Error::Tauri(e) }
+    fn from(e: tauri::Error) -> Self {
+        Error::Tauri(e)
+    }
 }
 
 impl From<tauri_plugin_store::Error> for Error {
-    fn from(e: tauri_plugin_store::Error) -> Self { Error::Store(e) }
+    fn from(e: tauri_plugin_store::Error) -> Self {
+        Error::Store(e)
+    }
 }
 
 impl From<tauri_plugin_dialog::Error> for Error {
-    fn from(e: tauri_plugin_dialog::Error) -> Self { Error::Dialog(e) }
+    fn from(e: tauri_plugin_dialog::Error) -> Self {
+        Error::Dialog(e)
+    }
 }
 
 impl From<tauri_plugin_fs::Error> for Error {
-    fn from(e: tauri_plugin_fs::Error) -> Self { Error::Fs(e) }
+    fn from(e: tauri_plugin_fs::Error) -> Self {
+        Error::Fs(e)
+    }
 }
 
 impl From<tauri_plugin_opener::Error> for Error {
-    fn from(e: tauri_plugin_opener::Error) -> Self { Error::Opener(e) }
+    fn from(e: tauri_plugin_opener::Error) -> Self {
+        Error::Opener(e)
+    }
 }
 
 impl From<tauri_plugin_updater::Error> for Error {
-    fn from(e: tauri_plugin_updater::Error) -> Self { Error::Updater(e) }
+    fn from(e: tauri_plugin_updater::Error) -> Self {
+        Error::Updater(e)
+    }
 }
 
 impl From<tauri_plugin_clipboard_manager::Error> for Error {
-    fn from(e: tauri_plugin_clipboard_manager::Error) -> Self { Error::Clipboard(e) }
+    fn from(e: tauri_plugin_clipboard_manager::Error) -> Self {
+        Error::Clipboard(e)
+    }
 }
 
 impl From<tauri_plugin_shell::Error> for Error {
-    fn from(e: tauri_plugin_shell::Error) -> Self { Error::Shell(e) }
+    fn from(e: tauri_plugin_shell::Error) -> Self {
+        Error::Shell(e)
+    }
 }
 
 impl From<tauri_plugin_notification::Error> for Error {
-    fn from(e: tauri_plugin_notification::Error) -> Self { Error::Notification(e) }
+    fn from(e: tauri_plugin_notification::Error) -> Self {
+        Error::Notification(e)
+    }
 }
 
 impl From<tauri_plugin_window_state::Error> for Error {
-    fn from(e: tauri_plugin_window_state::Error) -> Self { Error::WindowState(e) }
+    fn from(e: tauri_plugin_window_state::Error) -> Self {
+        Error::WindowState(e)
+    }
 }
 
 impl From<tauri_plugin_global_shortcut::Error> for Error {
-    fn from(e: tauri_plugin_global_shortcut::Error) -> Self { Error::GlobalShortcut(e) }
+    fn from(e: tauri_plugin_global_shortcut::Error) -> Self {
+        Error::GlobalShortcut(e)
+    }
 }
 
 impl From<tauri_plugin_log::Error> for Error {
-    fn from(e: tauri_plugin_log::Error) -> Self { Error::Log(e) }
+    fn from(e: tauri_plugin_log::Error) -> Self {
+        Error::Log(e)
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -1,4 +1,3 @@
-import { isTauri } from '@tauri-apps/api/core'
 import type { EditorSession } from '@hybrid-canvas/canvas'
 import {
   CanvasInspector,
@@ -7,17 +6,28 @@ import {
   EditorSessionHost,
 } from '@hybrid-canvas/canvas'
 import { WorkspaceShell, type WorkspaceShellActions } from '@hybrid-canvas/workspace'
-import { useCallback, useMemo, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 
 import type { CanvasSessionId, WorkbenchSessionStore } from '@hybrid-canvas/workspace'
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
+
+const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({ pages: Object.freeze([]) })
+const EMPTY_SUBSCRIBE = () => () => {}
+const EMPTY_EDITOR_SNAPSHOT = () => EMPTY_EDITOR_SESSION_SNAPSHOT
 
 export interface WorkspaceCanvasUIPort {
   readonly create: (title: string) => void
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
-  readonly close: (sessionId: CanvasSessionId) => void
+  readonly requestClose: (
+    sessionId: CanvasSessionId,
+  ) => import('../../application/documents/canvas-session-service').CanvasCloseDecision
+  readonly discardAndClose: (sessionId: CanvasSessionId) => void
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
+  readonly getSessionSnapshot: (
+    sessionId: CanvasSessionId,
+  ) => import('../../application/documents/canvas-session-service').CanvasSessionSnapshot | null
+  readonly subscribe: (listener: () => void) => () => void
 }
 
 export interface WorkspaceUIPort {
@@ -44,6 +54,7 @@ export function WorkspaceContainer({
   onWindowClose,
   onWindowStartDragging,
 }: WorkspaceContainerProps) {
+  const [pendingCloseSessionId, setPendingCloseSessionId] = useState<CanvasSessionId | null>(null)
   const workbench = useSyncExternalStore(
     port.workspace.subscribe,
     port.workspace.getSnapshot,
@@ -69,16 +80,20 @@ export function WorkspaceContainer({
         port.workspace.activateCanvas(sessionId)
       },
       closeCanvas(sessionId) {
-        port.canvases.close(sessionId)
+        const decision = port.canvases.requestClose(sessionId)
+        if (decision.kind === 'confirm-discard') setPendingCloseSessionId(sessionId)
+        if (decision.kind === 'wait-for-save') {
+          void decision.operation.then(() => {
+            const nextDecision = port.canvases.requestClose(sessionId)
+            if (nextDecision.kind === 'confirm-discard') setPendingCloseSessionId(sessionId)
+          })
+        }
       },
       activatePage(pageId) {
-        const editor = port.canvases.getEditorSession(workbench.activeSessionId ?? '')?.editor
-        const page = editor?.getPages().find((candidate) => candidate.id === pageId)
-        if (editor && page) editor.setCurrentPage(page)
+        activeEditorSession?.activatePage(pageId)
       },
       createPage() {
-        const editor = port.canvases.getEditorSession(workbench.activeSessionId ?? '')?.editor
-        if (editor) editor.createPage({ name: `画板 ${editor.getPages().length + 1}` })
+        activeEditorSession?.createPage(`画板 ${pages.length + 1}`)
       },
       openCommandPalette: onCommandPaletteOpen,
       openSettingsWindow: onSettingsOpen,
@@ -90,14 +105,23 @@ export function WorkspaceContainer({
     [onCommandPaletteOpen, onSettingsOpen, port, workbench.tabs],
   )
 
-  const activeEditor = port.canvases.getEditorSession(workbench.activeSessionId ?? '')?.editor
-  const pages = activeEditor
-    ? activeEditor.getPages().map((page) => ({
-        id: page.id,
-        title: page.name,
-        isActive: page.id === activeEditor.getCurrentPageId(),
-      }))
-    : []
+  useSyncExternalStore(
+    port.canvases.subscribe,
+    port.workspace.getSnapshot,
+    port.workspace.getSnapshot,
+  )
+  const tabs = workbench.tabs.map((tab) => {
+    const status = port.canvases.getSessionSnapshot(tab.sessionId)?.persistence
+    return status ? { ...tab, status } : tab
+  })
+  const workbenchWithCanvasStatus = { ...workbench, tabs }
+
+  const activeEditorSession = port.canvases.getEditorSession(workbench.activeSessionId ?? '')
+  const pages = useSyncExternalStore(
+    activeEditorSession?.subscribe ?? EMPTY_SUBSCRIBE,
+    activeEditorSession?.getSessionSnapshot ?? EMPTY_EDITOR_SNAPSHOT,
+    activeEditorSession?.getSessionSnapshot ?? EMPTY_EDITOR_SNAPSHOT,
+  ).pages
 
   const hostedSessions = useMemo(
     () =>
@@ -123,22 +147,53 @@ export function WorkspaceContainer({
         ) : null
       }
       inspector={<CanvasInspector />}
-      model={workbench}
+      model={workbenchWithCanvasStatus}
       pages={pages}
       statusLeft={<CanvasStatusLeft />}
       statusRight={<CanvasStatusRight />}
+      overlays={
+        pendingCloseSessionId ? (
+          <div
+            className="absolute inset-0 z-50 grid place-items-center bg-black/25"
+            role="presentation"
+          >
+            <section
+              aria-labelledby="discard-canvas-title"
+              aria-modal="true"
+              className="w-96 rounded-xl border border-divider bg-background p-5 shadow-2xl"
+              role="dialog"
+            >
+              <h2 className="text-base font-semibold" id="discard-canvas-title">
+                放弃未保存的更改？
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                关闭画布会丢失自上次保存后的更改，此操作无法撤销。
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  className="rounded-md px-3 py-2 text-sm hover:bg-muted"
+                  onClick={() => setPendingCloseSessionId(null)}
+                  type="button"
+                >
+                  取消
+                </button>
+                <button
+                  className="rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground"
+                  onClick={() => {
+                    port.canvases.discardAndClose(pendingCloseSessionId)
+                    setPendingCloseSessionId(null)
+                  }}
+                  type="button"
+                >
+                  放弃并关闭
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null
+      }
     />
   )
-}
-
-async function invokeWindowAction(
-  action: 'minimize' | 'toggleMaximize' | 'close' | 'startDragging',
-): Promise<void> {
-  if (!isTauri()) {
-    return
-  }
-  const { getCurrentWindow } = await import('@tauri-apps/api/window')
-  await getCurrentWindow()[action]()
 }
 
 function createUntitledCanvasTitle(existingTitles: readonly string[]): string {

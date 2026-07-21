@@ -46,7 +46,11 @@ export function DesktopTitleBar({
             onClick={onSidebarToggle}
             type="button"
           >
-            {isSidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
+            {isSidebarOpen ? (
+              <PanelLeftClose className="size-4" />
+            ) : (
+              <PanelLeftOpen className="size-4" />
+            )}
           </button>
         </div>
         <div

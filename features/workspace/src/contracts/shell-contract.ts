@@ -31,4 +31,5 @@ export interface WorkspaceShellProps {
   readonly inspector: ReactNode
   readonly statusLeft: ReactNode
   readonly statusRight?: ReactNode
+  readonly overlays?: ReactNode
 }

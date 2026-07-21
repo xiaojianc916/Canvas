@@ -15,10 +15,10 @@
 //! Tauri-specific IPC is handled by `apps/desktop/src-tauri/commands/`.
 
 mod error;
-pub mod window;
-pub mod opener;
 pub mod lifecycle;
-pub mod theme;
+pub mod opener;
 pub mod runtime_info;
+pub mod theme;
+pub mod window;
 
 pub use error::{Error, Result};

@@ -1,8 +1,4 @@
-import {
-  createTLStore,
-  getSnapshot as getStoreEditorSnapshot,
-  loadSnapshot,
-} from '@tldraw/editor'
+import { createTLStore, getSnapshot as getStoreEditorSnapshot, loadSnapshot } from '@tldraw/editor'
 import type { Editor, TLStore, TLEditorSnapshot } from 'tldraw'
 
 import {
@@ -20,6 +16,16 @@ export interface CreateEditorSessionOptions {
 
 export type EditorSessionState = 'created' | 'attached' | 'detached' | 'disposed'
 
+export interface CanvasPageSnapshot {
+  readonly id: string
+  readonly title: string
+  readonly isActive: boolean
+}
+
+export interface EditorSessionSnapshot {
+  readonly pages: readonly CanvasPageSnapshot[]
+}
+
 export interface EditorSession {
   readonly sessionId: string
   readonly documentId: string
@@ -30,6 +36,10 @@ export interface EditorSession {
   readonly attachEditor: (editor: Editor) => void
   readonly detachEditor: (editor: Editor) => void
   readonly getSnapshot: () => TLEditorSnapshot
+  readonly getSessionSnapshot: () => EditorSessionSnapshot
+  readonly subscribe: (listener: () => void) => () => void
+  readonly createPage: (title: string) => void
+  readonly activatePage: (pageId: string) => void
   readonly dispose: () => void
 }
 
@@ -44,6 +54,13 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
   }
   let attachedEditor: Editor | null = null
   let state: EditorSessionState = 'created'
+  const listeners = new Set<() => void>()
+  const stopObserving = store.listen(
+    () => {
+      for (const listener of listeners) listener()
+    },
+    { scope: 'document' },
+  )
 
   function assertActive(): void {
     if (state === 'disposed') {
@@ -80,7 +97,34 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
       assertActive()
       return attachedEditor?.getSnapshot() ?? getStoreEditorSnapshot(store)
     },
+    getSessionSnapshot() {
+      const editor = attachedEditor
+      if (!editor) return { pages: [] }
+      const activePageId = editor.getCurrentPageId()
+      return {
+        pages: editor.getPages().map((page) => ({
+          id: page.id,
+          title: page.name,
+          isActive: page.id === activePageId,
+        })),
+      }
+    },
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    createPage(title) {
+      assertActive()
+      attachedEditor?.createPage({ name: title })
+    },
+    activatePage(pageId) {
+      assertActive()
+      const page = attachedEditor?.getPages().find((candidate) => candidate.id === pageId)
+      if (attachedEditor && page) attachedEditor.setCurrentPage(page)
+    },
     dispose() {
+      stopObserving()
+      listeners.clear()
       attachedEditor = null
       state = 'disposed'
     },

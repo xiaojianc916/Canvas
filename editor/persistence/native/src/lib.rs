@@ -1,4 +1,4 @@
-﻿#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 //! Native file capability.
 //!
@@ -13,9 +13,11 @@
 
 mod atomic_write;
 mod container;
+mod error;
 mod lock;
 mod recovery;
 mod watcher;
-mod error;
 
+pub use atomic_write::atomic_write;
 pub use error::{Error, Result};
+pub use recovery::{recover_directory, RecoveryAction};

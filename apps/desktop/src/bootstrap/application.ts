@@ -23,12 +23,17 @@ import {
 import {
   createCanvasService,
   type CanvasService,
-} from '../application/documents/document-session-service'
+} from '../application/documents/canvas-session-service'
+import {
+  createApplicationTerminationCoordinator,
+  type ApplicationTerminationCoordinator,
+} from '../application/termination/application-termination-coordinator'
 
 export interface ApplicationRuntime {
   readonly workspace: WorkbenchSessionStore
   readonly commands: CommandRegistry
   readonly canvases: CanvasService
+  readonly termination: ApplicationTerminationCoordinator
   readonly mainWindow: MainWindowController
   readonly drawFiles: DrawFileCommands
   readonly settings: SettingsStore
@@ -52,11 +57,15 @@ export function createApplicationRuntime(): ApplicationRuntime {
     dialog,
     extensions: [flowchartExtension],
   })
+  const termination = createApplicationTerminationCoordinator(canvases, {
+    terminate: () => mainWindow.forceClose(),
+  })
 
   return {
     workspace,
     commands,
     canvases,
+    termination,
     mainWindow,
     drawFiles,
     settings: createDesktopSettingsStore(),
@@ -64,6 +73,7 @@ export function createApplicationRuntime(): ApplicationRuntime {
     opener: createExternalOpener(),
     theme: createSystemTheme(),
     dispose() {
+      termination.dispose()
       canvases.dispose()
     },
   }
