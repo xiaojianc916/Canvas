@@ -4,204 +4,183 @@ import {
   cp,
   mkdir,
   readFile,
+  rm,
   writeFile,
 } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import {
+  dirname,
+  resolve,
+} from 'node:path'
 import process from 'node:process'
 
 const root = process.cwd()
 
-const appPath = resolve(
+const chromePath = resolve(
   root,
-  'apps/desktop/src-tauri/src/bootstrap/app.rs',
+  'features/workspace/src/presentation/shell/WorkspaceChrome.tsx',
 )
 
-const commandsModPath = resolve(
+const publicApiPath = resolve(
   root,
-  'apps/desktop/src-tauri/src/commands/mod.rs',
+  'features/workspace/src/presentation/public-api.ts',
 )
 
-const openerPath = resolve(
+const workspaceContainerPath = resolve(
   root,
-  'apps/desktop/src-tauri/src/commands/opener.rs',
+  'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
 )
 
-function replaceOnce(
-  content,
-  oldText,
-  newText,
-  description,
-) {
-  const firstIndex = content.indexOf(oldText)
-
-  if (firstIndex < 0) {
-    throw new Error(
-      `找不到待修改内容：${description}`,
-    )
-  }
-
-  const secondIndex = content.indexOf(
-    oldText,
-    firstIndex + oldText.length,
-  )
-
-  if (secondIndex >= 0) {
-    throw new Error(
-      `待修改内容不唯一：${description}`,
-    )
-  }
-
-  return (
-    content.slice(0, firstIndex) +
-    newText +
-    content.slice(
-      firstIndex + oldText.length,
-    )
-  )
-}
+const backupRoot = resolve(
+  root,
+  '.refactor-backup',
+  new Date()
+    .toISOString()
+    .replaceAll(':', '-')
+    .replaceAll('.', '-'),
+)
 
 async function main() {
   const [
-    appContent,
-    commandsModContent,
-    openerContent,
+    chromeContent,
+    publicApiContent,
+    workspaceContainerContent,
   ] = await Promise.all([
-    readFile(appPath, 'utf8'),
-    readFile(commandsModPath, 'utf8'),
-    readFile(openerPath, 'utf8'),
+    readFile(chromePath, 'utf8'),
+    readFile(publicApiPath, 'utf8'),
+    readFile(
+      workspaceContainerPath,
+      'utf8',
+    ),
   ])
 
-  const hasAssetModule =
-    commandsModContent.includes(
-      'pub mod asset;',
-    )
-
-  if (hasAssetModule) {
-    throw new Error(
-      [
-        'commands/mod.rs 已声明 asset module。',
-        '请检查是否已经开始实现原生 Asset command，',
-        '不要自动删除有效注册。',
-      ].join('\n'),
-    )
-  }
-
-  const assetHandlerBlock = `            commands::asset::asset_store,
-            commands::asset::asset_load,
-            commands::asset::asset_delete,
-            commands::asset::asset_list,
-`
-
-  let nextAppContent = appContent
-
-  if (
-    nextAppContent.includes(
-      assetHandlerBlock,
-    )
-  ) {
-    nextAppContent = replaceOnce(
-      nextAppContent,
-      assetHandlerBlock,
-      '',
-      '删除尚未激活的 Asset command 注册',
-    )
-  } else {
-    console.log(
-      'Asset command 注册已经不存在，跳过 app.rs。',
-    )
-  }
-
-  let nextOpenerContent = openerContent
-
-  if (
-    nextOpenerContent.includes(
-      'if let Some(parent) = path.parent() {',
-    )
-  ) {
-    nextOpenerContent =
-      nextOpenerContent.replace(
-        'if let Some(parent) = path.parent() {',
-        'if let Some(_parent) = path.parent() {',
-      )
-
-    nextOpenerContent =
-      nextOpenerContent.replace(
-        '.arg(parent).spawn()?;',
-        '.arg(_parent).spawn()?;',
-      )
-  } else {
-    console.log(
-      'opener.rs 的 parent 警告可能已经修复，跳过。',
-    )
-  }
-
-  const backupRoot = resolve(
-    root,
-    '.refactor-backup',
-    new Date()
-      .toISOString()
-      .replaceAll(':', '-')
-      .replaceAll('.', '-'),
+  assertMigrationState(
+    chromeContent,
+    publicApiContent,
+    workspaceContainerContent,
   )
 
   await Promise.all([
-    backup(appPath, backupRoot),
-    backup(commandsModPath, backupRoot),
-    backup(openerPath, backupRoot),
+    backup(chromePath),
+    backup(publicApiPath),
   ])
 
-  await Promise.all([
-    writeFile(
-      appPath,
-      nextAppContent,
-      'utf8',
-    ),
-    writeFile(
-      openerPath,
-      nextOpenerContent,
-      'utf8',
-    ),
-  ])
+  const exportLine =
+    `export { CanvasChrome, type CanvasChromeProps } from './shell/WorkspaceChrome'\n`
+
+  const nextPublicApiContent =
+    publicApiContent.replace(
+      exportLine,
+      '',
+    )
+
+  if (
+    nextPublicApiContent ===
+    publicApiContent
+  ) {
+    throw new Error(
+      '未能从 Workspace public API 中删除 CanvasChrome 导出。',
+    )
+  }
+
+  await writeFile(
+    publicApiPath,
+    nextPublicApiContent,
+    'utf8',
+  )
+
+  await rm(chromePath)
 
   console.log('')
   console.log('已完成：')
   console.log(
-    '- 删除不存在的 Asset Tauri command 注册',
+    '- 删除废弃的 WorkspaceChrome.tsx',
   )
   console.log(
-    '- 保留 Asset native 预留脚手架',
+    '- 删除 CanvasChrome public API 导出',
   )
   console.log(
-    '- 修复 opener.rs 条件编译产生的 unused variable 警告',
+    '- 保留 DesktopTitleBar 在 desktop composition layer',
+  )
+  console.log(
+    '- WorkspaceShell 继续通过 renderChrome 接收平台 UI',
   )
   console.log('')
   console.log('接下来执行：')
   console.log('')
-  console.log(
-    '  cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml',
-  )
-  console.log(
-    '  cargo check --workspace --all-targets --all-features',
-  )
+  console.log('  pnpm format')
+  console.log('  pnpm test:architecture')
+  console.log('  pnpm typecheck')
   console.log('  pnpm tauri dev')
   console.log('')
 }
 
-async function backup(
-  sourcePath,
-  backupRoot,
+function assertMigrationState(
+  chromeContent,
+  publicApiContent,
+  workspaceContainerContent,
 ) {
-  const relativePath = sourcePath
-    .slice(root.length + 1)
+  if (
+    !chromeContent.includes(
+      `from './DesktopTitleBar'`,
+    )
+  ) {
+    throw new Error(
+      [
+        'WorkspaceChrome.tsx 内容与预期不同。',
+        '为避免删除有效实现，脚本已停止。',
+      ].join('\n'),
+    )
+  }
+
+  if (
+    !publicApiContent.includes(
+      `from './shell/WorkspaceChrome'`,
+    )
+  ) {
+    throw new Error(
+      'Workspace public API 已经没有 WorkspaceChrome 导出。',
+    )
+  }
+
+  if (
+    !workspaceContainerContent.includes(
+      `import { DesktopTitleBar } from '../chrome/DesktopTitleBar'`,
+    )
+  ) {
+    throw new Error(
+      [
+        'DesktopTitleBar 尚未在 WorkspaceContainer 中正确接线。',
+        '不能安全删除旧 WorkspaceChrome。',
+      ].join('\n'),
+    )
+  }
+
+  if (
+    !workspaceContainerContent.includes(
+      'renderChrome={({',
+    )
+  ) {
+    throw new Error(
+      'WorkspaceContainer 尚未通过 renderChrome 注入平台 Chrome。',
+    )
+  }
+}
+
+async function backup(sourcePath) {
+  const relativePath =
+    sourcePath.slice(root.length + 1)
 
   const targetPath = resolve(
     backupRoot,
     relativePath,
   )
 
-  await mkdir(dirname(targetPath), {
-    recursive: true,
-  })
+  await mkdir(
+    dirname(targetPath),
+    {
+      recursive: true,
+    },
+  )
 
   await cp(sourcePath, targetPath)
 }
@@ -209,7 +188,7 @@ async function backup(
 main().catch((error) => {
   console.error('')
   console.error(
-    'Tauri command 注册修复失败：',
+    '清理旧 WorkspaceChrome 失败：',
   )
   console.error(error)
   process.exitCode = 1
