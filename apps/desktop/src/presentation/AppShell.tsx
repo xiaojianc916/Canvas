@@ -9,8 +9,8 @@ import type { CommandRegistry } from '@hybrid-canvas/workspace/application'
 import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
 
 import type { ApplicationTerminationCoordinator } from '../application/termination/application-termination-coordinator'
-import { SettingsDialog } from '../windows/settings/SettingsShell'
 import { UiErrorBoundary } from './boundaries/UiErrorBoundary'
+import { SettingsDialog } from './settings/SettingsDialog'
 import { useGlobalCommandShortcuts } from './commands/useGlobalCommandShortcuts'
 import { type WorkspaceCanvasUIPort, WorkspaceContainer } from './workspace/WorkspaceContainer'
 
