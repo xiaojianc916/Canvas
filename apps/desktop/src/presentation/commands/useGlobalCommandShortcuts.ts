@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-import type { CommandRegistry } from '@hybrid-canvas/workspace'
+import type { CommandRegistry } from '@hybrid-canvas/workspace/contracts'
 
 export interface CommandShortcutBinding {
   readonly key: string

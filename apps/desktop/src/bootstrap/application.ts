@@ -1,25 +1,17 @@
-import { createEditorSessionRegistry } from '@hybrid-canvas/canvas'
+import { createEditorSessionRegistry } from '@hybrid-canvas/canvas/application'
 import { flowchartExtension } from '@hybrid-canvas/flowchart'
 import {
   createMainWindowController,
   createDrawFileCommands,
-  createDesktopSettingsStore,
-  createExternalOpener,
   createFileDialog,
-  createSystemTheme,
   type MainWindowController,
-  type DrawFileCommands,
-  type ExternalOpener,
-  type FileDialog,
-  type SettingsStore,
-  type SystemTheme,
 } from '@hybrid-canvas/platforms-desktop-runtime'
 import {
   type CommandRegistry,
   createCommandRegistry,
   createWorkbenchSessionController,
   type WorkbenchSessionStore,
-} from '@hybrid-canvas/workspace'
+} from '@hybrid-canvas/workspace/contracts'
 import { createCanvasService, type CanvasService } from '@hybrid-canvas/canvas-session'
 import {
   createApplicationTerminationCoordinator,
@@ -32,11 +24,6 @@ export interface ApplicationRuntime {
   readonly canvases: CanvasService
   readonly termination: ApplicationTerminationCoordinator
   readonly mainWindow: MainWindowController
-  readonly drawFiles: DrawFileCommands
-  readonly settings: SettingsStore
-  readonly dialog: FileDialog
-  readonly opener: ExternalOpener
-  readonly theme: SystemTheme
   readonly dispose: () => void
 }
 
@@ -80,11 +67,6 @@ export function createApplicationRuntime(): ApplicationRuntime {
     canvases,
     termination,
     mainWindow,
-    drawFiles,
-    settings: createDesktopSettingsStore(),
-    dialog,
-    opener: createExternalOpener(),
-    theme: createSystemTheme(),
     dispose() {
       termination.dispose()
       canvases.dispose()

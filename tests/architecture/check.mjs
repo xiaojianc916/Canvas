@@ -125,6 +125,27 @@ function check(path) {
     violations.push(`${rel}: workspace 领域语言必须使用 Canvas，不得继续引入 Document 模型`)
   }
 
+  if (
+    rel !== 'editor/core/src/public-api.ts' &&
+    /from\s+['"]@hybrid-canvas\/canvas['"]/.test(text)
+  ) {
+    violations.push(`${rel}: 必须选择 Canvas /application、/extensions 或 /react 入口`)
+  }
+
+  if (
+    rel !== 'features/workspace/src/public-api.ts' &&
+    /from\s+['"]@hybrid-canvas\/workspace['"]/.test(text)
+  ) {
+    violations.push(`${rel}: 必须选择 Workspace /contracts、/application 或 /react 入口`)
+  }
+
+  if (
+    rel.startsWith('apps/desktop/src/presentation/') &&
+    /from\s+['"]@hybrid-canvas\/(?:canvas|workspace)['"]/.test(text)
+  ) {
+    violations.push(`${rel}: presentation 必须使用 Canvas/Workspace 的 /react 或 /contracts 入口`)
+  }
+
   if (/from\s+['"]@hybrid-canvas\/[^'"]+\/src\//.test(text)) {
     violations.push(`${rel}: 跨包 deep import，必须使用 package exports`)
   }
@@ -145,6 +166,10 @@ function check(path) {
     /(?:parseDrawDocument|serializeDrawDocument|createTLStore)\s*\(/.test(text)
   ) {
     violations.push(`${rel}: composition root 承载文档或编辑器业务逻辑`)
+  }
+
+  if (rel.startsWith('apps/desktop/src/presentation/') && /\bApplicationRuntime\b/.test(text)) {
+    violations.push(`${rel}: presentation 不得依赖完整 ApplicationRuntime service locator`)
   }
 
   if (

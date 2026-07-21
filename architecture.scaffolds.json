@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "scaffolds": [
+    {
+      "path": "editor/assets/native",
+      "stage": "reserved",
+      "role": "Native asset storage capability",
+      "activationCondition": "Asset persistence is wired into the desktop composition root",
+      "forbiddenDependencies": ["apps/", "features/"]
+    },
+    {
+      "path": "editor/extensions/native",
+      "stage": "reserved",
+      "role": "Native extension installation capability",
+      "activationCondition": "Extension installation is exposed through a stable application port",
+      "forbiddenDependencies": ["apps/", "features/"]
+    },
+    {
+      "path": "platforms/desktop-runtime/native",
+      "stage": "partial",
+      "role": "Desktop OS capability wrappers",
+      "activationCondition": "Capabilities replace registered Tauri command placeholders",
+      "forbiddenDependencies": ["apps/", "features/"]
+    },
+    {
+      "path": "features/freehand",
+      "stage": "domain-only",
+      "role": "Freehand domain and future canvas extension",
+      "activationCondition": "A tldraw extension adapter is implemented",
+      "forbiddenDependencies": ["apps/", "platforms/"]
+    },
+    {
+      "path": "features/scientific-plot",
+      "stage": "domain-only",
+      "role": "Scientific plotting domain and future canvas extension",
+      "activationCondition": "Plot rendering is connected through the extension API",
+      "forbiddenDependencies": ["apps/", "platforms/"]
+    },
+    {
+      "path": "features/import-export",
+      "stage": "domain-only",
+      "role": "Import and export contracts",
+      "activationCondition": "Application orchestration binds format contributors",
+      "forbiddenDependencies": ["apps/", "platforms/"]
+    }
+  ]
+}

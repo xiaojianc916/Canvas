@@ -11,9 +11,17 @@
       "types": "./src/public-api.ts",
       "default": "./src/public-api.ts"
     },
+    "./application": {
+      "types": "./src/application/public-api.ts",
+      "default": "./src/application/public-api.ts"
+    },
+    "./extensions": {
+      "types": "./src/extensions-public-api.ts",
+      "default": "./src/extensions-public-api.ts"
+    },
     "./react": {
-      "types": "./src/presentation/public-api.ts",
-      "default": "./src/presentation/public-api.ts"
+      "types": "./src/react/public-api.ts",
+      "default": "./src/react/public-api.ts"
     }
   },
   "scripts": {

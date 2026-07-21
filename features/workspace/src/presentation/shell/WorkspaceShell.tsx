@@ -1,4 +1,4 @@
-import { Button, TooltipProvider } from '@hybrid-canvas/design-system'
+﻿import { Button, TooltipProvider } from '@hybrid-canvas/design-system'
 import { BotMessageSquare, PanelRightClose, PanelRightOpen, Sparkles, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
@@ -8,7 +8,7 @@ import { InspectorHost } from '../inspector/InspectorHost'
 import { StatusBarHost } from '../status/StatusBarHost'
 import { ActivityRail, type CanvasNavigationItemId } from './ActivityRail'
 import { DesktopTitleBar } from './DesktopTitleBar'
-import { DocumentTabs } from './CanvasTabs'
+import { CanvasTabs } from './CanvasTabs'
 import { SidebarSplitter } from './SidebarSplitter'
 import { WorkspaceFrame } from './WorkspaceFrame'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
@@ -94,7 +94,7 @@ export function WorkspaceShell({
         isSidebarOpen={isSidebarOpen}
         sidebarWidth={sidebarWidth}
       >
-        <DocumentTabs
+        <CanvasTabs
           onActivate={actions.activateCanvas}
           onClose={actions.closeCanvas}
           onCreate={actions.createCanvas}

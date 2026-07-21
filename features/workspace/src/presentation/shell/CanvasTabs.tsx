@@ -2,10 +2,7 @@ import { Button, cn } from '@hybrid-canvas/design-system'
 import { Plus, X } from 'lucide-react'
 import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 
-import type {
-  CanvasSessionId,
-  CanvasTabViewModel,
-} from '../../application/model/workbench-view-model'
+import type { CanvasSessionId, CanvasTabViewModel } from '../../contracts/workbench-contract'
 
 export interface CanvasTabsProps {
   readonly tabs: readonly CanvasTabViewModel[]
@@ -27,7 +24,7 @@ const TOP_RADIUS = 12
 const OUTER_RADIUS = 15
 const BEZIER_CIRCLE = 0.5522848
 
-export function DocumentTabs({ tabs, onActivate, onClose, onCreate }: CanvasTabsProps) {
+export function CanvasTabs({ tabs, onActivate, onClose, onCreate }: CanvasTabsProps) {
   const shellRef = useRef<HTMLElement | null>(null)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const tabRefs = useRef(new Map<CanvasSessionId, HTMLButtonElement>())

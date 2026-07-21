@@ -1,17 +1,29 @@
 import 'tldraw/tldraw.css'
 
-import { EditorProvider } from '@hybrid-canvas/canvas'
-import { CommandPalette } from '@hybrid-canvas/workspace'
+import { EditorProvider } from '@hybrid-canvas/canvas/react'
+import { CommandPalette } from '@hybrid-canvas/workspace/react'
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
-import type { ApplicationRuntime } from '../bootstrap/application'
+import type { CanvasService } from '@hybrid-canvas/canvas-session'
+import type { MainWindowController } from '@hybrid-canvas/platforms-desktop-runtime'
+import type { CommandRegistry, WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
+
+import type { ApplicationTerminationCoordinator } from '../application/termination/application-termination-coordinator'
 import { SettingsDialog } from '../windows/settings/SettingsShell'
 import { UiErrorBoundary } from './boundaries/UiErrorBoundary'
 import { useGlobalCommandShortcuts } from './commands/useGlobalCommandShortcuts'
 import { WorkspaceContainer } from './workspace/WorkspaceContainer'
 
+export interface AppShellRuntime {
+  readonly workspace: WorkbenchSessionStore
+  readonly commands: CommandRegistry
+  readonly canvases: CanvasService
+  readonly termination: ApplicationTerminationCoordinator
+  readonly mainWindow: MainWindowController
+}
+
 export interface AppShellProps {
-  readonly runtime: ApplicationRuntime
+  readonly runtime: AppShellRuntime
 }
 
 export function AppShell({ runtime }: AppShellProps) {
@@ -107,10 +119,7 @@ export function AppShell({ runtime }: AppShellProps) {
   )
 }
 
-function useApplicationCommands(
-  runtime: ApplicationRuntime,
-  toggleCommandPalette: () => void,
-): void {
+function useApplicationCommands(runtime: AppShellRuntime, toggleCommandPalette: () => void): void {
   useEffect(() => {
     const unregisterPalette = runtime.commands.register({
       id: 'application.toggle-command-palette',

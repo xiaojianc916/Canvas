@@ -1,14 +1,14 @@
-import type { EditorSession } from '@hybrid-canvas/canvas'
+import type { EditorSession } from '@hybrid-canvas/canvas/application'
 import {
   CanvasInspector,
   CanvasStatusLeft,
   CanvasStatusRight,
   EditorSessionHost,
-} from '@hybrid-canvas/canvas'
-import { WorkspaceShell, type WorkspaceShellActions } from '@hybrid-canvas/workspace'
+} from '@hybrid-canvas/canvas/application'
+import { WorkspaceShell, type WorkspaceShellActions } from '@hybrid-canvas/workspace/contracts'
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 
-import type { CanvasSessionId, WorkbenchSessionStore } from '@hybrid-canvas/workspace'
+import type { CanvasSessionId, WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
 
 const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({ pages: Object.freeze([]) })

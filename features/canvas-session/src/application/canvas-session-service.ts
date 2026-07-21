@@ -1,10 +1,7 @@
-import type {
-  EditorSession,
-  EditorSessionRegistry,
-  HybridCanvasExtension,
-} from '@hybrid-canvas/canvas'
+import type { EditorSession, EditorSessionRegistry } from '@hybrid-canvas/canvas/application'
+import type { HybridCanvasExtension } from '@hybrid-canvas/canvas/extensions'
 import { parseDrawDocument, serializeDrawDocument } from '@hybrid-canvas/file'
-import type { CanvasSessionId } from '@hybrid-canvas/workspace'
+import type { CanvasSessionId } from '@hybrid-canvas/workspace/contracts'
 import type { TLEditorSnapshot } from 'tldraw'
 
 export type CanvasPersistenceState = 'clean' | 'dirty' | 'saving' | 'failed'

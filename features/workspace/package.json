@@ -9,6 +9,14 @@
       "types": "./src/public-api.ts",
       "default": "./src/public-api.ts"
     },
+    "./application": {
+      "types": "./src/application/public-api.ts",
+      "default": "./src/application/public-api.ts"
+    },
+    "./contracts": {
+      "types": "./src/contracts-entry.ts",
+      "default": "./src/contracts-entry.ts"
+    },
     "./react": {
       "types": "./src/presentation/public-api.ts",
       "default": "./src/presentation/public-api.ts"
