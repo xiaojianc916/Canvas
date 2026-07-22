@@ -1,5 +1,6 @@
 import { EditorProvider } from '@hybrid-canvas/canvas/react'
 import { applyThemePreference, ConfirmationDialog } from '@hybrid-canvas/design-system'
+import { error as reportDiagnosticError } from '@hybrid-canvas/foundations-observability'
 import type { MainWindowController } from '@hybrid-canvas/platforms-desktop-runtime'
 import type { SettingsStore } from '@hybrid-canvas/settings'
 import { SettingsDialog } from '@hybrid-canvas/settings/react'
@@ -49,6 +50,8 @@ export function AppShell({ runtime }: AppShellProps) {
 
   const [isSettingsOpen, setSettingsOpen] = useState(false)
 
+  const [failedCanvasTitle, setFailedCanvasTitle] = useState<string | null>(null)
+
   const termination = useSyncExternalStore(
     runtime.termination.subscribe,
     runtime.termination.getSnapshot,
@@ -62,6 +65,24 @@ export function AppShell({ runtime }: AppShellProps) {
   const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), [])
 
   const openSettings = useCallback(() => setSettingsOpen(true), [])
+
+  const createCanvasWithFeedback = useCallback(
+    (title: string) => {
+      try {
+        runtime.canvases.create(title)
+        setFailedCanvasTitle(null)
+      } catch (cause) {
+        reportDiagnosticError('canvas create failed', {
+          scope: 'app-shell',
+          operation: 'create-canvas',
+          cause,
+        })
+
+        setFailedCanvasTitle(title)
+      }
+    },
+    [runtime.canvases],
+  )
 
   const requestApplicationClose = useCallback(() => {
     runtime.termination.request('window-close')
@@ -97,7 +118,7 @@ export function AppShell({ runtime }: AppShellProps) {
     })
   }, [runtime.mainWindow])
 
-  useApplicationCommands(runtime, toggleCommandPalette)
+  useApplicationCommands(runtime, toggleCommandPalette, createCanvasWithFeedback)
 
   useEffect(() => {
     let active = true
@@ -134,10 +155,13 @@ export function AppShell({ runtime }: AppShellProps) {
 
   const workspacePort = useMemo(
     () => ({
-      canvases: runtime.canvases,
+      canvases: {
+        ...runtime.canvases,
+        create: createCanvasWithFeedback,
+      },
       workspace: runtime.workspace,
     }),
-    [runtime.canvases, runtime.workspace],
+    [createCanvasWithFeedback, runtime.canvases, runtime.workspace],
   )
 
   return (
@@ -167,6 +191,24 @@ export function AppShell({ runtime }: AppShellProps) {
       />
 
       <UiFeedbackRegion />
+
+      <ConfirmationDialog
+        cancelLabel="取消"
+        confirmLabel="重试"
+        description="无法新建画布，请重试。"
+        onCancel={() => {
+          setFailedCanvasTitle(null)
+        }}
+        onConfirm={() => {
+          if (!failedCanvasTitle) {
+            return
+          }
+
+          createCanvasWithFeedback(failedCanvasTitle)
+        }}
+        open={failedCanvasTitle !== null}
+        title="新建画布失败"
+      />
 
       <ConfirmationDialog
         confirmLabel="放弃全部并退出"
@@ -220,7 +262,11 @@ function useMainWindowCloseRequest(
   }, [mainWindow, onCloseRequested])
 }
 
-function useApplicationCommands(runtime: AppShellRuntime, toggleCommandPalette: () => void): void {
+function useApplicationCommands(
+  runtime: AppShellRuntime,
+  toggleCommandPalette: () => void,
+  createCanvas: (title: string) => void,
+): void {
   useEffect(() => {
     const unregister = [
       runtime.commands.register({
@@ -237,7 +283,7 @@ function useApplicationCommands(runtime: AppShellRuntime, toggleCommandPalette: 
         category: '文件',
         shortcut: 'Ctrl+N',
         execute() {
-          runtime.canvases.create('未命名画布')
+          createCanvas('未命名画布')
         },
       }),
 
@@ -255,5 +301,5 @@ function useApplicationCommands(runtime: AppShellRuntime, toggleCommandPalette: 
         unregister[index]?.()
       }
     }
-  }, [runtime, toggleCommandPalette])
+  }, [createCanvas, runtime, toggleCommandPalette])
 }
