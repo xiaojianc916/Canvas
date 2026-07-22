@@ -47,6 +47,7 @@ hybrid-canvas/
 ├── foundations/        # 共享基础设施
 │   ├── design-system/
 │   ├── geometry/
+│   ├── kernel/
 │   ├── observability/
 │   ├── serialization/
 │   └── test-kit/
@@ -151,6 +152,17 @@ foundations ───────── no dependencies on editor/features/platf
 - 空 `catch`、隐式副作用、万能 Store、万能 Manager。
 - 未经请求扩大改动范围。
 - 未验证即宣称完成。
+
+## 文档一致性
+
+- README.md 负责项目入口、当前架构概览和开发方式。
+- AGENTS.md 是强制性的架构约束与修改规则。
+- docs/rfcs 只描述尚未接受的提案，不得伪装成当前实现。
+- docs/adr 记录已经接受的重要决策。
+- architecture.scaffolds.json 只登记有明确所有者、激活条件和删除条件的预留结构。
+- README、AGENTS、ADR、代码和测试不得同时声明不同的文档内核、同步协议、目录结构或依赖方向。
+- 已废弃的架构描述必须与旧实现、旧测试、旧导出和旧配置一起删除。
+- 目录和契约的存在不代表功能已经完成；完成状态必须由实现和验证结果证明。
 
 ## 验证
 
