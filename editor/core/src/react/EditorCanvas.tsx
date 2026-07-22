@@ -6,6 +6,9 @@ import type { EditorSession } from '../runtime/editor-session'
 import { CanvasToolbar } from './CanvasToolbar'
 import { useBindEditorSession, useEditor } from './editor-context'
 
+const TLDRAW_LICENSE_KEY =
+  'tldraw-2026-10-28/WyJKRWdfbFdwZyIsWyIqIl0sMTYsIjIwMjYtMTAtMjgiXQ.lmi81fI8OPFbKs0/HJEW9FHFXxwCvSb/rS29gNvSO9+nXHlk/d62Tg4yzjBBRqfIqNb5Bcuo1lhf/JZ3DOeuYw'
+
 export interface EditorCanvasProps {
   readonly session: EditorSession
   readonly isActive?: boolean
@@ -21,6 +24,7 @@ export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasP
   const tldrawProps = useMemo((): TldrawProps => {
     const base: TldrawProps = {
       hideUi: true,
+      licenseKey: TLDRAW_LICENSE_KEY,
       store,
       onMount: setEditor,
       options: {
