@@ -1,121 +1,192 @@
-#!/usr/bin/env node
+// tooling/script/1.mjs
+// 只负责添加 Motion，不修改任何业务代码。
 
-import { execFileSync } from 'node:child_process'
 import {
   existsSync,
   readFileSync,
-  renameSync,
   writeFileSync,
 } from 'node:fs'
-import { resolve } from 'node:path'
-import process from 'node:process'
+import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
-const root = resolve(process.cwd())
-const target = resolve(
+const VERSION = '12.42.2'
+const root = process.cwd()
+
+if (!process.argv.includes('--apply')) {
+  console.log(
+    '请运行：node tooling\\script\\1.mjs --apply',
+  )
+  process.exit(0)
+}
+
+const workspacePath = join(
   root,
-  'tooling/script/refactor.mjs',
+  'pnpm-workspace.yaml',
 )
 
-if (!existsSync(target)) {
+const packagePath = join(
+  root,
+  'foundations',
+  'design-system',
+  'package.json',
+)
+
+if (!existsSync(workspacePath)) {
   throw new Error(
-    '找不到 tooling/script/refactor.mjs',
+    `找不到文件：${workspacePath}\n请在项目根目录运行脚本。`,
   )
 }
 
-const original = readFileSync(
-  target,
+if (!existsSync(packagePath)) {
+  throw new Error(`找不到文件：${packagePath}`)
+}
+
+const originalWorkspace = readFileSync(
+  workspacePath,
   'utf8',
 )
 
-const replacements = [
-  {
-    oldText:
-      "delete activeTab.dataset['suppressHover']",
-    newText:
-      'delete activeTab.dataset[',
-  },
-  {
-    oldText:
-      "delete event.currentTarget.dataset['suppressHover']",
-    newText:
-      'delete event.currentTarget.dataset[',
-  },
-]
+const originalPackage = readFileSync(
+  packagePath,
+  'utf8',
+)
 
-let updated = original
+function addMotionToCatalog(source) {
+  const newline = source.includes('\r\n')
+    ? '\r\n'
+    : '\n'
 
-for (const replacement of replacements) {
-  const count =
-    updated.split(replacement.oldText).length - 1
-
-  if (count !== 1) {
-    if (
-      updated.includes(
-        replacement.newText,
-      )
-    ) {
-      console.log(
-        'SKIP   已修复断言：' +
-          replacement.newText,
-      )
-      continue
-    }
-
-    throw new Error(
-      '预期断言应出现一次，实际出现 ' +
-        String(count) +
-        ' 次：' +
-        replacement.oldText,
+  // 如果已经存在 motion，则只更新版本。
+  if (/^ {2}motion\s*:/m.test(source)) {
+    return source.replace(
+      /^ {2}motion\s*:.*$/m,
+      `  motion: "${VERSION}"`,
     )
   }
 
-  updated = updated.replace(
-    replacement.oldText,
-    replacement.newText,
-  )
+  // 将 motion 插入顶级 catalog 开头。
+  if (/^catalog:\s*$/m.test(source)) {
+    return source.replace(
+      /^catalog:\s*$/m,
+      `catalog:${newline}  motion: "${VERSION}"`,
+    )
+  }
 
-  console.log(
-    'PATCH  ' +
-      replacement.oldText,
+  throw new Error(
+    'pnpm-workspace.yaml 中找不到顶级 catalog 配置',
   )
 }
 
-if (updated !== original) {
-  const temporary =
-    target +
-    '.tmp-' +
-    process.pid +
-    '-' +
-    Date.now()
+function addMotionToPackage(source) {
+  const packageJson = JSON.parse(source)
+
+  packageJson.dependencies ??= {}
+  packageJson.dependencies.motion = 'catalog:'
+
+  packageJson.dependencies = Object.fromEntries(
+    Object.entries(packageJson.dependencies).sort(
+      ([left], [right]) =>
+        left.localeCompare(right),
+    ),
+  )
+
+  return `${JSON.stringify(packageJson, null, 2)}\n`
+}
+
+function installDependencies() {
+  if (process.platform === 'win32') {
+    const cmd =
+      process.env.ComSpec ??
+      'C:\\Windows\\System32\\cmd.exe'
+
+    return spawnSync(
+      cmd,
+      ['/d', '/s', '/c', 'pnpm install'],
+      {
+        cwd: root,
+        stdio: 'inherit',
+        env: process.env,
+        windowsHide: true,
+      },
+    )
+  }
+
+  return spawnSync('pnpm', ['install'], {
+    cwd: root,
+    stdio: 'inherit',
+    env: process.env,
+  })
+}
+
+try {
+  const updatedWorkspace =
+    addMotionToCatalog(originalWorkspace)
+
+  const updatedPackage =
+    addMotionToPackage(originalPackage)
 
   writeFileSync(
-    temporary,
-    updated
-      .replaceAll('\r\n', '\n')
-      .trimStart() + '\n',
+    workspacePath,
+    updatedWorkspace,
     'utf8',
   )
 
-  renameSync(
-    temporary,
-    target,
+  writeFileSync(
+    packagePath,
+    updatedPackage,
+    'utf8',
   )
+
+  console.log(
+    `已添加 motion ${VERSION} 到 workspace catalog`,
+  )
+
+  console.log(
+    '已添加 motion 到 @hybrid-canvas/design-system',
+  )
+
+  console.log('正在执行 pnpm install...')
+
+  const result = installDependencies()
+
+  if (result.error) {
+    throw result.error
+  }
+
+  if (result.status !== 0) {
+    throw new Error(
+      `pnpm install 失败，退出码：${
+        result.status ?? 'unknown'
+      }`,
+    )
+  }
+
+  console.log('')
+  console.log('Motion 安装完成。')
+  console.log(
+    "使用方式：import { m } from 'motion/react'",
+  )
+} catch (error) {
+  // 失败后恢复配置文件。
+  writeFileSync(
+    workspacePath,
+    originalWorkspace,
+    'utf8',
+  )
+
+  writeFileSync(
+    packagePath,
+    originalPackage,
+    'utf8',
+  )
+
+  console.error('')
+  console.error(
+    '添加 Motion 失败：',
+    error instanceof Error
+      ? error.message
+      : String(error),
+  )
+
+  process.exitCode = 1
 }
-
-console.log('')
-console.log(
-  'RUN    node tooling/script/refactor.mjs --apply',
-)
-
-execFileSync(
-  process.execPath,
-  [
-    'tooling/script/refactor.mjs',
-    '--apply',
-  ],
-  {
-    cwd: root,
-    stdio: 'inherit',
-    shell: false,
-  },
-)
