@@ -11,10 +11,7 @@ import {
   type TLIndicatorPath,
 } from 'tldraw'
 
-import {
-  ScientificChartTypeStyle,
-  type ScientificChartType,
-} from '../styles/chart-styles'
+import { type ScientificChartType, ScientificChartTypeStyle } from '../styles/chart-styles'
 
 declare module '@tldraw/tlschema' {
   interface TLGlobalShapePropsMap {
@@ -33,10 +30,7 @@ export interface ScientificChartShapeProps {
   readonly showLegend: boolean
 }
 
-export type ScientificChartShape = TLBaseShape<
-  'scientific-chart',
-  ScientificChartShapeProps
->
+export type ScientificChartShape = TLBaseShape<'scientific-chart', ScientificChartShapeProps>
 
 const COLOR_VALUES: Record<string, string> = {
   black: '#1d1d1d',
@@ -96,23 +90,17 @@ export class ScientificChartShapeUtil extends ShapeUtil<ScientificChartShape> {
     })
   }
 
-  override component(
-    shape: ScientificChartShape,
-  ): ReactElement | null {
+  override component(shape: ScientificChartShape): ReactElement | null {
     return <ScientificChartView shape={shape} />
   }
 
-  override getIndicatorPath(
-    shape: ScientificChartShape,
-  ): TLIndicatorPath | undefined {
+  override getIndicatorPath(shape: ScientificChartShape): TLIndicatorPath | undefined {
     const path = new Path2D()
     path.rect(0, 0, shape.props.w, shape.props.h)
     return path
   }
 
-  override toSvg(
-    shape: ScientificChartShape,
-  ): ReactElement | null {
+  override toSvg(shape: ScientificChartShape): ReactElement | null {
     const { w, h } = shape.props
 
     return (
@@ -123,24 +111,10 @@ export class ScientificChartShapeUtil extends ShapeUtil<ScientificChartShape> {
   }
 }
 
-function ScientificChartView({
-  shape,
-}: {
-  readonly shape: ScientificChartShape
-}) {
-  const {
-    w,
-    h,
-    chartType,
-    color,
-    size,
-    showAxes,
-    showGrid,
-    showLegend,
-  } = shape.props
+function ScientificChartView({ shape }: { readonly shape: ScientificChartShape }) {
+  const { w, h, chartType, color, size, showAxes, showGrid, showLegend } = shape.props
 
-  const stroke =
-    COLOR_VALUES[color] ?? '#2563eb'
+  const stroke = COLOR_VALUES[color] ?? '#2563eb'
   const strokeWidth = STROKE_WIDTHS[size] ?? 3
 
   const padding = 34
@@ -150,9 +124,7 @@ function ScientificChartView({
   const values = [0.25, 0.52, 0.4, 0.76, 0.61, 0.88, 0.72]
   const points = values
     .map((value, index) => {
-      const x =
-        padding +
-        (index / Math.max(1, values.length - 1)) * chartWidth
+      const x = padding + (index / Math.max(1, values.length - 1)) * chartWidth
       const y = padding + (1 - value) * chartHeight
 
       return String(x) + ',' + String(y)
@@ -223,10 +195,7 @@ function ScientificChartView({
               const slotWidth = chartWidth / values.length
               const barWidth = Math.max(4, slotWidth * 0.58)
               const barHeight = value * chartHeight
-              const x =
-                padding +
-                index * slotWidth +
-                (slotWidth - barWidth) / 2
+              const x = padding + index * slotWidth + (slotWidth - barWidth) / 2
               const y = h - padding - barHeight
 
               return (
@@ -277,39 +246,17 @@ function ScientificChartView({
 
         {chartType === 'scatter'
           ? values.map((value, index) => {
-              const x =
-                padding +
-                (index / Math.max(1, values.length - 1)) *
-                  chartWidth
+              const x = padding + (index / Math.max(1, values.length - 1)) * chartWidth
               const y = padding + (1 - value) * chartHeight
 
-              return (
-                <circle
-                  cx={x}
-                  cy={y}
-                  fill={stroke}
-                  key={String(index)}
-                  r={strokeWidth + 2}
-                />
-              )
+              return <circle cx={x} cy={y} fill={stroke} key={String(index)} r={strokeWidth + 2} />
             })
           : null}
 
         {showLegend ? (
           <>
-            <circle
-              cx={w - 92}
-              cy={18}
-              fill={stroke}
-              r="4"
-            />
-            <text
-              fill="#4b5563"
-              fontFamily="sans-serif"
-              fontSize="11"
-              x={w - 82}
-              y={22}
-            >
+            <circle cx={w - 92} cy={18} fill={stroke} r="4" />
+            <text fill="#4b5563" fontFamily="sans-serif" fontSize="11" x={w - 82} y={22}>
               数据系列
             </text>
           </>

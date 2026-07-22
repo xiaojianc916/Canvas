@@ -18,9 +18,7 @@ async function getMainWindow() {
   const window = getCurrentWindow()
 
   if (window.label !== MAIN_WINDOW_LABEL) {
-    throw new Error(
-      `Expected window "${MAIN_WINDOW_LABEL}", received "${window.label}".`,
-    )
+    throw new Error(`Expected window "${MAIN_WINDOW_LABEL}", received "${window.label}".`)
   }
 
   return window

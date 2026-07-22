@@ -383,9 +383,8 @@ export function WorkspaceShell({
         disableLayoutAnimation={isResizing}
         gridTemplateColumns={columns}
         gridTemplateRows={rows}
-        inspectorColumnWidth={inspectorColumnWidth}
-        sidebarColumnWidth={sidebarColumnWidth}
         inspector={inspectorRegion}
+        inspectorColumnWidth={inspectorColumnWidth}
         overlays={
           <>
             {assistantOverlay}
@@ -395,6 +394,7 @@ export function WorkspaceShell({
         rail={rail}
         rootRef={rootRef}
         sidebar={sidebar}
+        sidebarColumnWidth={sidebarColumnWidth}
         statusBar={status}
       />
     </TooltipProvider>

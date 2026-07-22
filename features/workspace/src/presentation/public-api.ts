@@ -23,12 +23,10 @@ export {
 } from './shell/WorkbenchTabs'
 
 export { WorkspaceShell } from './shell/WorkspaceShell'
-
+export { WorkspaceSidebar } from './shell/WorkspaceSidebar'
 export {
   WorkspaceSurface,
   type WorkspaceSurfaceProps,
 } from './shell/WorkspaceSurface'
-
-export { WorkspaceSidebar } from './shell/WorkspaceSidebar'
 
 export { StatusBarHost } from './status/StatusBarHost'

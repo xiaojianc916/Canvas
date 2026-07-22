@@ -2,8 +2,8 @@ import {
   Boxes,
   ChartNoAxesCombined,
   FilePlus2,
-  FileText,
   Files,
+  FileText,
   Grid2X2,
   Image,
   Layers3,
@@ -230,14 +230,14 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
                 }}
                 onDragStart={(event) => handleDragStart(event, tab)}
                 onDrop={(event) => handleDrop(event, index)}
-                onPointerLeave={(event) => {
-                  event.currentTarget.removeAttribute('data-suppress-hover')
-                }}
                 onMouseDown={(event) => {
                   if (event.button === 1 && tab.canClose) {
                     event.preventDefault()
                     onClose(tab.id)
                   }
+                }}
+                onPointerLeave={(event) => {
+                  event.currentTarget.removeAttribute('data-suppress-hover')
                 }}
               >
                 <ChromeActiveTabShape />

@@ -49,9 +49,7 @@ function checkTauriWindowSurface() {
     config = JSON.parse(source)
   } catch (cause) {
     failures.push(
-      `Tauri 配置不是合法 JSON：${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
+      `Tauri 配置不是合法 JSON：${cause instanceof Error ? cause.message : String(cause)}`,
     )
     return
   }
@@ -64,32 +62,22 @@ function checkTauriWindowSurface() {
   }
 
   const mainWindows = windows.filter(
-    (windowConfig) =>
-      windowConfig?.label === WINDOW_SURFACE.mainWindowLabel,
+    (windowConfig) => windowConfig?.label === WINDOW_SURFACE.mainWindowLabel,
   )
 
   if (mainWindows.length !== 1) {
-    failures.push(
-      `必须且只能存在一个 label="${WINDOW_SURFACE.mainWindowLabel}" 的主窗口`,
-    )
+    failures.push(`必须且只能存在一个 label="${WINDOW_SURFACE.mainWindowLabel}" 的主窗口`)
     return
   }
 
   const [mainWindow] = mainWindows
 
   if (mainWindow.transparent !== false) {
-    failures.push(
-      '主窗口必须显式配置 transparent: false；禁止依赖默认值或透明合成',
-    )
+    failures.push('主窗口必须显式配置 transparent: false；禁止依赖默认值或透明合成')
   }
 
-  if (
-    normalize(String(mainWindow.backgroundColor ?? '')) !==
-    WINDOW_SURFACE.color
-  ) {
-    failures.push(
-      `主窗口 backgroundColor 必须为 ${WINDOW_SURFACE.color}`,
-    )
+  if (normalize(String(mainWindow.backgroundColor ?? '')) !== WINDOW_SURFACE.color) {
+    failures.push(`主窗口 backgroundColor 必须为 ${WINDOW_SURFACE.color}`)
   }
 
   if (mainWindow.resizable !== true) {
@@ -101,50 +89,26 @@ function checkHtmlBootstrapSurface() {
   const source = read(PATHS.htmlEntry)
   const normalized = source.toLowerCase()
 
-  if (
-    !normalized.includes(
-      `content="${WINDOW_SURFACE.color}" name="theme-color"`,
-    )
-  ) {
-    failures.push(
-      `HTML theme-color 必须为 ${WINDOW_SURFACE.color}`,
-    )
+  if (!normalized.includes(`content="${WINDOW_SURFACE.color}" name="theme-color"`)) {
+    failures.push(`HTML theme-color 必须为 ${WINDOW_SURFACE.color}`)
   }
 
   if (!source.includes('id="window-backing-surface"')) {
     failures.push('HTML 缺少首帧 window-backing-surface 样式')
   }
 
-  if (
-    !normalized.includes(
-      `${WINDOW_SURFACE.cssToken}: ${WINDOW_SURFACE.color}`,
-    )
-  ) {
-    failures.push(
-      `HTML 首帧必须声明 ${WINDOW_SURFACE.cssToken}: ${WINDOW_SURFACE.color}`,
-    )
+  if (!normalized.includes(`${WINDOW_SURFACE.cssToken}: ${WINDOW_SURFACE.color}`)) {
+    failures.push(`HTML 首帧必须声明 ${WINDOW_SURFACE.cssToken}: ${WINDOW_SURFACE.color}`)
   }
 
-  if (
-    !normalized.includes(
-      `background: var(${WINDOW_SURFACE.cssToken})`,
-    )
-  ) {
+  if (!normalized.includes(`background: var(${WINDOW_SURFACE.cssToken})`)) {
     failures.push('HTML 首帧根节点没有使用窗口 backing surface token')
   }
 
-  const styleIndex = normalized.indexOf(
-    'id="window-backing-surface"',
-  )
-  const applicationScriptIndex = normalized.indexOf(
-    'src="/src/main.tsx"',
-  )
+  const styleIndex = normalized.indexOf('id="window-backing-surface"')
+  const applicationScriptIndex = normalized.indexOf('src="/src/main.tsx"')
 
-  if (
-    styleIndex < 0 ||
-    applicationScriptIndex < 0 ||
-    styleIndex > applicationScriptIndex
-  ) {
+  if (styleIndex < 0 || applicationScriptIndex < 0 || styleIndex > applicationScriptIndex) {
     failures.push('窗口 backing surface 必须在应用脚本执行前声明')
   }
 }
@@ -153,21 +117,11 @@ function checkApplicationSurface() {
   const source = read(PATHS.applicationStyles)
   const normalized = source.toLowerCase()
 
-  if (
-    !normalized.includes(
-      `${WINDOW_SURFACE.cssToken}: ${WINDOW_SURFACE.color}`,
-    )
-  ) {
-    failures.push(
-      `应用 CSS 必须声明 ${WINDOW_SURFACE.cssToken}: ${WINDOW_SURFACE.color}`,
-    )
+  if (!normalized.includes(`${WINDOW_SURFACE.cssToken}: ${WINDOW_SURFACE.color}`)) {
+    failures.push(`应用 CSS 必须声明 ${WINDOW_SURFACE.cssToken}: ${WINDOW_SURFACE.color}`)
   }
 
-  if (
-    !normalized.includes(
-      `background: var(${WINDOW_SURFACE.cssToken})`,
-    )
-  ) {
+  if (!normalized.includes(`background: var(${WINDOW_SURFACE.cssToken})`)) {
     failures.push('应用根节点必须使用窗口 backing surface token')
   }
 
@@ -175,9 +129,7 @@ function checkApplicationSurface() {
     /html\s*,\s*body\s*,\s*#root\s*\{[\s\S]*?background:\s*var\(--window-backing-surface\)/i
 
   if (!rootSurfacePattern.test(source)) {
-    failures.push(
-      'html、body、#root 必须共同使用 --window-backing-surface',
-    )
+    failures.push('html、body、#root 必须共同使用 --window-backing-surface')
   }
 }
 

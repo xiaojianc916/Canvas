@@ -1,4 +1,3 @@
-
 import type { Plugin } from 'vite'
 
 interface UnknownRecord {
@@ -32,18 +31,12 @@ function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null
 }
 
-function getString(
-  record: UnknownRecord,
-  property: string,
-): string | undefined {
+function getString(record: UnknownRecord, property: string): string | undefined {
   const value = record[property]
   return typeof value === 'string' ? value : undefined
 }
 
-function getNumber(
-  record: UnknownRecord,
-  property: string,
-): number | undefined {
+function getNumber(record: UnknownRecord, property: string): number | undefined {
   const value = record[property]
   return typeof value === 'number' ? value : undefined
 }
@@ -53,23 +46,13 @@ function serializeLocation(value: unknown): SerializableLocation | undefined {
     return undefined
   }
 
-  const file =
-    getString(value, 'file') ??
-    getString(value, 'id')
+  const file = getString(value, 'file') ?? getString(value, 'id')
 
-  const line =
-    getNumber(value, 'line') ??
-    getNumber(value, 'lineNumber')
+  const line = getNumber(value, 'line') ?? getNumber(value, 'lineNumber')
 
-  const column =
-    getNumber(value, 'column') ??
-    getNumber(value, 'columnNumber')
+  const column = getNumber(value, 'column') ?? getNumber(value, 'columnNumber')
 
-  if (
-    file === undefined &&
-    line === undefined &&
-    column === undefined
-  ) {
+  if (file === undefined && line === undefined && column === undefined) {
     return undefined
   }
 
@@ -99,19 +82,13 @@ function serializeViteError(value: unknown): SerializableViteError {
   if (!isRecord(value)) {
     return {
       name: 'ViteError',
-      message:
-        typeof value === 'string'
-          ? value
-          : String(value ?? '未知 Vite 错误'),
+      message: typeof value === 'string' ? value : String(value ?? '未知 Vite 错误'),
     }
   }
 
   return {
     name: getString(value, 'name') ?? 'ViteError',
-    message:
-      getString(value, 'message') ??
-      getString(value, 'msg') ??
-      '未知 Vite 错误',
+    message: getString(value, 'message') ?? getString(value, 'msg') ?? '未知 Vite 错误',
     stack: getString(value, 'stack'),
     plugin: getString(value, 'plugin'),
     id: getString(value, 'id'),
@@ -121,17 +98,11 @@ function serializeViteError(value: unknown): SerializableViteError {
   }
 }
 
-function isViteErrorPayload(
-  payload: unknown,
-): payload is UnknownRecord & {
+function isViteErrorPayload(payload: unknown): payload is UnknownRecord & {
   readonly type: 'error'
   readonly err: unknown
 } {
-  return (
-    isRecord(payload) &&
-    payload.type === 'error' &&
-    'err' in payload
-  )
+  return isRecord(payload) && payload.type === 'error' && 'err' in payload
 }
 
 /**
@@ -151,9 +122,7 @@ export function customErrorDiagnosticsPlugin(): Plugin {
     configureServer(server) {
       const originalSend = server.ws.send.bind(server.ws)
 
-      const sendOriginal = originalSend as (
-        ...arguments_: readonly unknown[]
-      ) => unknown
+      const sendOriginal = originalSend as (...arguments_: readonly unknown[]) => unknown
 
       server.ws.send = ((...arguments_: readonly unknown[]) => {
         const payload = arguments_[0]

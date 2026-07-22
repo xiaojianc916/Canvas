@@ -1,13 +1,7 @@
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
-import {
-  EditorSessionHost,
-  useEditor,
-} from '@hybrid-canvas/canvas/react'
+import { EditorSessionHost, useEditor } from '@hybrid-canvas/canvas/react'
 import { ConfirmationDialog } from '@hybrid-canvas/design-system'
-import {
-  ScientificChartTypeStyle,
-  type ScientificChartType,
-} from '@hybrid-canvas/scientific-plot'
+import { type ScientificChartType, ScientificChartTypeStyle } from '@hybrid-canvas/scientific-plot'
 import type {
   CanvasSessionId,
   WorkbenchSessionStore,
@@ -20,12 +14,7 @@ import {
   WorkspaceShell,
   WorkspaceSurface,
 } from '@hybrid-canvas/workspace/react'
-import {
-  useCallback,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from 'react'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import {
   ArrowShapeArrowheadEndStyle,
   ArrowShapeArrowheadStartStyle,
@@ -35,8 +24,8 @@ import {
   DefaultFontStyle,
   DefaultSizeStyle,
   DefaultTextAlignStyle,
-  GeoShapeGeoStyle,
   type Editor,
+  GeoShapeGeoStyle,
   type TLShape,
   useValue,
 } from 'tldraw'
@@ -102,35 +91,25 @@ export function WorkspaceContainer({
 
   const editor = useEditor()
 
-  const inspectorSelectionKey = useValue(
-    'workspace inspector selection key',
-    () => {
-      if (!editor) {
-        return ''
-      }
+  const inspectorSelectionKey = useValue('workspace inspector selection key', () => {
+    if (!editor) {
+      return ''
+    }
 
-      const selectedIds = editor
-        .getSelectedShapeIds()
-        .map(String)
-        .sort()
+    const selectedIds = editor.getSelectedShapeIds().map(String).sort()
 
-      if (selectedIds.length > 0) {
-        return 'selection:' + selectedIds.join('|')
-      }
+    if (selectedIds.length > 0) {
+      return 'selection:' + selectedIds.join('|')
+    }
 
-      const toolId = editor.getCurrentToolId()
+    const toolId = editor.getCurrentToolId()
 
-      if (
-        toolId === 'select' ||
-        toolId === 'hand'
-      ) {
-        return ''
-      }
+    if (toolId === 'select' || toolId === 'hand') {
+      return ''
+    }
 
-      return 'tool:' + toolId
-    },
-    [editor],
-  )
+    return 'tool:' + toolId
+  }, [editor])
 
   const workbench = useSyncExternalStore(
     port.workspace.subscribe,
@@ -307,11 +286,7 @@ export function WorkspaceContainer({
   return (
     <WorkspaceShell
       actions={actions}
-      inspector={
-        <CanvasInspectorContent
-          hasActiveCanvas={workbench.activeCanvas !== null}
-        />
-      }
+      inspector={<CanvasInspectorContent hasActiveCanvas={workbench.activeCanvas !== null} />}
       inspectorSelectionKey={inspectorSelectionKey}
       mainContent={mainContent}
       model={model}
@@ -368,17 +343,15 @@ export function WorkspaceContainer({
           <WorkbenchTabs
             onActivate={onActivateTab}
             onClose={onCloseTab}
-            onMove={onMoveTab}
             onCreate={onCreateCanvas}
+            onMove={onMoveTab}
             tabs={chromeTabs}
           />
         </DesktopTitleBar>
       )}
       statusLeft={
         <>
-          <CanvasStatusLeftContent
-            hasActiveCanvas={workbench.activeCanvas !== null}
-          />
+          <CanvasStatusLeftContent hasActiveCanvas={workbench.activeCanvas !== null} />
           <CanvasSelectionGeometryStatus />
         </>
       }
@@ -427,11 +400,7 @@ function renderActiveSurface({
   }
 }
 
-function CanvasInspectorContent({
-  hasActiveCanvas,
-}: {
-  readonly hasActiveCanvas: boolean
-}) {
+function CanvasInspectorContent({ hasActiveCanvas }: { readonly hasActiveCanvas: boolean }) {
   const editor = useEditor()
 
   const selectedShapes = useValue(
@@ -458,12 +427,7 @@ function CanvasInspectorContent({
   }
 
   if (selectedShapes.length === 0) {
-    return (
-      <CanvasActiveToolPanel
-        editor={editor}
-        toolId={activeToolId}
-      />
-    )
+    return <CanvasActiveToolPanel editor={editor} toolId={activeToolId} />
   }
 
   const selectedIds = selectedShapes.map((shape) => shape.id)
@@ -473,9 +437,7 @@ function CanvasInspectorContent({
     return null
   }
 
-  const commonType = selectedShapes.every(
-    (shape) => shape.type === primaryShape.type,
-  )
+  const commonType = selectedShapes.every((shape) => shape.type === primaryShape.type)
     ? primaryShape.type
     : 'mixed'
 
@@ -486,14 +448,8 @@ function CanvasInspectorContent({
   const commonFont = getCommonShapeProp(selectedShapes, 'font')
   const commonAlign = getCommonShapeProp(selectedShapes, 'textAlign')
   const commonGeo = getCommonShapeProp(selectedShapes, 'geo')
-  const commonArrowheadStart = getCommonShapeProp(
-    selectedShapes,
-    'arrowheadStart',
-  )
-  const commonArrowheadEnd = getCommonShapeProp(
-    selectedShapes,
-    'arrowheadEnd',
-  )
+  const commonArrowheadStart = getCommonShapeProp(selectedShapes, 'arrowheadStart')
+  const commonArrowheadEnd = getCommonShapeProp(selectedShapes, 'arrowheadEnd')
 
   const applyStyle = (
     style:
@@ -569,14 +525,10 @@ function CanvasInspectorContent({
               aria-label={'设置颜色为' + color.label}
               className={
                 'size-7 rounded-md border transition-transform hover:scale-105 ' +
-                (commonColor === color.value
-                  ? 'ring-2 ring-primary ring-offset-1'
-                  : '')
+                (commonColor === color.value ? 'ring-2 ring-primary ring-offset-1' : '')
               }
               key={color.value}
-              onClick={() =>
-                applyStyle(DefaultColorStyle, color.value)
-              }
+              onClick={() => applyStyle(DefaultColorStyle, color.value)}
               style={{ backgroundColor: color.css }}
               title={color.label}
               type="button"
@@ -588,9 +540,7 @@ function CanvasInspectorContent({
       {supportsFill(commonType) ? (
         <ShapeInspectorSection title="填充">
           <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyStyle(DefaultFillStyle, value)
-            }
+            onChange={(value) => applyStyle(DefaultFillStyle, value)}
             options={[
               { value: 'none', label: '无' },
               { value: 'semi', label: '半透明' },
@@ -606,9 +556,7 @@ function CanvasInspectorContent({
         <>
           <ShapeInspectorSection title="线型">
             <ShapeInspectorSegmentedControl
-              onChange={(value) =>
-                applyStyle(DefaultDashStyle, value)
-              }
+              onChange={(value) => applyStyle(DefaultDashStyle, value)}
               options={[
                 { value: 'draw', label: '手绘' },
                 { value: 'solid', label: '实线' },
@@ -621,9 +569,7 @@ function CanvasInspectorContent({
 
           <ShapeInspectorSection title="粗细">
             <ShapeInspectorSegmentedControl
-              onChange={(value) =>
-                applyStyle(DefaultSizeStyle, value)
-              }
+              onChange={(value) => applyStyle(DefaultSizeStyle, value)}
               options={[
                 { value: 's', label: '细' },
                 { value: 'm', label: '中' },
@@ -651,10 +597,7 @@ function CanvasInspectorContent({
               { value: 'area', label: '面积' },
               { value: 'scatter', label: '散点' },
             ]}
-            value={getCommonShapeProp(
-              selectedShapes,
-              'chartType',
-            )}
+            value={getCommonShapeProp(selectedShapes, 'chartType')}
           />
         </ShapeInspectorSection>
       ) : null}
@@ -689,9 +632,7 @@ function CanvasInspectorContent({
         <>
           <ShapeInspectorSection title="字体">
             <ShapeInspectorSegmentedControl
-              onChange={(value) =>
-                applyStyle(DefaultFontStyle, value)
-              }
+              onChange={(value) => applyStyle(DefaultFontStyle, value)}
               options={[
                 { value: 'draw', label: '手写' },
                 { value: 'sans', label: '无衬线' },
@@ -704,9 +645,7 @@ function CanvasInspectorContent({
 
           <ShapeInspectorSection title="对齐">
             <ShapeInspectorSegmentedControl
-              onChange={(value) =>
-                applyStyle(DefaultTextAlignStyle, value)
-              }
+              onChange={(value) => applyStyle(DefaultTextAlignStyle, value)}
               options={[
                 { value: 'start', label: '左' },
                 { value: 'middle', label: '中' },
@@ -722,18 +661,14 @@ function CanvasInspectorContent({
         <>
           <ShapeInspectorSection title="起点">
             <ShapeInspectorArrowheadSelect
-              onChange={(value) =>
-                applyStyle(ArrowShapeArrowheadStartStyle, value)
-              }
+              onChange={(value) => applyStyle(ArrowShapeArrowheadStartStyle, value)}
               value={commonArrowheadStart}
             />
           </ShapeInspectorSection>
 
           <ShapeInspectorSection title="终点">
             <ShapeInspectorArrowheadSelect
-              onChange={(value) =>
-                applyStyle(ArrowShapeArrowheadEndStyle, value)
-              }
+              onChange={(value) => applyStyle(ArrowShapeArrowheadEndStyle, value)}
               value={commonArrowheadEnd}
             />
           </ShapeInspectorSection>
@@ -742,27 +677,19 @@ function CanvasInspectorContent({
 
       <ShapeInspectorSection title="排列">
         <div className="grid grid-cols-2 gap-2">
-          <ShapeInspectorButton
-            onClick={() => editor.bringToFront(selectedIds)}
-          >
+          <ShapeInspectorButton onClick={() => editor.bringToFront(selectedIds)}>
             置于顶层
           </ShapeInspectorButton>
 
-          <ShapeInspectorButton
-            onClick={() => editor.sendToBack(selectedIds)}
-          >
+          <ShapeInspectorButton onClick={() => editor.sendToBack(selectedIds)}>
             置于底层
           </ShapeInspectorButton>
 
-          <ShapeInspectorButton
-            onClick={() => editor.bringForward(selectedIds)}
-          >
+          <ShapeInspectorButton onClick={() => editor.bringForward(selectedIds)}>
             上移一层
           </ShapeInspectorButton>
 
-          <ShapeInspectorButton
-            onClick={() => editor.sendBackward(selectedIds)}
-          >
+          <ShapeInspectorButton onClick={() => editor.sendBackward(selectedIds)}>
             下移一层
           </ShapeInspectorButton>
         </div>
@@ -770,9 +697,7 @@ function CanvasInspectorContent({
 
       <ShapeInspectorSection title="对象操作">
         <div className="grid grid-cols-2 gap-2">
-          <ShapeInspectorButton
-            onClick={() => editor.duplicateShapes(selectedIds)}
-          >
+          <ShapeInspectorButton onClick={() => editor.duplicateShapes(selectedIds)}>
             复制
           </ShapeInspectorButton>
 
@@ -799,14 +724,8 @@ function CanvasActiveToolPanel({
   readonly editor: Editor
   readonly toolId: string
 }) {
-  const applyNextStyle = (
-    style: Parameters<Editor['setStyleForNextShapes']>[0],
-    value: string,
-  ) => {
-    editor.setStyleForNextShapes(
-      style,
-      value as never,
-    )
+  const applyNextStyle = (style: Parameters<Editor['setStyleForNextShapes']>[0], value: string) => {
+    editor.setStyleForNextShapes(style, value as never)
   }
 
   const colors = (
@@ -817,12 +736,7 @@ function CanvasActiveToolPanel({
             aria-label={'设置默认颜色为' + color.label}
             className="size-7 rounded-md border transition-transform hover:scale-105"
             key={color.value}
-            onClick={() =>
-              applyNextStyle(
-                DefaultColorStyle,
-                color.value,
-              )
-            }
+            onClick={() => applyNextStyle(DefaultColorStyle, color.value)}
             style={{
               backgroundColor: color.css,
             }}
@@ -837,9 +751,7 @@ function CanvasActiveToolPanel({
   const size = (
     <ShapeInspectorSection title="粗细">
       <ShapeInspectorSegmentedControl
-        onChange={(value) =>
-          applyNextStyle(DefaultSizeStyle, value)
-        }
+        onChange={(value) => applyNextStyle(DefaultSizeStyle, value)}
         options={[
           { value: 's', label: '细' },
           { value: 'm', label: '中' },
@@ -854,9 +766,7 @@ function CanvasActiveToolPanel({
   const dash = (
     <ShapeInspectorSection title="线型">
       <ShapeInspectorSegmentedControl
-        onChange={(value) =>
-          applyNextStyle(DefaultDashStyle, value)
-        }
+        onChange={(value) => applyNextStyle(DefaultDashStyle, value)}
         options={[
           { value: 'draw', label: '手绘' },
           { value: 'solid', label: '实线' },
@@ -870,20 +780,12 @@ function CanvasActiveToolPanel({
 
   if (toolId === 'geo') {
     return (
-      <CanvasToolPanelHeader
-        description="在画布中连续创建形状"
-        title="形状"
-      >
+      <CanvasToolPanelHeader description="在画布中连续创建形状" title="形状">
         <ShapeInspectorSection title="形状类型">
           <select
             className="h-8 w-full rounded-md border border-divider bg-background px-2 text-[11px] outline-none focus:border-primary"
             defaultValue="rectangle"
-            onChange={(event) =>
-              applyNextStyle(
-                GeoShapeGeoStyle,
-                event.target.value,
-              )
-            }
+            onChange={(event) => applyNextStyle(GeoShapeGeoStyle, event.target.value)}
           >
             <option value="rectangle">矩形</option>
             <option value="ellipse">椭圆</option>
@@ -907,12 +809,7 @@ function CanvasActiveToolPanel({
 
         <ShapeInspectorSection title="填充">
           <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyNextStyle(
-                DefaultFillStyle,
-                value,
-              )
-            }
+            onChange={(value) => applyNextStyle(DefaultFillStyle, value)}
             options={[
               { value: 'none', label: '无' },
               { value: 'semi', label: '半透明' },
@@ -931,34 +828,21 @@ function CanvasActiveToolPanel({
 
   if (toolId === 'arrow') {
     return (
-      <CanvasToolPanelHeader
-        description="在画布中连续创建连接线"
-        title="连接"
-      >
+      <CanvasToolPanelHeader description="在画布中连续创建连接线" title="连接">
         {colors}
         {dash}
         {size}
 
         <ShapeInspectorSection title="起点">
           <ShapeInspectorArrowheadSelect
-            onChange={(value) =>
-              applyNextStyle(
-                ArrowShapeArrowheadStartStyle,
-                value,
-              )
-            }
+            onChange={(value) => applyNextStyle(ArrowShapeArrowheadStartStyle, value)}
             value="none"
           />
         </ShapeInspectorSection>
 
         <ShapeInspectorSection title="终点">
           <ShapeInspectorArrowheadSelect
-            onChange={(value) =>
-              applyNextStyle(
-                ArrowShapeArrowheadEndStyle,
-                value,
-              )
-            }
+            onChange={(value) => applyNextStyle(ArrowShapeArrowheadEndStyle, value)}
             value="arrow"
           />
         </ShapeInspectorSection>
@@ -968,18 +852,10 @@ function CanvasActiveToolPanel({
 
   if (toolId === 'scientific-chart') {
     return (
-      <CanvasToolPanelHeader
-        description="拖拽创建图表"
-        title="图表"
-      >
+      <CanvasToolPanelHeader description="拖拽创建图表" title="图表">
         <ShapeInspectorSection title="图表类型">
           <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyNextStyle(
-                ScientificChartTypeStyle,
-                value,
-              )
-            }
+            onChange={(value) => applyNextStyle(ScientificChartTypeStyle, value)}
             options={[
               { value: 'line', label: '折线' },
               { value: 'bar', label: '柱状' },
@@ -1002,20 +878,12 @@ function CanvasActiveToolPanel({
 
   if (toolId === 'text') {
     return (
-      <CanvasToolPanelHeader
-        description="在画布中连续创建文本"
-        title="文本"
-      >
+      <CanvasToolPanelHeader description="在画布中连续创建文本" title="文本">
         {colors}
 
         <ShapeInspectorSection title="字体">
           <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyNextStyle(
-                DefaultFontStyle,
-                value,
-              )
-            }
+            onChange={(value) => applyNextStyle(DefaultFontStyle, value)}
             options={[
               { value: 'draw', label: '手写' },
               { value: 'sans', label: '无衬线' },
@@ -1030,12 +898,7 @@ function CanvasActiveToolPanel({
 
         <ShapeInspectorSection title="对齐">
           <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyNextStyle(
-                DefaultTextAlignStyle,
-                value,
-              )
-            }
+            onChange={(value) => applyNextStyle(DefaultTextAlignStyle, value)}
             options={[
               { value: 'start', label: '左' },
               { value: 'middle', label: '中' },
@@ -1048,22 +911,11 @@ function CanvasActiveToolPanel({
     )
   }
 
-  if (
-    toolId === 'draw' ||
-    toolId === 'highlight'
-  ) {
+  if (toolId === 'draw' || toolId === 'highlight') {
     return (
       <CanvasToolPanelHeader
-        description={
-          toolId === 'highlight'
-            ? '连续绘制高亮标记'
-            : '连续自由绘制'
-        }
-        title={
-          toolId === 'highlight'
-            ? '高亮'
-            : '自由绘制'
-        }
+        description={toolId === 'highlight' ? '连续绘制高亮标记' : '连续自由绘制'}
+        title={toolId === 'highlight' ? '高亮' : '自由绘制'}
       >
         {colors}
         {dash}
@@ -1074,20 +926,12 @@ function CanvasActiveToolPanel({
 
   if (toolId === 'note') {
     return (
-      <CanvasToolPanelHeader
-        description="在画布中连续创建便签"
-        title="便签"
-      >
+      <CanvasToolPanelHeader description="在画布中连续创建便签" title="便签">
         {colors}
 
         <ShapeInspectorSection title="填充">
           <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyNextStyle(
-                DefaultFillStyle,
-                value,
-              )
-            }
+            onChange={(value) => applyNextStyle(DefaultFillStyle, value)}
             options={[
               { value: 'semi', label: '半透明' },
               { value: 'solid', label: '实心' },
@@ -1099,12 +943,7 @@ function CanvasActiveToolPanel({
 
         <ShapeInspectorSection title="字体">
           <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyNextStyle(
-                DefaultFontStyle,
-                value,
-              )
-            }
+            onChange={(value) => applyNextStyle(DefaultFontStyle, value)}
             options={[
               { value: 'draw', label: '手写' },
               { value: 'sans', label: '无衬线' },
@@ -1122,10 +961,7 @@ function CanvasActiveToolPanel({
 
   if (toolId === 'frame') {
     return (
-      <CanvasToolPanelHeader
-        description="在画布中连续创建画框"
-        title="画框"
-      >
+      <CanvasToolPanelHeader description="在画布中连续创建画框" title="画框">
         {colors}
         {dash}
         {size}
@@ -1135,10 +971,7 @@ function CanvasActiveToolPanel({
 
   if (toolId === 'eraser') {
     return (
-      <CanvasToolPanelHeader
-        description="拖过对象进行删除"
-        title="橡皮擦"
-      >
+      <CanvasToolPanelHeader description="拖过对象进行删除" title="橡皮擦">
         <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
           橡皮擦将保持激活。手动点击“选择”或切换其他工具后退出。
         </div>
@@ -1148,11 +981,7 @@ function CanvasActiveToolPanel({
 
   return (
     <div className="rounded-lg border border-dashed border-divider px-4 py-8 text-center">
-      <p className="text-xs font-medium">
-        {toolId === 'hand'
-          ? '移动画布'
-          : '选择工具'}
-      </p>
+      <p className="text-xs font-medium">{toolId === 'hand' ? '移动画布' : '选择工具'}</p>
 
       <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
         {toolId === 'hand'
@@ -1175,20 +1004,15 @@ function CanvasToolPanelHeader({
   return (
     <div className="space-y-4">
       <header className="border-b border-divider pb-3">
-        <h2 className="text-sm font-semibold">
-          {title}
-        </h2>
+        <h2 className="text-sm font-semibold">{title}</h2>
 
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {description}
-        </p>
+        <p className="mt-1 text-[11px] text-muted-foreground">{description}</p>
       </header>
 
       {children}
     </div>
   )
 }
-
 
 const SHAPE_COLORS = [
   { value: 'black', label: '黑色', css: '#1d1d1d' },
@@ -1262,8 +1086,7 @@ function ShapeInspectorSegmentedControl({
     <div
       className="grid gap-1.5"
       style={{
-        gridTemplateColumns:
-          'repeat(' + String(options.length) + ', minmax(0, 1fr))',
+        gridTemplateColumns: 'repeat(' + String(options.length) + ', minmax(0, 1fr))',
       }}
     >
       {options.map((option) => (
@@ -1310,18 +1133,14 @@ function ShapeInspectorArrowheadSelect({
   )
 }
 
-function getCommonShapeProp(
-  shapes: readonly TLShape[],
-  key: string,
-): string | null {
+function getCommonShapeProp(shapes: readonly TLShape[], key: string): string | null {
   const firstShape = shapes[0]
 
   if (!firstShape) {
     return null
   }
 
-  const firstProps =
-    firstShape.props as unknown as Record<string, unknown>
+  const firstProps = firstShape.props as unknown as Record<string, unknown>
   const firstValue = firstProps[key]
 
   if (typeof firstValue !== 'string') {
@@ -1398,47 +1217,40 @@ function getInspectorShapeDescription(type: string): string {
 function CanvasSelectionGeometryStatus() {
   const editor = useEditor()
 
-  const geometry = useValue(
-    'canvas status selection geometry',
-    () => {
-      if (!editor) {
-        return null
-      }
+  const geometry = useValue('canvas status selection geometry', () => {
+    if (!editor) {
+      return null
+    }
 
-      const selectedShapes = editor.getSelectedShapes()
+    const selectedShapes = editor.getSelectedShapes()
 
-      if (selectedShapes.length === 0) {
-        return null
-      }
+    if (selectedShapes.length === 0) {
+      return null
+    }
 
-      const bounds = editor.getSelectionPageBounds()
+    const bounds = editor.getSelectionPageBounds()
 
-      if (!bounds) {
-        return null
-      }
+    if (!bounds) {
+      return null
+    }
 
-      const firstShape = selectedShapes[0]
+    const firstShape = selectedShapes[0]
 
-      const sharedRotation =
-        firstShape &&
-        selectedShapes.every(
-          (shape) =>
-            Math.abs(shape.rotation - firstShape.rotation) < 0.0001,
-        )
-          ? radiansToStatusDegrees(firstShape.rotation)
-          : null
+    const sharedRotation =
+      firstShape &&
+      selectedShapes.every((shape) => Math.abs(shape.rotation - firstShape.rotation) < 0.0001)
+        ? radiansToStatusDegrees(firstShape.rotation)
+        : null
 
-      return {
-        count: selectedShapes.length,
-        x: bounds.x,
-        y: bounds.y,
-        width: bounds.width,
-        height: bounds.height,
-        rotation: sharedRotation,
-      }
-    },
-    [editor],
-  )
+    return {
+      count: selectedShapes.length,
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      rotation: sharedRotation,
+    }
+  }, [editor])
 
   if (!geometry) {
     return null
@@ -1449,37 +1261,19 @@ function CanvasSelectionGeometryStatus() {
       <StatusDivider />
 
       <span className="shrink-0 font-medium text-foreground/80">
-        {geometry.count === 1
-          ? '已选择 1 个对象'
-          : '已选择 ' + String(geometry.count) + ' 个对象'}
+        {geometry.count === 1 ? '已选择 1 个对象' : '已选择 ' + String(geometry.count) + ' 个对象'}
       </span>
 
-      <StatusGeometryValue
-        label="X"
-        value={formatStatusNumber(geometry.x)}
-      />
+      <StatusGeometryValue label="X" value={formatStatusNumber(geometry.x)} />
 
-      <StatusGeometryValue
-        label="Y"
-        value={formatStatusNumber(geometry.y)}
-      />
+      <StatusGeometryValue label="Y" value={formatStatusNumber(geometry.y)} />
 
-      <StatusGeometryValue
-        label="W"
-        value={formatStatusNumber(geometry.width)}
-      />
+      <StatusGeometryValue label="W" value={formatStatusNumber(geometry.width)} />
 
-      <StatusGeometryValue
-        label="H"
-        value={formatStatusNumber(geometry.height)}
-      />
+      <StatusGeometryValue label="H" value={formatStatusNumber(geometry.height)} />
 
       {geometry.rotation !== null ? (
-        <StatusGeometryValue
-          label="R"
-          suffix="°"
-          value={formatStatusNumber(geometry.rotation)}
-        />
+        <StatusGeometryValue label="R" suffix="°" value={formatStatusNumber(geometry.rotation)} />
       ) : null}
     </>
   )
@@ -1491,11 +1285,7 @@ interface StatusGeometryValueProps {
   readonly suffix?: string
 }
 
-function StatusGeometryValue({
-  label,
-  value,
-  suffix,
-}: StatusGeometryValueProps) {
+function StatusGeometryValue({ label, value, suffix }: StatusGeometryValueProps) {
   return (
     <span
       className="inline-flex shrink-0 items-center gap-1"
@@ -1511,12 +1301,7 @@ function StatusGeometryValue({
 }
 
 function StatusDivider() {
-  return (
-    <span
-      aria-hidden="true"
-      className="h-3 w-px shrink-0 bg-divider"
-    />
-  )
+  return <span aria-hidden="true" className="h-3 w-px shrink-0 bg-divider" />
 }
 
 function radiansToStatusDegrees(value: number): number {

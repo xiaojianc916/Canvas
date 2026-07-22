@@ -89,92 +89,85 @@ export function Select({
   )
 }
 
-export type SelectTriggerProps = ComponentPropsWithoutRef<
-  typeof BaseCombobox.Trigger
->
+export type SelectTriggerProps = ComponentPropsWithoutRef<typeof BaseCombobox.Trigger>
 
-export const SelectTrigger = forwardRef<
-  HTMLButtonElement,
-  SelectTriggerProps
->(function SelectTrigger({ children, className, ...props }, forwardedRef) {
-  const { data, type, value, setWidth } = useSelectContext()
-  const localRef = useRef<HTMLButtonElement | null>(null)
+export const SelectTrigger = forwardRef<HTMLButtonElement, SelectTriggerProps>(
+  function SelectTrigger({ children, className, ...props }, forwardedRef) {
+    const { data, type, value, setWidth } = useSelectContext()
+    const localRef = useRef<HTMLButtonElement | null>(null)
 
-  useEffect(() => {
-    const element = localRef.current
+    useEffect(() => {
+      const element = localRef.current
 
-    if (!element) {
-      return
-    }
-
-    const updateWidth = () => {
-      if (element.offsetWidth > 0) {
-        setWidth(element.offsetWidth)
+      if (!element) {
+        return
       }
-    }
 
-    updateWidth()
-
-    const resizeObserver = new ResizeObserver(updateWidth)
-    resizeObserver.observe(element)
-
-    return () => {
-      resizeObserver.disconnect()
-    }
-  }, [setWidth])
-
-  const selectedItem = data.find((item) => item.value === value)
-
-  return (
-    <BaseCombobox.Trigger
-      className={cn(
-        'flex h-10 w-full items-center justify-between gap-2',
-        'rounded-md border border-input',
-        'bg-background px-3 text-left text-sm text-foreground',
-        'shadow-sm outline-none',
-        'transition-[border-color,box-shadow,background-color]',
-        'hover:bg-muted/40',
-        'focus-visible:ring-2 focus-visible:ring-ring',
-        'data-[popup-open]:border-ring',
-        'disabled:cursor-not-allowed disabled:opacity-50',
-        className,
-      )}
-      ref={(element) => {
-        localRef.current = element
-
-        if (typeof forwardedRef === 'function') {
-          forwardedRef(element)
-        } else if (forwardedRef) {
-          forwardedRef.current = element
+      const updateWidth = () => {
+        if (element.offsetWidth > 0) {
+          setWidth(element.offsetWidth)
         }
-      }}
-      type="button"
-      {...props}
-    >
-      {children ?? (
-        <>
-          <span className="min-w-0 flex-1 truncate">
-            {selectedItem?.label ?? `选择${type}…`}
-          </span>
+      }
 
-          <ChevronsUpDownIcon
-            aria-hidden="true"
-            className="size-4 shrink-0 text-muted-foreground"
-          />
-        </>
-      )}
-    </BaseCombobox.Trigger>
-  )
-})
+      updateWidth()
 
-export type SelectContentProps = ComponentPropsWithoutRef<
-  typeof BaseCombobox.Popup
->
+      const resizeObserver = new ResizeObserver(updateWidth)
+      resizeObserver.observe(element)
 
-export const SelectContent = forwardRef<
-  HTMLDivElement,
-  SelectContentProps
->(function SelectContent({ className, style, ...props }, ref) {
+      return () => {
+        resizeObserver.disconnect()
+      }
+    }, [setWidth])
+
+    const selectedItem = data.find((item) => item.value === value)
+
+    return (
+      <BaseCombobox.Trigger
+        className={cn(
+          'flex h-10 w-full items-center justify-between gap-2',
+          'rounded-md border border-input',
+          'bg-background px-3 text-left text-sm text-foreground',
+          'shadow-sm outline-none',
+          'transition-[border-color,box-shadow,background-color]',
+          'hover:bg-muted/40',
+          'focus-visible:ring-2 focus-visible:ring-ring',
+          'data-[popup-open]:border-ring',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          className,
+        )}
+        ref={(element) => {
+          localRef.current = element
+
+          if (typeof forwardedRef === 'function') {
+            forwardedRef(element)
+          } else if (forwardedRef) {
+            forwardedRef.current = element
+          }
+        }}
+        type="button"
+        {...props}
+      >
+        {children ?? (
+          <>
+            <span className="min-w-0 flex-1 truncate">{selectedItem?.label ?? `选择${type}…`}</span>
+
+            <ChevronsUpDownIcon
+              aria-hidden="true"
+              className="size-4 shrink-0 text-muted-foreground"
+            />
+          </>
+        )}
+      </BaseCombobox.Trigger>
+    )
+  },
+)
+
+export type SelectContentProps = ComponentPropsWithoutRef<typeof BaseCombobox.Popup>
+
+export const SelectContent = forwardRef<HTMLDivElement, SelectContentProps>(function SelectContent(
+  { className, style, ...props },
+  ref,
+) {
   const { width } = useSelectContext()
 
   return (
@@ -213,57 +206,46 @@ export const SelectContent = forwardRef<
   )
 })
 
-export type ComboboxInputProps = ComponentPropsWithoutRef<
-  typeof BaseCombobox.Input
->
+export type ComboboxInputProps = ComponentPropsWithoutRef<typeof BaseCombobox.Input>
 
-export const ComboboxInput = forwardRef<
-  HTMLInputElement,
-  ComboboxInputProps
->(function ComboboxInput({ className, placeholder, ...props }, ref) {
-  const { type } = useSelectContext()
+export const ComboboxInput = forwardRef<HTMLInputElement, ComboboxInputProps>(
+  function ComboboxInput({ className, placeholder, ...props }, ref) {
+    const { type } = useSelectContext()
 
-  return (
-    <div className="flex items-center gap-2 border-b border-divider px-3">
-      <SearchIcon
-        aria-hidden="true"
-        className="size-4 shrink-0 text-muted-foreground"
-      />
+    return (
+      <div className="flex items-center gap-2 border-b border-divider px-3">
+        <SearchIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
 
-      <BaseCombobox.Input
-        aria-label={props['aria-label'] ?? `搜索${type}`}
-        className={cn(
-          'h-10 min-w-0 flex-1',
-          'bg-transparent text-sm text-foreground',
-          'outline-none',
-          'placeholder:text-muted-foreground',
-          'disabled:cursor-not-allowed disabled:opacity-50',
-          className,
-        )}
-        placeholder={placeholder ?? `搜索${type}…`}
-        ref={ref}
-        {...props}
-      />
-    </div>
-  )
-})
+        <BaseCombobox.Input
+          aria-label={props['aria-label'] ?? `搜索${type}`}
+          className={cn(
+            'h-10 min-w-0 flex-1',
+            'bg-transparent text-sm text-foreground',
+            'outline-none',
+            'placeholder:text-muted-foreground',
+            'disabled:cursor-not-allowed disabled:opacity-50',
+            className,
+          )}
+          placeholder={placeholder ?? `搜索${type}…`}
+          ref={ref}
+          {...props}
+        />
+      </div>
+    )
+  },
+)
 
-export type ComboboxEmptyProps = ComponentPropsWithoutRef<
-  typeof BaseCombobox.Empty
->
+export type ComboboxEmptyProps = ComponentPropsWithoutRef<typeof BaseCombobox.Empty>
 
-export const ComboboxEmpty = forwardRef<
-  HTMLDivElement,
-  ComboboxEmptyProps
->(function ComboboxEmpty({ children, className, ...props }, ref) {
+export const ComboboxEmpty = forwardRef<HTMLDivElement, ComboboxEmptyProps>(function ComboboxEmpty(
+  { children, className, ...props },
+  ref,
+) {
   const { type } = useSelectContext()
 
   return (
     <BaseCombobox.Empty
-      className={cn(
-        'px-3 py-6 text-center text-sm text-muted-foreground',
-        className,
-      )}
+      className={cn('px-3 py-6 text-center text-sm text-muted-foreground', className)}
       ref={ref}
       {...props}
     >
@@ -272,55 +254,38 @@ export const ComboboxEmpty = forwardRef<
   )
 })
 
-export type SelectListProps = ComponentPropsWithoutRef<
-  typeof BaseCombobox.List
->
+export type SelectListProps = ComponentPropsWithoutRef<typeof BaseCombobox.List>
 
-export const SelectList = forwardRef<
-  HTMLDivElement,
-  SelectListProps
->(function SelectList({ className, ...props }, ref) {
+export const SelectList = forwardRef<HTMLDivElement, SelectListProps>(function SelectList(
+  { className, ...props },
+  ref,
+) {
   return (
     <BaseCombobox.List
-      className={cn(
-        'max-h-64 overflow-y-auto overscroll-contain p-1',
-        'outline-none',
-        className,
-      )}
+      className={cn('max-h-64 overflow-y-auto overscroll-contain p-1', 'outline-none', className)}
       ref={ref}
       {...props}
     />
   )
 })
 
-export type SelectGroupProps = ComponentPropsWithoutRef<
-  typeof BaseCombobox.Group
->
+export type SelectGroupProps = ComponentPropsWithoutRef<typeof BaseCombobox.Group>
 
-export const SelectGroup = forwardRef<
-  HTMLDivElement,
-  SelectGroupProps
->(function SelectGroup({ className, ...props }, ref) {
-  return (
-    <BaseCombobox.Group
-      className={cn('grid gap-0.5', className)}
-      ref={ref}
-      {...props}
-    />
-  )
+export const SelectGroup = forwardRef<HTMLDivElement, SelectGroupProps>(function SelectGroup(
+  { className, ...props },
+  ref,
+) {
+  return <BaseCombobox.Group className={cn('grid gap-0.5', className)} ref={ref} {...props} />
 })
 
-export type SelectItemProps = Omit<
-  ComponentPropsWithoutRef<typeof BaseCombobox.Item>,
-  'value'
-> & {
+export type SelectItemProps = Omit<ComponentPropsWithoutRef<typeof BaseCombobox.Item>, 'value'> & {
   readonly value: string
 }
 
-export const SelectItem = forwardRef<
-  HTMLDivElement,
-  SelectItemProps
->(function SelectItem({ children, className, value, ...props }, ref) {
+export const SelectItem = forwardRef<HTMLDivElement, SelectItemProps>(function SelectItem(
+  { children, className, value, ...props },
+  ref,
+) {
   return (
     <BaseCombobox.Item
       className={cn(
@@ -347,19 +312,16 @@ export const SelectItem = forwardRef<
   )
 })
 
-export type SelectSeparatorProps = ComponentPropsWithoutRef<
-  typeof BaseCombobox.Separator
->
+export type SelectSeparatorProps = ComponentPropsWithoutRef<typeof BaseCombobox.Separator>
 
-export const SelectSeparator = forwardRef<
-  HTMLDivElement,
-  SelectSeparatorProps
->(function SelectSeparator({ className, ...props }, ref) {
-  return (
-    <BaseCombobox.Separator
-      className={cn('-mx-1 my-1 h-px bg-divider', className)}
-      ref={ref}
-      {...props}
-    />
-  )
-})
+export const SelectSeparator = forwardRef<HTMLDivElement, SelectSeparatorProps>(
+  function SelectSeparator({ className, ...props }, ref) {
+    return (
+      <BaseCombobox.Separator
+        className={cn('-mx-1 my-1 h-px bg-divider', className)}
+        ref={ref}
+        {...props}
+      />
+    )
+  },
+)

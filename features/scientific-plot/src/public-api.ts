@@ -14,7 +14,7 @@ export {
   ScientificChartShapeUtil,
 } from './shapes/ScientificChartShapeUtil'
 export {
-  ScientificChartTypeStyle,
   type ScientificChartType,
+  ScientificChartTypeStyle,
 } from './styles/chart-styles'
 export { ScientificChartTool } from './tools/ScientificChartTool'

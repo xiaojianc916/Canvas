@@ -9,7 +9,7 @@
  * 禁止重新直接引入 tracing，避免形成两套日志字段、过滤器和初始化流程。
  */
 
-import { readFile, readdir } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { extname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 
@@ -32,10 +32,7 @@ async function collectRustFiles(directory) {
   })
 
   for (const entry of entries) {
-    if (
-      entry.isDirectory() &&
-      ignoredDirectories.has(entry.name)
-    ) {
+    if (entry.isDirectory() && ignoredDirectories.has(entry.name)) {
       continue
     }
 
@@ -73,16 +70,11 @@ const violations = []
 
 for (const path of await collectRustFiles(root)) {
   const content = await readFile(path, 'utf8')
-  const repositoryPath = relative(root, path).replaceAll(
-    '\\',
-    '/',
-  )
+  const repositoryPath = relative(root, path).replaceAll('\\', '/')
 
   for (const forbidden of forbiddenSourcePatterns) {
     if (forbidden.pattern.test(content)) {
-      violations.push(
-        `${repositoryPath}: contains ${forbidden.name}`,
-      )
+      violations.push(`${repositoryPath}: contains ${forbidden.name}`)
     }
   }
 }
@@ -95,10 +87,7 @@ async function collectCargoFiles(directory) {
   })
 
   for (const entry of entries) {
-    if (
-      entry.isDirectory() &&
-      ignoredDirectories.has(entry.name)
-    ) {
+    if (entry.isDirectory() && ignoredDirectories.has(entry.name)) {
       continue
     }
 
@@ -119,30 +108,15 @@ await collectCargoFiles(root)
 
 for (const path of cargoFiles) {
   const content = await readFile(path, 'utf8')
-  const repositoryPath = relative(root, path).replaceAll(
-    '\\',
-    '/',
-  )
+  const repositoryPath = relative(root, path).replaceAll('\\', '/')
 
-  if (
-    /^(?:tracing|tracing-appender|tracing-subscriber)(?:\.workspace)?\s*=/m.test(
-      content,
-    )
-  ) {
-    violations.push(
-      `${repositoryPath}: declares a tracing dependency`,
-    )
+  if (/^(?:tracing|tracing-appender|tracing-subscriber)(?:\.workspace)?\s*=/m.test(content)) {
+    violations.push(`${repositoryPath}: declares a tracing dependency`)
   }
 }
 
-const loggingBootstrap = resolve(
-  root,
-  'apps/desktop/src-tauri/src/bootstrap/logging.rs',
-)
-const bootstrapContent = await readFile(
-  loggingBootstrap,
-  'utf8',
-)
+const loggingBootstrap = resolve(root, 'apps/desktop/src-tauri/src/bootstrap/logging.rs')
+const bootstrapContent = await readFile(loggingBootstrap, 'utf8')
 
 const requiredBootstrapFragments = [
   'use log::LevelFilter;',
@@ -153,9 +127,7 @@ const requiredBootstrapFragments = [
 
 for (const fragment of requiredBootstrapFragments) {
   if (!bootstrapContent.includes(fragment)) {
-    violations.push(
-      `logging bootstrap is missing: ${fragment}`,
-    )
+    violations.push(`logging bootstrap is missing: ${fragment}`)
   }
 }
 
@@ -169,7 +141,5 @@ if (violations.length > 0) {
 
   process.exitCode = 1
 } else {
-  console.log(
-    'Rust logging architecture check passed.',
-  )
+  console.log('Rust logging architecture check passed.')
 }

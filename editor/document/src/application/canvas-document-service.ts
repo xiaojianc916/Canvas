@@ -5,9 +5,9 @@ import type { TLEditorSnapshot } from 'tldraw'
 
 import {
   createDocumentSession,
+  type DocumentPersistenceState,
   type DocumentSaveTicket,
   type DocumentSession,
-  type DocumentPersistenceState,
 } from '../domain/document-session'
 import type { EditorDocumentEvent, EditorDocumentPort } from '../ports/editor-document-port'
 

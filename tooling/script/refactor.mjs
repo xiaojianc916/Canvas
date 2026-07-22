@@ -1,43 +1,51 @@
 #!/usr/bin/env node
 
-import {
-  readFile,
-  writeFile,
-} from 'node:fs/promises'
+/**
+ * Document lifecycle verification runner.
+ *
+ * This script does not modify business code or tests.
+ * TypeScript, Vitest, Biome and architecture tests are the only authorities.
+ *
+ * Run:
+ *
+ *   node tooling/script/refactor.mjs --apply
+ */
+
 import { spawnSync } from 'node:child_process'
+import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 
 const root = process.cwd()
-const shouldApply =
-  process.argv.includes('--apply')
+
+const shouldRun = process.argv.includes('--apply') || process.argv.includes('--verify')
 
 const files = {
   packageJson: 'package.json',
+  workspace: 'pnpm-workspace.yaml',
 
-  canvasPackage:
-    'editor/core/package.json',
+  editorSession: 'editor/core/src/runtime/editor-session.ts',
 
-  documentPackage:
-    'editor/document/package.json',
+  coreApplicationPublicApi: 'editor/core/src/application/public-api.ts',
 
-  editorSession:
-    'editor/core/src/runtime/editor-session.ts',
+  documentCheckpoint: 'editor/document/src/domain/document-checkpoint.ts',
 
-  documentSession:
-    'editor/document/src/domain/document-session.ts',
+  documentSession: 'editor/document/src/domain/document-session.ts',
 
-  documentService:
-    'editor/document/src/application/canvas-document-service.ts',
+  editorDocumentPort: 'editor/document/src/ports/editor-document-port.ts',
 
-  documentSessionTest:
-    'tests/cross-domain-contract/document-lifecycle/document-session.test.ts',
+  documentService: 'editor/document/src/application/canvas-document-service.ts',
+
+  documentPublicApi: 'editor/document/src/public-api.ts',
+
+  testPackage: 'tests/cross-domain-contract/package.json',
+
+  testTsconfig: 'tests/cross-domain-contract/tsconfig.json',
+
+  documentSessionTest: 'tests/cross-domain-contract/document-lifecycle/document-session.test.ts',
 
   documentServiceTest:
     'tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts',
-
-  testPackage:
-    'tests/cross-domain-contract/package.json',
 }
 
 function absolute(relativePath) {
@@ -45,26 +53,7 @@ function absolute(relativePath) {
 }
 
 function fail(message) {
-  throw new Error(
-    `[document-lifecycle-verification] ${message}`,
-  )
-}
-
-async function read(relativePath) {
-  return readFile(
-    absolute(relativePath),
-    'utf8',
-  )
-}
-
-async function write(relativePath, content) {
-  await writeFile(
-    absolute(relativePath),
-    content,
-    'utf8',
-  )
-
-  console.log(`已修改：${relativePath}`)
+  throw new Error(`[document-lifecycle-verification] ${message}`)
 }
 
 async function exists(relativePath) {
@@ -72,12 +61,7 @@ async function exists(relativePath) {
     await readFile(absolute(relativePath))
     return true
   } catch (error) {
-    if (
-      error &&
-      typeof error === 'object' &&
-      'code' in error &&
-      error.code === 'ENOENT'
-    ) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
       return false
     }
 
@@ -85,340 +69,249 @@ async function exists(relativePath) {
   }
 }
 
+async function read(relativePath) {
+  return readFile(absolute(relativePath), 'utf8')
+}
+
 async function assertRepository() {
   if (!(await exists(files.packageJson))) {
-    fail(
-      '请在 hybrid-canvas 仓库根目录执行。',
-    )
+    fail('请在 hybrid-canvas 仓库根目录执行。')
   }
 
-  const packageJson = JSON.parse(
-    await read(files.packageJson),
-  )
+  const packageJson = JSON.parse(await read(files.packageJson))
 
   if (packageJson.name !== 'hybrid-canvas') {
-    fail(
-      `当前 package.json.name 不是 hybrid-canvas：${String(
-        packageJson.name,
-      )}`,
-    )
+    fail(`当前 package.json.name 不是 hybrid-canvas：${String(packageJson.name)}`)
   }
 
-  const requiredFiles = [
-    files.canvasPackage,
-    files.documentPackage,
-    files.editorSession,
-    files.documentSession,
-    files.documentService,
-    files.documentSessionTest,
-    files.documentServiceTest,
-    files.testPackage,
-  ]
+  const requiredFiles = Object.values(files)
 
   for (const requiredFile of requiredFiles) {
     if (!(await exists(requiredFile))) {
-      fail(`缺少文件：${requiredFile}`)
+      fail(`缺少必要文件：${requiredFile}`)
     }
   }
 }
 
-function parseTypeImportNames(importBody) {
-  return importBody
-    .split(',')
-    .map((name) => name.trim())
-    .filter(Boolean)
-}
-
-function formatCanvasApplicationTypeImport(
-  names,
-) {
-  const orderedNames = [
-    ...new Set(names),
-  ].sort((left, right) =>
-    left.localeCompare(right),
-  )
-
-  return `import type {
-${orderedNames
-  .map((name) => `  ${name},`)
-  .join('\n')}
-} from '@hybrid-canvas/canvas/application'`
-}
-
 /**
- * 确保测试从 canvas/application 显式导入所需类型。
+ * Structural checks only verify architectural presence and removal.
  *
- * 不使用脆弱的 includes('type EditorDocumentEvent')，
- * 而是解析整个 type import 块。
+ * They deliberately do not attempt to parse TypeScript signatures.
+ * Type correctness belongs exclusively to tsc.
  */
-function ensureCanvasApplicationTypeImports(
-  source,
-) {
-  const importPattern =
-    /import\s+type\s*\{([\s\S]*?)\}\s*from\s*['"]@hybrid-canvas\/canvas\/application['"]/
-
-  const match = source.match(importPattern)
-
-  if (!match) {
-    fail(
-      '测试文件缺少 @hybrid-canvas/canvas/application type import。',
-    )
-  }
-
-  const importBody = match[1]
-
-  if (importBody === undefined) {
-    fail(
-      '无法读取 canvas/application type import 内容。',
-    )
-  }
-
-  const importedNames =
-    parseTypeImportNames(importBody)
-
-  const requiredNames = [
-    'EditorDocumentEvent',
-    'EditorSession',
-  ]
-
-  let changed = false
-
-  for (const requiredName of requiredNames) {
-    if (!importedNames.includes(requiredName)) {
-      importedNames.push(requiredName)
-      changed = true
-    }
-  }
-
-  if (!changed) {
-    return {
-      source,
-      changed: false,
-    }
-  }
-
-  const replacement =
-    formatCanvasApplicationTypeImport(
-      importedNames,
-    )
-
-  return {
-    source: source.replace(
-      importPattern,
-      replacement,
-    ),
-    changed: true,
-  }
-}
-
-/**
- * 修复测试桩 listener 的隐式 any。
- */
-function ensureTypedSubscribeMethod(source) {
-  const untypedPattern =
-    /subscribeDocumentEvents\s*\(\s*listener\s*\)\s*\{/
-
-  if (!untypedPattern.test(source)) {
-    return {
-      source,
-      changed: false,
-    }
-  }
-
-  const replacement = `subscribeDocumentEvents(
-      listener: (
-        event: EditorDocumentEvent,
-      ) => void,
-    ) {`
-
-  return {
-    source: source.replace(
-      untypedPattern,
-      replacement,
-    ),
-    changed: true,
-  }
-}
-
-async function repairDocumentServiceTest() {
-  const original = await read(
-    files.documentServiceTest,
-  )
-
-  let source = original
-
-  const importResult =
-    ensureCanvasApplicationTypeImports(source)
-
-  source = importResult.source
-
-  const methodResult =
-    ensureTypedSubscribeMethod(source)
-
-  source = methodResult.source
-
-  if (source !== original) {
-    await write(
-      files.documentServiceTest,
-      source,
-    )
-  } else {
-    console.log(
-      `无需修改：${files.documentServiceTest}`,
-    )
-  }
-}
-
-function validateCanvasApplicationImport(
-  source,
-) {
-  const importPattern =
-    /import\s+type\s*\{([\s\S]*?)\}\s*from\s*['"]@hybrid-canvas\/canvas\/application['"]/
-
-  const match = source.match(importPattern)
-
-  if (!match) {
-    fail(
-      '测试文件缺少 canvas/application type import。',
-    )
-  }
-
-  const importBody = match[1]
-
-  if (importBody === undefined) {
-    fail(
-      '无法读取 canvas/application import。',
-    )
-  }
-
-  const importedNames =
-    parseTypeImportNames(importBody)
-
-  for (const requiredName of [
-    'EditorDocumentEvent',
-    'EditorSession',
-  ]) {
-    if (!importedNames.includes(requiredName)) {
-      fail(
-        `测试文件没有导入 ${requiredName}。`,
-      )
-    }
-  }
-}
-
-function validateTypedSubscribeMethod(source) {
-  const typedPattern =
-    /subscribeDocumentEvents\s*\(\s*listener\s*:\s*\(\s*event\s*:\s*EditorDocumentEvent\s*\)\s*=>\s*void\s*,?\s*\)\s*\{/
-
-  if (!typedPattern.test(source)) {
-    fail(
-      'subscribeDocumentEvents listener 没有显式 EditorDocumentEvent 类型。',
-    )
-  }
-
-  const untypedPattern =
-    /subscribeDocumentEvents\s*\(\s*listener\s*\)\s*\{/
-
-  if (untypedPattern.test(source)) {
-    fail(
-      'subscribeDocumentEvents 仍存在隐式 any。',
-    )
-  }
-}
-
-async function validateTestRepair() {
-  const source = await read(
-    files.documentServiceTest,
-  )
-
-  validateCanvasApplicationImport(source)
-  validateTypedSubscribeMethod(source)
-
-  console.log('测试类型修复检查通过。')
-}
-
-async function validateArchitectureFiles() {
+async function assertArchitectureStructure() {
   const [
-    editorSource,
-    sessionSource,
-    serviceSource,
+    workspace,
+    editorSession,
+    documentCheckpoint,
+    documentSession,
+    editorDocumentPort,
+    documentService,
+    corePublicApi,
+    documentPublicApi,
+    testPackage,
   ] = await Promise.all([
+    read(files.workspace),
     read(files.editorSession),
+    read(files.documentCheckpoint),
     read(files.documentSession),
+    read(files.editorDocumentPort),
     read(files.documentService),
+    read(files.coreApplicationPublicApi),
+    read(files.documentPublicApi),
+    read(files.testPackage),
   ])
 
+  if (!workspace.includes('- "tests/*"') && !workspace.includes("- 'tests/*'")) {
+    fail('pnpm workspace 尚未包含 tests/*。')
+  }
+
   const editorRequirements = [
+    'EditorDocumentEvent',
     'captureDocument',
     'subscribeDocumentEvents',
     "kind: 'ready'",
     "kind: 'changed'",
     "source: 'user'",
+    'attachEditor',
+    'detachEditor',
   ]
 
   for (const requirement of editorRequirements) {
-    if (!editorSource.includes(requirement)) {
-      fail(
-        `Editor adapter 缺少：${requirement}`,
-      )
+    if (!editorSession.includes(requirement)) {
+      fail(`EditorSession 缺少架构能力：${requirement}`)
+    }
+  }
+
+  const checkpointRequirements = [
+    'DocumentCheckpoint',
+    'createDocumentCheckpoint',
+    'checkpointsEqual',
+    'canonicalDocument',
+    'snapshot.document',
+  ]
+
+  for (const requirement of checkpointRequirements) {
+    if (!documentCheckpoint.includes(requirement)) {
+      fail(`DocumentCheckpoint 缺少：${requirement}`)
     }
   }
 
   const sessionRequirements = [
+    'DocumentSessionPhase',
+    'DocumentPersistenceState',
+    'DocumentSaveTicket',
     'createDocumentSession',
-    'createDocumentCheckpoint',
+    'initialize',
     'recordDocumentChange',
     'beginSave',
     'completeSave',
     'failSave',
+    'beginClosing',
+    'completeClosing',
     'isDirty',
   ]
 
   for (const requirement of sessionRequirements) {
-    if (!sessionSource.includes(requirement)) {
-      fail(
-        `DocumentSession 缺少：${requirement}`,
-      )
+    if (!documentSession.includes(requirement)) {
+      fail(`DocumentSession 缺少：${requirement}`)
+    }
+  }
+
+  const portRequirements = [
+    'EditorDocumentPort',
+    'EditorDocumentEvent',
+    'captureDocument',
+    'subscribeDocumentEvents',
+  ]
+
+  for (const requirement of portRequirements) {
+    if (!editorDocumentPort.includes(requirement)) {
+      fail(`EditorDocumentPort 缺少：${requirement}`)
     }
   }
 
   const serviceRequirements = [
     'createDocumentSession',
+    'EditorDocumentPort',
     'subscribeDocumentEvents',
     'captureDocument',
+    'recordDocumentChange',
     'beginSave',
     'completeSave',
-    'recordDocumentChange',
+    'failSave',
+    'planApplicationClose',
   ]
 
   for (const requirement of serviceRequirements) {
-    if (!serviceSource.includes(requirement)) {
-      fail(
-        `CanvasDocumentService 缺少：${requirement}`,
-      )
+    if (!documentService.includes(requirement)) {
+      fail(`CanvasDocumentService 缺少：${requirement}`)
     }
   }
 
-  const forbiddenTokens = [
+  const forbiddenOldImplementation = [
     'bootstrapPending',
     'queueMicrotask',
     'isInitialDocumentBootstrapChange',
+    'hasInitialDocumentAndPage',
     'onUserDocumentChange',
     'savedRevision',
     'session.revision',
   ]
 
-  for (const token of forbiddenTokens) {
+  for (const forbidden of forbiddenOldImplementation) {
     if (
-      editorSource.includes(token) ||
-      sessionSource.includes(token) ||
-      serviceSource.includes(token)
+      editorSession.includes(forbidden) ||
+      documentSession.includes(forbidden) ||
+      documentService.includes(forbidden)
     ) {
-      fail(`仍存在旧实现：${token}`)
+      fail(`仍存在已废弃实现：${forbidden}`)
     }
   }
 
-  console.log('Document lifecycle 架构检查通过。')
+  const coreExports = ['EditorDocumentEvent', 'EditorSession', 'createEditorSession']
+
+  for (const requiredExport of coreExports) {
+    if (!corePublicApi.includes(requiredExport)) {
+      fail(`Canvas application public API 缺少导出：${requiredExport}`)
+    }
+  }
+
+  const documentExports = [
+    'DocumentCheckpoint',
+    'DocumentSession',
+    'EditorDocumentPort',
+    'createDocumentSession',
+    'createCanvasDocumentService',
+  ]
+
+  for (const requiredExport of documentExports) {
+    if (!documentPublicApi.includes(requiredExport)) {
+      fail(`Document public API 缺少导出：${requiredExport}`)
+    }
+  }
+
+  const parsedTestPackage = JSON.parse(testPackage)
+
+  if (parsedTestPackage.name !== '@hybrid-canvas/test-cross-domain-contract') {
+    fail('跨域测试包名称配置错误。')
+  }
+
+  if (parsedTestPackage.scripts?.test !== 'vitest run document-lifecycle') {
+    fail('跨域测试包没有运行 document-lifecycle 测试。')
+  }
+
+  console.log('Document lifecycle 架构结构检查通过。')
+}
+
+async function findTestFiles(relativeDirectory) {
+  const directory = absolute(relativeDirectory)
+
+  const entries = await readdir(directory, {
+    withFileTypes: true,
+  })
+
+  const results = []
+
+  for (const entry of entries) {
+    const relativePath = path.posix.join(relativeDirectory.replaceAll('\\', '/'), entry.name)
+
+    if (entry.isDirectory()) {
+      results.push(...(await findTestFiles(relativePath)))
+
+      continue
+    }
+
+    if (entry.isFile() && /\.(test|spec)\.[cm]?[jt]sx?$/.test(entry.name)) {
+      results.push(relativePath)
+    }
+  }
+
+  return results
+}
+
+async function assertTestsAreCentralized() {
+  const businessDirectories = ['editor/core/src', 'editor/document/src']
+
+  const misplacedTests = []
+
+  for (const businessDirectory of businessDirectories) {
+    misplacedTests.push(...(await findTestFiles(businessDirectory)))
+  }
+
+  if (misplacedTests.length > 0) {
+    fail('业务源码目录中仍存在测试文件：\n' + misplacedTests.map((file) => `- ${file}`).join('\n'))
+  }
+
+  const expectedTests = [files.documentSessionTest, files.documentServiceTest]
+
+  for (const expectedTest of expectedTests) {
+    if (!(await exists(expectedTest))) {
+      fail(`缺少测试文件：${expectedTest}`)
+    }
+  }
+
+  console.log('测试文件位置检查通过。')
 }
 
 function runPnpm(args) {
@@ -435,91 +328,67 @@ function runPnpm(args) {
     process.platform === 'win32'
       ? spawnSync(
           process.env.ComSpec ?? 'cmd.exe',
-          [
-            '/d',
-            '/s',
-            '/c',
-            `pnpm ${args.join(' ')}`,
-          ],
+          ['/d', '/s', '/c', `pnpm ${args.join(' ')}`],
           options,
         )
-      : spawnSync(
-          'pnpm',
-          args,
-          options,
-        )
+      : spawnSync('pnpm', args, options)
 
   if (result.error) {
     throw result.error
   }
 
   if (result.signal) {
-    fail(
-      `pnpm 被信号 ${result.signal} 终止。`,
-    )
+    fail(`pnpm 被信号 ${result.signal} 终止。`)
   }
 
   if (result.status !== 0) {
-    fail(
-      `pnpm ${args.join(
-        ' ',
-      )} 执行失败，退出码：${String(
-        result.status,
-      )}`,
-    )
+    fail(`pnpm ${args.join(' ')} 执行失败，退出码：${String(result.status)}`)
   }
 }
 
-function verify() {
-  runPnpm([
-    'exec',
-    'biome',
-    'format',
-    '--write',
-    files.documentServiceTest,
-  ])
+function runTargetedVerification() {
+  /*
+   * tsc is the only authority for TypeScript signatures.
+   * No regex-based signature validation is performed.
+   */
+  runPnpm(['--filter', '@hybrid-canvas/canvas', 'typecheck'])
 
-  runPnpm([
-    '--filter',
-    '@hybrid-canvas/test-cross-domain-contract',
-    'typecheck',
-  ])
+  runPnpm(['--filter', '@hybrid-canvas/document', 'typecheck'])
 
-  runPnpm([
-    '--filter',
-    '@hybrid-canvas/test-cross-domain-contract',
-    'test',
-  ])
+  runPnpm(['--filter', '@hybrid-canvas/test-cross-domain-contract', 'typecheck'])
 
-  runPnpm([
-    '--filter',
-    '@hybrid-canvas/canvas',
-    'typecheck',
-  ])
-
-  runPnpm([
-    '--filter',
-    '@hybrid-canvas/document',
-    'typecheck',
-  ])
+  runPnpm(['--filter', '@hybrid-canvas/test-cross-domain-contract', 'test'])
 
   runPnpm(['test:architecture'])
+}
+
+function runRepositoryVerification() {
+  runPnpm(['format:check'])
+  runPnpm(['lint'])
+  runPnpm(['typecheck'])
+  runPnpm(['test'])
 }
 
 async function main() {
   await assertRepository()
 
-  if (!shouldApply) {
+  if (!shouldRun) {
     console.log(`
-Document lifecycle verification recovery
+Document lifecycle verification runner
 
-该脚本将：
+该脚本不会修改任何业务代码或测试。
 
-1. 修复测试桩 listener 的隐式 any。
-2. 解析并验证多行 type import。
-3. 自动补充 EditorDocumentEvent 和 EditorSession。
-4. 不修改脚本自身。
-5. 继续执行类型检查、测试和架构检查。
+验证内容：
+
+1. Document lifecycle 架构文件完整性
+2. 旧 dirty/revision/bootstrap 逻辑已删除
+3. 测试只位于专门 tests 目录
+4. Canvas 类型检查
+5. Document 类型检查
+6. Cross-domain tests 类型检查
+7. Document lifecycle Vitest
+8. 架构测试
+9. 全仓库格式、Lint、类型检查和测试
 
 执行：
 
@@ -529,36 +398,39 @@ node tooling\\\\script\\\\refactor.mjs --apply
     return
   }
 
-  console.log(
-    '开始恢复 Document lifecycle 验证……',
-  )
+  console.log('开始验证 Document lifecycle 重构……')
 
-  await repairDocumentServiceTest()
-  await validateTestRepair()
-  await validateArchitectureFiles()
+  await assertArchitectureStructure()
+  await assertTestsAreCentralized()
 
-  console.log(
-    '\n代码检查完成，继续执行验证。',
-  )
+  console.log('\n开始执行定向验证。')
 
-  verify()
+  runTargetedVerification()
+
+  console.log('\n定向验证通过，开始执行全仓库验证。')
+
+  runRepositoryVerification()
 
   console.log(`
-Document lifecycle 重构验证完成。
+Document lifecycle 重构全部验证通过。
 
 测试文件：
 
 - tests/cross-domain-contract/document-lifecycle/document-session.test.ts
 - tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts
 
-业务源码目录中没有测试文件。
+现在可以重新启动桌面应用，验证：
+
+1. 新建空白画布显示 clean
+2. 直接关闭不出现未保存提示
+3. 创建图形后显示 dirty
+4. Undo 回初始状态后恢复 clean
+5. 保存后恢复 clean
 `)
 }
 
 main().catch((error) => {
-  console.error(
-    '\nDocument lifecycle 验证失败：',
-  )
+  console.error('\nDocument lifecycle 验证失败：')
   console.error(error)
   process.exitCode = 1
 })

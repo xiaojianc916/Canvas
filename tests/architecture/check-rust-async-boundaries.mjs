@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFile, readdir } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { extname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 
@@ -38,8 +38,7 @@ async function collectRustFiles(directory) {
 
 function findAsyncFunctions(source) {
   const functions = []
-  const pattern =
-    /(?:pub\s+)?async\s+fn\s+([A-Za-z0-9_]+)[^{]*\{/g
+  const pattern = /(?:pub\s+)?async\s+fn\s+([A-Za-z0-9_]+)[^{]*\{/g
 
   for (const match of source.matchAll(pattern)) {
     const bodyStart = match.index + match[0].length
@@ -89,9 +88,7 @@ for (const path of await collectRustFiles(rustRoot)) {
   for (const fn of findAsyncFunctions(source)) {
     for (const forbidden of forbiddenPatterns) {
       if (forbidden.pattern.test(fn.body)) {
-        violations.push(
-          `${repositoryPath}: async fn ${fn.name} directly uses ${forbidden.name}`,
-        )
+        violations.push(`${repositoryPath}: async fn ${fn.name} directly uses ${forbidden.name}`)
       }
     }
 
@@ -99,17 +96,14 @@ for (const path of await collectRustFiles(rustRoot)) {
       /\bblocking_[A-Za-z0-9_]+\s*\(/.test(fn.body) &&
       !allowedBlockingFiles.has(repositoryPath)
     ) {
-      violations.push(
-        `${repositoryPath}: async fn ${fn.name} directly invokes a blocking_* API`,
-      )
+      violations.push(`${repositoryPath}: async fn ${fn.name} directly invokes a blocking_* API`)
     }
   }
 }
 
 if (violations.length > 0) {
   console.error(
-    'Rust async boundary check failed:\n' +
-      violations.map((item) => `- ${item}`).join('\n'),
+    'Rust async boundary check failed:\n' + violations.map((item) => `- ${item}`).join('\n'),
   )
   process.exitCode = 1
 } else {

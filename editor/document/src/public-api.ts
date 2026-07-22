@@ -29,7 +29,7 @@ export {
   type DocumentSessionSnapshot,
 } from './domain/document-session'
 
-export {
-  type EditorDocumentEvent,
-  type EditorDocumentPort,
+export type {
+  EditorDocumentEvent,
+  EditorDocumentPort,
 } from './ports/editor-document-port'

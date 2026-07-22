@@ -1,4 +1,3 @@
-
 interface BootstrapDiagnosticElements {
   readonly root: HTMLElement
   readonly title: HTMLElement
@@ -21,17 +20,11 @@ const startedAt = new Date().toISOString()
 function getElements(): BootstrapDiagnosticElements | null {
   const root = document.getElementById('bootstrap-fallback')
   const title = document.getElementById('bootstrap-fallback-title')
-  const description = document.getElementById(
-    'bootstrap-fallback-description',
-  )
+  const description = document.getElementById('bootstrap-fallback-description')
   const details = document.getElementById('bootstrap-fallback-details')
-  const diagnostic = document.getElementById(
-    'bootstrap-fallback-diagnostic',
-  )
+  const diagnostic = document.getElementById('bootstrap-fallback-diagnostic')
   const actions = document.getElementById('bootstrap-fallback-actions')
-  const reloadButton = document.getElementById(
-    'bootstrap-fallback-reload',
-  )
+  const reloadButton = document.getElementById('bootstrap-fallback-reload')
   const copyButton = document.getElementById('bootstrap-fallback-copy')
 
   if (
@@ -120,8 +113,7 @@ function showFatalError(diagnosticText: string): void {
 
   elements.root.setAttribute('role', 'alert')
   elements.title.textContent = '应用无法完成启动'
-  elements.description.textContent =
-    '应用启动期间发生了未处理错误。完整诊断信息如下。'
+  elements.description.textContent = '应用启动期间发生了未处理错误。完整诊断信息如下。'
   elements.diagnostic.textContent = diagnosticText
   elements.details.dataset.visible = 'true'
   elements.actions.dataset.visible = 'true'
@@ -190,37 +182,24 @@ interface ViteDiagnosticPayload {
 }
 
 interface HybridCanvasHotContext {
-  readonly on: (
-    event: string,
-    listener: (payload: unknown) => void,
-  ) => void
+  readonly on: (event: string, listener: (payload: unknown) => void) => void
 }
 
-function isUnknownRecord(
-  value: unknown,
-): value is Record<string, unknown> {
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function readOptionalString(
-  value: Record<string, unknown>,
-  property: string,
-): string | undefined {
+function readOptionalString(value: Record<string, unknown>, property: string): string | undefined {
   const candidate = value[property]
   return typeof candidate === 'string' ? candidate : undefined
 }
 
-function readOptionalNumber(
-  value: Record<string, unknown>,
-  property: string,
-): number | undefined {
+function readOptionalNumber(value: Record<string, unknown>, property: string): number | undefined {
   const candidate = value[property]
   return typeof candidate === 'number' ? candidate : undefined
 }
 
-function parseViteDiagnosticPayload(
-  value: unknown,
-): ViteDiagnosticPayload {
+function parseViteDiagnosticPayload(value: unknown): ViteDiagnosticPayload {
   if (!isUnknownRecord(value)) {
     return {
       source: 'vite',
@@ -232,87 +211,49 @@ function parseViteDiagnosticPayload(
     }
   }
 
-  const rawError = isUnknownRecord(value.error)
-    ? value.error
-    : {}
+  const rawError = isUnknownRecord(value.error) ? value.error : {}
 
-  const rawLocation = isUnknownRecord(rawError.location)
-    ? rawError.location
-    : undefined
+  const rawLocation = isUnknownRecord(rawError.location) ? rawError.location : undefined
 
   return {
     source: readOptionalString(value, 'source') ?? 'vite',
-    occurredAt:
-      readOptionalString(value, 'occurredAt') ??
-      new Date().toISOString(),
+    occurredAt: readOptionalString(value, 'occurredAt') ?? new Date().toISOString(),
     error: {
-      name:
-        readOptionalString(rawError, 'name') ??
-        'ViteError',
-      message:
-        readOptionalString(rawError, 'message') ??
-        '未知 Vite 开发服务器错误',
+      name: readOptionalString(rawError, 'name') ?? 'ViteError',
+      message: readOptionalString(rawError, 'message') ?? '未知 Vite 开发服务器错误',
       stack: readOptionalString(rawError, 'stack'),
       plugin: readOptionalString(rawError, 'plugin'),
       id: readOptionalString(rawError, 'id'),
       frame: readOptionalString(rawError, 'frame'),
-      pluginCode: readOptionalString(
-        rawError,
-        'pluginCode',
-      ),
+      pluginCode: readOptionalString(rawError, 'pluginCode'),
       location: rawLocation
         ? {
             file: readOptionalString(rawLocation, 'file'),
             line: readOptionalNumber(rawLocation, 'line'),
-            column: readOptionalNumber(
-              rawLocation,
-              'column',
-            ),
+            column: readOptionalNumber(rawLocation, 'column'),
           }
         : undefined,
     },
   }
 }
 
-function formatViteDiagnostic(
-  payload: ViteDiagnosticPayload,
-): string {
+function formatViteDiagnostic(payload: ViteDiagnosticPayload): string {
   const error = payload.error ?? {}
   const location = error.location
 
   return [
     '错误来源: Vite 开发服务器',
-    `时间: ${
-      payload.occurredAt ?? new Date().toISOString()
-    }`,
+    `时间: ${payload.occurredAt ?? new Date().toISOString()}`,
     `错误类型: ${error.name ?? 'ViteError'}`,
-    `错误信息: ${
-      error.message ?? '未知 Vite 开发服务器错误'
-    }`,
-    error.plugin
-      ? `Vite 插件: ${error.plugin}`
-      : undefined,
-    error.id
-      ? `模块 ID: ${error.id}`
-      : undefined,
-    location?.file
-      ? `文件: ${location.file}`
-      : undefined,
-    typeof location?.line === 'number'
-      ? `行: ${location.line}`
-      : undefined,
-    typeof location?.column === 'number'
-      ? `列: ${location.column}`
-      : undefined,
-    error.frame
-      ? `\n代码定位:\n${error.frame}`
-      : undefined,
-    error.pluginCode
-      ? `\n插件代码:\n${error.pluginCode}`
-      : undefined,
-    error.stack
-      ? `\nStack:\n${error.stack}`
-      : undefined,
+    `错误信息: ${error.message ?? '未知 Vite 开发服务器错误'}`,
+    error.plugin ? `Vite 插件: ${error.plugin}` : undefined,
+    error.id ? `模块 ID: ${error.id}` : undefined,
+    location?.file ? `文件: ${location.file}` : undefined,
+    typeof location?.line === 'number' ? `行: ${location.line}` : undefined,
+    typeof location?.column === 'number' ? `列: ${location.column}` : undefined,
+    error.frame ? `\n代码定位:\n${error.frame}` : undefined,
+    error.pluginCode ? `\n插件代码:\n${error.pluginCode}` : undefined,
+    error.stack ? `\nStack:\n${error.stack}` : undefined,
   ]
     .filter((item): item is string => Boolean(item))
     .join('\n')
@@ -324,17 +265,11 @@ const hybridCanvasHot = (
   }
 ).hot
 
-hybridCanvasHot?.on(
-  'hybrid-canvas:diagnostic',
-  (rawPayload: unknown) => {
-    const payload = parseViteDiagnosticPayload(rawPayload)
-    const diagnostic = formatViteDiagnostic(payload)
+hybridCanvasHot?.on('hybrid-canvas:diagnostic', (rawPayload: unknown) => {
+  const payload = parseViteDiagnosticPayload(rawPayload)
+  const diagnostic = formatViteDiagnostic(payload)
 
-    console.error(
-      '[Hybrid Canvas Vite Diagnostic]',
-      rawPayload,
-    )
+  console.error('[Hybrid Canvas Vite Diagnostic]', rawPayload)
 
-    showFatalError(diagnostic)
-  },
-)
+  showFatalError(diagnostic)
+})

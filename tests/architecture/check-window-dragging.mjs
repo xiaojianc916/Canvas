@@ -12,9 +12,7 @@ function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), 'utf8')
 }
 
-const capability = JSON.parse(
-  read('apps/desktop/src-tauri/capabilities/main-window.json'),
-)
+const capability = JSON.parse(read('apps/desktop/src-tauri/capabilities/main-window.json'))
 
 for (const permission of [
   'core:window:allow-minimize',
@@ -26,9 +24,7 @@ for (const permission of [
   }
 }
 
-const adapter = read(
-  'platforms/desktop-runtime/src/adapters/native-window.ts',
-)
+const adapter = read('platforms/desktop-runtime/src/adapters/native-window.ts')
 
 for (const officialCall of [
   'window.minimize()',
@@ -50,9 +46,7 @@ for (const obsoleteInvoke of [
   }
 }
 
-const titleBar = read(
-  'apps/desktop/src/presentation/chrome/DesktopTitleBar.tsx',
-)
+const titleBar = read('apps/desktop/src/presentation/chrome/DesktopTitleBar.tsx')
 
 if (!titleBar.includes('onMouseDownCapture={handleDragMouseDown}')) {
   failures.push('DesktopTitleBar 必须在捕获阶段处理拖动')
@@ -63,20 +57,12 @@ if (!titleBar.includes('WINDOW_DRAG_EXCLUSION_SELECTOR')) {
 }
 
 if (titleBar.includes('data-tauri-drag-region')) {
-  failures.push(
-    'DesktopTitleBar 禁止同时混用 data-tauri-drag-region 与手动拖动',
-  )
+  failures.push('DesktopTitleBar 禁止同时混用 data-tauri-drag-region 与手动拖动')
 }
 
-const bootstrap = read(
-  'apps/desktop/src-tauri/src/bootstrap/app.rs',
-)
+const bootstrap = read('apps/desktop/src-tauri/src/bootstrap/app.rs')
 
-for (const obsoleteCommand of [
-  'window_start_dragging',
-  'window_minimize',
-  'window_maximize',
-]) {
+for (const obsoleteCommand of ['window_start_dragging', 'window_minimize', 'window_maximize']) {
   if (bootstrap.includes(`commands::window::${obsoleteCommand}`)) {
     failures.push(`Rust bootstrap 仍注册旧命令：${obsoleteCommand}`)
   }

@@ -1,16 +1,7 @@
-
 import { Button } from '@hybrid-canvas/design-system'
 import { error as reportError } from '@hybrid-canvas/foundations-observability'
-import {
-  AlertTriangle,
-  ClipboardCopy,
-  RotateCcw,
-} from 'lucide-react'
-import {
-  Component,
-  type ErrorInfo,
-  type ReactNode,
-} from 'react'
+import { AlertTriangle, ClipboardCopy, RotateCcw } from 'lucide-react'
+import { Component, type ErrorInfo, type ReactNode } from 'react'
 
 interface ApplicationErrorBoundaryProps {
   readonly children: ReactNode
@@ -35,9 +26,7 @@ function createDiagnosticText(
     `页面: ${window.location.href}`,
     `User Agent: ${navigator.userAgent}`,
     error.stack ? `\nJavaScript Stack:\n${error.stack}` : undefined,
-    componentStack
-      ? `\nReact Component Stack:\n${componentStack}`
-      : undefined,
+    componentStack ? `\nReact Component Stack:\n${componentStack}` : undefined,
   ]
     .filter((item): item is string => Boolean(item))
     .join('\n')
@@ -54,9 +43,7 @@ export class ApplicationErrorBoundary extends Component<
     copied: false,
   }
 
-  static getDerivedStateFromError(
-    error: Error,
-  ): Partial<ApplicationErrorBoundaryState> {
+  static getDerivedStateFromError(error: Error): Partial<ApplicationErrorBoundaryState> {
     return {
       error,
       occurredAt: new Date().toISOString(),
@@ -64,10 +51,7 @@ export class ApplicationErrorBoundary extends Component<
     }
   }
 
-  override componentDidCatch(
-    error: Error,
-    errorInfo: ErrorInfo,
-  ): void {
+  override componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     const componentStack = errorInfo.componentStack ?? null
 
     this.setState({ componentStack })
@@ -88,11 +72,7 @@ export class ApplicationErrorBoundary extends Component<
       return
     }
 
-    const diagnostic = createDiagnosticText(
-      error,
-      componentStack,
-      occurredAt,
-    )
+    const diagnostic = createDiagnosticText(error, componentStack, occurredAt)
 
     try {
       await navigator.clipboard.writeText(diagnostic)
@@ -106,22 +86,13 @@ export class ApplicationErrorBoundary extends Component<
   }
 
   override render(): ReactNode {
-    const {
-      error,
-      componentStack,
-      occurredAt,
-      copied,
-    } = this.state
+    const { error, componentStack, occurredAt, copied } = this.state
 
     if (!error) {
       return this.props.children
     }
 
-    const diagnostic = createDiagnosticText(
-      error,
-      componentStack,
-      occurredAt,
-    )
+    const diagnostic = createDiagnosticText(error, componentStack, occurredAt)
 
     return (
       <main
@@ -133,22 +104,14 @@ export class ApplicationErrorBoundary extends Component<
             <AlertTriangle className="size-5" />
           </div>
 
-          <h1 className="mt-5 text-lg font-semibold">
-            应用遇到严重错误
-          </h1>
+          <h1 className="mt-5 text-lg font-semibold">应用遇到严重错误</h1>
 
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Hybrid Canvas 无法继续显示当前界面。你可以复制完整诊断信息，
-            然后重新加载应用。
+            Hybrid Canvas 无法继续显示当前界面。你可以复制完整诊断信息， 然后重新加载应用。
           </p>
 
-          <details
-            className="mt-4 rounded-lg bg-muted p-3 text-xs text-muted-foreground"
-            open
-          >
-            <summary className="cursor-pointer font-medium">
-              完整技术详情
-            </summary>
+          <details className="mt-4 rounded-lg bg-muted p-3 text-xs text-muted-foreground" open>
+            <summary className="cursor-pointer font-medium">完整技术详情</summary>
 
             <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5">
               {diagnostic}
@@ -156,10 +119,7 @@ export class ApplicationErrorBoundary extends Component<
           </details>
 
           <div className="mt-5 flex flex-wrap gap-2">
-            <Button
-              onClick={() => window.location.reload()}
-              type="button"
-            >
+            <Button onClick={() => window.location.reload()} type="button">
               <RotateCcw className="size-4" />
               重新加载
             </Button>

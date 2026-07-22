@@ -13,7 +13,6 @@ import {
   ArrowRightToLine,
   ArrowUpToLine,
   BringToFront,
-  LineChart,
   Eraser,
   FlipHorizontal2,
   FlipVertical2,
@@ -21,6 +20,7 @@ import {
   Group,
   Hand,
   Highlighter,
+  LineChart,
   Lock,
   Menu,
   MousePointer2,
@@ -37,13 +37,7 @@ import {
   Unlock,
   ZoomIn,
 } from 'lucide-react'
-import {
-  type ComponentType,
-  type ReactNode,
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
+import { type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react'
 import { useValue } from 'tldraw'
 
 import type { CanvasToolId } from '../application/model/canvas-session-view-model'
@@ -152,8 +146,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
   const hasSelection = selectionCount > 0
   const hasMultipleSelection = selectionCount > 1
   const containsGroup = selectedShapes.some((shape) => shape.type === 'group')
-  const allLocked =
-    hasSelection && selectedShapes.every((shape) => shape.isLocked)
+  const allLocked = hasSelection && selectedShapes.every((shape) => shape.isLocked)
 
   useEffect(() => {
     if (!isMoreOpen) {
@@ -163,11 +156,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target
 
-      if (
-        target instanceof Node &&
-        menuRef.current &&
-        !menuRef.current.contains(target)
-      ) {
+      if (target instanceof Node && menuRef.current && !menuRef.current.contains(target)) {
         setMoreOpen(false)
       }
     }
@@ -237,10 +226,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
           return (
             <div className="contents" key={tool.id}>
               {tool.separatorBefore ? (
-                <Separator
-                  className="mx-1 h-5 shrink-0"
-                  orientation="vertical"
-                />
+                <Separator className="mx-1 h-5 shrink-0" orientation="vertical" />
               ) : null}
 
               <ToolbarButton
@@ -254,17 +240,9 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
           )
         })}
 
-        <Separator
-          className="mx-1 h-5 shrink-0"
-          orientation="vertical"
-        />
+        <Separator className="mx-1 h-5 shrink-0" orientation="vertical" />
 
-        <ToolbarButton
-          icon={Undo2}
-          label="撤销"
-          onClick={() => editor?.undo()}
-          shortcut="Ctrl+Z"
-        />
+        <ToolbarButton icon={Undo2} label="撤销" onClick={() => editor?.undo()} shortcut="Ctrl+Z" />
 
         <ToolbarButton
           icon={Redo2}
@@ -274,10 +252,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
         />
       </div>
 
-      <Separator
-        className="mx-1 h-5 shrink-0"
-        orientation="vertical"
-      />
+      <Separator className="mx-1 h-5 shrink-0" orientation="vertical" />
 
       <div className="relative shrink-0" ref={menuRef}>
         <ToolbarButton
@@ -309,9 +284,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
                 disabled={!hasMultipleSelection}
                 icon={Group}
                 label="编组"
-                onClick={() =>
-                  execute(() => editor?.groupShapes(selectedIds))
-                }
+                onClick={() => execute(() => editor?.groupShapes(selectedIds))}
                 shortcut="Ctrl+G"
               />
 
@@ -319,9 +292,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
                 disabled={!containsGroup}
                 icon={Ungroup}
                 label="取消编组"
-                onClick={() =>
-                  execute(() => editor?.ungroupShapes(selectedIds))
-                }
+                onClick={() => execute(() => editor?.ungroupShapes(selectedIds))}
                 shortcut="Ctrl+Shift+G"
               />
 
@@ -340,36 +311,28 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
                 disabled={!hasSelection}
                 icon={BringToFront}
                 label="置于顶层"
-                onClick={() =>
-                  execute(() => editor?.bringToFront(selectedIds))
-                }
+                onClick={() => execute(() => editor?.bringToFront(selectedIds))}
               />
 
               <MenuAction
                 disabled={!hasSelection}
                 icon={ArrowUpToLine}
                 label="上移一层"
-                onClick={() =>
-                  execute(() => editor?.bringForward(selectedIds))
-                }
+                onClick={() => execute(() => editor?.bringForward(selectedIds))}
               />
 
               <MenuAction
                 disabled={!hasSelection}
                 icon={ArrowDownToLine}
                 label="下移一层"
-                onClick={() =>
-                  execute(() => editor?.sendBackward(selectedIds))
-                }
+                onClick={() => execute(() => editor?.sendBackward(selectedIds))}
               />
 
               <MenuAction
                 disabled={!hasSelection}
                 icon={SendToBack}
                 label="置于底层"
-                onClick={() =>
-                  execute(() => editor?.sendToBack(selectedIds))
-                }
+                onClick={() => execute(() => editor?.sendToBack(selectedIds))}
               />
             </MenuSection>
 
@@ -380,22 +343,14 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
                 disabled={!hasSelection}
                 icon={FlipHorizontal2}
                 label="水平翻转"
-                onClick={() =>
-                  execute(() =>
-                    editor?.flipShapes(selectedIds, 'horizontal'),
-                  )
-                }
+                onClick={() => execute(() => editor?.flipShapes(selectedIds, 'horizontal'))}
               />
 
               <MenuAction
                 disabled={!hasSelection}
                 icon={FlipVertical2}
                 label="垂直翻转"
-                onClick={() =>
-                  execute(() =>
-                    editor?.flipShapes(selectedIds, 'vertical'),
-                  )
-                }
+                onClick={() => execute(() => editor?.flipShapes(selectedIds, 'vertical'))}
               />
             </MenuSection>
 
@@ -427,17 +382,9 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
 
       {onSave ? (
         <>
-          <Separator
-            className="mx-1 h-5 shrink-0"
-            orientation="vertical"
-          />
+          <Separator className="mx-1 h-5 shrink-0" orientation="vertical" />
 
-          <ToolbarButton
-            icon={Save}
-            label="保存"
-            onClick={onSave}
-            shortcut="Ctrl+S"
-          />
+          <ToolbarButton icon={Save} label="保存" onClick={onSave} shortcut="Ctrl+S" />
         </>
       ) : null}
     </div>
@@ -470,8 +417,7 @@ function ToolbarButton({
           className={cn(
             'size-8 shrink-0 rounded-md text-muted-foreground',
             'hover:bg-accent hover:text-foreground',
-            active &&
-              'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
+            active && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
           )}
           disabled={disabled}
           onClick={onClick}
@@ -485,11 +431,7 @@ function ToolbarButton({
 
       <TooltipContent side="bottom">
         <span>{label}</span>
-        {shortcut ? (
-          <kbd className="ml-2 text-[10px] opacity-60">
-            {shortcut}
-          </kbd>
-        ) : null}
+        {shortcut ? <kbd className="ml-2 text-[10px] opacity-60">{shortcut}</kbd> : null}
       </TooltipContent>
     </Tooltip>
   )
@@ -519,13 +461,7 @@ interface MenuActionProps {
   readonly disabled?: boolean
 }
 
-function MenuAction({
-  icon: Icon,
-  label,
-  onClick,
-  shortcut,
-  disabled = false,
-}: MenuActionProps) {
+function MenuAction({ icon: Icon, label, onClick, shortcut, disabled = false }: MenuActionProps) {
   return (
     <button
       className={cn(
@@ -541,9 +477,7 @@ function MenuAction({
       <Icon className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {shortcut ? (
-        <kbd className="shrink-0 text-[9px] text-muted-foreground">
-          {shortcut}
-        </kbd>
+        <kbd className="shrink-0 text-[9px] text-muted-foreground">{shortcut}</kbd>
       ) : null}
     </button>
   )
