@@ -57,7 +57,7 @@ function normalizeError(value: unknown): NormalizedError {
     return {
       name: value.name || 'Error',
       message: value.message || '未知错误',
-      stack: value.stack,
+      ...optionalProperty('stack', value.stack),
     }
   }
 
@@ -115,8 +115,8 @@ function showFatalError(diagnosticText: string): void {
   elements.title.textContent = '应用无法完成启动'
   elements.description.textContent = '应用启动期间发生了未处理错误。完整诊断信息如下。'
   elements.diagnostic.textContent = diagnosticText
-  elements.details.dataset.visible = 'true'
-  elements.actions.dataset.visible = 'true'
+  elements.details.setAttribute('data-visible', 'true')
+  elements.actions.setAttribute('data-visible', 'true')
 
   elements.reloadButton.onclick = () => {
     window.location.reload()
@@ -199,6 +199,35 @@ function readOptionalNumber(value: Record<string, unknown>, property: string): n
   return typeof candidate === 'number' ? candidate : undefined
 }
 
+function readUnknownProperty(value: Record<string, unknown>, property: string): unknown {
+  return value[property]
+}
+
+function optionalProperty<Key extends string, Value>(
+  property: Key,
+  value: Value | undefined,
+): Partial<Record<Key, Value>> {
+  if (value === undefined) {
+    return {}
+  }
+
+  return {
+    [property]: value,
+  } as Record<Key, Value>
+}
+
+function parseViteDiagnosticLocation(value: unknown): ViteDiagnosticLocation | undefined {
+  if (!isUnknownRecord(value)) {
+    return undefined
+  }
+
+  return {
+    ...optionalProperty('file', readOptionalString(value, 'file')),
+    ...optionalProperty('line', readOptionalNumber(value, 'line')),
+    ...optionalProperty('column', readOptionalNumber(value, 'column')),
+  }
+}
+
 function parseViteDiagnosticPayload(value: unknown): ViteDiagnosticPayload {
   if (!isUnknownRecord(value)) {
     return {
@@ -211,9 +240,11 @@ function parseViteDiagnosticPayload(value: unknown): ViteDiagnosticPayload {
     }
   }
 
-  const rawError = isUnknownRecord(value.error) ? value.error : {}
+  const rawErrorValue = readUnknownProperty(value, 'error')
+  const rawError = isUnknownRecord(rawErrorValue) ? rawErrorValue : {}
 
-  const rawLocation = isUnknownRecord(rawError.location) ? rawError.location : undefined
+  const rawLocationValue = readUnknownProperty(rawError, 'location')
+  const location = parseViteDiagnosticLocation(rawLocationValue)
 
   return {
     source: readOptionalString(value, 'source') ?? 'vite',
@@ -221,18 +252,12 @@ function parseViteDiagnosticPayload(value: unknown): ViteDiagnosticPayload {
     error: {
       name: readOptionalString(rawError, 'name') ?? 'ViteError',
       message: readOptionalString(rawError, 'message') ?? '未知 Vite 开发服务器错误',
-      stack: readOptionalString(rawError, 'stack'),
-      plugin: readOptionalString(rawError, 'plugin'),
-      id: readOptionalString(rawError, 'id'),
-      frame: readOptionalString(rawError, 'frame'),
-      pluginCode: readOptionalString(rawError, 'pluginCode'),
-      location: rawLocation
-        ? {
-            file: readOptionalString(rawLocation, 'file'),
-            line: readOptionalNumber(rawLocation, 'line'),
-            column: readOptionalNumber(rawLocation, 'column'),
-          }
-        : undefined,
+      ...optionalProperty('stack', readOptionalString(rawError, 'stack')),
+      ...optionalProperty('plugin', readOptionalString(rawError, 'plugin')),
+      ...optionalProperty('id', readOptionalString(rawError, 'id')),
+      ...optionalProperty('frame', readOptionalString(rawError, 'frame')),
+      ...optionalProperty('pluginCode', readOptionalString(rawError, 'pluginCode')),
+      ...optionalProperty('location', location),
     },
   }
 }

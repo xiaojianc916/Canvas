@@ -70,6 +70,7 @@ export interface WorkspaceUIPort {
 
 export interface WorkspaceContainerProps {
   readonly port: WorkspaceUIPort
+  readonly isWindowMaximized: boolean
   readonly onCommandPaletteOpen: () => void
   readonly onSettingsOpen: () => void
   readonly onWindowMinimize: () => void
@@ -80,6 +81,7 @@ export interface WorkspaceContainerProps {
 
 export function WorkspaceContainer({
   port,
+  isWindowMaximized,
   onCommandPaletteOpen,
   onSettingsOpen,
   onWindowMinimize,
@@ -332,6 +334,7 @@ export function WorkspaceContainer({
         onCreateCanvas,
       }) => (
         <DesktopTitleBar
+          isMaximized={isWindowMaximized}
           isSidebarOpen={isSidebarOpen}
           onClose={onWindowClose}
           onMaximize={onWindowMaximize}

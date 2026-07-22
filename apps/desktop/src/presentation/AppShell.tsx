@@ -50,6 +50,8 @@ export function AppShell({ runtime }: AppShellProps) {
 
   const [isSettingsOpen, setSettingsOpen] = useState(false)
 
+  const isWindowMaximized = useWindowMaximizedState(runtime.mainWindow)
+
   const [failedCanvasTitle, setFailedCanvasTitle] = useState<string | null>(null)
 
   const termination = useSyncExternalStore(
@@ -168,6 +170,7 @@ export function AppShell({ runtime }: AppShellProps) {
     <EditorProvider>
       <UiErrorBoundary area="工作区">
         <WorkspaceContainer
+          isWindowMaximized={isWindowMaximized}
           onCommandPaletteOpen={openCommandPalette}
           onSettingsOpen={openSettings}
           onWindowClose={requestApplicationClose}
@@ -225,6 +228,80 @@ export function AppShell({ runtime }: AppShellProps) {
       />
     </EditorProvider>
   )
+}
+
+function useWindowMaximizedState(
+  mainWindow: MainWindowController,
+): boolean {
+  const [isMaximized, setMaximized] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    let unsubscribe: (() => void) | undefined
+    let requestVersion = 0
+
+    function synchronizeMaximizedState() {
+      const currentVersion = ++requestVersion
+
+      void mainWindow.isMaximized().then(
+        (nextIsMaximized) => {
+          if (
+            !active ||
+            currentVersion !== requestVersion
+          ) {
+            return
+          }
+
+          setMaximized(nextIsMaximized)
+        },
+        (cause: unknown) => {
+          if (!active) {
+            return
+          }
+
+          reportError('window maximize state query failed', {
+            scope: 'app-shell',
+            operation: 'query-window-maximized',
+            cause,
+          })
+        },
+      )
+    }
+
+    synchronizeMaximizedState()
+
+    void mainWindow.onResized(
+      synchronizeMaximizedState,
+    ).then(
+      (nextUnsubscribe) => {
+        if (!active) {
+          nextUnsubscribe()
+          return
+        }
+
+        unsubscribe = nextUnsubscribe
+      },
+      (cause: unknown) => {
+        if (!active) {
+          return
+        }
+
+        reportError('window resize listener registration failed', {
+          scope: 'app-shell',
+          operation: 'register-window-resize-listener',
+          cause,
+        })
+      },
+    )
+
+    return () => {
+      active = false
+      requestVersion += 1
+      unsubscribe?.()
+    }
+  }, [mainWindow])
+
+  return isMaximized
 }
 
 function useMainWindowCloseRequest(

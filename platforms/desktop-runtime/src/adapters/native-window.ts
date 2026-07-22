@@ -3,6 +3,8 @@ import { invoke } from '@hybrid-canvas/desktop-ipc'
 export interface MainWindowController {
   minimize(): Promise<void>
   toggleMaximize(): Promise<void>
+  isMaximized(): Promise<boolean>
+  onResized(handler: () => void): Promise<() => void>
   close(): Promise<void>
   forceClose(): void
   onCloseRequested(handler: () => void): Promise<() => void>
@@ -33,6 +35,17 @@ export function createMainWindowController(): MainWindowController {
     async toggleMaximize() {
       const window = await getMainWindow()
       await window.toggleMaximize()
+    },
+    async isMaximized() {
+      const window = await getMainWindow()
+      return window.isMaximized()
+    },
+    async onResized(handler) {
+      const window = await getMainWindow()
+
+      return window.onResized(() => {
+        handler()
+      })
     },
     close: () => invoke('window_close', { label: MAIN_WINDOW_LABEL }),
     forceClose() {

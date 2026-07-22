@@ -1,4 +1,4 @@
-import { Minus, PanelLeftClose, PanelLeftOpen, Square, X } from 'lucide-react'
+import { Copy, Minus, PanelLeftClose, PanelLeftOpen, Square, X } from 'lucide-react'
 
 const WINDOW_DRAG_EXCLUSION_SELECTOR = [
   'button',
@@ -21,6 +21,7 @@ export interface DesktopTitleBarProps {
   readonly onStartDragging: () => void
   readonly onSidebarToggle: () => void
   readonly isSidebarOpen: boolean
+  readonly isMaximized: boolean
   readonly sidebarWidth: number
 }
 
@@ -32,6 +33,7 @@ export function DesktopTitleBar({
   onStartDragging,
   onSidebarToggle,
   isSidebarOpen,
+  isMaximized,
 }: DesktopTitleBarProps) {
   function handleDragMouseDown(event: React.MouseEvent<HTMLElement>) {
     if (event.button !== 0) {
@@ -101,12 +103,23 @@ export function DesktopTitleBar({
             <Minus className="size-3.5" />
           </button>
           <button
-            aria-label="最大化或还原"
+            aria-label={isMaximized ? '还原窗口' : '最大化窗口'}
             className="grid w-11 place-items-center text-muted-foreground hover:bg-black/5 hover:text-foreground"
             onClick={onMaximize}
+            title={isMaximized ? '还原窗口' : '最大化窗口'}
             type="button"
           >
-            <Square className="size-3" />
+            {isMaximized ? (
+              <Copy
+                aria-hidden="true"
+                className="size-3.5"
+              />
+            ) : (
+              <Square
+                aria-hidden="true"
+                className="size-3"
+              />
+            )}
           </button>
           <button
             aria-label="关闭"
