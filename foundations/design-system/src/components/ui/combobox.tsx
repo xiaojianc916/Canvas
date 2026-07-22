@@ -181,8 +181,11 @@ export const ComboboxContent = forwardRef<
     <BaseCombobox.Portal>
       <BaseCombobox.Positioner
         align="start"
-        className="z-[var(--ui-z-popover)] outline-none"
+        className="outline-none"
         sideOffset={4}
+        style={{
+          zIndex: 'calc(var(--ui-z-dialog) + 1)',
+        }}
       >
         <BaseCombobox.Popup
           className={cn(

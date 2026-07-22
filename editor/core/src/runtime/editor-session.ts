@@ -311,27 +311,19 @@ function isInitialDocumentBootstrapChange(entry: unknown): boolean {
   }
 
   const removedValue = changes['removed']
-  const removed = isRecord(removedValue)
-    ? Object.values(removedValue)
-    : []
+  const removed = isRecord(removedValue) ? Object.values(removedValue) : []
 
   if (removed.length > 0) {
     return false
   }
 
   const addedValue = changes['added']
-  const added = isRecord(addedValue)
-    ? Object.values(addedValue)
-    : []
+  const added = isRecord(addedValue) ? Object.values(addedValue) : []
 
   const updatedValue = changes['updated']
-  const updatedValues = isRecord(updatedValue)
-    ? Object.values(updatedValue)
-    : []
+  const updatedValues = isRecord(updatedValue) ? Object.values(updatedValue) : []
 
-  const updated = updatedValues.flatMap((value) =>
-    Array.isArray(value) ? value : [value],
-  )
+  const updated = updatedValues.flatMap((value) => (Array.isArray(value) ? value : [value]))
 
   const affectedRecords = [...added, ...updated].filter(isRecord)
 
