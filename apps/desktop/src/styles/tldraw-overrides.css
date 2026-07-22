@@ -1,0 +1,38 @@
+/*
+ * tldraw 5.2.5 UI override boundary.
+ * Revalidate these selectors when upgrading tldraw.
+ */
+
+.tl-canvas,
+.tl-background {
+  background-color: var(--color-canvas);
+}
+
+.tlui-help-menu,
+.tlui-menu-zone,
+.tlui-navigation-zone,
+.tlui-debug-panel {
+  display: none;
+}
+
+.tlui-toolbar__tools {
+  border-radius: 10px;
+}
+
+.tlui-page-menu {
+  --tl-page-menu-y: auto;
+}
+
+[data-workbench-state='empty'] .tl-container {
+  display: none;
+}
+
+.workspace-shell .tl-container,
+.workspace-shell .tlui-layout {
+  width: 100%;
+  height: 100%;
+}
+
+.workspace-shell .tlui-layout {
+  overflow: hidden;
+}

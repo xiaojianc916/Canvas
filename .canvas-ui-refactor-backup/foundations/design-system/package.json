@@ -10,8 +10,7 @@
     ".": {
       "types": "./src/public-api.ts",
       "default": "./src/public-api.ts"
-    },
-    "./styles.css": "./src/styles/index.css"
+    }
   },
   "scripts": {
     "build": "tsc --project tsconfig.json --noEmit",

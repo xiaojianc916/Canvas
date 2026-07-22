@@ -1,0 +1,16 @@
+{
+  "createdAt": "2026-07-22T04:50:25.766Z",
+  "files": [
+    "foundations/design-system/src/styles/index.css",
+    "foundations/design-system/src/theme-controller.ts",
+    "foundations/design-system/src/components/ui/select.tsx",
+    "foundations/design-system/src/components/ui/feedback.tsx",
+    "features/workspace/src/presentation/shell/useWorkspaceLayout.ts",
+    "apps/desktop/src/styles/tldraw-overrides.css",
+    "tests/architecture/check-ui-architecture.mjs",
+    "apps/desktop/src/app.css",
+    "foundations/design-system/package.json",
+    "foundations/design-system/src/public-api.ts",
+    "package.json"
+  ]
+}

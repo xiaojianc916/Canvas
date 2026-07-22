@@ -1,7 +1,5 @@
 ﻿@import "tldraw/tldraw.css";
-@import "@hybrid-canvas/design-system/styles.css";
 @import "tailwindcss" source("../../../");
-@import "./styles/tldraw-overrides.css";
 
 :root {
   --activity-rail-width: 48px;
