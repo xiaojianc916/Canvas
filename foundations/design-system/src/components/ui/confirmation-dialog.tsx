@@ -37,48 +37,28 @@ export function ConfirmationDialog({
         }
       }}
       footer={
-        <div
-          className={cnFooter()}
-        >
-          <Button
-            disabled={busy}
-            onClick={onCancel}
-            type="button"
-            variant="ghost"
-          >
+        <div className={cnFooter()}>
+          <Button disabled={busy} onClick={onCancel} type="button" variant="ghost">
             {cancelLabel}
           </Button>
 
           <Button
-            aria-busy={
-              busy || undefined
-            }
+            aria-busy={busy || undefined}
             disabled={busy}
             onClick={onConfirm}
             type="button"
-            variant={
-              destructive
-                ? 'destructive'
-                : 'default'
-            }
+            variant={destructive ? 'destructive' : 'default'}
           >
-            {busy
-              ? '处理中…'
-              : confirmLabel}
+            {busy ? '处理中…' : confirmLabel}
           </Button>
         </div>
       }
     >
-      <div className="sr-only">
-        {description}
-      </div>
+      <div className="sr-only">{description}</div>
     </Dialog>
   )
 }
 
 function cnFooter(): string {
-  return [
-    'flex flex-wrap',
-    'justify-end gap-2',
-  ].join(' ')
+  return ['flex flex-wrap', 'justify-end gap-2'].join(' ')
 }

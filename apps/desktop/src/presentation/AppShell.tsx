@@ -7,21 +7,12 @@ import { SettingsDialog } from '@hybrid-canvas/settings/react'
 import type { CommandRegistry } from '@hybrid-canvas/workspace/application'
 import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
 import { CommandPalette } from '@hybrid-canvas/workspace/react'
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
 import type { ApplicationTerminationCoordinator } from '../application/termination/application-termination-coordinator'
 import { UiErrorBoundary } from './boundaries/UiErrorBoundary'
 import { useGlobalCommandShortcuts } from './commands/useGlobalCommandShortcuts'
-import {
-  type WorkspaceCanvasUIPort,
-  WorkspaceContainer,
-} from './workspace/WorkspaceContainer'
+import { type WorkspaceCanvasUIPort, WorkspaceContainer } from './workspace/WorkspaceContainer'
 
 export interface AppShellRuntime {
   readonly workspace: WorkbenchSessionStore
@@ -39,8 +30,7 @@ export interface AppShellProps {
 const GLOBAL_COMMAND_SHORTCUTS = [
   {
     key: 'k',
-    commandId:
-      'application.toggle-command-palette',
+    commandId: 'application.toggle-command-palette',
     ctrlOrMeta: true,
   },
   {
@@ -55,18 +45,10 @@ const GLOBAL_COMMAND_SHORTCUTS = [
   },
 ] as const
 
-export function AppShell({
-  runtime,
-}: AppShellProps) {
-  const [
-    isCommandPaletteOpen,
-    setCommandPaletteOpen,
-  ] = useState(false)
+export function AppShell({ runtime }: AppShellProps) {
+  const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false)
 
-  const [
-    isSettingsOpen,
-    setSettingsOpen,
-  ] = useState(false)
+  const [isSettingsOpen, setSettingsOpen] = useState(false)
 
   const termination = useSyncExternalStore(
     runtime.termination.subscribe,
@@ -74,135 +56,78 @@ export function AppShell({
     runtime.termination.getSnapshot,
   )
 
-  const toggleCommandPalette = useCallback(
-    () => {
-      setCommandPaletteOpen(
-        (open) => !open,
-      )
-    },
-    [],
-  )
+  const toggleCommandPalette = useCallback(() => {
+    setCommandPaletteOpen((open) => !open)
+  }, [])
 
-  const openCommandPalette = useCallback(
-    () => setCommandPaletteOpen(true),
-    [],
-  )
+  const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), [])
 
-  const openSettings = useCallback(
-    () => setSettingsOpen(true),
-    [],
-  )
+  const openSettings = useCallback(() => setSettingsOpen(true), [])
 
-  const requestApplicationClose = useCallback(
-    () => {
-      runtime.termination.request(
-        'window-close',
-      )
-    },
-    [runtime.termination],
-  )
+  const requestApplicationClose = useCallback(() => {
+    runtime.termination.request('window-close')
+  }, [runtime.termination])
 
   const minimizeWindow = useCallback(() => {
-    void runtime.mainWindow
-      .minimize()
-      .catch((cause: unknown) => {
-        reportError(
-          'main window minimize failed',
-          {
-            scope: 'app-shell',
-            operation: 'minimize-window',
-            cause,
-          },
-        )
+    void runtime.mainWindow.minimize().catch((cause: unknown) => {
+      reportError('main window minimize failed', {
+        scope: 'app-shell',
+        operation: 'minimize-window',
+        cause,
       })
+    })
   }, [runtime.mainWindow])
 
   const maximizeWindow = useCallback(() => {
-    void runtime.mainWindow
-      .toggleMaximize()
-      .catch((cause: unknown) => {
-        reportError(
-          'main window maximize failed',
-          {
-            scope: 'app-shell',
-            operation: 'toggle-maximize-window',
-            cause,
-          },
-        )
+    void runtime.mainWindow.toggleMaximize().catch((cause: unknown) => {
+      reportError('main window maximize failed', {
+        scope: 'app-shell',
+        operation: 'toggle-maximize-window',
+        cause,
       })
+    })
   }, [runtime.mainWindow])
 
-  const startWindowDragging =
-    useCallback(() => {
-      void runtime.mainWindow
-        .startDragging()
-        .catch((cause: unknown) => {
-          reportError(
-            'main window drag failed',
-            {
-              scope: 'app-shell',
-              operation:
-                'start-window-dragging',
-              cause,
-            },
-          )
-        })
-    }, [runtime.mainWindow])
+  const startWindowDragging = useCallback(() => {
+    void runtime.mainWindow.startDragging().catch((cause: unknown) => {
+      reportError('main window drag failed', {
+        scope: 'app-shell',
+        operation: 'start-window-dragging',
+        cause,
+      })
+    })
+  }, [runtime.mainWindow])
 
-  useApplicationCommands(
-    runtime,
-    toggleCommandPalette,
-  )
+  useApplicationCommands(runtime, toggleCommandPalette)
 
-  useGlobalCommandShortcuts(
-    runtime.commands,
-    GLOBAL_COMMAND_SHORTCUTS,
-  )
+  useGlobalCommandShortcuts(runtime.commands, GLOBAL_COMMAND_SHORTCUTS)
 
-  useMainWindowCloseRequest(
-    runtime.mainWindow,
-    requestApplicationClose,
-  )
+  useMainWindowCloseRequest(runtime.mainWindow, requestApplicationClose)
 
   const workspacePort = useMemo(
     () => ({
       canvases: runtime.canvases,
       workspace: runtime.workspace,
     }),
-    [
-      runtime.canvases,
-      runtime.workspace,
-    ],
+    [runtime.canvases, runtime.workspace],
   )
 
   return (
     <EditorProvider>
       <UiErrorBoundary area="工作区">
         <WorkspaceContainer
-          onCommandPaletteOpen={
-            openCommandPalette
-          }
+          onCommandPaletteOpen={openCommandPalette}
           onSettingsOpen={openSettings}
-          onWindowClose={
-            requestApplicationClose
-          }
-          onWindowMaximize={
-            maximizeWindow
-          }
-          onWindowMinimize={
-            minimizeWindow
-          }
-          onWindowStartDragging={
-            startWindowDragging
-          }
+          onWindowClose={requestApplicationClose}
+          onWindowMaximize={maximizeWindow}
+          onWindowMinimize={minimizeWindow}
+          onWindowStartDragging={startWindowDragging}
           port={workspacePort}
         />
       </UiErrorBoundary>
 
       <CommandPalette
-        onOpenChange={
-          setCommandPaletteOpen
-        }
+        onOpenChange={setCommandPaletteOpen}
         open={isCommandPaletteOpen}
         registry={runtime.commands}
       />
@@ -216,22 +141,14 @@ export function AppShell({
       <ConfirmationDialog
         confirmLabel="放弃全部并退出"
         description={
-          termination.state ===
-          'confirmation-required'
+          termination.state === 'confirmation-required'
             ? `有 ${termination.sessionIds.length} 个画布包含未保存的更改。`
             : ''
         }
         destructive
-        onCancel={
-          runtime.termination.cancel
-        }
-        onConfirm={
-          runtime.termination.confirmDiscard
-        }
-        open={
-          termination.state ===
-          'confirmation-required'
-        }
+        onCancel={runtime.termination.cancel}
+        onConfirm={runtime.termination.confirmDiscard}
+        open={termination.state === 'confirmation-required'}
         title="退出并放弃未保存的更改？"
       />
     </EditorProvider>
@@ -244,35 +161,27 @@ function useMainWindowCloseRequest(
 ): void {
   useEffect(() => {
     let disposed = false
-    let unsubscribe:
-      | (() => void)
-      | undefined
+    let unsubscribe: (() => void) | undefined
 
-    void mainWindow
-      .onCloseRequested(onCloseRequested)
-      .then(
-        (nextUnsubscribe) => {
-          if (disposed) {
-            nextUnsubscribe()
-            return
-          }
+    void mainWindow.onCloseRequested(onCloseRequested).then(
+      (nextUnsubscribe) => {
+        if (disposed) {
+          nextUnsubscribe()
+          return
+        }
 
-          unsubscribe = nextUnsubscribe
-        },
-        (cause: unknown) => {
-          if (!disposed) {
-            reportError(
-              'main window close listener registration failed',
-              {
-                scope: 'app-shell',
-                operation:
-                  'register-close-listener',
-                cause,
-              },
-            )
-          }
-        },
-      )
+        unsubscribe = nextUnsubscribe
+      },
+      (cause: unknown) => {
+        if (!disposed) {
+          reportError('main window close listener registration failed', {
+            scope: 'app-shell',
+            operation: 'register-close-listener',
+            cause,
+          })
+        }
+      },
+    )
 
     return () => {
       disposed = true
@@ -281,10 +190,7 @@ function useMainWindowCloseRequest(
   }, [mainWindow, onCloseRequested])
 }
 
-function useApplicationCommands(
-  runtime: AppShellRuntime,
-  toggleCommandPalette: () => void,
-): void {
+function useApplicationCommands(runtime: AppShellRuntime, toggleCommandPalette: () => void): void {
   useEffect(() => {
     const unregister = [
       runtime.commands.register({
@@ -301,9 +207,7 @@ function useApplicationCommands(
         category: '文件',
         shortcut: 'Ctrl+N',
         execute() {
-          runtime.canvases.create(
-            '未命名画板',
-          )
+          runtime.canvases.create('未命名画板')
         },
       }),
 
@@ -317,11 +221,7 @@ function useApplicationCommands(
     ]
 
     return () => {
-      for (
-        let index = unregister.length - 1;
-        index >= 0;
-        index -= 1
-      ) {
+      for (let index = unregister.length - 1; index >= 0; index -= 1) {
         unregister[index]?.()
       }
     }

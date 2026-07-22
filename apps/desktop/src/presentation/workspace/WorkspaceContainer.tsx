@@ -7,16 +7,8 @@ import type {
   WorkbenchSessionStore,
   WorkspaceShellActions,
 } from '@hybrid-canvas/workspace/contracts'
-import {
-  CanvasTabs,
-  WorkspaceShell,
-} from '@hybrid-canvas/workspace/react'
-import {
-  useCallback,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from 'react'
+import { CanvasTabs, WorkspaceShell } from '@hybrid-canvas/workspace/react'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
 import { DesktopTitleBar } from '../chrome/DesktopTitleBar'
@@ -26,8 +18,7 @@ const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({
 })
 
 const EMPTY_SUBSCRIBE = () => () => {}
-const EMPTY_EDITOR_SNAPSHOT = () =>
-  EMPTY_EDITOR_SESSION_SNAPSHOT
+const EMPTY_EDITOR_SNAPSHOT = () => EMPTY_EDITOR_SESSION_SNAPSHOT
 
 export type WorkspaceCanvasCloseResult =
   | { readonly kind: 'closed' }
@@ -40,27 +31,15 @@ export type WorkspaceCanvasCloseResult =
 export interface WorkspaceCanvasUIPort {
   readonly create: (title: string) => void
   readonly open: () => Promise<void>
-  readonly save: (
-    sessionId: CanvasSessionId,
-  ) => Promise<void>
-  readonly requestClose: (
-    sessionId: CanvasSessionId,
-  ) => Promise<WorkspaceCanvasCloseResult>
-  readonly discardAndClose: (
-    sessionId: CanvasSessionId,
-  ) => void
-  readonly getEditorSession: (
-    sessionId: CanvasSessionId,
-  ) => EditorSession | null
+  readonly save: (sessionId: CanvasSessionId) => Promise<void>
+  readonly requestClose: (sessionId: CanvasSessionId) => Promise<WorkspaceCanvasCloseResult>
+  readonly discardAndClose: (sessionId: CanvasSessionId) => void
+  readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (
     sessionId: CanvasSessionId,
-  ) =>
-    | import('@hybrid-canvas/document').CanvasSessionSnapshot
-    | null
+  ) => import('@hybrid-canvas/document').CanvasSessionSnapshot | null
   readonly getVersion: () => number
-  readonly subscribe: (
-    listener: () => void,
-  ) => () => void
+  readonly subscribe: (listener: () => void) => () => void
 }
 
 export interface WorkspaceUIPort {
@@ -87,10 +66,7 @@ export function WorkspaceContainer({
   onWindowClose,
   onWindowStartDragging,
 }: WorkspaceContainerProps) {
-  const [
-    pendingCloseSessionId,
-    setPendingCloseSessionId,
-  ] = useState<CanvasSessionId | null>(null)
+  const [pendingCloseSessionId, setPendingCloseSessionId] = useState<CanvasSessionId | null>(null)
 
   const workbench = useSyncExternalStore(
     port.workspace.subscribe,
@@ -98,37 +74,26 @@ export function WorkspaceContainer({
     port.workspace.getSnapshot,
   )
 
-  useSyncExternalStore(
-    port.canvases.subscribe,
-    port.canvases.getVersion,
-    port.canvases.getVersion,
-  )
+  useSyncExternalStore(port.canvases.subscribe, port.canvases.getVersion, port.canvases.getVersion)
 
-  const activeEditorSession =
-    port.canvases.getEditorSession(
-      workbench.activeSessionId ?? '',
-    )
+  const activeEditorSession = port.canvases.getEditorSession(workbench.activeSessionId ?? '')
 
   const pages = useSyncExternalStore(
     activeEditorSession?.subscribe ?? EMPTY_SUBSCRIBE,
-    activeEditorSession?.getSessionSnapshot ??
-      EMPTY_EDITOR_SNAPSHOT,
-    activeEditorSession?.getSessionSnapshot ??
-      EMPTY_EDITOR_SNAPSHOT,
+    activeEditorSession?.getSessionSnapshot ?? EMPTY_EDITOR_SNAPSHOT,
+    activeEditorSession?.getSessionSnapshot ?? EMPTY_EDITOR_SNAPSHOT,
   ).pages
 
   const handleSave = useCallback(
     (sessionId: string) => {
-      void port.canvases.save(sessionId).catch(
-        (cause: unknown) => {
-          reportError('canvas save failed', {
-            scope: 'workspace',
-            operation: 'save-canvas',
-            sessionId,
-            cause,
-          })
-        },
-      )
+      void port.canvases.save(sessionId).catch((cause: unknown) => {
+        reportError('canvas save failed', {
+          scope: 'workspace',
+          operation: 'save-canvas',
+          sessionId,
+          cause,
+        })
+      })
     },
     [port.canvases],
   )
@@ -138,13 +103,8 @@ export function WorkspaceContainer({
       void port.canvases
         .requestClose(sessionId)
         .then((result) => {
-          if (
-            result.kind ===
-            'confirmation-required'
-          ) {
-            setPendingCloseSessionId(
-              result.sessionId,
-            )
+          if (result.kind === 'confirmation-required') {
+            setPendingCloseSessionId(result.sessionId)
           }
         })
         .catch((cause: unknown) => {
@@ -162,25 +122,17 @@ export function WorkspaceContainer({
   const actions = useMemo<WorkspaceShellActions>(
     () => ({
       createCanvas() {
-        port.canvases.create(
-          createUntitledCanvasTitle(
-            workbench.tabs.map(
-              (tab) => tab.title,
-            ),
-          ),
-        )
+        port.canvases.create(createUntitledCanvasTitle(workbench.tabs.map((tab) => tab.title)))
       },
 
       openCanvas() {
-        void port.canvases.open().catch(
-          (cause: unknown) => {
-            reportError('canvas open failed', {
-              scope: 'workspace',
-              operation: 'open-canvas',
-              cause,
-            })
-          },
-        )
+        void port.canvases.open().catch((cause: unknown) => {
+          reportError('canvas open failed', {
+            scope: 'workspace',
+            operation: 'open-canvas',
+            cause,
+          })
+        })
       },
 
       activateCanvas(sessionId) {
@@ -194,13 +146,10 @@ export function WorkspaceContainer({
       },
 
       createPage() {
-        activeEditorSession?.createPage(
-          `画板 ${pages.length + 1}`,
-        )
+        activeEditorSession?.createPage(`画板 ${pages.length + 1}`)
       },
 
-      openCommandPalette:
-        onCommandPaletteOpen,
+      openCommandPalette: onCommandPaletteOpen,
 
       openSettingsWindow: onSettingsOpen,
     }),
@@ -217,14 +166,9 @@ export function WorkspaceContainer({
   )
 
   const tabs = workbench.tabs.map((tab) => {
-    const status =
-      port.canvases.getSessionSnapshot(
-        tab.sessionId,
-      )?.persistence
+    const status = port.canvases.getSessionSnapshot(tab.sessionId)?.persistence
 
-    return status
-      ? { ...tab, status }
-      : tab
+    return status ? { ...tab, status } : tab
   })
 
   const workbenchWithCanvasStatus = {
@@ -235,10 +179,7 @@ export function WorkspaceContainer({
   const hostedSessions = useMemo(
     () =>
       workbench.tabs.flatMap((tab) => {
-        const session =
-          port.canvases.getEditorSession(
-            tab.sessionId,
-          )
+        const session = port.canvases.getEditorSession(tab.sessionId)
 
         return session
           ? [
@@ -259,52 +200,35 @@ export function WorkspaceContainer({
         workbench.activeCanvas ? (
           <UiErrorBoundary area="画布编辑器">
             <EditorSessionHost
-              activeSessionId={
-                workbench.activeSessionId
-              }
+              activeSessionId={workbench.activeSessionId}
               onSave={handleSave}
               sessions={hostedSessions}
             />
           </UiErrorBoundary>
         ) : null
       }
-      inspector={
-        <CanvasInspectorContent
-          hasActiveCanvas={
-            workbench.activeCanvas !== null
-          }
-        />
-      }
+      inspector={<CanvasInspectorContent hasActiveCanvas={workbench.activeCanvas !== null} />}
       model={workbenchWithCanvasStatus}
       overlays={
         <ConfirmationDialog
           confirmLabel="放弃并关闭"
           description="关闭画布会丢失自上次保存后的更改，此操作无法撤销。"
           destructive
-          onCancel={() =>
-            setPendingCloseSessionId(null)
-          }
+          onCancel={() => setPendingCloseSessionId(null)}
           onConfirm={() => {
             if (!pendingCloseSessionId) {
               return
             }
 
             try {
-              port.canvases.discardAndClose(
-                pendingCloseSessionId,
-              )
+              port.canvases.discardAndClose(pendingCloseSessionId)
             } catch (cause) {
-              reportError(
-                'discard and close canvas failed',
-                {
-                  scope: 'workspace',
-                  operation:
-                    'discard-and-close-canvas',
-                  sessionId:
-                    pendingCloseSessionId,
-                  cause,
-                },
-              )
+              reportError('discard and close canvas failed', {
+                scope: 'workspace',
+                operation: 'discard-and-close-canvas',
+                sessionId: pendingCloseSessionId,
+                cause,
+              })
 
               return
             }
@@ -331,9 +255,7 @@ export function WorkspaceContainer({
           onMaximize={onWindowMaximize}
           onMinimize={onWindowMinimize}
           onSidebarToggle={onSidebarToggle}
-          onStartDragging={
-            onWindowStartDragging
-          }
+          onStartDragging={onWindowStartDragging}
           sidebarWidth={sidebarWidth}
         >
           <CanvasTabs
@@ -344,27 +266,13 @@ export function WorkspaceContainer({
           />
         </DesktopTitleBar>
       )}
-      statusLeft={
-        <CanvasStatusLeftContent
-          hasActiveCanvas={
-            workbench.activeCanvas !== null
-          }
-        />
-      }
-      statusRight={
-        <CanvasStatusRightContent
-          pageCount={pages.length}
-        />
-      }
+      statusLeft={<CanvasStatusLeftContent hasActiveCanvas={workbench.activeCanvas !== null} />}
+      statusRight={<CanvasStatusRightContent pageCount={pages.length} />}
     />
   )
 }
 
-function CanvasInspectorContent({
-  hasActiveCanvas,
-}: {
-  readonly hasActiveCanvas: boolean
-}) {
+function CanvasInspectorContent({ hasActiveCanvas }: { readonly hasActiveCanvas: boolean }) {
   if (!hasActiveCanvas) {
     return (
       <div className="py-10 text-center text-xs text-muted-foreground">
@@ -376,9 +284,7 @@ function CanvasInspectorContent({
   return (
     <div className="space-y-3">
       <section className="rounded-md border border-divider p-3">
-        <h3 className="text-xs font-medium">
-          画布属性
-        </h3>
+        <h3 className="text-xs font-medium">画布属性</h3>
 
         <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
           选择画布中的对象后，可在这里编辑对应属性。
@@ -388,25 +294,11 @@ function CanvasInspectorContent({
   )
 }
 
-function CanvasStatusLeftContent({
-  hasActiveCanvas,
-}: {
-  readonly hasActiveCanvas: boolean
-}) {
-  return (
-    <span>
-      {hasActiveCanvas
-        ? '本地画布'
-        : '没有打开的画布'}
-    </span>
-  )
+function CanvasStatusLeftContent({ hasActiveCanvas }: { readonly hasActiveCanvas: boolean }) {
+  return <span>{hasActiveCanvas ? '本地画布' : '没有打开的画布'}</span>
 }
 
-function CanvasStatusRightContent({
-  pageCount,
-}: {
-  readonly pageCount: number
-}) {
+function CanvasStatusRightContent({ pageCount }: { readonly pageCount: number }) {
   if (pageCount === 0) {
     return null
   }
@@ -414,9 +306,7 @@ function CanvasStatusRightContent({
   return <span>{pageCount} 个页面</span>
 }
 
-function createUntitledCanvasTitle(
-  existingTitles: readonly string[],
-): string {
+function createUntitledCanvasTitle(existingTitles: readonly string[]): string {
   const baseTitle = '未命名画板'
 
   if (!existingTitles.includes(baseTitle)) {
@@ -425,11 +315,7 @@ function createUntitledCanvasTitle(
 
   let suffix = 2
 
-  while (
-    existingTitles.includes(
-      `${baseTitle} ${suffix}`,
-    )
-  ) {
+  while (existingTitles.includes(`${baseTitle} ${suffix}`)) {
     suffix += 1
   }
 

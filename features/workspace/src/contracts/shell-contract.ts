@@ -1,10 +1,6 @@
 import type { ReactNode } from 'react'
 
-import type {
-  CanvasSessionId,
-  CanvasTabViewModel,
-  WorkbenchViewModel,
-} from './public-api'
+import type { CanvasSessionId, CanvasTabViewModel, WorkbenchViewModel } from './public-api'
 
 export interface CanvasPageViewModel {
   readonly id: string
@@ -37,9 +33,7 @@ export interface WorkspaceShellProps {
   readonly model: WorkbenchViewModel
   readonly actions: WorkspaceShellActions
   readonly pages: readonly CanvasPageViewModel[]
-  readonly renderChrome: (
-    props: WorkspaceChromeRenderProps,
-  ) => ReactNode
+  readonly renderChrome: (props: WorkspaceChromeRenderProps) => ReactNode
   readonly editor: ReactNode
   readonly inspector: ReactNode
   readonly statusLeft: ReactNode

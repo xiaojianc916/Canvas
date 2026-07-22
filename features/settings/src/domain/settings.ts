@@ -1,7 +1,4 @@
-export type ThemeMode =
-  | 'light'
-  | 'dark'
-  | 'system'
+export type ThemeMode = 'light' | 'dark' | 'system'
 
 export interface CanvasSettings {
   readonly defaultZoom: number
@@ -40,9 +37,7 @@ export interface AppSettings {
   readonly language: string
   readonly autoSave: boolean
   readonly autoSaveIntervalMs: number
-  readonly shortcuts: Readonly<
-    Record<string, string>
-  >
+  readonly shortcuts: Readonly<Record<string, string>>
   readonly canvas: CanvasSettings
   readonly editor: EditorSettings
   readonly export: ExportSettings
@@ -64,8 +59,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     infiniteCanvas: true,
   },
   editor: {
-    fontFamily:
-      'JetBrains Mono, Consolas, monospace',
+    fontFamily: 'JetBrains Mono, Consolas, monospace',
     fontSize: 14,
     lineHeight: 1.5,
     tabSize: 2,

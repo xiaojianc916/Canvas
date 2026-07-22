@@ -11,9 +11,7 @@ function flushMicrotasks(): Promise<void> {
 
 describe('ApplicationTerminationCoordinator', () => {
   it('enters a recoverable failure state when native termination fails', async () => {
-    const terminate = vi.fn().mockRejectedValue(
-      new Error('NATIVE_CLOSE_FAILED'),
-    )
+    const terminate = vi.fn().mockRejectedValue(new Error('NATIVE_CLOSE_FAILED'))
 
     const coordinator = createApplicationTerminationCoordinator(
       {
@@ -56,34 +54,22 @@ describe('ApplicationTerminationCoordinator', () => {
     coordinator.request('update-restart')
     await flushMicrotasks()
 
-    expect(coordinator.getSnapshot().state).toBe(
-      'termination-failed',
-    )
+    expect(coordinator.getSnapshot().state).toBe('termination-failed')
 
     coordinator.retry()
     await flushMicrotasks()
 
-    expect(terminate).toHaveBeenNthCalledWith(
-      1,
-      'update-restart',
-    )
-    expect(terminate).toHaveBeenNthCalledWith(
-      2,
-      'update-restart',
-    )
+    expect(terminate).toHaveBeenNthCalledWith(1, 'update-restart')
+    expect(terminate).toHaveBeenNthCalledWith(2, 'update-restart')
     expect(
       snapshots.some(
-        (snapshot) =>
-          snapshot.state === 'terminating' &&
-          snapshot.intent === 'update-restart',
+        (snapshot) => snapshot.state === 'terminating' && snapshot.intent === 'update-restart',
       ),
     ).toBe(true)
   })
 
   it('ignores a stale failure after cancellation', async () => {
-    let rejectTermination:
-      | ((reason?: unknown) => void)
-      | undefined
+    let rejectTermination: ((reason?: unknown) => void) | undefined
 
     const terminate = vi.fn(
       () =>

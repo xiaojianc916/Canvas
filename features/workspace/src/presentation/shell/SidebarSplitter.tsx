@@ -3,8 +3,7 @@ export interface SidebarSplitterProps {
   readonly min: number
   readonly max: number
   readonly onResizeStart: () => void
-  readonly onResize:
-    (width: number) => void
+  readonly onResize: (width: number) => void
   readonly onCollapse: () => void
 }
 
@@ -16,16 +15,8 @@ export function SidebarSplitter({
   onResize,
   onCollapse,
 }: SidebarSplitterProps) {
-  const clamp = (
-    nextWidth: number,
-  ) => {
-    return Math.max(
-      min,
-      Math.min(
-        max,
-        nextWidth,
-      ),
-    )
+  const clamp = (nextWidth: number) => {
+    return Math.max(min, Math.min(max, nextWidth))
   }
 
   return (
@@ -34,9 +25,7 @@ export function SidebarSplitter({
       aria-orientation="vertical"
       aria-valuemax={max}
       aria-valuemin={min}
-      aria-valuenow={
-        Math.round(width)
-      }
+      aria-valuenow={Math.round(width)}
       className={[
         'absolute right-0 top-0',
         'z-20 h-full w-2',
@@ -53,17 +42,13 @@ export function SidebarSplitter({
           case 'ArrowLeft':
             event.preventDefault()
 
-            onResize(
-              clamp(width - 16),
-            )
+            onResize(clamp(width - 16))
             break
 
           case 'ArrowRight':
             event.preventDefault()
 
-            onResize(
-              clamp(width + 16),
-            )
+            onResize(clamp(width + 16))
             break
 
           case 'Home':
@@ -84,11 +69,9 @@ export function SidebarSplitter({
 
         event.preventDefault()
 
-        document.body.style.cursor =
-          'col-resize'
+        document.body.style.cursor = 'col-resize'
 
-        document.body.style.userSelect =
-          'none'
+        document.body.style.userSelect = 'none'
 
         onResizeStart()
       }}

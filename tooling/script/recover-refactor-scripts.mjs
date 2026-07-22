@@ -6,14 +6,11 @@ import process from 'node:process'
 import { execFileSync } from 'node:child_process'
 
 const ROOT = process.cwd()
-const APPLY =
-  process.argv.includes('--apply')
-const ALLOW_DIRTY =
-  process.argv.includes('--allow-dirty')
+const APPLY = process.argv.includes('--apply')
+const ALLOW_DIRTY = process.argv.includes('--allow-dirty')
 
 const GENERATED_FILES = {
-  'features/workspace/src/presentation/shell/useWorkspaceLayout.ts':
-    String.raw`import { useSyncExternalStore } from 'react'
+  'features/workspace/src/presentation/shell/useWorkspaceLayout.ts': String.raw`import { useSyncExternalStore } from 'react'
 
 export type WorkspaceLayoutMode =
   | 'wide'
@@ -67,8 +64,7 @@ export function useWorkspaceLayoutMode():
 }
 `,
 
-  'features/workspace/src/presentation/shell/SidebarSplitter.tsx':
-    String.raw`export interface SidebarSplitterProps {
+  'features/workspace/src/presentation/shell/SidebarSplitter.tsx': String.raw`export interface SidebarSplitterProps {
   readonly width: number
   readonly min: number
   readonly max: number
@@ -169,8 +165,7 @@ export function SidebarSplitter({
 }
 `,
 
-  'features/workspace/src/presentation/shell/WorkspaceShell.tsx':
-    String.raw`import {
+  'features/workspace/src/presentation/shell/WorkspaceShell.tsx': String.raw`import {
   Button,
   TooltipProvider,
 } from '@hybrid-canvas/design-system'
@@ -914,51 +909,25 @@ export function WorkspaceShell({
 }
 
 function absolute(relativePath) {
-  return path.join(
-    ROOT,
-    relativePath,
-  )
+  return path.join(ROOT, relativePath)
 }
 
 function assertRepository() {
-  const packageFile =
-    absolute('package.json')
+  const packageFile = absolute('package.json')
 
   if (!fs.existsSync(packageFile)) {
-    throw new Error(
-      '请在 Canvas 仓库根目录运行脚本。',
-    )
+    throw new Error('请在 Canvas 仓库根目录运行脚本。')
   }
 
-  const packageJson = JSON.parse(
-    fs.readFileSync(
-      packageFile,
-      'utf8',
-    ),
-  )
+  const packageJson = JSON.parse(fs.readFileSync(packageFile, 'utf8'))
 
-  if (
-    packageJson.name !==
-    'hybrid-canvas'
-  ) {
-    throw new Error(
-      '当前目录不是 hybrid-canvas 仓库。',
-    )
+  if (packageJson.name !== 'hybrid-canvas') {
+    throw new Error('当前目录不是 hybrid-canvas 仓库。')
   }
 
-  for (
-    const relativePath of
-      Object.keys(GENERATED_FILES)
-  ) {
-    if (
-      !fs.existsSync(
-        absolute(relativePath),
-      )
-    ) {
-      throw new Error(
-        '缺少目标文件：' +
-          relativePath,
-      )
+  for (const relativePath of Object.keys(GENERATED_FILES)) {
+    if (!fs.existsSync(absolute(relativePath))) {
+      throw new Error('缺少目标文件：' + relativePath)
     }
   }
 
@@ -966,106 +935,58 @@ function assertRepository() {
     return
   }
 
-  const status = execFileSync(
-    'git',
-    ['status', '--porcelain'],
-    {
-      cwd: ROOT,
-      encoding: 'utf8',
-    },
-  ).trim()
+  const status = execFileSync('git', ['status', '--porcelain'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  }).trim()
 
   if (status.length > 0) {
-    throw new Error(
-      'Git 工作区不干净。' +
-        '请先提交，或显式使用 --allow-dirty。',
-    )
+    throw new Error('Git 工作区不干净。' + '请先提交，或显式使用 --allow-dirty。')
   }
 }
 
 function buildChanges() {
-  return Object.entries(
-    GENERATED_FILES,
-  )
-    .map(
-      ([
-        relativePath,
-        nextContent,
-      ]) => ({
-        relativePath,
+  return Object.entries(GENERATED_FILES)
+    .map(([relativePath, nextContent]) => ({
+      relativePath,
 
-        currentContent:
-          fs.readFileSync(
-            absolute(relativePath),
-            'utf8',
-          ),
+      currentContent: fs.readFileSync(absolute(relativePath), 'utf8'),
 
-        nextContent,
-      }),
-    )
-    .filter(
-      (change) =>
-        change.currentContent !==
-        change.nextContent,
-    )
+      nextContent,
+    }))
+    .filter((change) => change.currentContent !== change.nextContent)
 }
 
 function applyChanges(changes) {
   for (const change of changes) {
-    fs.mkdirSync(
-      path.dirname(
-        absolute(
-          change.relativePath,
-        ),
-      ),
-      {
-        recursive: true,
-      },
-    )
+    fs.mkdirSync(path.dirname(absolute(change.relativePath)), {
+      recursive: true,
+    })
 
-    fs.writeFileSync(
-      absolute(
-        change.relativePath,
-      ),
-      change.nextContent,
-      'utf8',
-    )
+    fs.writeFileSync(absolute(change.relativePath), change.nextContent, 'utf8')
   }
 
-  execFileSync(
-    'git',
-    ['diff', '--check'],
-    {
-      cwd: ROOT,
-      stdio: 'inherit',
-    },
-  )
+  execFileSync('git', ['diff', '--check'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+  })
 }
 
 function printPlan(changes) {
-  console.log(
-    'Phase 3 将修改 ' +
-      changes.length +
-      ' 个文件：',
-  )
+  console.log('Phase 3 将修改 ' + changes.length + ' 个文件：')
 
   for (const change of changes) {
-    console.log(
-      '- ' + change.relativePath,
-    )
+    console.log('- ' + change.relativePath)
   }
 }
 
 function main() {
   assertRepository()
 
-  const changes =
-    buildChanges()
+  const changes = buildChanges()
 
   if (changes.length === 0) {
-    console.log(
-      'Phase 3 没有需要应用的修改。',
-    )
+    console.log('Phase 3 没有需要应用的修改。')
 
     return
   }
@@ -1074,17 +995,11 @@ function main() {
 
   if (!APPLY) {
     console.log('')
-    console.log(
-      '当前为预检模式，没有写入文件。',
-    )
+    console.log('当前为预检模式，没有写入文件。')
 
-    console.log(
-      '应用命令：',
-    )
+    console.log('应用命令：')
 
-    console.log(
-      'node tooling/script/refactor-ui-phase-3.mjs --apply',
-    )
+    console.log('node tooling/script/refactor-ui-phase-3.mjs --apply')
 
     return
   }
@@ -1092,9 +1007,7 @@ function main() {
   applyChanges(changes)
 
   console.log('')
-  console.log(
-    'Phase 3 Workspace 响应式重构已写入。',
-  )
+  console.log('Phase 3 Workspace 响应式重构已写入。')
 
   console.log('')
   console.log('请依次执行：')
@@ -1106,29 +1019,15 @@ function main() {
   console.log('pnpm build:desktop')
 
   console.log('')
-  console.log(
-    '放弃本阶段未提交修改：',
-  )
+  console.log('放弃本阶段未提交修改：')
 
-  console.log(
-    'git restore -- ' +
-      changes
-        .map(
-          (change) =>
-            change.relativePath,
-        )
-        .join(' '),
-  )
+  console.log('git restore -- ' + changes.map((change) => change.relativePath).join(' '))
 }
 
 try {
   main()
 } catch (error) {
-  console.error(
-    error instanceof Error
-      ? error.message
-      : error,
-  )
+  console.error(error instanceof Error ? error.message : error)
 
   process.exitCode = 1
 }

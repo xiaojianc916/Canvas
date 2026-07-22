@@ -1,30 +1,11 @@
 #!/usr/bin/env node
 
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-} from 'node:fs'
-import {
-  dirname,
-  extname,
-  join,
-  normalize,
-  relative,
-  resolve,
-} from 'node:path'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { dirname, extname, join, normalize, relative, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '../..')
 
-const workspaceRoots = [
-  'apps',
-  'editor',
-  'features',
-  'foundations',
-  'platforms',
-  'tooling',
-]
+const workspaceRoots = ['apps', 'editor', 'features', 'foundations', 'platforms', 'tooling']
 
 const ignoredDirectories = new Set([
   '.git',
@@ -39,23 +20,13 @@ const ignoredDirectories = new Set([
   'test-results',
 ])
 
-const sourceExtensions = [
-  '.ts',
-  '.tsx',
-  '.mts',
-  '.cts',
-]
+const sourceExtensions = ['.ts', '.tsx', '.mts', '.cts']
 
 const importPattern =
   /(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\sfrom\s*)?['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)/g
 
 const packages = loadWorkspacePackages()
-const packageByName = new Map(
-  packages.map((pkg) => [
-    pkg.manifest.name,
-    pkg,
-  ]),
-)
+const packageByName = new Map(packages.map((pkg) => [pkg.manifest.name, pkg]))
 
 const sourceFiles = collectSourceFiles()
 const sourceFileSet = new Set(sourceFiles)
@@ -73,30 +44,21 @@ for (const pkg of packages) {
   ]
 
   for (const dependencies of dependencyGroups) {
-    for (const dependencyName of Object.keys(
-      dependencies ?? {},
-    )) {
+    for (const dependencyName of Object.keys(dependencies ?? {})) {
       if (packageByName.has(dependencyName)) {
-        packageGraph
-          .get(pkg.manifest.name)
-          .add(dependencyName)
+        packageGraph.get(pkg.manifest.name).add(dependencyName)
       }
     }
   }
 }
 
 for (const file of sourceFiles) {
-  const imports = extractImports(
-    readFileSync(file, 'utf8'),
-  )
+  const imports = extractImports(readFileSync(file, 'utf8'))
 
   const dependencies = new Set()
 
   for (const specifier of imports) {
-    const resolvedFile = resolveImport(
-      file,
-      specifier,
-    )
+    const resolvedFile = resolveImport(file, specifier)
 
     if (resolvedFile) {
       dependencies.add(resolvedFile)
@@ -112,79 +74,46 @@ const fileCycles = findCycles(fileGraph)
 const violations = []
 
 for (const cycle of packageCycles) {
-  violations.push(
-    'Package cycle: ' +
-      cycle.join(' -> '),
-  )
+  violations.push('Package cycle: ' + cycle.join(' -> '))
 }
 
 for (const cycle of fileCycles) {
   violations.push(
-    'Source cycle: ' +
-      cycle
-        .map((file) =>
-          relative(root, file).replaceAll(
-            '\\',
-            '/',
-          ),
-        )
-        .join(' -> '),
+    'Source cycle: ' + cycle.map((file) => relative(root, file).replaceAll('\\', '/')).join(' -> '),
   )
 }
 
 if (violations.length > 0) {
-  console.error(
-    violations.join('\n'),
-  )
+  console.error(violations.join('\n'))
   process.exit(1)
 }
 
-console.log(
-  `Import graph OK: ${packages.length} packages, ${sourceFiles.length} source files`,
-)
+console.log(`Import graph OK: ${packages.length} packages, ${sourceFiles.length} source files`)
 
 function loadWorkspacePackages() {
   const result = []
 
   for (const workspaceRoot of workspaceRoots) {
-    const absoluteRoot = join(
-      root,
-      workspaceRoot,
-    )
+    const absoluteRoot = join(root, workspaceRoot)
 
     if (!existsSync(absoluteRoot)) {
       continue
     }
 
-    for (const entry of readdirSync(
-      absoluteRoot,
-    )) {
-      const packageRoot = join(
-        absoluteRoot,
-        entry,
-      )
+    for (const entry of readdirSync(absoluteRoot)) {
+      const packageRoot = join(absoluteRoot, entry)
 
-      if (
-        !statSync(packageRoot).isDirectory()
-      ) {
+      if (!statSync(packageRoot).isDirectory()) {
         continue
       }
 
-      const manifestPath = join(
-        packageRoot,
-        'package.json',
-      )
+      const manifestPath = join(packageRoot, 'package.json')
 
       if (!existsSync(manifestPath)) {
         continue
       }
 
-      const manifest = JSON.parse(
-        readFileSync(
-          manifestPath,
-          'utf8',
-        ).replace(/^\uFEFF/, ''),
-      )
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''))
 
       if (!manifest.name) {
         continue
@@ -204,10 +133,7 @@ function collectSourceFiles() {
   const result = []
 
   for (const pkg of packages) {
-    const sourceRoot = join(
-      pkg.root,
-      'src',
-    )
+    const sourceRoot = join(pkg.root, 'src')
 
     if (existsSync(sourceRoot)) {
       walk(sourceRoot, result)
@@ -231,19 +157,11 @@ function walk(directory, result) {
       continue
     }
 
-    if (
-      !sourceExtensions.includes(
-        extname(path),
-      )
-    ) {
+    if (!sourceExtensions.includes(extname(path))) {
       continue
     }
 
-    if (
-      /\.(?:test|spec)\.[cm]?tsx?$/.test(
-        path,
-      )
-    ) {
+    if (/\.(?:test|spec)\.[cm]?tsx?$/.test(path)) {
       continue
     }
 
@@ -257,11 +175,8 @@ function extractImports(content) {
 
   let match
 
-  while (
-    (match = importPattern.exec(content))
-  ) {
-    const specifier =
-      match[1] ?? match[2]
+  while ((match = importPattern.exec(content))) {
+    const specifier = match[1] ?? match[2]
 
     if (specifier) {
       imports.push(specifier)
@@ -273,61 +188,31 @@ function extractImports(content) {
 
 function resolveImport(importer, specifier) {
   if (specifier.startsWith('.')) {
-    return resolveSourcePath(
-      resolve(
-        dirname(importer),
-        specifier,
-      ),
-    )
+    return resolveSourcePath(resolve(dirname(importer), specifier))
   }
 
   const matchingPackage = packages
-    .filter((pkg) =>
-      specifier === pkg.manifest.name ||
-      specifier.startsWith(
-        pkg.manifest.name + '/',
-      ),
+    .filter(
+      (pkg) => specifier === pkg.manifest.name || specifier.startsWith(pkg.manifest.name + '/'),
     )
-    .sort(
-      (left, right) =>
-        right.manifest.name.length -
-        left.manifest.name.length,
-    )[0]
+    .sort((left, right) => right.manifest.name.length - left.manifest.name.length)[0]
 
   if (!matchingPackage) {
     return null
   }
 
   const subpath =
-    specifier ===
-    matchingPackage.manifest.name
+    specifier === matchingPackage.manifest.name
       ? '.'
-      : '.' +
-        specifier.slice(
-          matchingPackage.manifest.name
-            .length,
-        )
+      : '.' + specifier.slice(matchingPackage.manifest.name.length)
 
-  const exportTarget = getExportTarget(
-    matchingPackage.manifest.exports,
-    subpath,
-  )
+  const exportTarget = getExportTarget(matchingPackage.manifest.exports, subpath)
 
   if (exportTarget) {
-    return resolveSourcePath(
-      join(
-        matchingPackage.root,
-        exportTarget,
-      ),
-    )
+    return resolveSourcePath(join(matchingPackage.root, exportTarget))
   }
 
-  return resolveSourcePath(
-    join(
-      matchingPackage.root,
-      'src/public-api',
-    ),
-  )
+  return resolveSourcePath(join(matchingPackage.root, 'src/public-api'))
 }
 
 function getExportTarget(exportsField, subpath) {
@@ -335,10 +220,7 @@ function getExportTarget(exportsField, subpath) {
     return null
   }
 
-  if (
-    typeof exportsField === 'string' &&
-    subpath === '.'
-  ) {
+  if (typeof exportsField === 'string' && subpath === '.') {
     return exportsField
   }
 
@@ -348,58 +230,33 @@ function getExportTarget(exportsField, subpath) {
     return entry
   }
 
-  if (
-    entry &&
-    typeof entry === 'object'
-  ) {
-    return (
-      entry.default ??
-      entry.import ??
-      entry.types ??
-      null
-    )
+  if (entry && typeof entry === 'object') {
+    return entry.default ?? entry.import ?? entry.types ?? null
   }
 
   return null
 }
 
 function resolveSourcePath(candidate) {
-  const normalizedCandidate =
-    candidate.replace(
-      /\.[cm]?[jt]sx?$/,
-      '',
-    )
+  const normalizedCandidate = candidate.replace(/\.[cm]?[jt]sx?$/, '')
 
   const candidates = [
     candidate,
-    ...sourceExtensions.map(
-      (extension) =>
-        normalizedCandidate + extension,
-    ),
-    ...sourceExtensions.map(
-      (extension) =>
-        join(
-          normalizedCandidate,
-          'index' + extension,
-        ),
-    ),
+    ...sourceExtensions.map((extension) => normalizedCandidate + extension),
+    ...sourceExtensions.map((extension) => join(normalizedCandidate, 'index' + extension)),
   ]
 
   for (const path of candidates) {
     const normalizedPath = normalize(path)
 
-    if (
-      sourceFileSet.has(normalizedPath)
-    ) {
+    if (sourceFileSet.has(normalizedPath)) {
       return normalizedPath
     }
 
     if (
       existsSync(normalizedPath) &&
       statSync(normalizedPath).isFile() &&
-      sourceExtensions.includes(
-        extname(normalizedPath),
-      )
+      sourceExtensions.includes(extname(normalizedPath))
     ) {
       return normalizedPath
     }
@@ -423,21 +280,15 @@ function findCycles(graph) {
     }
 
     if (currentState === 'visiting') {
-      const start =
-        stackIndex.get(node)
+      const start = stackIndex.get(node)
 
       if (start === undefined) {
         return
       }
 
-      const cycle = [
-        ...stack.slice(start),
-        node,
-      ]
+      const cycle = [...stack.slice(start), node]
 
-      const signature = canonicalizeCycle(
-        cycle,
-      )
+      const signature = canonicalizeCycle(cycle)
 
       if (!signatures.has(signature)) {
         signatures.add(signature)
@@ -451,9 +302,7 @@ function findCycles(graph) {
     stackIndex.set(node, stack.length)
     stack.push(node)
 
-    for (const dependency of graph.get(
-      node,
-    ) ?? []) {
+    for (const dependency of graph.get(node) ?? []) {
       if (graph.has(dependency)) {
         visit(dependency)
       }
@@ -478,11 +327,8 @@ function canonicalizeCycle(cycle) {
     return ''
   }
 
-  const rotations = values.map(
-    (_, index) => [
-      ...values.slice(index),
-      ...values.slice(0, index),
-    ].join('|'),
+  const rotations = values.map((_, index) =>
+    [...values.slice(index), ...values.slice(0, index)].join('|'),
   )
 
   return rotations.sort()[0]

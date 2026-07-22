@@ -1,20 +1,10 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import {
-  createDrawFileHeader,
-  parseDrawDocument,
-  serializeDrawDocument,
-} from './snapshot-service'
+import { createDrawFileHeader, parseDrawDocument, serializeDrawDocument } from './snapshot-service'
 
 function createValidJson(): string {
   return JSON.stringify({
-    header: createDrawFileHeader(
-      '2026-01-01T00:00:00.000Z',
-    ),
+    header: createDrawFileHeader('2026-01-01T00:00:00.000Z'),
     content: {
       document: {},
       session: {},
@@ -24,27 +14,17 @@ function createValidJson(): string {
 
 describe('draw snapshot service', () => {
   it('parses and serializes a valid draw container', () => {
-    const parsed = parseDrawDocument(
-      createValidJson(),
-    )
+    const parsed = parseDrawDocument(createValidJson())
 
-    const serialized =
-      serializeDrawDocument(
-        parsed.content,
-      )
+    const serialized = serializeDrawDocument(parsed.content)
 
-    const reparsed =
-      parseDrawDocument(serialized)
+    const reparsed = parseDrawDocument(serialized)
 
-    expect(reparsed.header.format).toBe(
-      'hybrid-canvas/draw',
-    )
+    expect(reparsed.header.format).toBe('hybrid-canvas/draw')
 
     expect(reparsed.header.version).toBe(1)
 
-    expect(reparsed.content).toEqual(
-      parsed.content,
-    )
+    expect(reparsed.content).toEqual(parsed.content)
   })
 
   it('rejects a future file version', () => {
@@ -52,8 +32,7 @@ describe('draw snapshot service', () => {
       header: {
         format: 'hybrid-canvas/draw',
         version: 999,
-        createdAt:
-          '2026-01-01T00:00:00.000Z',
+        createdAt: '2026-01-01T00:00:00.000Z',
       },
       content: {
         document: {},
@@ -61,9 +40,7 @@ describe('draw snapshot service', () => {
       },
     })
 
-    expect(() =>
-      parseDrawDocument(json),
-    ).toThrow('DRAW_FUTURE_VERSION')
+    expect(() => parseDrawDocument(json)).toThrow('DRAW_FUTURE_VERSION')
   })
 
   it('rejects an invalid format identifier', () => {
@@ -71,15 +48,12 @@ describe('draw snapshot service', () => {
       header: {
         format: 'unknown/draw',
         version: 1,
-        createdAt:
-          '2026-01-01T00:00:00.000Z',
+        createdAt: '2026-01-01T00:00:00.000Z',
       },
       content: {},
     })
 
-    expect(() =>
-      parseDrawDocument(json),
-    ).toThrow('DRAW_INVALID_HEADER')
+    expect(() => parseDrawDocument(json)).toThrow('DRAW_INVALID_HEADER')
   })
 
   it('rejects invalid creation timestamps', () => {
@@ -92,9 +66,7 @@ describe('draw snapshot service', () => {
       content: {},
     })
 
-    expect(() =>
-      parseDrawDocument(json),
-    ).toThrow('DRAW_INVALID_CREATED_AT')
+    expect(() => parseDrawDocument(json)).toThrow('DRAW_INVALID_CREATED_AT')
   })
 
   it('rejects excessive nesting', () => {
@@ -109,8 +81,6 @@ describe('draw snapshot service', () => {
       content: value,
     })
 
-    expect(() =>
-      parseDrawDocument(json),
-    ).toThrow('DRAW_DEPTH_EXCEEDED')
+    expect(() => parseDrawDocument(json)).toThrow('DRAW_DEPTH_EXCEEDED')
   })
 })

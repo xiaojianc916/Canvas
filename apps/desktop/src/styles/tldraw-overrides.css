@@ -23,7 +23,7 @@
   --tl-page-menu-y: auto;
 }
 
-[data-workbench-state='empty'] .tl-container {
+[data-workbench-state="empty"] .tl-container {
   display: none;
 }
 

@@ -173,37 +173,24 @@ body {
 
 @theme {
   --color-primary: var(--ui-color-primary);
-  --color-primary-foreground:
-    var(--ui-color-primary-foreground);
+  --color-primary-foreground: var(--ui-color-primary-foreground);
   --color-secondary: var(--ui-color-secondary);
-  --color-secondary-foreground:
-    var(--ui-color-secondary-foreground);
+  --color-secondary-foreground: var(--ui-color-secondary-foreground);
   --color-muted: var(--ui-color-muted);
-  --color-muted-foreground:
-    var(--ui-color-muted-foreground);
+  --color-muted-foreground: var(--ui-color-muted-foreground);
   --color-accent: var(--ui-color-accent);
-  --color-accent-foreground:
-    var(--ui-color-accent-foreground);
+  --color-accent-foreground: var(--ui-color-accent-foreground);
   --color-input: var(--ui-color-input);
   --color-ring: var(--ui-color-ring);
   --color-destructive: var(--ui-color-destructive);
-  --color-destructive-foreground:
-    var(--ui-color-destructive-foreground);
+  --color-destructive-foreground: var(--ui-color-destructive-foreground);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :where(
-    button,
-    input,
-    select,
-    [role="dialog"],
-    [role="menu"],
-    [role="tab"]
-  ) {
+  :where(button, input, select, [role="dialog"], [role="menu"], [role="tab"]) {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
 }
-

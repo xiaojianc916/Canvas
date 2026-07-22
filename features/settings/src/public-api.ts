@@ -8,6 +8,4 @@ export {
   type ThemeMode,
 } from './domain/settings'
 
-export type {
-  SettingsStore,
-} from './ports/settings-store'
+export type { SettingsStore } from './ports/settings-store'

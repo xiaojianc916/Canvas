@@ -169,10 +169,7 @@ const DocumentTab = forwardRef<HTMLDivElement, DocumentTabProps>(function Docume
       )}
       onClick={() => onActivate(model.sessionId)}
       onKeyDown={(event) => {
-        if (
-          event.key === 'Enter' ||
-          event.key === ' '
-        ) {
+        if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()
           onActivate(model.sessionId)
         }

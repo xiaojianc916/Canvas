@@ -1,15 +1,10 @@
-export type ThemePreference =
-  | 'light'
-  | 'dark'
-  | 'system'
+export type ThemePreference = 'light' | 'dark' | 'system'
 
 const DARK_QUERY = '(prefers-color-scheme: dark)'
 
 let removeSystemListener: (() => void) | undefined
 
-export function applyThemePreference(
-  theme: ThemePreference,
-): void {
+export function applyThemePreference(theme: ThemePreference): void {
   removeSystemListener?.()
   removeSystemListener = undefined
 

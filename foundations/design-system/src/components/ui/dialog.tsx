@@ -49,92 +49,57 @@ export function Dialog({
   const titleId = useId()
   const descriptionId = useId()
 
-  const panelRef =
-    useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
-  const closeButtonRef =
-    useRef<HTMLButtonElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!open) {
       return
     }
 
-    const previouslyFocused =
-      document.activeElement
+    const previouslyFocused = document.activeElement
 
-    const animationFrame =
-      window.requestAnimationFrame(() => {
-        closeButtonRef.current?.focus()
-      })
+    const animationFrame = window.requestAnimationFrame(() => {
+      closeButtonRef.current?.focus()
+    })
 
-    const handleDocumentKeyDown = (
-      event: KeyboardEvent,
-    ) => {
-      if (
-        event.key === 'Escape' &&
-        !busy
-      ) {
+    const handleDocumentKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !busy) {
         event.preventDefault()
         onOpenChange(false)
       }
     }
 
-    document.addEventListener(
-      'keydown',
-      handleDocumentKeyDown,
-    )
+    document.addEventListener('keydown', handleDocumentKeyDown)
 
     return () => {
-      window.cancelAnimationFrame(
-        animationFrame,
-      )
+      window.cancelAnimationFrame(animationFrame)
 
-      document.removeEventListener(
-        'keydown',
-        handleDocumentKeyDown,
-      )
+      document.removeEventListener('keydown', handleDocumentKeyDown)
 
-      if (
-        previouslyFocused instanceof
-        HTMLElement
-      ) {
+      if (previouslyFocused instanceof HTMLElement) {
         previouslyFocused.focus()
       }
     }
-  }, [
-    busy,
-    onOpenChange,
-    open,
-  ])
+  }, [busy, onOpenChange, open])
 
   if (!open) {
     return null
   }
 
-  const handlePanelKeyDown = (
-    event:
-      ReactKeyboardEvent<HTMLDivElement>,
-  ) => {
+  const handlePanelKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Tab') {
       return
     }
 
-    const focusableElements =
-      Array.from(
-        panelRef.current
-          ?.querySelectorAll<HTMLElement>(
-            FOCUSABLE_SELECTOR,
-          ) ?? [],
-      )
+    const focusableElements = Array.from(
+      panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [],
+    )
 
-    const firstElement =
-      focusableElements[0]
+    const firstElement = focusableElements[0]
 
-    const lastElement =
-      focusableElements[
-        focusableElements.length - 1
-      ]
+    const lastElement = focusableElements[focusableElements.length - 1]
 
     if (!firstElement || !lastElement) {
       event.preventDefault()
@@ -142,21 +107,13 @@ export function Dialog({
       return
     }
 
-    if (
-      event.shiftKey &&
-      document.activeElement ===
-        firstElement
-    ) {
+    if (event.shiftKey && document.activeElement === firstElement) {
       event.preventDefault()
       lastElement.focus()
       return
     }
 
-    if (
-      !event.shiftKey &&
-      document.activeElement ===
-        lastElement
-    ) {
+    if (!event.shiftKey && document.activeElement === lastElement) {
       event.preventDefault()
       firstElement.focus()
     }
@@ -172,12 +129,7 @@ export function Dialog({
         'backdrop-blur-[2px]',
       )}
       onMouseDown={(event) => {
-        if (
-          event.target ===
-            event.currentTarget &&
-          closeOnOverlayClick &&
-          !busy
-        ) {
+        if (event.target === event.currentTarget && closeOnOverlayClick && !busy) {
           onOpenChange(false)
         }
       }}
@@ -185,14 +137,8 @@ export function Dialog({
     >
       <div
         ref={panelRef}
-        aria-busy={
-          busy || undefined
-        }
-        aria-describedby={
-          description
-            ? descriptionId
-            : undefined
-        }
+        aria-busy={busy || undefined}
+        aria-describedby={description ? descriptionId : undefined}
         aria-labelledby={titleId}
         aria-modal="true"
         className={cn(
@@ -210,9 +156,7 @@ export function Dialog({
           'max-sm:rounded-none',
           className,
         )}
-        onKeyDown={
-          handlePanelKeyDown
-        }
+        onKeyDown={handlePanelKeyDown}
         role="dialog"
         tabIndex={-1}
       >
@@ -226,21 +170,14 @@ export function Dialog({
           )}
         >
           <div className="min-w-0">
-            <h2
-              id={titleId}
-              className="text-base font-semibold"
-            >
+            <h2 id={titleId} className="text-base font-semibold">
               {title}
             </h2>
 
             {description ? (
               <p
                 id={descriptionId}
-                className={cn(
-                  'mt-1 text-sm',
-                  'leading-5',
-                  'text-muted-foreground',
-                )}
+                className={cn('mt-1 text-sm', 'leading-5', 'text-muted-foreground')}
               >
                 {description}
               </p>
@@ -258,31 +195,14 @@ export function Dialog({
             type="button"
             variant="ghost"
           >
-            <X
-              aria-hidden="true"
-              className="size-4"
-            />
+            <X aria-hidden="true" className="size-4" />
           </Button>
         </header>
 
-        <div
-          className={cn(
-            'min-h-0 flex-1',
-            'overflow-auto',
-            contentClassName,
-          )}
-        >
-          {children}
-        </div>
+        <div className={cn('min-h-0 flex-1', 'overflow-auto', contentClassName)}>{children}</div>
 
         {footer ? (
-          <footer
-            className={cn(
-              'shrink-0',
-              'border-t border-divider',
-              'px-5 py-3',
-            )}
-          >
+          <footer className={cn('shrink-0', 'border-t border-divider', 'px-5 py-3')}>
             {footer}
           </footer>
         ) : null}

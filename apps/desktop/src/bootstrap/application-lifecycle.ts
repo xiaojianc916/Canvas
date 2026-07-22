@@ -23,18 +23,13 @@ export function installApplicationLifecycle(
   }
 
   const handleBeforeUnload = () => {
-    void runtime.mainWindow
-      .saveState()
-      .catch((cause: unknown) => {
-        reportError(
-          'main window state save failed during unload',
-          {
-            scope: 'application-lifecycle',
-            operation: 'save-window-state',
-            cause,
-          },
-        )
+    void runtime.mainWindow.saveState().catch((cause: unknown) => {
+      reportError('main window state save failed during unload', {
+        scope: 'application-lifecycle',
+        operation: 'save-window-state',
+        cause,
       })
+    })
   }
 
   window.addEventListener('pagehide', dispose, { once: true })

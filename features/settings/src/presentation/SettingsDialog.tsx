@@ -8,27 +8,12 @@ import {
   Select,
   Switch,
 } from '@hybrid-canvas/design-system'
-import type {
-  AppSettings,
-  SettingsStore,
-  ThemeMode,
-} from '@hybrid-canvas/settings'
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
+import type { AppSettings, SettingsStore, ThemeMode } from '@hybrid-canvas/settings'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-type SettingsSection =
-  | 'general'
-  | 'canvas'
-  | 'about'
+type SettingsSection = 'general' | 'canvas' | 'about'
 
-type SettingsOperation =
-  | 'load'
-  | 'save'
-  | 'reset'
+type SettingsOperation = 'load' | 'save' | 'reset'
 
 type SettingsViewState =
   | {
@@ -43,9 +28,7 @@ type SettingsViewState =
     }
   | {
       readonly status: 'saving'
-      readonly operation:
-        | 'save'
-        | 'reset'
+      readonly operation: 'save' | 'reset'
       readonly draft: AppSettings
     }
   | {
@@ -60,106 +43,75 @@ interface SettingsSectionItem {
   readonly label: string
 }
 
-const SECTIONS:
-  readonly SettingsSectionItem[] = [
-    {
-      id: 'general',
-      label: '常规',
-    },
-    {
-      id: 'canvas',
-      label: '画布',
-    },
-    {
-      id: 'about',
-      label: '关于',
-    },
-  ]
+const SECTIONS: readonly SettingsSectionItem[] = [
+  {
+    id: 'general',
+    label: '常规',
+  },
+  {
+    id: 'canvas',
+    label: '画布',
+  },
+  {
+    id: 'about',
+    label: '关于',
+  },
+]
 
 export interface SettingsDialogProps {
   readonly open: boolean
   readonly store: SettingsStore
-  readonly onOpenChange:
-    (open: boolean) => void
+  readonly onOpenChange: (open: boolean) => void
 }
 
-export function SettingsDialog({
-  open,
-  store,
-  onOpenChange,
-}: SettingsDialogProps) {
-  const [
-    section,
-    setSection,
-  ] = useState<SettingsSection>(
-    'general',
-  )
+export function SettingsDialog({ open, store, onOpenChange }: SettingsDialogProps) {
+  const [section, setSection] = useState<SettingsSection>('general')
 
-  const [
-    state,
-    setState,
-  ] = useState<SettingsViewState>({
+  const [state, setState] = useState<SettingsViewState>({
     status: 'idle',
   })
 
-  const initialSettingsRef =
-    useRef<AppSettings | null>(null)
+  const initialSettingsRef = useRef<AppSettings | null>(null)
 
-  const requestIdRef =
-    useRef(0)
+  const requestIdRef = useRef(0)
 
-  const loadSettings =
-    useCallback(() => {
-      const requestId =
-        requestIdRef.current + 1
+  const loadSettings = useCallback(() => {
+    const requestId = requestIdRef.current + 1
 
-      requestIdRef.current =
-        requestId
+    requestIdRef.current = requestId
 
-      setState({
-        status: 'loading',
-      })
+    setState({
+      status: 'loading',
+    })
 
-      void store.load().then(
-        (settings) => {
-          if (
-            requestIdRef.current !==
-            requestId
-          ) {
-            return
-          }
+    void store.load().then(
+      (settings) => {
+        if (requestIdRef.current !== requestId) {
+          return
+        }
 
-          initialSettingsRef.current =
-            settings
+        initialSettingsRef.current = settings
 
-          applyThemePreference(
-            settings.theme,
-          )
+        applyThemePreference(settings.theme)
 
-          setState({
-            status: 'ready',
-            draft: settings,
-          })
-        },
-        (cause: unknown) => {
-          if (
-            requestIdRef.current !==
-            requestId
-          ) {
-            return
-          }
+        setState({
+          status: 'ready',
+          draft: settings,
+        })
+      },
+      (cause: unknown) => {
+        if (requestIdRef.current !== requestId) {
+          return
+        }
 
-          setState({
-            status: 'error',
-            operation: 'load',
-            message:
-              getErrorMessage(cause),
-          })
-        },
-      )
-    }, [
-      store,
-    ])
+        setState({
+          status: 'error',
+          operation: 'load',
+          message: getErrorMessage(cause),
+        })
+      },
+    )
+  }, [store])
 
   useEffect(() => {
     if (!open) {
@@ -173,27 +125,18 @@ export function SettingsDialog({
     return () => {
       requestIdRef.current += 1
     }
-  }, [
-    loadSettings,
-    open,
-  ])
+  }, [loadSettings, open])
 
-  const draft =
-    getDraft(state)
+  const draft = getDraft(state)
 
-  const busy =
-    state.status === 'saving'
+  const busy = state.status === 'saving'
 
-  const updateDraft = (
-    nextSettings: AppSettings,
-  ) => {
+  const updateDraft = (nextSettings: AppSettings) => {
     if (busy) {
       return
     }
 
-    applyThemePreference(
-      nextSettings.theme,
-    )
+    applyThemePreference(nextSettings.theme)
 
     setState({
       status: 'ready',
@@ -206,13 +149,10 @@ export function SettingsDialog({
       return
     }
 
-    const initialSettings =
-      initialSettingsRef.current
+    const initialSettings = initialSettingsRef.current
 
     if (initialSettings) {
-      applyThemePreference(
-        initialSettings.theme,
-      )
+      applyThemePreference(initialSettings.theme)
     }
 
     onOpenChange(false)
@@ -231,16 +171,11 @@ export function SettingsDialog({
       draft: settingsToSave,
     })
 
-    void store.save(
-      settingsToSave,
-    ).then(
+    void store.save(settingsToSave).then(
       () => {
-        initialSettingsRef.current =
-          settingsToSave
+        initialSettingsRef.current = settingsToSave
 
-        applyThemePreference(
-          settingsToSave.theme,
-        )
+        applyThemePreference(settingsToSave.theme)
 
         setState({
           status: 'ready',
@@ -253,8 +188,7 @@ export function SettingsDialog({
         setState({
           status: 'error',
           operation: 'save',
-          message:
-            getErrorMessage(cause),
+          message: getErrorMessage(cause),
           draft: settingsToSave,
         })
       },
@@ -276,25 +210,20 @@ export function SettingsDialog({
 
     void store.reset().then(
       (resetSettingsValue) => {
-        initialSettingsRef.current =
-          resetSettingsValue
+        initialSettingsRef.current = resetSettingsValue
 
-        applyThemePreference(
-          resetSettingsValue.theme,
-        )
+        applyThemePreference(resetSettingsValue.theme)
 
         setState({
           status: 'ready',
-          draft:
-            resetSettingsValue,
+          draft: resetSettingsValue,
         })
       },
       (cause: unknown) => {
         setState({
           status: 'error',
           operation: 'reset',
-          message:
-            getErrorMessage(cause),
+          message: getErrorMessage(cause),
           draft: currentDraft,
         })
       },
@@ -302,22 +231,16 @@ export function SettingsDialog({
   }
 
   const retryLastOperation = () => {
-    if (
-      state.status !== 'error'
-    ) {
+    if (state.status !== 'error') {
       return
     }
 
-    if (
-      state.operation === 'load'
-    ) {
+    if (state.operation === 'load') {
       loadSettings()
       return
     }
 
-    if (
-      state.operation === 'save'
-    ) {
+    if (state.operation === 'save') {
       saveSettings()
       return
     }
@@ -349,11 +272,7 @@ export function SettingsDialog({
           busy={busy}
           canReset={Boolean(draft)}
           canSave={Boolean(draft)}
-          operation={
-            state.status === 'saving'
-              ? state.operation
-              : undefined
-          }
+          operation={state.status === 'saving' ? state.operation : undefined}
           onCancel={closeDialog}
           onReset={resetSettings}
           onSave={saveSettings}
@@ -368,68 +287,34 @@ export function SettingsDialog({
           'max-sm:grid-rows-[auto_minmax(0,1fr)]',
         ].join(' ')}
       >
-        <SettingsNavigation
-          activeSection={section}
-          onSectionChange={
-            setSection
-          }
-        />
+        <SettingsNavigation activeSection={section} onSectionChange={setSection} />
 
-        <main
-          className={[
-            'min-h-0 overflow-y-auto',
-            'p-6 max-sm:p-4',
-          ].join(' ')}
-        >
-          {state.status === 'idle' ||
-          state.status === 'loading' ? (
-            <LoadingState
-              label="正在读取设置…"
-            />
+        <main className={['min-h-0 overflow-y-auto', 'p-6 max-sm:p-4'].join(' ')}>
+          {state.status === 'idle' || state.status === 'loading' ? (
+            <LoadingState label="正在读取设置…" />
           ) : null}
 
-          {state.status === 'error' &&
-          !state.draft ? (
-            <ErrorState
-              message={state.message}
-              onRetry={
-                retryLastOperation
-              }
-            />
+          {state.status === 'error' && !state.draft ? (
+            <ErrorState message={state.message} onRetry={retryLastOperation} />
           ) : null}
 
-          {state.status === 'error' &&
-          state.draft ? (
+          {state.status === 'error' && state.draft ? (
             <SettingsErrorBanner
               message={state.message}
-              operation={
-                state.operation
-              }
-              onRetry={
-                retryLastOperation
-              }
+              operation={state.operation}
+              onRetry={retryLastOperation}
             />
           ) : null}
 
-          {draft &&
-          section === 'general' ? (
-            <GeneralSettingsPanel
-              settings={draft}
-              onChange={updateDraft}
-            />
+          {draft && section === 'general' ? (
+            <GeneralSettingsPanel settings={draft} onChange={updateDraft} />
           ) : null}
 
-          {draft &&
-          section === 'canvas' ? (
-            <CanvasSettingsPanel
-              settings={draft}
-              onChange={updateDraft}
-            />
+          {draft && section === 'canvas' ? (
+            <CanvasSettingsPanel settings={draft} onChange={updateDraft} />
           ) : null}
 
-          {section === 'about' ? (
-            <AboutSettingsPanel />
-          ) : null}
+          {section === 'about' ? <AboutSettingsPanel /> : null}
         </main>
       </div>
     </Dialog>
@@ -437,16 +322,11 @@ export function SettingsDialog({
 }
 
 interface SettingsNavigationProps {
-  readonly activeSection:
-    SettingsSection
-  readonly onSectionChange:
-    (section: SettingsSection) => void
+  readonly activeSection: SettingsSection
+  readonly onSectionChange: (section: SettingsSection) => void
 }
 
-function SettingsNavigation({
-  activeSection,
-  onSectionChange,
-}: SettingsNavigationProps) {
+function SettingsNavigation({ activeSection, onSectionChange }: SettingsNavigationProps) {
   return (
     <nav
       aria-label="设置分类"
@@ -462,17 +342,12 @@ function SettingsNavigation({
       ].join(' ')}
     >
       {SECTIONS.map((item) => {
-        const active =
-          activeSection === item.id
+        const active = activeSection === item.id
 
         return (
           <button
             key={item.id}
-            aria-current={
-              active
-                ? 'page'
-                : undefined
-            }
+            aria-current={active ? 'page' : undefined}
             className={[
               'w-full rounded-md',
               'px-3 py-2',
@@ -487,9 +362,7 @@ function SettingsNavigation({
                 : 'text-muted-foreground hover:bg-muted hover:text-foreground',
             ].join(' ')}
             onClick={() => {
-              onSectionChange(
-                item.id,
-              )
+              onSectionChange(item.id)
             }}
             type="button"
           >
@@ -503,105 +376,60 @@ function SettingsNavigation({
 
 interface SettingsPanelProps {
   readonly settings: AppSettings
-  readonly onChange:
-    (settings: AppSettings) => void
+  readonly onChange: (settings: AppSettings) => void
 }
 
-function GeneralSettingsPanel({
-  settings,
-  onChange,
-}: SettingsPanelProps) {
+function GeneralSettingsPanel({ settings, onChange }: SettingsPanelProps) {
   return (
-    <section
-      aria-labelledby="general-settings-title"
-      className="grid max-w-xl gap-8"
-    >
+    <section aria-labelledby="general-settings-title" className="grid max-w-xl gap-8">
       <header>
-        <h3
-          id="general-settings-title"
-          className="text-base font-semibold"
-        >
+        <h3 id="general-settings-title" className="text-base font-semibold">
           常规
         </h3>
 
-        <p
-          className={[
-            'mt-1 text-sm',
-            'text-muted-foreground',
-          ].join(' ')}
-        >
+        <p className={['mt-1 text-sm', 'text-muted-foreground'].join(' ')}>
           调整应用外观、语言和保存行为。
         </p>
       </header>
 
-      <Field
-        label="外观"
-        description="选择应用界面的颜色模式。"
-      >
-        {({
-          inputId,
-          describedBy,
-        }) => (
+      <Field label="外观" description="选择应用界面的颜色模式。">
+        {({ inputId, describedBy }) => (
           <Select
             id={inputId}
-            aria-describedby={
-              describedBy
-            }
+            aria-describedby={describedBy}
             value={settings.theme}
             onChange={(event) => {
               onChange({
                 ...settings,
-                theme:
-                  event.target
-                    .value as ThemeMode,
+                theme: event.target.value as ThemeMode,
               })
             }}
           >
-            <option value="light">
-              浅色
-            </option>
+            <option value="light">浅色</option>
 
-            <option value="dark">
-              深色
-            </option>
+            <option value="dark">深色</option>
 
-            <option value="system">
-              跟随系统
-            </option>
+            <option value="system">跟随系统</option>
           </Select>
         )}
       </Field>
 
-      <Field
-        label="语言"
-        description="控制应用界面使用的语言。"
-      >
-        {({
-          inputId,
-          describedBy,
-        }) => (
+      <Field label="语言" description="控制应用界面使用的语言。">
+        {({ inputId, describedBy }) => (
           <Select
             id={inputId}
-            aria-describedby={
-              describedBy
-            }
+            aria-describedby={describedBy}
             value={settings.language}
             onChange={(event) => {
               onChange({
                 ...settings,
-                language:
-                  event.target.value as
-                    AppSettings['language'],
+                language: event.target.value as AppSettings['language'],
               })
             }}
           >
-            <option value="zh-CN">
-              简体中文
-            </option>
+            <option value="zh-CN">简体中文</option>
 
-            <option value="en">
-              English
-            </option>
+            <option value="en">English</option>
           </Select>
         )}
       </Field>
@@ -621,37 +449,21 @@ function GeneralSettingsPanel({
   )
 }
 
-function CanvasSettingsPanel({
-  settings,
-  onChange,
-}: SettingsPanelProps) {
+function CanvasSettingsPanel({ settings, onChange }: SettingsPanelProps) {
   return (
-    <section
-      aria-labelledby="canvas-settings-title"
-      className="grid max-w-xl gap-6"
-    >
+    <section aria-labelledby="canvas-settings-title" className="grid max-w-xl gap-6">
       <header>
-        <h3
-          id="canvas-settings-title"
-          className="text-base font-semibold"
-        >
+        <h3 id="canvas-settings-title" className="text-base font-semibold">
           画布
         </h3>
 
-        <p
-          className={[
-            'mt-1 text-sm',
-            'text-muted-foreground',
-          ].join(' ')}
-        >
+        <p className={['mt-1 text-sm', 'text-muted-foreground'].join(' ')}>
           调整网格、吸附和默认缩放。
         </p>
       </header>
 
       <SettingsToggle
-        checked={
-          settings.canvas.showGrid
-        }
+        checked={settings.canvas.showGrid}
         description="在画布背景中显示辅助网格。"
         label="显示网格"
         onChange={(checked) => {
@@ -666,9 +478,7 @@ function CanvasSettingsPanel({
       />
 
       <SettingsToggle
-        checked={
-          settings.canvas.snapToGrid
-        }
+        checked={settings.canvas.snapToGrid}
         description="移动图形时自动吸附到网格。"
         label="吸附到网格"
         onChange={(checked) => {
@@ -682,46 +492,27 @@ function CanvasSettingsPanel({
         }}
       />
 
-      <Field
-        label="默认缩放"
-        description="新建画布时使用的默认缩放比例。"
-      >
-        {({
-          inputId,
-          describedBy,
-        }) => (
+      <Field label="默认缩放" description="新建画布时使用的默认缩放比例。">
+        {({ inputId, describedBy }) => (
           <Select
             id={inputId}
-            aria-describedby={
-              describedBy
-            }
-            value={
-              settings.canvas.defaultZoom
-            }
+            aria-describedby={describedBy}
+            value={settings.canvas.defaultZoom}
             onChange={(event) => {
               onChange({
                 ...settings,
                 canvas: {
                   ...settings.canvas,
-                  defaultZoom:
-                    Number(
-                      event.target.value,
-                    ),
+                  defaultZoom: Number(event.target.value),
                 },
               })
             }}
           >
-            <option value="1">
-              100%
-            </option>
+            <option value="1">100%</option>
 
-            <option value="0.75">
-              75%
-            </option>
+            <option value="0.75">75%</option>
 
-            <option value="0.5">
-              50%
-            </option>
+            <option value="0.5">50%</option>
           </Select>
         )}
       </Field>
@@ -733,16 +524,10 @@ interface SettingsToggleProps {
   readonly checked: boolean
   readonly label: string
   readonly description: string
-  readonly onChange:
-    (checked: boolean) => void
+  readonly onChange: (checked: boolean) => void
 }
 
-function SettingsToggle({
-  checked,
-  label,
-  description,
-  onChange,
-}: SettingsToggleProps) {
+function SettingsToggle({ checked, label, description, onChange }: SettingsToggleProps) {
   return (
     <div
       className={[
@@ -756,26 +541,14 @@ function SettingsToggle({
       ].join(' ')}
     >
       <div>
-        <div className="text-sm font-medium">
-          {label}
-        </div>
+        <div className="text-sm font-medium">{label}</div>
 
-        <p
-          className={[
-            'mt-1 text-xs',
-            'leading-5',
-            'text-muted-foreground',
-          ].join(' ')}
-        >
+        <p className={['mt-1 text-xs', 'leading-5', 'text-muted-foreground'].join(' ')}>
           {description}
         </p>
       </div>
 
-      <Switch
-        aria-label={label}
-        checked={checked}
-        onCheckedChange={onChange}
-      />
+      <Switch aria-label={label} checked={checked} onCheckedChange={onChange} />
     </div>
   )
 }
@@ -784,44 +557,22 @@ function AboutSettingsPanel() {
   return (
     <section
       aria-labelledby="about-settings-title"
-      className={[
-        'max-w-xl rounded-lg',
-        'border border-divider',
-        'p-5',
-      ].join(' ')}
+      className={['max-w-xl rounded-lg', 'border border-divider', 'p-5'].join(' ')}
     >
-      <h3
-        id="about-settings-title"
-        className="text-base font-semibold"
-      >
+      <h3 id="about-settings-title" className="text-base font-semibold">
         Hybrid Canvas
       </h3>
 
-      <p
-        className={[
-          'mt-2 text-sm',
-          'text-muted-foreground',
-        ].join(' ')}
-      >
+      <p className={['mt-2 text-sm', 'text-muted-foreground'].join(' ')}>
         基于 tldraw 的本地优先画布应用。
       </p>
 
-      <dl
-        className={[
-          'mt-5 grid',
-          'grid-cols-[100px_1fr]',
-          'gap-y-2 text-sm',
-        ].join(' ')}
-      >
-        <dt className="text-muted-foreground">
-          版本
-        </dt>
+      <dl className={['mt-5 grid', 'grid-cols-[100px_1fr]', 'gap-y-2 text-sm'].join(' ')}>
+        <dt className="text-muted-foreground">版本</dt>
 
         <dd>0.1.0</dd>
 
-        <dt className="text-muted-foreground">
-          设置存储
-        </dt>
+        <dt className="text-muted-foreground">设置存储</dt>
 
         <dd>Tauri Store</dd>
       </dl>
@@ -833,9 +584,7 @@ interface SettingsFooterProps {
   readonly busy: boolean
   readonly canSave: boolean
   readonly canReset: boolean
-  readonly operation?:
-    | 'save'
-    | 'reset'
+  readonly operation?: 'save' | 'reset'
   readonly onSave: () => void
   readonly onReset: () => void
   readonly onCancel: () => void
@@ -851,49 +600,18 @@ function SettingsFooter({
   onCancel,
 }: SettingsFooterProps) {
   return (
-    <div
-      className={[
-        'flex flex-wrap',
-        'items-center',
-        'justify-between',
-        'gap-3',
-      ].join(' ')}
-    >
-      <Button
-        disabled={
-          busy || !canReset
-        }
-        onClick={onReset}
-        type="button"
-        variant="ghost"
-      >
-        {busy &&
-        operation === 'reset'
-          ? '正在重置…'
-          : '恢复默认'}
+    <div className={['flex flex-wrap', 'items-center', 'justify-between', 'gap-3'].join(' ')}>
+      <Button disabled={busy || !canReset} onClick={onReset} type="button" variant="ghost">
+        {busy && operation === 'reset' ? '正在重置…' : '恢复默认'}
       </Button>
 
       <div className="flex gap-2">
-        <Button
-          disabled={busy}
-          onClick={onCancel}
-          type="button"
-          variant="ghost"
-        >
+        <Button disabled={busy} onClick={onCancel} type="button" variant="ghost">
           取消
         </Button>
 
-        <Button
-          disabled={
-            busy || !canSave
-          }
-          onClick={onSave}
-          type="button"
-        >
-          {busy &&
-          operation === 'save'
-            ? '正在保存…'
-            : '保存'}
+        <Button disabled={busy || !canSave} onClick={onSave} type="button">
+          {busy && operation === 'save' ? '正在保存…' : '保存'}
         </Button>
       </div>
     </div>
@@ -901,17 +619,12 @@ function SettingsFooter({
 }
 
 interface SettingsErrorBannerProps {
-  readonly operation:
-    SettingsOperation
+  readonly operation: SettingsOperation
   readonly message: string
   readonly onRetry: () => void
 }
 
-function SettingsErrorBanner({
-  operation,
-  message,
-  onRetry,
-}: SettingsErrorBannerProps) {
+function SettingsErrorBanner({ operation, message, onRetry }: SettingsErrorBannerProps) {
   return (
     <div
       className={[
@@ -923,34 +636,18 @@ function SettingsErrorBanner({
       ].join(' ')}
       role="alert"
     >
-      <p
-        className={[
-          'text-sm',
-          'text-destructive',
-        ].join(' ')}
-      >
-        {getOperationLabel(
-          operation,
-        )}
-        ：{message}
+      <p className={['text-sm', 'text-destructive'].join(' ')}>
+        {getOperationLabel(operation)}：{message}
       </p>
 
-      <Button
-        className="mt-3"
-        onClick={onRetry}
-        size="sm"
-        type="button"
-        variant="outline"
-      >
+      <Button className="mt-3" onClick={onRetry} size="sm" type="button" variant="outline">
         重试
       </Button>
     </div>
   )
 }
 
-function getDraft(
-  state: SettingsViewState,
-): AppSettings | undefined {
+function getDraft(state: SettingsViewState): AppSettings | undefined {
   if ('draft' in state) {
     return state.draft
   }
@@ -958,9 +655,7 @@ function getDraft(
   return undefined
 }
 
-function getOperationLabel(
-  operation: SettingsOperation,
-): string {
+function getOperationLabel(operation: SettingsOperation): string {
   if (operation === 'load') {
     return '读取设置失败'
   }
@@ -972,13 +667,8 @@ function getOperationLabel(
   return '重置设置失败'
 }
 
-function getErrorMessage(
-  cause: unknown,
-): string {
-  if (
-    cause instanceof Error &&
-    cause.message.trim().length > 0
-  ) {
+function getErrorMessage(cause: unknown): string {
+  if (cause instanceof Error && cause.message.trim().length > 0) {
     return cause.message
   }
 

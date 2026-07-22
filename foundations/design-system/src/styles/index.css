@@ -62,12 +62,7 @@
   --ui-destructive: oklch(0.56 0.22 28);
   --ui-destructive-foreground: oklch(0.99 0 0);
 
-  --ui-font-sans:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+  --ui-font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   --activity-rail-width: 48px;
   --workspace-sidebar-min: 220px;
@@ -88,7 +83,7 @@
   --ui-ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 
-:root[data-theme='dark'] {
+:root[data-theme="dark"] {
   color-scheme: dark;
 
   --ui-background: #191919;

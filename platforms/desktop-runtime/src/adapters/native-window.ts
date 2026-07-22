@@ -27,8 +27,7 @@ export function createMainWindowController(): MainWindowController {
         .catch(async () => {
           // Native command dispatch failed before the window was destroyed.
           // Fall back to Tauri's direct window API.
-          const { getCurrentWindow } =
-            await import('@tauri-apps/api/window')
+          const { getCurrentWindow } = await import('@tauri-apps/api/window')
 
           await getCurrentWindow().destroy()
         })

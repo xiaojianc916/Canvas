@@ -8,7 +8,9 @@
       "@hybrid-canvas/design-system": ["../../foundations/design-system/src/public-api.ts"],
       "@hybrid-canvas/kernel": ["../../foundations/kernel/src/public-api.ts"],
       "@hybrid-canvas/geometry": ["../../foundations/geometry/src/public-api.ts"],
-      "@hybrid-canvas/foundations-observability": ["../../foundations/observability/src/public-api.ts"],
+      "@hybrid-canvas/foundations-observability": [
+        "../../foundations/observability/src/public-api.ts"
+      ],
       "@hybrid-canvas/file": ["../../editor/persistence/src/public-api.ts"],
       "@hybrid-canvas/asset": ["../../editor/assets/src/public-api.ts"],
       "@hybrid-canvas/flowchart": ["../../features/flowchart/src/public-api.ts"],
