@@ -1,5 +1,5 @@
 import { Menu } from '@base-ui/react/menu'
-import { forwardRef, type ComponentPropsWithoutRef } from 'react'
+import { type ComponentPropsWithoutRef, forwardRef } from 'react'
 import { cn } from '../../lib/utils'
 
 export const DropdownMenu = Menu.Root
@@ -10,8 +10,8 @@ export const DropdownMenuTrigger = forwardRef<
 >(function DropdownMenuTrigger({ className, ...props }, ref) {
   return (
     <Menu.Trigger
-      ref={ref}
       className={cn('outline-none', 'focus-visible:ring-2', 'focus-visible:ring-ring', className)}
+      ref={ref}
       {...props}
     />
   )
@@ -34,12 +34,11 @@ export const DropdownMenuContent = forwardRef<HTMLDivElement, DropdownMenuConten
       <Menu.Portal>
         <Menu.Positioner
           align={align}
+          className={['z-[var(--ui-z-popover)]', 'outline-none'].join(' ')}
           side={side}
           sideOffset={sideOffset}
-          className={['z-[var(--ui-z-popover)]', 'outline-none'].join(' ')}
         >
           <Menu.Popup
-            ref={ref}
             className={cn(
               'min-w-32 overflow-hidden',
               'rounded-md',
@@ -55,6 +54,7 @@ export const DropdownMenuContent = forwardRef<HTMLDivElement, DropdownMenuConten
               'data-[starting-style]:opacity-0',
               className,
             )}
+            ref={ref}
             {...props}
           />
         </Menu.Positioner>
@@ -69,7 +69,6 @@ export const DropdownMenuItem = forwardRef<
 >(function DropdownMenuItem({ className, ...props }, ref) {
   return (
     <Menu.Item
-      ref={ref}
       className={cn(
         'relative flex min-h-9',
         'cursor-default select-none',
@@ -83,6 +82,7 @@ export const DropdownMenuItem = forwardRef<
         'data-[disabled]:opacity-50',
         className,
       )}
+      ref={ref}
       {...props}
     />
   )
@@ -96,8 +96,8 @@ export const DropdownMenuLabel = forwardRef<
 >(function DropdownMenuLabel({ className, ...props }, ref) {
   return (
     <Menu.GroupLabel
-      ref={ref}
       className={cn('px-2 py-1.5', 'text-sm font-semibold', className)}
+      ref={ref}
       {...props}
     />
   )
@@ -109,8 +109,8 @@ export const DropdownMenuSeparator = forwardRef<
 >(function DropdownMenuSeparator({ className, ...props }, ref) {
   return (
     <Menu.Separator
-      ref={ref}
       className={cn('-mx-1 my-1', 'h-px bg-divider', className)}
+      ref={ref}
       {...props}
     />
   )

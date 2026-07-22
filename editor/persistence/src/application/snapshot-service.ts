@@ -1,3 +1,4 @@
+/* biome-ignore-all lint/complexity/useLiteralKeys: Parsed snapshot data uses index signatures until runtime validation completes. */
 import type { DrawFileContainer, DrawFileHeader } from '../domain/file'
 
 const CURRENT_FILE_VERSION = 1

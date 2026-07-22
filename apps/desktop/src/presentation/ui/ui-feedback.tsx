@@ -107,7 +107,6 @@ export function UiFeedbackRegion() {
     >
       {notices.map((notice) => (
         <div
-          key={notice.id}
           className={[
             'pointer-events-auto',
             'flex items-start gap-3',
@@ -116,6 +115,7 @@ export function UiFeedbackRegion() {
             'bg-background p-3',
             'text-sm shadow-xl',
           ].join(' ')}
+          key={notice.id}
           role="alert"
         >
           <AlertCircle

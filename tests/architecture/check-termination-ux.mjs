@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* biome-ignore-all lint/suspicious/noConsole: CLI scripts intentionally write command output. */
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'

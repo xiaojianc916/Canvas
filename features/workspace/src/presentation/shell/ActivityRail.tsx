@@ -109,9 +109,9 @@ export function ActivityRail({
       <div className={['flex flex-col gap-1'].join(' ')}>
         {items.map((item) => (
           <RailButton
-            key={item.id}
             active={item.id === activeItemId}
             icon={item.icon}
+            key={item.id}
             label={item.label}
             onClick={() => {
               onItemActivate?.(item.id)

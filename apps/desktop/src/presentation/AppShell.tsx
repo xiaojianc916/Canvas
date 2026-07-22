@@ -1,6 +1,5 @@
 import { EditorProvider } from '@hybrid-canvas/canvas/react'
 import { applyThemePreference, ConfirmationDialog } from '@hybrid-canvas/design-system'
-import { reportUiError as reportError, UiFeedbackRegion } from './ui/ui-feedback'
 import type { MainWindowController } from '@hybrid-canvas/platforms-desktop-runtime'
 import type { SettingsStore } from '@hybrid-canvas/settings'
 import { SettingsDialog } from '@hybrid-canvas/settings/react'
@@ -8,10 +7,10 @@ import type { CommandRegistry } from '@hybrid-canvas/workspace/application'
 import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
 import { CommandPalette } from '@hybrid-canvas/workspace/react'
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-
 import type { ApplicationTerminationCoordinator } from '../application/termination/application-termination-coordinator'
 import { UiErrorBoundary } from './boundaries/UiErrorBoundary'
 import { useGlobalCommandShortcuts } from './commands/useGlobalCommandShortcuts'
+import { reportUiError as reportError, UiFeedbackRegion } from './ui/ui-feedback'
 import { type WorkspaceCanvasUIPort, WorkspaceContainer } from './workspace/WorkspaceContainer'
 
 export interface AppShellRuntime {

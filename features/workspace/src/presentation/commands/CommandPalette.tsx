@@ -81,17 +81,16 @@ export function CommandPalette({ open, registry, onOpenChange }: CommandPaletteP
 
   return (
     <Dialog
-      open={open}
       className="max-w-xl"
       description="搜索并执行工作区命令"
       onOpenChange={onOpenChange}
+      open={open}
       title="命令面板"
     >
       <div className={['flex items-center gap-2', 'border-b', 'border-divider', 'px-4'].join(' ')}>
         <Search aria-hidden="true" className={['size-4', 'text-muted-foreground'].join(' ')} />
 
         <Input
-          ref={inputRef}
           aria-activedescendant={activeCommand ? 'command-' + activeCommand.id : undefined}
           aria-autocomplete="list"
           aria-controls="command-palette-results"
@@ -138,6 +137,7 @@ export function CommandPalette({ open, registry, onOpenChange }: CommandPaletteP
             }
           }}
           placeholder="输入命令名称…"
+          ref={inputRef}
           role="combobox"
           value={query}
         />
@@ -156,15 +156,13 @@ export function CommandPalette({ open, registry, onOpenChange }: CommandPaletteP
       </div>
 
       <div
-        id="command-palette-results"
         className={['max-h-80', 'overflow-y-auto', 'p-2'].join(' ')}
+        id="command-palette-results"
         role="listbox"
       >
         {filteredCommands.length > 0 ? (
           filteredCommands.map((command, index) => (
             <button
-              key={command.id}
-              id={'command-' + command.id}
               aria-selected={index === activeIndex}
               className={[
                 'flex min-h-11',
@@ -177,6 +175,8 @@ export function CommandPalette({ open, registry, onOpenChange }: CommandPaletteP
                 'focus-visible:ring-2',
                 'focus-visible:ring-ring',
               ].join(' ')}
+              id={'command-' + command.id}
+              key={command.id}
               onClick={() => {
                 executeCommand(command)
               }}

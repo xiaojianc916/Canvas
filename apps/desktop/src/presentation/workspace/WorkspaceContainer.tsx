@@ -1,7 +1,6 @@
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
 import { EditorSessionHost } from '@hybrid-canvas/canvas/react'
 import { ConfirmationDialog } from '@hybrid-canvas/design-system'
-import { reportUiError as reportError } from '../ui/ui-feedback'
 import type {
   CanvasSessionId,
   WorkbenchSessionStore,
@@ -9,9 +8,9 @@ import type {
 } from '@hybrid-canvas/workspace/contracts'
 import { CanvasTabs, WorkspaceShell } from '@hybrid-canvas/workspace/react'
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
-
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
 import { DesktopTitleBar } from '../chrome/DesktopTitleBar'
+import { reportUiError as reportError } from '../ui/ui-feedback'
 
 const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({
   pages: Object.freeze([]),
