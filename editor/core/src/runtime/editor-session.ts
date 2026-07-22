@@ -58,7 +58,9 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
   const listeners = new Set<() => void>()
   const stopObserving = store.listen(
     () => {
-      for (const listener of listeners) listener()
+      for (const listener of listeners) {
+        listener()
+      }
     },
     { scope: 'document' },
   )
@@ -100,7 +102,9 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     },
     getSessionSnapshot() {
       const editor = attachedEditor
-      if (!editor) return { pages: [] }
+      if (!editor) {
+        return { pages: [] }
+      }
       const activePageId = editor.getCurrentPageId()
       return {
         pages: editor.getPages().map((page) => ({
@@ -125,7 +129,9 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     activatePage(pageId) {
       assertActive()
       const page = attachedEditor?.getPages().find((candidate) => candidate.id === pageId)
-      if (attachedEditor && page) attachedEditor.setCurrentPage(page)
+      if (attachedEditor && page) {
+        attachedEditor.setCurrentPage(page)
+      }
     },
     dispose() {
       stopObserving()

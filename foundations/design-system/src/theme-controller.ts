@@ -11,7 +11,7 @@ export function applyThemePreference(theme: ThemePreference): void {
   const root = document.documentElement
 
   const apply = (dark: boolean) => {
-    root.dataset.theme = dark ? 'dark' : 'light'
+    root.setAttribute('data-theme', dark ? 'dark' : 'light')
   }
 
   if (theme === 'light' || theme === 'dark') {

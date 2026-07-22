@@ -1,23 +1,37 @@
 #!/usr/bin/env node
-/* biome-ignore-all lint/suspicious/noConsole: This CLI reports migration results. */
+/* biome-ignore-all lint/suspicious/noConsole: This migration CLI reports its changes. */
 
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
+import { execFileSync } from 'node:child_process'
 
 const ROOT = process.cwd()
 
 const APPLY = process.argv.includes('--apply')
 
-const SNAPSHOT_FILE = 'editor/persistence/src/application/snapshot-service.ts'
+const FILES = {
+  splitter: 'features/workspace/src/presentation/shell/SidebarSplitter.tsx',
 
-const CLI_ROOTS = ['tests', 'tooling']
+  field: 'foundations/design-system/src/components/ui/field.tsx',
 
-const NO_CONSOLE_SUPPRESSION =
-  '/* biome-ignore-all lint/suspicious/noConsole: CLI scripts intentionally write command output. */'
+  theme: 'foundations/design-system/src/theme-controller.ts',
+
+  workspacePublicApi: 'features/workspace/src/public-api.ts',
+}
 
 function absolute(relativePath) {
   return path.join(ROOT, relativePath)
+}
+
+function read(relativePath) {
+  const filePath = absolute(relativePath)
+
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`缺少文件：${relativePath}`)
+  }
+
+  return fs.readFileSync(filePath, 'utf8')
 }
 
 function assertRepository() {
@@ -34,132 +48,97 @@ function assertRepository() {
   }
 }
 
-function walk(directory) {
-  if (!fs.existsSync(directory)) {
-    return []
+function replaceRequired(content, search, replacement, label) {
+  if (content.includes(replacement)) {
+    return content
   }
 
-  return fs
-    .readdirSync(directory, {
-      withFileTypes: true,
-    })
-    .flatMap((entry) => {
-      const entryPath = path.join(directory, entry.name)
+  const count = content.split(search).length - 1
 
-      if (entry.isDirectory()) {
-        return walk(entryPath)
-      }
+  if (count !== 1) {
+    throw new Error([label, '：预期匹配 1 次，', '实际匹配 ', String(count), ' 次。'].join(''))
+  }
 
-      return entry.isFile() ? [entryPath] : []
-    })
+  return content.replace(search, replacement)
 }
 
-function fixSnapshotService(
-  content,
-) {
-  const suppression =
-    '/* biome-ignore-all lint/complexity/useLiteralKeys: Parsed snapshot data uses index signatures until runtime validation completes. */'
-
+function fixSplitter(content) {
   let next = content
-    .replaceAll(
-      'parsed.header',
-      "parsed['header']",
-    )
-    .replaceAll(
-      'header.format',
-      "header['format']",
-    )
-    .replaceAll(
-      'header.version',
-      "header['version']",
-    )
-    .replaceAll(
-      'header.createdAt',
-      "header['createdAt']",
-    )
 
-  if (
-    !next.includes(
-      'biome-ignore-all lint/complexity/useLiteralKeys',
-    )
-  ) {
-    next = [
-      suppression,
-      next,
-    ].join('\n')
+  next = replaceRequired(
+    next,
+    ['    <div', '      aria-label="调整侧边栏宽度"'].join('\n'),
+    ['    <hr', '      aria-label="调整侧边栏宽度"'].join('\n'),
+    'SidebarSplitter 语义元素',
+  )
+
+  next = next.replace('\n      role="separator"', '')
+
+  return next
+}
+
+function fixField(content) {
+  let next = content
+
+  const replacements = [
+    ['readonly descriptionId?: string', 'readonly descriptionId: string | undefined'],
+    ['readonly errorId?: string', 'readonly errorId: string | undefined'],
+    ['readonly describedBy?: string', 'readonly describedBy: string | undefined'],
+  ]
+
+  for (const [search, replacement] of replacements) {
+    next = next.replace(search, replacement)
   }
 
   return next
 }
 
-function addNoConsoleSuppression(content) {
+function fixThemeController(content) {
+  return content.replace(
+    ['root.dataset.theme = ', "dark ? 'dark' : 'light'"].join(''),
+    ['root.setAttribute(', "'data-theme', ", "dark ? 'dark' : 'light'", ')'].join(''),
+  )
+}
+
+function fixWorkspacePublicApi(content) {
+  const suppression =
+    '/* biome-ignore-all lint/performance/noReExportAll: The package public API intentionally re-exports its contract entry. */'
+
+  let next = content.replace(/^\uFEFF/, '')
+
   if (
-    !content.includes('console.') ||
-    content.includes('biome-ignore-all lint/suspicious/noConsole')
+    next.includes('export * from') &&
+    !next.includes('biome-ignore-all lint/performance/noReExportAll')
   ) {
-    return content
+    next = [suppression, next].join('\n')
   }
 
-  if (content.startsWith('#!')) {
-    const newlineIndex = content.indexOf('\n')
-
-    if (newlineIndex === -1) {
-      return [content, NO_CONSOLE_SUPPRESSION, ''].join('\n')
-    }
-
-    return [
-      content.slice(0, newlineIndex),
-      NO_CONSOLE_SUPPRESSION,
-      content.slice(newlineIndex + 1),
-    ].join('\n')
-  }
-
-  return [NO_CONSOLE_SUPPRESSION, content].join('\n')
+  return next
 }
 
 function buildChanges() {
+  const transforms = [
+    [FILES.splitter, fixSplitter],
+    [FILES.field, fixField],
+    [FILES.theme, fixThemeController],
+    [FILES.workspacePublicApi, fixWorkspacePublicApi],
+  ]
+
   const changes = []
 
-  const snapshotPath = absolute(SNAPSHOT_FILE)
+  for (const [relativePath, transform] of transforms) {
+    const currentContent = read(relativePath)
 
-  if (!fs.existsSync(snapshotPath)) {
-    throw new Error(`缺少文件：${SNAPSHOT_FILE}`)
-  }
+    const nextContent = transform(currentContent)
 
-  const snapshotCurrent = fs.readFileSync(snapshotPath, 'utf8')
-
-  const snapshotNext = fixSnapshotService(snapshotCurrent)
-
-  if (snapshotCurrent !== snapshotNext) {
-    changes.push({
-      relativePath: SNAPSHOT_FILE,
-
-      nextContent: snapshotNext,
-    })
-  }
-
-  for (const sourceRoot of CLI_ROOTS) {
-    const sourceRootPath = absolute(sourceRoot)
-
-    for (const filePath of walk(sourceRootPath)) {
-      if (!filePath.endsWith('.mjs')) {
-        continue
-      }
-
-      const currentContent = fs.readFileSync(filePath, 'utf8')
-
-      const nextContent = addNoConsoleSuppression(currentContent)
-
-      if (currentContent === nextContent) {
-        continue
-      }
-
-      changes.push({
-        relativePath: path.relative(ROOT, filePath).split(path.sep).join('/'),
-
-        nextContent,
-      })
+    if (currentContent === nextContent) {
+      continue
     }
+
+    changes.push({
+      relativePath,
+      nextContent,
+    })
   }
 
   return changes
@@ -177,6 +156,11 @@ function applyChanges(changes) {
   for (const change of changes) {
     fs.writeFileSync(absolute(change.relativePath), change.nextContent, 'utf8')
   }
+
+  execFileSync('git', ['diff', '--check'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+  })
 }
 
 function main() {
@@ -198,7 +182,7 @@ function main() {
 
     console.log('应用命令：')
 
-    console.log('node tooling/script/fix-biome-diagnostics.mjs --apply')
+    console.log('node tooling/script/fix-post-refactor.mjs --apply')
 
     return
   }
@@ -207,11 +191,6 @@ function main() {
 
   console.log('')
   console.log('定向修复已应用。')
-
-  console.log('')
-  console.log('接下来执行：')
-
-  console.log('pnpm exec biome check --write . --max-diagnostics=300')
 }
 
 try {

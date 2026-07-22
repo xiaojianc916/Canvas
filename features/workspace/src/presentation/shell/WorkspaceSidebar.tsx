@@ -1,13 +1,5 @@
+import { Button, cn, ScrollArea } from '@hybrid-canvas/design-system'
 import {
-  Button,
-  cn,
-  ScrollArea,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@hybrid-canvas/design-system'
-import {
-  Archive,
   Boxes,
   ChartNoAxesCombined,
   Files,

@@ -20,7 +20,7 @@ export function SidebarSplitter({
   }
 
   return (
-    <div
+    <hr
       aria-label="调整侧边栏宽度"
       aria-orientation="vertical"
       aria-valuemax={max}
@@ -75,7 +75,6 @@ export function SidebarSplitter({
 
         onResizeStart()
       }}
-      role="separator"
       tabIndex={0}
     />
   )

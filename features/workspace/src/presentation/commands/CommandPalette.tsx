@@ -91,7 +91,7 @@ export function CommandPalette({ open, registry, onOpenChange }: CommandPaletteP
         <Search aria-hidden="true" className={['size-4', 'text-muted-foreground'].join(' ')} />
 
         <Input
-          aria-activedescendant={activeCommand ? 'command-' + activeCommand.id : undefined}
+          aria-activedescendant={activeCommand ? `command-${activeCommand.id}` : undefined}
           aria-autocomplete="list"
           aria-controls="command-palette-results"
           aria-expanded={open}
@@ -175,7 +175,7 @@ export function CommandPalette({ open, registry, onOpenChange }: CommandPaletteP
                 'focus-visible:ring-2',
                 'focus-visible:ring-ring',
               ].join(' ')}
-              id={'command-' + command.id}
+              id={`command-${command.id}`}
               key={command.id}
               onClick={() => {
                 executeCommand(command)

@@ -383,7 +383,7 @@ function transition(session: OwnedCanvasSession, nextState: CanvasSessionState):
   }
 
   if (!ALLOWED_TRANSITIONS[session.state].includes(nextState)) {
-    throw new Error('CANVAS_SESSION_INVALID_TRANSITION:' + session.state + '->' + nextState)
+    throw new Error(`CANVAS_SESSION_INVALID_TRANSITION:${session.state}->${nextState}`)
   }
 
   session.state = nextState

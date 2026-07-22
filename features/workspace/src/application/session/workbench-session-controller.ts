@@ -16,7 +16,9 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
   function emit(nextSnapshot: WorkbenchViewModel): void {
     assertWorkbenchInvariants(nextSnapshot)
     snapshot = nextSnapshot
-    for (const listener of listeners) listener()
+    for (const listener of listeners) {
+      listener()
+    }
   }
 
   function createCanvas(request: CreateCanvasRequest): void {
@@ -47,9 +49,13 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
 
   function activateCanvas(sessionId: CanvasSessionId): void {
     const target = snapshot.tabs.find((tab) => tab.sessionId === sessionId)
-    if (!target || target.isActive) return
+    if (!target || target.isActive) {
+      return
+    }
     const activeCanvas = canvases.get(sessionId)
-    if (!activeCanvas) throw new Error('WORKBENCH_CANVAS_NOT_FOUND')
+    if (!activeCanvas) {
+      throw new Error('WORKBENCH_CANVAS_NOT_FOUND')
+    }
     emit({
       activeSessionId: sessionId,
       activeCanvas,
@@ -59,7 +65,9 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
 
   function closeCanvas(sessionId: CanvasSessionId): void {
     const closingIndex = snapshot.tabs.findIndex((tab) => tab.sessionId === sessionId)
-    if (closingIndex < 0) return
+    if (closingIndex < 0) {
+      return
+    }
     const remainingTabs = snapshot.tabs.filter((tab) => tab.sessionId !== sessionId)
     canvases.delete(sessionId)
     if (snapshot.activeSessionId !== sessionId) {
@@ -72,7 +80,9 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
       return
     }
     const activeCanvas = canvases.get(nextTab.sessionId)
-    if (!activeCanvas) throw new Error('WORKBENCH_CANVAS_NOT_FOUND')
+    if (!activeCanvas) {
+      throw new Error('WORKBENCH_CANVAS_NOT_FOUND')
+    }
     emit({
       activeSessionId: nextTab.sessionId,
       activeCanvas,
@@ -95,17 +105,25 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
 function assertWorkbenchInvariants(snapshot: WorkbenchViewModel): void {
   const activeTabs = snapshot.tabs.filter((tab) => tab.isActive)
   const sessionIds = new Set(snapshot.tabs.map((tab) => tab.sessionId))
-  if (sessionIds.size !== snapshot.tabs.length) throw new Error('WORKBENCH_DUPLICATE_SESSION_ID')
-  if (activeTabs.length > 1) throw new Error('WORKBENCH_MULTIPLE_ACTIVE_SESSIONS')
+  if (sessionIds.size !== snapshot.tabs.length) {
+    throw new Error('WORKBENCH_DUPLICATE_SESSION_ID')
+  }
+  if (activeTabs.length > 1) {
+    throw new Error('WORKBENCH_MULTIPLE_ACTIVE_SESSIONS')
+  }
   if (snapshot.activeSessionId === null) {
-    if (activeTabs.length !== 0 || snapshot.activeCanvas !== null)
+    if (activeTabs.length !== 0 || snapshot.activeCanvas !== null) {
       throw new Error('WORKBENCH_EMPTY_STATE_INCONSISTENT')
+    }
     return
   }
-  if (!sessionIds.has(snapshot.activeSessionId))
+  if (!sessionIds.has(snapshot.activeSessionId)) {
     throw new Error('WORKBENCH_ACTIVE_SESSION_NOT_FOUND')
-  if (activeTabs[0]?.sessionId !== snapshot.activeSessionId)
+  }
+  if (activeTabs[0]?.sessionId !== snapshot.activeSessionId) {
     throw new Error('WORKBENCH_ACTIVE_TAB_INCONSISTENT')
-  if (snapshot.activeCanvas?.sessionId !== snapshot.activeSessionId)
+  }
+  if (snapshot.activeCanvas?.sessionId !== snapshot.activeSessionId) {
     throw new Error('WORKBENCH_ACTIVE_CANVAS_INCONSISTENT')
+  }
 }

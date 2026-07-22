@@ -3,9 +3,9 @@ import { cn } from '../../lib/utils'
 
 export interface FieldControlIds {
   readonly inputId: string
-  readonly descriptionId?: string
-  readonly errorId?: string
-  readonly describedBy?: string
+  readonly descriptionId: string | undefined
+  readonly errorId: string | undefined
+  readonly describedBy: string | undefined
 }
 
 export interface FieldProps {
