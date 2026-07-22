@@ -1,33 +1,82 @@
 use serde::Serialize;
 use specta::Type;
-use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
-    Io(std::io::Error),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Persistence error: {0}")]
     Persistence(String),
-    SerdeJson(serde_json::Error),
-    Tauri(tauri::Error),
-    Store(tauri_plugin_store::Error),
-    Dialog(tauri_plugin_dialog::Error),
-    Fs(tauri_plugin_fs::Error),
-    Opener(tauri_plugin_opener::Error),
-    Updater(tauri_plugin_updater::Error),
-    Clipboard(tauri_plugin_clipboard_manager::Error),
-    Shell(tauri_plugin_shell::Error),
-    Notification(tauri_plugin_notification::Error),
-    WindowState(tauri_plugin_window_state::Error),
-    GlobalShortcut(tauri_plugin_global_shortcut::Error),
-    Log(tauri_plugin_log::Error),
+
+    #[error("JSON error: {0}")]
+    SerdeJson(#[from] serde_json::Error),
+
+    #[error("Tauri error: {0}")]
+    Tauri(#[from] tauri::Error),
+
+    #[error("Store error: {0}")]
+    Store(#[from] tauri_plugin_store::Error),
+
+    #[error("Dialog error: {0}")]
+    Dialog(#[from] tauri_plugin_dialog::Error),
+
+    #[error("FS error: {0}")]
+    Fs(#[from] tauri_plugin_fs::Error),
+
+    #[error("Opener error: {0}")]
+    Opener(#[from] tauri_plugin_opener::Error),
+
+    #[error("Updater error: {0}")]
+    Updater(#[from] tauri_plugin_updater::Error),
+
+    #[error("Clipboard error: {0}")]
+    Clipboard(#[from] tauri_plugin_clipboard_manager::Error),
+
+    #[error("Shell error: {0}")]
+    Shell(#[from] tauri_plugin_shell::Error),
+
+    #[error("Notification error: {0}")]
+    Notification(#[from] tauri_plugin_notification::Error),
+
+    #[error("Window state error: {0}")]
+    WindowState(#[from] tauri_plugin_window_state::Error),
+
+    #[error("Global shortcut error: {0}")]
+    GlobalShortcut(#[from] tauri_plugin_global_shortcut::Error),
+
+    #[error("Log error: {0}")]
+    Log(#[from] tauri_plugin_log::Error),
+
+    #[error("Validation error: {0}")]
     Validation(String),
+
+    #[error("Not found: {0}")]
     NotFound(String),
+
+    #[error("Permission denied: {0}")]
     PermissionDenied(String),
+
+    #[error("Internal error: {0}")]
     Internal(String),
+
+    #[error("Plugin error: {0}")]
     Plugin(String),
+
+    #[error("Collaboration error: {0}")]
     Collaboration(String),
+
+    #[error("Export error: {0}")]
     Export(String),
+
+    #[error("Import error: {0}")]
     Import(String),
+
+    #[error("Asset error: {0}")]
     Asset(String),
+
+    #[error("File error: {0}")]
     File(String),
 }
 
@@ -114,138 +163,94 @@ impl Serialize for Error {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Io(e) => write!(f, "IO error: {}", e),
-            Error::Persistence(e) => write!(f, "Persistence error: {}", e),
-            Error::SerdeJson(e) => write!(f, "JSON error: {}", e),
-            Error::Tauri(e) => write!(f, "Tauri error: {}", e),
-            Error::Store(e) => write!(f, "Store error: {}", e),
-            Error::Dialog(e) => write!(f, "Dialog error: {}", e),
-            Error::Fs(e) => write!(f, "FS error: {}", e),
-            Error::Opener(e) => write!(f, "Opener error: {}", e),
-            Error::Updater(e) => write!(f, "Updater error: {}", e),
-            Error::Clipboard(e) => write!(f, "Clipboard error: {}", e),
-            Error::Shell(e) => write!(f, "Shell error: {}", e),
-            Error::Notification(e) => write!(f, "Notification error: {}", e),
-            Error::WindowState(e) => write!(f, "Window state error: {}", e),
-            Error::GlobalShortcut(e) => write!(f, "Global shortcut error: {}", e),
-            Error::Log(e) => write!(f, "Log error: {}", e),
-            Error::Validation(e) => write!(f, "Validation error: {}", e),
-            Error::NotFound(e) => write!(f, "Not found: {}", e),
-            Error::PermissionDenied(e) => write!(f, "Permission denied: {}", e),
-            Error::Internal(e) => write!(f, "Internal error: {}", e),
-            Error::Plugin(e) => write!(f, "Plugin error: {}", e),
-            Error::Collaboration(e) => write!(f, "Collaboration error: {}", e),
-            Error::Export(e) => write!(f, "Export error: {}", e),
-            Error::Import(e) => write!(f, "Import error: {}", e),
-            Error::Asset(e) => write!(f, "Asset error: {}", e),
-            Error::File(e) => write!(f, "File error: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Error::Io(e) => Some(e),
-            Error::SerdeJson(e) => Some(e),
-            Error::Tauri(e) => Some(e),
-            Error::Store(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
 impl From<hybrid_canvas_file_native::Error> for Error {
     fn from(error: hybrid_canvas_file_native::Error) -> Self {
         Self::Persistence(error.to_string())
     }
 }
 
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Error::Io(e)
-    }
-}
-
-impl From<serde_json::Error> for Error {
-    fn from(e: serde_json::Error) -> Self {
-        Error::SerdeJson(e)
-    }
-}
-
-impl From<tauri::Error> for Error {
-    fn from(e: tauri::Error) -> Self {
-        Error::Tauri(e)
-    }
-}
-
-impl From<tauri_plugin_store::Error> for Error {
-    fn from(e: tauri_plugin_store::Error) -> Self {
-        Error::Store(e)
-    }
-}
-
-impl From<tauri_plugin_dialog::Error> for Error {
-    fn from(e: tauri_plugin_dialog::Error) -> Self {
-        Error::Dialog(e)
-    }
-}
-
-impl From<tauri_plugin_fs::Error> for Error {
-    fn from(e: tauri_plugin_fs::Error) -> Self {
-        Error::Fs(e)
-    }
-}
-
-impl From<tauri_plugin_opener::Error> for Error {
-    fn from(e: tauri_plugin_opener::Error) -> Self {
-        Error::Opener(e)
-    }
-}
-
-impl From<tauri_plugin_updater::Error> for Error {
-    fn from(e: tauri_plugin_updater::Error) -> Self {
-        Error::Updater(e)
-    }
-}
-
-impl From<tauri_plugin_clipboard_manager::Error> for Error {
-    fn from(e: tauri_plugin_clipboard_manager::Error) -> Self {
-        Error::Clipboard(e)
-    }
-}
-
-impl From<tauri_plugin_shell::Error> for Error {
-    fn from(e: tauri_plugin_shell::Error) -> Self {
-        Error::Shell(e)
-    }
-}
-
-impl From<tauri_plugin_notification::Error> for Error {
-    fn from(e: tauri_plugin_notification::Error) -> Self {
-        Error::Notification(e)
-    }
-}
-
-impl From<tauri_plugin_window_state::Error> for Error {
-    fn from(e: tauri_plugin_window_state::Error) -> Self {
-        Error::WindowState(e)
-    }
-}
-
-impl From<tauri_plugin_global_shortcut::Error> for Error {
-    fn from(e: tauri_plugin_global_shortcut::Error) -> Self {
-        Error::GlobalShortcut(e)
-    }
-}
-
-impl From<tauri_plugin_log::Error> for Error {
-    fn from(e: tauri_plugin_log::Error) -> Self {
-        Error::Log(e)
-    }
-}
-
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::{Error, IpcErrorCode, IpcOperation};
+
+    #[test]
+    fn import_error_uses_import_message() {
+        let error = Error::Import("invalid document".to_owned());
+
+        assert_eq!(
+            error.to_string(),
+            "Import error: invalid document"
+        );
+    }
+
+    #[test]
+    fn export_error_uses_export_message() {
+        let error = Error::Export("unsupported target".to_owned());
+
+        assert_eq!(
+            error.to_string(),
+            "Export error: unsupported target"
+        );
+    }
+
+    #[test]
+    fn validation_error_has_validation_ipc_mapping() {
+        let error = Error::Validation("invalid input".to_owned());
+
+        assert!(matches!(error.code(), IpcErrorCode::Validation));
+        assert!(matches!(error.operation(), IpcOperation::Platform));
+        assert!(!error.recoverable());
+    }
+
+    #[test]
+    fn import_error_has_import_export_operation() {
+        let error = Error::Import("invalid document".to_owned());
+
+        assert!(matches!(
+            error.code(),
+            IpcErrorCode::ImportExport
+        ));
+        assert!(matches!(
+            error.operation(),
+            IpcOperation::ImportExport
+        ));
+        assert!(!error.recoverable());
+    }
+
+    #[test]
+    fn io_error_is_recoverable_persistence_error() {
+        let error = Error::Io(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "denied",
+        ));
+
+        assert!(matches!(
+            error.code(),
+            IpcErrorCode::Persistence
+        ));
+        assert!(matches!(
+            error.operation(),
+            IpcOperation::File
+        ));
+        assert!(error.recoverable());
+    }
+
+    #[test]
+    fn serialized_error_preserves_ipc_contract() {
+        let value = serde_json::to_value(
+            Error::Validation("invalid settings".to_owned()),
+        )
+        .expect("error should serialize");
+
+        assert_eq!(value["code"], "validation");
+        assert_eq!(value["operation"], "platform");
+        assert_eq!(
+            value["message"],
+            "Validation error: invalid settings"
+        );
+        assert_eq!(value["recoverable"], false);
+    }
+}
+
