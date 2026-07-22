@@ -1,19 +1,11 @@
 /*
  * Chrome-style workbench tabs.
  *
- * This stylesheet intentionally does not control titlebar layout.
- * The sidebar-aligned blank region remains owned by DesktopTitleBar.
- *
- * Active tab geometry:
- *
- *       ╭────────────────────╮
- *   ────╯                    ╰────
- *      concave shoulders
- *
- * The center body is inset by --chrome-tab-shoulder. The active
- * pseudo-elements occupy both side areas and use rounded corners
- * plus box-shadows to produce Chrome's outward base and concave
- * transition into the content surface.
+ * The strip owns one continuous baseline between browser chrome and
+ * workspace content. Active tab geometry is painted above that line,
+ * covering only the segment directly beneath the active tab. This
+ * preserves the workspace separator while making the active tab look
+ * physically open into the workspace.
  */
 
 .chrome-workbench-tabs,
@@ -22,15 +14,27 @@
 }
 
 .chrome-workbench-tabs {
-  --chrome-tab-height: 36px;
-  --chrome-tab-shoulder: 12px;
-  --chrome-tab-min-width: 144px;
-  --chrome-tab-preferred-width: 220px;
-  --chrome-tab-max-width: 240px;
+  --chrome-tab-height: 32px;
+  --chrome-tab-shoulder: 8px;
+  --chrome-tab-min-width: 120px;
+  --chrome-tab-preferred-width: 196px;
+  --chrome-tab-max-width: 228px;
+
   --chrome-tab-strip: var(--color-chrome);
   --chrome-tab-surface: var(--color-background);
-  --chrome-tab-hover: color-mix(in srgb, var(--color-background) 56%, transparent);
-  --chrome-tab-divider: color-mix(in srgb, var(--color-foreground) 20%, transparent);
+
+  --chrome-tab-hover: color-mix(in srgb, var(--color-foreground) 9%, var(--chrome-tab-strip));
+
+  --chrome-tab-hover-border: color-mix(in srgb, var(--color-foreground) 13%, transparent);
+
+  --chrome-tab-outline: color-mix(in srgb, var(--color-foreground) 18%, transparent);
+
+  --chrome-tab-divider: color-mix(in srgb, var(--color-foreground) 21%, transparent);
+
+  --chrome-workspace-divider: var(
+    --color-divider,
+    color-mix(in srgb, var(--color-foreground) 16%, transparent)
+  );
 
   position: relative;
   width: 100%;
@@ -43,6 +47,25 @@
   font-size: 12px;
 }
 
+/*
+ * Real workspace separator.
+ *
+ * It exists across the strip but is painted below active tabs. The
+ * active body and its shoulders have a higher stacking order and mask
+ * only their own portion of the separator.
+ */
+.chrome-workbench-tabs::after {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1px;
+  background: var(--chrome-workspace-divider);
+  content: "";
+  pointer-events: none;
+}
+
 .chrome-workbench-tabs__scroller {
   position: relative;
   display: flex;
@@ -50,7 +73,7 @@
   width: 100%;
   height: 100%;
   min-width: 0;
-  padding: 5px 4px 0;
+  padding: 4px 4px 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -63,16 +86,13 @@
 
 .chrome-workbench-tabs__drag-region {
   height: 100%;
-  min-width: 28px;
-  flex: 1 0 28px;
+  min-width: 24px;
+  flex: 1 0 24px;
 }
 
 /*
- * Keep titles readable.
- *
- * When the intentionally reserved titlebar space leaves insufficient
- * room, the strip scrolls horizontally. It does not hide the title
- * based on measured width.
+ * Tabs overlap slightly so neighboring tabs do not look detached.
+ * The overlap is visual only and does not change state ownership.
  */
 .chrome-workbench-tab {
   position: relative;
@@ -81,7 +101,7 @@
   min-width: var(--chrome-tab-min-width);
   max-width: var(--chrome-tab-max-width);
   flex: 0 1 var(--chrome-tab-preferred-width);
-  margin-left: -1px;
+  margin-left: -4px;
   overflow: visible;
   isolation: isolate;
   user-select: none;
@@ -100,16 +120,15 @@
 }
 
 /*
- * Active Chrome shoulders.
+ * Active shoulders.
  *
- * The box-shadow projects the active surface toward the center body.
- * The rounded inner edge removes the upper outside portion, producing
- * the characteristic concave transition instead of a diagonal wing.
+ * The first shadow paints the surface. The second, slightly larger
+ * shadow paints the subtle outline around the concave transition.
  */
 .chrome-workbench-tab[data-active="true"]::before,
 .chrome-workbench-tab[data-active="true"]::after {
   position: absolute;
-  z-index: 0;
+  z-index: 3;
   bottom: 0;
   width: var(--chrome-tab-shoulder);
   height: var(--chrome-tab-shoulder);
@@ -120,41 +139,71 @@
 .chrome-workbench-tab[data-active="true"]::before {
   left: 0;
   border-bottom-right-radius: var(--chrome-tab-shoulder);
-  box-shadow: 6px 6px 0 6px var(--chrome-tab-surface);
+  box-shadow:
+    4px 4px 0 4px var(--chrome-tab-surface),
+    4px 3px 0 5px var(--chrome-tab-outline);
 }
 
 .chrome-workbench-tab[data-active="true"]::after {
   right: 0;
   border-bottom-left-radius: var(--chrome-tab-shoulder);
-  box-shadow: -6px 6px 0 6px var(--chrome-tab-surface);
+  box-shadow:
+    -4px 4px 0 4px var(--chrome-tab-surface),
+    -4px 3px 0 5px var(--chrome-tab-outline);
 }
 
 /*
- * The center body connects directly to the content area at its
- * baseline. Only the upper corners are convex.
+ * Default content occupies the tab without creating its own visible
+ * background. Inactive hover and active states provide their own
+ * geometry below.
  */
 .chrome-workbench-tab__content {
   position: absolute;
-  z-index: 1;
-  inset: 0 var(--chrome-tab-shoulder) 0;
+  z-index: 4;
   display: flex;
   align-items: center;
   min-width: 0;
-  padding: 0 10px;
   overflow: hidden;
-  border-radius: 10px 10px 0 0;
   background: transparent;
   transition:
-    background-color 110ms ease-out,
-    color 110ms ease-out;
+    background-color 120ms ease-out,
+    border-color 120ms ease-out,
+    color 120ms ease-out;
 }
 
+/*
+ * Active body:
+ * - 2px internal top gap in addition to the strip's 4px top padding.
+ * - No bottom border, so the body opens into the workspace.
+ * - Top and side outline remains visible.
+ */
 .chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__content {
+  inset: 2px var(--chrome-tab-shoulder) 0;
+  padding: 0 9px;
+  border: 1px solid var(--chrome-tab-outline);
+  border-bottom: 0;
+  border-radius: 9px 9px 0 0;
   background: var(--chrome-tab-surface);
 }
 
+/*
+ * Inactive body:
+ * horizontal inset reduces the apparent gap between tabs.
+ */
+.chrome-workbench-tab:not([data-active="true"]) .chrome-workbench-tab__content {
+  inset: 2px 3px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+/*
+ * Hover fill intentionally leaves 2px above and below. It is stronger
+ * than the previous translucent surface while remaining subordinate
+ * to the active tab.
+ */
 .chrome-workbench-tab:hover:not([data-active="true"]) .chrome-workbench-tab__content {
-  border-radius: 10px;
+  border-color: var(--chrome-tab-hover-border);
   background: var(--chrome-tab-hover);
 }
 
@@ -164,7 +213,7 @@
   min-width: 0;
   height: 100%;
   flex: 1 1 auto;
-  gap: 8px;
+  gap: 7px;
   padding: 0;
   overflow: hidden;
   border: 0;
@@ -179,17 +228,21 @@
   color: var(--color-foreground);
 }
 
+.chrome-workbench-tab:hover:not([data-active="true"]) .chrome-workbench-tab__activation {
+  color: var(--color-foreground);
+}
+
 .chrome-workbench-tab__activation:focus-visible {
-  border-radius: 7px;
+  border-radius: 6px;
   outline: 2px solid var(--color-primary);
   outline-offset: -3px;
 }
 
 .chrome-workbench-tab__icon {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
-  stroke-width: 1.7;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  stroke-width: 1.8;
 }
 
 .chrome-workbench-tab__title {
@@ -215,7 +268,7 @@
   width: 20px;
   height: 20px;
   flex: 0 0 20px;
-  margin-left: 4px;
+  margin-left: 3px;
   place-items: center;
 }
 
@@ -226,19 +279,19 @@
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: 5px;
   color: currentColor;
   background: transparent;
   opacity: 0.78;
 }
 
 .chrome-workbench-tab__close:hover {
-  background: color-mix(in srgb, var(--color-foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--color-foreground) 11%, transparent);
   opacity: 1;
 }
 
 .chrome-workbench-tab__close:active {
-  background: color-mix(in srgb, var(--color-foreground) 20%, transparent);
+  background: color-mix(in srgb, var(--color-foreground) 17%, transparent);
 }
 
 .chrome-workbench-tab__close:focus-visible {
@@ -279,24 +332,13 @@
 }
 
 /*
- * Inactive-tab separators. Separators adjacent to active or hovered
- * tabs disappear, matching Chrome's tab-strip grouping.
- */
-
-/*
- * One DOM separator represents one physical boundary.
- *
- * Chromium computes leading and trailing opacities independently
- * because native tabs overlap and their separators align onto the
- * same device coordinate. In this flex layout, rendering both sides
- * would produce two distinct lines, so the left tab exclusively owns
- * the boundary after it.
+ * A single separator represents the boundary after this tab.
  */
 .chrome-workbench-tab__separator {
   position: absolute;
   z-index: 2;
-  top: 10px;
-  right: var(--chrome-tab-shoulder, var(--chrome-tab-margin, 12px));
+  top: 9px;
+  right: 3px;
   bottom: 9px;
   width: 1px;
   background: var(--chrome-tab-divider);
@@ -306,17 +348,10 @@
 }
 
 /*
- * Chromium separator state mapped to a single-active-tab workbench:
+ * Active and hover shapes replace separators on both sides.
  *
- * 1. Active tabs have a visible shape, so their own trailing
- *    separator is hidden.
- * 2. Hovered tabs have a visible hover shape, so their trailing
- *    separator fades out.
- * 3. The preceding tab owns the boundary before the active/hovered
- *    tab, so that preceding separator must also fade out.
- *
- * This guarantees that active and hovered tabs have no separator on
- * either side, while two ordinary background tabs have exactly one.
+ * The current tab owns its right separator. The previous tab owns the
+ * current tab's left separator.
  */
 .chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__separator,
 .chrome-workbench-tab:hover .chrome-workbench-tab__separator,
@@ -326,16 +361,23 @@
   opacity: 0;
 }
 
+/*
+ * Compact new-tab button.
+ *
+ * Icon size is 14px, matching the X icon. The hover target is reduced
+ * from 36px to 26px and uses the same rounded-square language.
+ */
 .chrome-workbench-tabs__new-tab {
+  align-self: center;
   display: grid;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
-  margin-left: 2px;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  margin: 0 3px 1px 2px;
   padding: 0;
   place-items: center;
   border: 0;
-  border-radius: 50%;
+  border-radius: 6px;
   color: var(--color-muted-foreground);
   background: transparent;
 }
@@ -346,18 +388,13 @@
 }
 
 .chrome-workbench-tabs__new-tab:active {
-  background: color-mix(in srgb, var(--color-foreground) 15%, transparent);
+  background: color-mix(in srgb, var(--color-foreground) 16%, transparent);
 }
 
 .chrome-workbench-tabs__new-tab:focus-visible {
   outline: 2px solid var(--color-primary);
-  outline-offset: -3px;
+  outline-offset: -2px;
 }
-
-/*
- * The tab and the content surface use the same background at the
- * baseline, removing any seam beneath the active body and shoulders.
- */
 
 @keyframes chrome-workbench-saving {
   from {

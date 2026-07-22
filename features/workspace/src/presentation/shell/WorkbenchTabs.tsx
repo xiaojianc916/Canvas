@@ -215,7 +215,7 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
           onClick={onCreate}
           type="button"
         >
-          <Plus aria-hidden="true" className="size-5" />
+          <Plus aria-hidden="true" className="size-3.5" />
         </button>
 
         <div
