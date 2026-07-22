@@ -44,7 +44,7 @@ export function WorkspaceShell({
   const previousModeRef = useRef(mode)
 
   const [isSidebarOpen, setSidebarOpen] = useState(true)
-  const [isInspectorOpen, setInspectorOpen] = useState(mode === 'wide')
+  const [isInspectorOpen, setInspectorOpen] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT)
   const [isResizing, setResizing] = useState(false)
 
