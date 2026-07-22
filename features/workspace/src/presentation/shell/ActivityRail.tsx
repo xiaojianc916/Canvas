@@ -2,8 +2,11 @@ import {
   Button,
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
   Tooltip,
   TooltipContent,
@@ -184,56 +187,101 @@ function HelpMenu() {
       <DropdownMenuTrigger
         aria-label="帮助"
         className={[
-          'grid size-9',
-          'place-items-center',
+          'grid size-9 place-items-center',
           'rounded-md',
           'text-muted-foreground',
+          'transition-colors',
           'hover:bg-sidebar-accent',
           'hover:text-foreground',
           'data-[popup-open]:bg-sidebar-accent',
+          'data-[popup-open]:text-foreground',
         ].join(' ')}
       >
-        <CircleHelp aria-hidden="true" className="size-4" />
+        <CircleHelp
+          aria-hidden="true"
+          className="size-4"
+        />
       </DropdownMenuTrigger>
 
       <DropdownMenuContent
-        align="end"
-        className={['w-60 rounded-xl p-2'].join(' ')}
+        align="start"
+        className="w-56"
         side="right"
         sideOffset={8}
       >
-        <HelpItem external icon={BookOpen} label="文档" />
+        <DropdownMenuLabel>
+          帮助与支持
+        </DropdownMenuLabel>
 
-        <HelpItem external icon={RefreshCcw} label="更新日志" />
+        <DropdownMenuGroup>
+          <HelpMenuItem
+            external
+            icon={BookOpen}
+            label="文档"
+          />
+
+          <HelpMenuItem
+            external
+            icon={RefreshCcw}
+            label="更新日志"
+          />
+        </DropdownMenuGroup>
 
         <DropdownMenuSeparator />
 
-        <HelpItem external icon={MessageCircle} label="Discord" />
+        <DropdownMenuGroup>
+          <HelpMenuItem
+            external
+            icon={MessageCircle}
+            label="Discord"
+          />
 
-        <HelpItem icon={MessageCircle} label="反馈" />
+          <HelpMenuItem
+            icon={MessageCircle}
+            label="反馈"
+          />
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   )
 }
 
-interface HelpItemProps {
+interface HelpMenuItemProps {
   readonly label: string
   readonly icon: NavigationIcon
   readonly external?: boolean
+  readonly disabled?: boolean
+  readonly onClick?: () => void
 }
 
-function HelpItem({ label, icon: Icon, external = false }: HelpItemProps) {
+function HelpMenuItem({
+  label,
+  icon: Icon,
+  external = false,
+  disabled = false,
+  onClick,
+}: HelpMenuItemProps) {
   return (
-    <DropdownMenuItem className={['min-h-10 gap-3', 'rounded-md'].join(' ')}>
-      <Icon aria-hidden="true" className={['size-4', 'text-muted-foreground'].join(' ')} />
+    <DropdownMenuItem
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <Icon
+        aria-hidden="true"
+        className="size-4 text-muted-foreground"
+      />
 
-      <span className="flex-1">{label}</span>
+      <span className="flex-1">
+        {label}
+      </span>
 
       {external ? (
-        <ExternalLink
-          aria-hidden="true"
-          className={['size-3.5', 'text-muted-foreground'].join(' ')}
-        />
+        <DropdownMenuShortcut>
+          <ExternalLink
+            aria-hidden="true"
+            className="size-3.5"
+          />
+        </DropdownMenuShortcut>
       ) : null}
     </DropdownMenuItem>
   )

@@ -1,261 +1,569 @@
-// apply-tldraw-license-clean.mjs
-// 放在仓库根目录执行：
-// node apply-tldraw-license-clean.mjs
+// refactor-help-dropdown.mjs
+// 放在仓库根目录运行：
+// node refactor-help-dropdown.mjs
 
-import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { extname, join, resolve } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 
-const editorCanvasPath = resolve(
-  'editor/core/src/react/EditorCanvas.tsx',
+const dropdownMenuPath = resolve(
+  'foundations/design-system/src/components/ui/dropdown-menu.tsx',
 )
 
-const editorPackagePath = resolve('editor/core/package.json')
-
-const oldLicenseCheckPath = resolve(
-  'editor/core/scripts/check-license.js',
+const designSystemPublicApiPath = resolve(
+  'foundations/design-system/src/public-api.ts',
 )
 
-const oldBackupPath = resolve(
-  'editor/core/src/react/EditorCanvas.tsx.bak',
+const activityRailPath = resolve(
+  'features/workspace/src/presentation/shell/ActivityRail.tsx',
 )
 
-const licenseKey =
-  'tldraw-2026-10-28/WyJKRWdfbFdwZyIsWyIqIl0sMTYsIjIwMjYtMTAtMjgiXQ.lmi81fI8OPFbKs0/HJEW9FHFXxwCvSb/rS29gNvSO9+nXHlk/d62Tg4yzjBBRqfIqNb5Bcuo1lhf/JZ3DOeuYw'
+/**
+ * 通用 DropdownMenu 组件。
+ *
+ * 基于项目现有的 @base-ui/react/menu 实现，
+ * 不额外引入 Radix UI，避免产生第二套基础组件体系。
+ */
+const dropdownMenuSource = `import { Menu } from '@base-ui/react/menu'
+import { ChevronRight } from 'lucide-react'
+import { type ComponentPropsWithoutRef, forwardRef } from 'react'
+import { cn } from '../../lib/utils'
 
-const constantName = 'TLDRAW_LICENSE_KEY'
+export const DropdownMenu = Menu.Root
 
-async function updateEditorCanvas() {
-  let source = await readFile(editorCanvasPath, 'utf8')
+export const DropdownMenuGroup = Menu.Group
 
-  /*
-   * 删除已有许可证常量，确保不会保留旧密钥或产生重复定义。
-   */
-  source = source.replace(
-    /(?:export\s+)?const\s+TLDRAW_LICENSE_KEY\s*=\s*(?:\r?\n\s*)?(['"`])[\s\S]*?\1\s*;?\s*/g,
-    '',
+export const DropdownMenuPortal = Menu.Portal
+
+export const DropdownMenuSub = Menu.SubmenuRoot
+
+export const DropdownMenuTrigger = forwardRef<
+  HTMLButtonElement,
+  ComponentPropsWithoutRef<typeof Menu.Trigger>
+>(function DropdownMenuTrigger({ className, ...props }, ref) {
+  return (
+    <Menu.Trigger
+      className={cn(
+        'outline-none',
+        'focus-visible:ring-2',
+        'focus-visible:ring-ring',
+        'focus-visible:ring-offset-2',
+        'disabled:pointer-events-none',
+        'disabled:opacity-50',
+        className,
+      )}
+      ref={ref}
+      {...props}
+    />
   )
+})
 
-  /*
-   * 删除 TldrawProps 中已有的许可证配置，包括：
-   *
-   * licenseKey: process.env.xxx
-   * licenseKey: import.meta.env.xxx
-   * licenseKey: SOME_CONSTANT
-   * licenseKey: '直接写入的旧密钥'
-   */
-  source = source.replace(
-    /^\s*licenseKey\s*:\s*[^\n]+,?\r?\n/gm,
-    '',
-  )
-
-  const importAnchor =
-    "import { useBindEditorSession, useEditor } from './editor-context'"
-
-  if (!source.includes(importAnchor)) {
-    throw new Error(
-      '未找到 EditorCanvas 的 import 插入位置，文件结构可能已经改变。',
-    )
+type DropdownMenuContentProps =
+  ComponentPropsWithoutRef<typeof Menu.Popup> & {
+    readonly sideOffset?: number
+    readonly side?: ComponentPropsWithoutRef<
+      typeof Menu.Positioner
+    >['side']
+    readonly align?: ComponentPropsWithoutRef<
+      typeof Menu.Positioner
+    >['align']
   }
 
-  source = source.replace(
-    importAnchor,
-    `${importAnchor}
+const popupClassName = [
+  'min-w-32 overflow-hidden',
+  'rounded-md border border-divider',
+  'bg-popover p-1',
+  'text-popover-foreground',
+  'shadow-md outline-none',
+  'origin-[var(--transform-origin)]',
+  'transition-[transform,scale,opacity]',
+  'duration-150',
+  'data-[starting-style]:scale-95',
+  'data-[starting-style]:opacity-0',
+  'data-[ending-style]:scale-95',
+  'data-[ending-style]:opacity-0',
+].join(' ')
 
-const ${constantName} =
-  '${licenseKey}'`,
+export const DropdownMenuContent = forwardRef<
+  HTMLDivElement,
+  DropdownMenuContentProps
+>(function DropdownMenuContent(
+  {
+    className,
+    sideOffset = 6,
+    side = 'bottom',
+    align = 'start',
+    ...props
+  },
+  ref,
+) {
+  return (
+    <Menu.Portal>
+      <Menu.Positioner
+        align={align}
+        className="z-[var(--ui-z-popover)] outline-none"
+        side={side}
+        sideOffset={sideOffset}
+      >
+        <Menu.Popup
+          className={cn(popupClassName, className)}
+          ref={ref}
+          {...props}
+        />
+      </Menu.Positioner>
+    </Menu.Portal>
   )
+})
 
-  const propsAnchor = /(\s+hideUi:\s*true,\r?\n)/
+export const DropdownMenuItem = forwardRef<
+  HTMLDivElement,
+  ComponentPropsWithoutRef<typeof Menu.Item>
+>(function DropdownMenuItem({ className, ...props }, ref) {
+  return (
+    <Menu.Item
+      className={cn(
+        'relative flex min-h-9',
+        'cursor-default select-none',
+        'items-center gap-2',
+        'rounded-sm px-2 py-1.5',
+        'text-sm outline-none',
+        'transition-colors',
+        'focus:bg-accent',
+        'focus:text-accent-foreground',
+        'data-[highlighted]:bg-accent',
+        'data-[highlighted]:text-accent-foreground',
+        'data-[disabled]:pointer-events-none',
+        'data-[disabled]:opacity-50',
+        className,
+      )}
+      ref={ref}
+      {...props}
+    />
+  )
+})
 
-  if (!propsAnchor.test(source)) {
-    throw new Error(
-      '未找到 TldrawProps 中的 hideUi 配置，文件结构可能已经改变。',
-    )
+export const DropdownMenuLabel = forwardRef<
+  HTMLDivElement,
+  ComponentPropsWithoutRef<typeof Menu.GroupLabel>
+>(function DropdownMenuLabel({ className, ...props }, ref) {
+  return (
+    <Menu.GroupLabel
+      className={cn(
+        'px-2 py-1.5',
+        'text-sm font-semibold',
+        'text-foreground',
+        className,
+      )}
+      ref={ref}
+      {...props}
+    />
+  )
+})
+
+export const DropdownMenuSeparator = forwardRef<
+  HTMLDivElement,
+  ComponentPropsWithoutRef<typeof Menu.Separator>
+>(function DropdownMenuSeparator({ className, ...props }, ref) {
+  return (
+    <Menu.Separator
+      className={cn(
+        '-mx-1 my-1 h-px',
+        'bg-divider',
+        className,
+      )}
+      ref={ref}
+      {...props}
+    />
+  )
+})
+
+export const DropdownMenuShortcut = forwardRef<
+  HTMLSpanElement,
+  ComponentPropsWithoutRef<'span'>
+>(function DropdownMenuShortcut({ className, ...props }, ref) {
+  return (
+    <span
+      className={cn(
+        'ml-auto',
+        'text-xs tracking-widest',
+        'text-muted-foreground',
+        className,
+      )}
+      ref={ref}
+      {...props}
+    />
+  )
+})
+
+export const DropdownMenuSubTrigger = forwardRef<
+  HTMLDivElement,
+  ComponentPropsWithoutRef<typeof Menu.SubmenuTrigger>
+>(function DropdownMenuSubTrigger(
+  { className, children, ...props },
+  ref,
+) {
+  return (
+    <Menu.SubmenuTrigger
+      className={cn(
+        'relative flex min-h-9',
+        'cursor-default select-none',
+        'items-center gap-2',
+        'rounded-sm px-2 py-1.5',
+        'text-sm outline-none',
+        'transition-colors',
+        'focus:bg-accent',
+        'focus:text-accent-foreground',
+        'data-[highlighted]:bg-accent',
+        'data-[highlighted]:text-accent-foreground',
+        'data-[popup-open]:bg-accent',
+        'data-[disabled]:pointer-events-none',
+        'data-[disabled]:opacity-50',
+        className,
+      )}
+      ref={ref}
+      {...props}
+    >
+      {children}
+
+      <ChevronRight
+        aria-hidden="true"
+        className="ml-auto size-4 text-muted-foreground"
+      />
+    </Menu.SubmenuTrigger>
+  )
+})
+
+type DropdownMenuSubContentProps =
+  ComponentPropsWithoutRef<typeof Menu.Popup> & {
+    readonly sideOffset?: number
+    readonly side?: ComponentPropsWithoutRef<
+      typeof Menu.Positioner
+    >['side']
+    readonly align?: ComponentPropsWithoutRef<
+      typeof Menu.Positioner
+    >['align']
   }
 
-  source = source.replace(
-    propsAnchor,
-    `$1      licenseKey: ${constantName},\n`,
+export const DropdownMenuSubContent = forwardRef<
+  HTMLDivElement,
+  DropdownMenuSubContentProps
+>(function DropdownMenuSubContent(
+  {
+    className,
+    sideOffset = 4,
+    side = 'right',
+    align = 'start',
+    ...props
+  },
+  ref,
+) {
+  return (
+    <Menu.Positioner
+      align={align}
+      className="z-[var(--ui-z-popover)] outline-none"
+      side={side}
+      sideOffset={sideOffset}
+    >
+      <Menu.Popup
+        className={cn(popupClassName, className)}
+        ref={ref}
+        {...props}
+      />
+    </Menu.Positioner>
   )
+})
+`
 
-  await writeFile(editorCanvasPath, source, 'utf8')
+const helpMenuSource = `function HelpMenu() {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="帮助"
+        className={[
+          'grid size-9 place-items-center',
+          'rounded-md',
+          'text-muted-foreground',
+          'transition-colors',
+          'hover:bg-sidebar-accent',
+          'hover:text-foreground',
+          'data-[popup-open]:bg-sidebar-accent',
+          'data-[popup-open]:text-foreground',
+        ].join(' ')}
+      >
+        <CircleHelp
+          aria-hidden="true"
+          className="size-4"
+        />
+      </DropdownMenuTrigger>
 
-  console.log('✅ 已更新 EditorCanvas.tsx')
+      <DropdownMenuContent
+        align="start"
+        className="w-56"
+        side="right"
+        sideOffset={8}
+      >
+        <DropdownMenuLabel>
+          帮助与支持
+        </DropdownMenuLabel>
+
+        <DropdownMenuGroup>
+          <HelpMenuItem
+            external
+            icon={BookOpen}
+            label="文档"
+          />
+
+          <HelpMenuItem
+            external
+            icon={RefreshCcw}
+            label="更新日志"
+          />
+        </DropdownMenuGroup>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuGroup>
+          <HelpMenuItem
+            external
+            icon={MessageCircle}
+            label="Discord"
+          />
+
+          <HelpMenuItem
+            icon={MessageCircle}
+            label="反馈"
+          />
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
-async function removeOldBuildCheck() {
-  const packageSource = await readFile(editorPackagePath, 'utf8')
-  const packageJson = JSON.parse(packageSource)
+interface HelpMenuItemProps {
+  readonly label: string
+  readonly icon: NavigationIcon
+  readonly external?: boolean
+  readonly disabled?: boolean
+  readonly onClick?: () => void
+}
 
-  const buildScript = packageJson.scripts?.build
+function HelpMenuItem({
+  label,
+  icon: Icon,
+  external = false,
+  disabled = false,
+  onClick,
+}: HelpMenuItemProps) {
+  return (
+    <DropdownMenuItem
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <Icon
+        aria-hidden="true"
+        className="size-4 text-muted-foreground"
+      />
 
-  if (typeof buildScript === 'string') {
-    const cleanedBuildScript = buildScript
-      .replace(
-        /\s*&&\s*node\s+(?:\.\/)?scripts\/check-license\.js/g,
-        '',
-      )
-      .trim()
+      <span className="flex-1">
+        {label}
+      </span>
 
-    packageJson.scripts.build = cleanedBuildScript
-  }
+      {external ? (
+        <DropdownMenuShortcut>
+          <ExternalLink
+            aria-hidden="true"
+            className="size-3.5"
+          />
+        </DropdownMenuShortcut>
+      ) : null}
+    </DropdownMenuItem>
+  )
+}
+`
 
+async function updateDropdownMenu() {
   await writeFile(
-    editorPackagePath,
-    `${JSON.stringify(packageJson, null, 2)}\n`,
+    dropdownMenuPath,
+    dropdownMenuSource,
     'utf8',
   )
 
-  console.log('✅ 已清除 package.json 中的旧许可证检查命令')
+  console.log('✅ 已更新通用 DropdownMenu 组件')
 }
 
-async function deleteOldFiles() {
-  await rm(oldLicenseCheckPath, {
-    force: true,
-  })
+async function updatePublicApi() {
+  let source = await readFile(
+    designSystemPublicApiPath,
+    'utf8',
+  )
 
-  await rm(oldBackupPath, {
-    force: true,
-  })
+  const dropdownExportPattern =
+    /export \{\s*DropdownMenu,[\s\S]*?\}\s*from '\.\/components\/ui\/dropdown-menu'/
 
-  console.log('✅ 已删除旧 check-license.js')
-  console.log('✅ 已删除旧 EditorCanvas.tsx.bak')
-}
-
-const ignoredDirectories = new Set([
-  '.git',
-  '.turbo',
-  '.vite',
-  'build',
-  'coverage',
-  'dist',
-  'node_modules',
-  'target',
-])
-
-const searchableExtensions = new Set([
-  '.cjs',
-  '.js',
-  '.json',
-  '.jsx',
-  '.mjs',
-  '.ts',
-  '.tsx',
-  '.yaml',
-  '.yml',
-])
-
-async function findOldImplementationReferences(directory) {
-  const matches = []
-  const entries = await readdir(directory, {
-    withFileTypes: true,
-  })
-
-  for (const entry of entries) {
-    if (ignoredDirectories.has(entry.name)) {
-      continue
-    }
-
-    const path = join(directory, entry.name)
-
-    if (entry.isDirectory()) {
-      matches.push(
-        ...(await findOldImplementationReferences(path)),
-      )
-      continue
-    }
-
-    if (!searchableExtensions.has(extname(entry.name))) {
-      continue
-    }
-
-    /*
-     * 不扫描当前执行脚本，否则脚本中的检查关键词会被误报。
-     */
-    if (
-      entry.name === 'apply-tldraw-license-clean.mjs' ||
-      entry.name === 'apply-tldraw-license.mjs'
-    ) {
-      continue
-    }
-
-    const content = await readFile(path, 'utf8')
-
-    if (
-      content.includes('TLDRaw_LICENSE_KEY') ||
-      content.includes('scripts/check-license.js')
-    ) {
-      matches.push(path)
-    }
+  if (!dropdownExportPattern.test(source)) {
+    throw new Error(
+      '无法在 design-system public-api.ts 中找到 DropdownMenu 导出块。',
+    )
   }
 
-  return matches
+  source = source.replace(
+    dropdownExportPattern,
+    `export {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuPortal,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from './components/ui/dropdown-menu'`,
+  )
+
+  await writeFile(
+    designSystemPublicApiPath,
+    source,
+    'utf8',
+  )
+
+  console.log('✅ 已更新 design-system 公共导出')
+}
+
+async function updateActivityRail() {
+  let source = await readFile(activityRailPath, 'utf8')
+
+  /*
+   * 扩充设计系统组件导入。
+   */
+  if (!source.includes('DropdownMenuGroup,')) {
+    source = source.replace(
+      `  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,`,
+      `  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,`,
+    )
+  }
+
+  if (!source.includes('DropdownMenuGroup,')) {
+    throw new Error(
+      '无法更新 ActivityRail 的 DropdownMenu 导入。',
+    )
+  }
+
+  /*
+   * 从 HelpMenu 开始替换至文件末尾，
+   * 彻底删除旧 HelpMenu 和 HelpItem 实现。
+   */
+  const oldHelpMenuPattern =
+    /function HelpMenu\(\) \{[\s\S]*$/
+
+  if (!oldHelpMenuPattern.test(source)) {
+    throw new Error(
+      '无法找到旧 HelpMenu 实现，文件结构可能已经改变。',
+    )
+  }
+
+  source = source.replace(
+    oldHelpMenuPattern,
+    helpMenuSource,
+  )
+
+  await writeFile(activityRailPath, source, 'utf8')
+
+  console.log('✅ 已替换帮助菜单 UI')
 }
 
 async function verifyResult() {
-  const editorSource = await readFile(editorCanvasPath, 'utf8')
+  const [
+    dropdownSource,
+    publicApiSource,
+    activitySource,
+  ] = await Promise.all([
+    readFile(dropdownMenuPath, 'utf8'),
+    readFile(designSystemPublicApiPath, 'utf8'),
+    readFile(activityRailPath, 'utf8'),
+  ])
 
-  const constantOccurrences = (
-    editorSource.match(
-      /const\s+TLDRAW_LICENSE_KEY\s*=/g,
-    ) ?? []
-  ).length
+  const requiredDropdownExports = [
+    'DropdownMenuGroup',
+    'DropdownMenuPortal',
+    'DropdownMenuShortcut',
+    'DropdownMenuSub',
+    'DropdownMenuSubContent',
+    'DropdownMenuSubTrigger',
+  ]
 
-  const propOccurrences = (
-    editorSource.match(
-      /licenseKey\s*:\s*TLDRAW_LICENSE_KEY/g,
-    ) ?? []
-  ).length
-
-  if (constantOccurrences !== 1) {
-    throw new Error(
-      `TLDRAW_LICENSE_KEY 常量数量异常：${constantOccurrences}`,
-    )
-  }
-
-  if (propOccurrences !== 1) {
-    throw new Error(
-      `licenseKey 属性数量异常：${propOccurrences}`,
-    )
-  }
-
-  const oldReferences =
-    await findOldImplementationReferences(resolve('.'))
-
-  if (oldReferences.length > 0) {
-    console.error('❌ 仍检测到旧实现引用：')
-
-    for (const path of oldReferences) {
-      console.error(`   ${path}`)
+  for (const name of requiredDropdownExports) {
+    if (!dropdownSource.includes(name)) {
+      throw new Error(
+        `通用 DropdownMenu 缺少组件：${name}`,
+      )
     }
 
-    process.exitCode = 1
-    return
+    if (!publicApiSource.includes(name)) {
+      throw new Error(
+        `public-api.ts 缺少导出：${name}`,
+      )
+    }
   }
 
-  console.log('✅ 未发现旧许可证实现残留')
+  const helpMenuCount = (
+    activitySource.match(
+      /function HelpMenu\(\)/g,
+    ) ?? []
+  ).length
+
+  const helpMenuItemCount = (
+    activitySource.match(
+      /function HelpMenuItem\(/g,
+    ) ?? []
+  ).length
+
+  if (helpMenuCount !== 1) {
+    throw new Error(
+      `HelpMenu 实现数量异常：${helpMenuCount}`,
+    )
+  }
+
+  if (helpMenuItemCount !== 1) {
+    throw new Error(
+      `HelpMenuItem 实现数量异常：${helpMenuItemCount}`,
+    )
+  }
+
+  if (activitySource.includes('function HelpItem(')) {
+    throw new Error('仍然残留旧 HelpItem 实现。')
+  }
+
+  console.log('✅ 已确认没有旧帮助菜单实现残留')
 }
 
 async function main() {
   try {
-    await updateEditorCanvas()
-    await removeOldBuildCheck()
-    await deleteOldFiles()
+    await updateDropdownMenu()
+    await updatePublicApi()
+    await updateActivityRail()
     await verifyResult()
 
-    if (process.exitCode) {
-      return
-    }
-
     console.log('')
-    console.log('🎉 tldraw 许可证实现已完成干净替换')
+    console.log('🎉 帮助菜单重构完成')
     console.log('')
-    console.log('请继续运行：')
+    console.log('请执行：')
+    console.log('  pnpm format')
     console.log('  pnpm typecheck')
+    console.log('  pnpm test:architecture')
     console.log('  pnpm build:desktop')
     console.log('  git diff --check')
   } catch (error) {
-    console.error('❌ 修改失败')
+    console.error('❌ 重构失败')
 
     if (error instanceof Error) {
       console.error(error.message)
