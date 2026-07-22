@@ -58,10 +58,7 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
       ...defaultShapeUtils,
       ...registration.shapeUtils,
     ] as unknown as readonly TLAnyShapeUtilConstructor[],
-    bindingUtils: [
-      ...defaultBindingUtils,
-      ...registration.bindingUtils,
-    ],
+    bindingUtils: [...defaultBindingUtils, ...registration.bindingUtils],
   })
   if (options.initialSnapshot) {
     loadSnapshot(store, options.initialSnapshot)
@@ -83,34 +80,26 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
       }
     }
 
-    const activePageId =
-      editor.getCurrentPageId()
+    const activePageId = editor.getCurrentPageId()
 
     return {
-      pages: editor
-        .getPages()
-        .map((page) => ({
-          id: page.id,
-          title: page.name,
-          isActive:
-            page.id === activePageId,
-        })),
+      pages: editor.getPages().map((page) => ({
+        id: page.id,
+        title: page.name,
+        isActive: page.id === activePageId,
+      })),
     }
   }
 
   function publishSessionSnapshot(): void {
-    sessionSnapshot =
-      createSessionSnapshot()
+    sessionSnapshot = createSessionSnapshot()
 
     for (const listener of listeners) {
       listener()
     }
   }
 
-  const stopObserving = store.listen(
-    publishSessionSnapshot,
-    { scope: 'document' },
-  )
+  const stopObserving = store.listen(publishSessionSnapshot, { scope: 'document' })
 
   function assertActive(): void {
     if (state === 'disposed') {
@@ -158,7 +147,28 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     },
     onUserDocumentChange(listener) {
       assertActive()
-      return store.listen(listener, { scope: 'document', source: 'user' })
+
+      return store.listen(
+        () => {
+          /*
+           * Tldraw may create its initial document records while the editor
+           * is being constructed. Those records establish the baseline
+           * document and are not user edits.
+           *
+           * Real user interaction is only possible after the editor session
+           * has been attached to the mounted editor.
+           */
+          if (state !== 'attached') {
+            return
+          }
+
+          listener()
+        },
+        {
+          scope: 'document',
+          source: 'user',
+        },
+      )
     },
     createPage(title) {
       assertActive()
