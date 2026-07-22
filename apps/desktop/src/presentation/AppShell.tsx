@@ -1,5 +1,8 @@
 import { EditorProvider } from '@hybrid-canvas/canvas/react'
-import { ConfirmationDialog } from '@hybrid-canvas/design-system'
+import {
+  applyThemePreference,
+  ConfirmationDialog,
+} from '@hybrid-canvas/design-system'
 import { reportUiError as reportError, UiFeedbackRegion } from './ui/ui-feedback'
 import type { MainWindowController } from '@hybrid-canvas/platforms-desktop-runtime'
 import type { SettingsStore } from '@hybrid-canvas/settings'
@@ -99,6 +102,42 @@ export function AppShell({ runtime }: AppShellProps) {
   }, [runtime.mainWindow])
 
   useApplicationCommands(runtime, toggleCommandPalette)
+
+  useEffect(() => {
+    let active = true
+
+    void runtime.settings.load().then(
+      (settings) => {
+        if (!active) {
+          return
+        }
+
+        applyThemePreference(
+          settings.theme,
+        )
+      },
+      (cause: unknown) => {
+        if (!active) {
+          return
+        }
+
+        reportError(
+          'settings load failed',
+          {
+            scope: 'app-shell',
+            operation: 'load-settings',
+            cause,
+          },
+        )
+      },
+    )
+
+    return () => {
+      active = false
+    }
+  }, [
+    runtime.settings,
+  ])
 
   useGlobalCommandShortcuts(runtime.commands, GLOBAL_COMMAND_SHORTCUTS)
 
