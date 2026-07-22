@@ -163,3 +163,178 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 export {}
+
+// HYBRID_CANVAS_VITE_DIAGNOSTIC_BRIDGE
+
+interface ViteDiagnosticLocation {
+  readonly file?: string
+  readonly line?: number
+  readonly column?: number
+}
+
+interface ViteDiagnosticError {
+  readonly name?: string
+  readonly message?: string
+  readonly stack?: string
+  readonly plugin?: string
+  readonly id?: string
+  readonly frame?: string
+  readonly pluginCode?: string
+  readonly location?: ViteDiagnosticLocation
+}
+
+interface ViteDiagnosticPayload {
+  readonly source?: string
+  readonly occurredAt?: string
+  readonly error?: ViteDiagnosticError
+}
+
+interface HybridCanvasHotContext {
+  readonly on: (
+    event: string,
+    listener: (payload: unknown) => void,
+  ) => void
+}
+
+function isUnknownRecord(
+  value: unknown,
+): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function readOptionalString(
+  value: Record<string, unknown>,
+  property: string,
+): string | undefined {
+  const candidate = value[property]
+  return typeof candidate === 'string' ? candidate : undefined
+}
+
+function readOptionalNumber(
+  value: Record<string, unknown>,
+  property: string,
+): number | undefined {
+  const candidate = value[property]
+  return typeof candidate === 'number' ? candidate : undefined
+}
+
+function parseViteDiagnosticPayload(
+  value: unknown,
+): ViteDiagnosticPayload {
+  if (!isUnknownRecord(value)) {
+    return {
+      source: 'vite',
+      occurredAt: new Date().toISOString(),
+      error: {
+        name: 'ViteError',
+        message: String(value),
+      },
+    }
+  }
+
+  const rawError = isUnknownRecord(value.error)
+    ? value.error
+    : {}
+
+  const rawLocation = isUnknownRecord(rawError.location)
+    ? rawError.location
+    : undefined
+
+  return {
+    source: readOptionalString(value, 'source') ?? 'vite',
+    occurredAt:
+      readOptionalString(value, 'occurredAt') ??
+      new Date().toISOString(),
+    error: {
+      name:
+        readOptionalString(rawError, 'name') ??
+        'ViteError',
+      message:
+        readOptionalString(rawError, 'message') ??
+        '未知 Vite 开发服务器错误',
+      stack: readOptionalString(rawError, 'stack'),
+      plugin: readOptionalString(rawError, 'plugin'),
+      id: readOptionalString(rawError, 'id'),
+      frame: readOptionalString(rawError, 'frame'),
+      pluginCode: readOptionalString(
+        rawError,
+        'pluginCode',
+      ),
+      location: rawLocation
+        ? {
+            file: readOptionalString(rawLocation, 'file'),
+            line: readOptionalNumber(rawLocation, 'line'),
+            column: readOptionalNumber(
+              rawLocation,
+              'column',
+            ),
+          }
+        : undefined,
+    },
+  }
+}
+
+function formatViteDiagnostic(
+  payload: ViteDiagnosticPayload,
+): string {
+  const error = payload.error ?? {}
+  const location = error.location
+
+  return [
+    '错误来源: Vite 开发服务器',
+    `时间: ${
+      payload.occurredAt ?? new Date().toISOString()
+    }`,
+    `错误类型: ${error.name ?? 'ViteError'}`,
+    `错误信息: ${
+      error.message ?? '未知 Vite 开发服务器错误'
+    }`,
+    error.plugin
+      ? `Vite 插件: ${error.plugin}`
+      : undefined,
+    error.id
+      ? `模块 ID: ${error.id}`
+      : undefined,
+    location?.file
+      ? `文件: ${location.file}`
+      : undefined,
+    typeof location?.line === 'number'
+      ? `行: ${location.line}`
+      : undefined,
+    typeof location?.column === 'number'
+      ? `列: ${location.column}`
+      : undefined,
+    error.frame
+      ? `\n代码定位:\n${error.frame}`
+      : undefined,
+    error.pluginCode
+      ? `\n插件代码:\n${error.pluginCode}`
+      : undefined,
+    error.stack
+      ? `\nStack:\n${error.stack}`
+      : undefined,
+  ]
+    .filter((item): item is string => Boolean(item))
+    .join('\n')
+}
+
+const hybridCanvasHot = (
+  import.meta as ImportMeta & {
+    readonly hot?: HybridCanvasHotContext
+  }
+).hot
+
+hybridCanvasHot?.on(
+  'hybrid-canvas:diagnostic',
+  (rawPayload: unknown) => {
+    const payload = parseViteDiagnosticPayload(rawPayload)
+    const diagnostic = formatViteDiagnostic(payload)
+
+    console.error(
+      '[Hybrid Canvas Vite Diagnostic]',
+      rawPayload,
+    )
+
+    showFatalError(diagnostic)
+  },
+)

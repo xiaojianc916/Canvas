@@ -1,15 +1,17 @@
 /**
- * scripts/apply-custom-error-ui.mjs
+ * scripts/apply-vite-diagnostic-bridge.mjs
  *
- * 作用：
- * 1. 永久关闭 Vite 默认错误 Overlay。
- * 2. 添加不依赖 React 应用入口的启动错误兜底。
- * 3. 增强 ApplicationErrorBoundary，显示完整错误信息。
- * 4. 捕获 window.error 和 unhandledrejection。
- * 5. 支持复制完整诊断信息。
+ * 第二阶段：
+ * 1. 捕获 Vite 服务端发送的 import/transform/HMR 错误。
+ * 2. 转换成 Hybrid Canvas 自定义诊断事件。
+ * 3. 在 bootstrap-fallback.ts 中显示完整 Vite 错误。
+ * 4. Vite 原始 Overlay 继续保持关闭。
  *
- * 在仓库根目录执行：
- *   node scripts/apply-custom-error-ui.mjs
+ * 前置条件：
+ *   已执行 apply-custom-error-ui.mjs
+ *
+ * 使用：
+ *   node scripts/apply-vite-diagnostic-bridge.mjs
  */
 
 import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
@@ -25,10 +27,9 @@ const repositoryRoot =
 
 const paths = {
   viteConfig: path.join(repositoryRoot, 'apps/desktop/vite.config.ts'),
-  indexHtml: path.join(repositoryRoot, 'apps/desktop/index.html'),
-  errorBoundary: path.join(
+  vitePlugin: path.join(
     repositoryRoot,
-    'apps/desktop/src/bootstrap/ApplicationErrorBoundary.tsx',
+    'apps/desktop/vite-plugins/custom-error-diagnostics.ts',
   ),
   bootstrapFallback: path.join(
     repositoryRoot,
@@ -61,616 +62,486 @@ async function atomicWrite(filePath, content) {
 }
 
 function updateViteConfig(source) {
-  if (/hmr\s*:\s*\{[\s\S]*?overlay\s*:\s*false/.test(source)) {
-    return source
-  }
+  let next = source
 
-  const strictPortPattern = /(\s+strictPort:\s*true,\s*\n)/
+  const pluginImport =
+    "import { customErrorDiagnosticsPlugin } from './vite-plugins/custom-error-diagnostics'"
 
-  if (!strictPortPattern.test(source)) {
-    throw new Error(
-      '无法定位 vite.config.ts 中的 strictPort: true，请检查文件是否已经改变。',
+  if (!next.includes(pluginImport)) {
+    const viteImport = "import { defineConfig } from 'vite'"
+
+    if (!next.includes(viteImport)) {
+      throw new Error('无法定位 vite.config.ts 中的 Vite import。')
+    }
+
+    next = next.replace(
+      viteImport,
+      `${viteImport}
+${pluginImport}`,
     )
   }
 
-  return source.replace(
-    strictPortPattern,
-    `$1    hmr: {
-      // 使用 Hybrid Canvas 自己的错误界面，禁止显示 Vite 默认 Overlay。
-      overlay: false,
-    },
-`,
-  )
-}
+  if (!next.includes('customErrorDiagnosticsPlugin()')) {
+    const pluginsPattern =
+      /plugins:\s*\[\s*react\(\),\s*tailwindcss\(\)\s*\],/
 
-function updateIndexHtml(source) {
-  let next = source
-
-  if (!next.includes('id="bootstrap-fallback-styles"')) {
-    const styleMarker = '    <style id="window-backing-surface">'
-
-    if (!next.includes(styleMarker)) {
+    if (!pluginsPattern.test(next)) {
       throw new Error(
-        '无法定位 index.html 中的 window-backing-surface 样式。',
+        '无法定位 vite.config.ts 中的 plugins 配置，请检查文件是否已经改变。',
       )
     }
 
-    const fallbackStyles = `    <style id="bootstrap-fallback-styles">
-      #bootstrap-fallback {
-        box-sizing: border-box;
-        display: grid;
-        width: 100%;
-        height: 100%;
-        place-items: center;
-        padding: 32px;
-        color: #18181b;
-        font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-          "Segoe UI", sans-serif;
-      }
-
-      #bootstrap-fallback-card {
-        box-sizing: border-box;
-        width: min(100%, 680px);
-        padding: 24px;
-        overflow: hidden;
-        background: #ffffff;
-        border: 1px solid #dedede;
-        border-radius: 16px;
-        box-shadow:
-          0 16px 48px rgb(0 0 0 / 10%),
-          0 2px 8px rgb(0 0 0 / 6%);
-      }
-
-      #bootstrap-fallback-icon {
-        display: grid;
-        width: 40px;
-        height: 40px;
-        place-items: center;
-        color: #b42318;
-        font-size: 20px;
-        font-weight: 700;
-        background: #fee4e2;
-        border-radius: 12px;
-      }
-
-      #bootstrap-fallback-title {
-        margin: 18px 0 0;
-        font-size: 18px;
-        line-height: 28px;
-      }
-
-      #bootstrap-fallback-description {
-        margin: 8px 0 0;
-        color: #667085;
-        font-size: 14px;
-        line-height: 22px;
-      }
-
-      #bootstrap-fallback-details {
-        display: none;
-        margin-top: 16px;
-        padding: 12px;
-        overflow: hidden;
-        background: #f4f4f5;
-        border-radius: 10px;
-      }
-
-      #bootstrap-fallback-details[data-visible="true"] {
-        display: block;
-      }
-
-      #bootstrap-fallback-diagnostic {
-        max-height: 320px;
-        margin: 0;
-        overflow: auto;
-        color: #3f3f46;
-        font-family:
-          "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono",
-          monospace;
-        font-size: 11px;
-        line-height: 18px;
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-        user-select: text;
-      }
-
-      #bootstrap-fallback-actions {
-        display: none;
-        gap: 8px;
-        margin-top: 16px;
-        flex-wrap: wrap;
-      }
-
-      #bootstrap-fallback-actions[data-visible="true"] {
-        display: flex;
-      }
-
-      .bootstrap-fallback-button {
-        min-height: 36px;
-        padding: 0 14px;
-        color: #18181b;
-        font: inherit;
-        font-size: 13px;
-        font-weight: 600;
-        background: #ffffff;
-        border: 1px solid #d4d4d8;
-        border-radius: 8px;
-        cursor: pointer;
-      }
-
-      .bootstrap-fallback-button:hover {
-        background: #f4f4f5;
-      }
-
-      .bootstrap-fallback-button[data-primary="true"] {
-        color: #ffffff;
-        background: #18181b;
-        border-color: #18181b;
-      }
-    </style>
-
-`
-
-    next = next.replace(styleMarker, `${fallbackStyles}${styleMarker}`)
-  }
-
-  if (!next.includes('id="bootstrap-fallback"')) {
-    const rootPattern = /<div id="root"><\/div>/
-
-    if (!rootPattern.test(next)) {
-      throw new Error('无法定位 index.html 中的空 #root 元素。')
-    }
-
     next = next.replace(
-      rootPattern,
-      `<div id="root">
-      <main id="bootstrap-fallback" role="status">
-        <section
-          aria-labelledby="bootstrap-fallback-title"
-          id="bootstrap-fallback-card"
-        >
-          <div aria-hidden="true" id="bootstrap-fallback-icon">!</div>
-          <h1 id="bootstrap-fallback-title">Hybrid Canvas 正在启动</h1>
-          <p id="bootstrap-fallback-description">
-            正在加载应用组件，请稍候。
-          </p>
-
-          <section
-            aria-label="技术详情"
-            id="bootstrap-fallback-details"
-          >
-            <pre id="bootstrap-fallback-diagnostic"></pre>
-          </section>
-
-          <div id="bootstrap-fallback-actions">
-            <button
-              class="bootstrap-fallback-button"
-              data-primary="true"
-              id="bootstrap-fallback-reload"
-              type="button"
-            >
-              重新加载
-            </button>
-            <button
-              class="bootstrap-fallback-button"
-              id="bootstrap-fallback-copy"
-              type="button"
-            >
-              复制诊断信息
-            </button>
-          </div>
-        </section>
-      </main>
-    </div>`,
+      pluginsPattern,
+      `plugins: [
+    // 必须最先注册，确保捕获后续插件及 import-analysis 错误。
+    customErrorDiagnosticsPlugin(),
+    react(),
+    tailwindcss(),
+  ],`,
     )
   }
 
-  if (!next.includes('/src/bootstrap/bootstrap-fallback.ts')) {
-    const mainScript =
-      '    <script src="/src/main.tsx" type="module"></script>'
+  if (!/hmr\s*:\s*\{[\s\S]*?overlay\s*:\s*false/.test(next)) {
+    const strictPortPattern = /(\s+strictPort:\s*true,\s*\n)/
 
-    if (!next.includes(mainScript)) {
-      throw new Error('无法定位 index.html 中的 main.tsx 入口。')
+    if (!strictPortPattern.test(next)) {
+      throw new Error(
+        '无法定位 server.strictPort，不能安全添加 hmr.overlay 配置。',
+      )
     }
 
     next = next.replace(
-      mainScript,
-      `    <!-- 必须先于 React 入口加载，确保应用模块失败时仍有错误 UI。 -->
-    <script
-      src="/src/bootstrap/bootstrap-fallback.ts"
-      type="module"
-    ></script>
-${mainScript}`,
+      strictPortPattern,
+      `$1    hmr: {
+      overlay: false,
+    },
+`,
     )
   }
 
   return next
 }
 
-const bootstrapFallbackSource = `
-interface BootstrapDiagnosticElements {
-  readonly root: HTMLElement
-  readonly title: HTMLElement
-  readonly description: HTMLElement
-  readonly details: HTMLElement
-  readonly diagnostic: HTMLElement
-  readonly actions: HTMLElement
-  readonly reloadButton: HTMLButtonElement
-  readonly copyButton: HTMLButtonElement
+const vitePluginSource = `
+import type { Plugin } from 'vite'
+
+interface UnknownRecord {
+  readonly [key: string]: unknown
 }
 
-interface NormalizedError {
+interface SerializableLocation {
+  readonly file?: string
+  readonly line?: number
+  readonly column?: number
+}
+
+interface SerializableViteError {
   readonly name: string
   readonly message: string
   readonly stack?: string
+  readonly plugin?: string
+  readonly id?: string
+  readonly frame?: string
+  readonly pluginCode?: string
+  readonly location?: SerializableLocation
 }
 
-const startedAt = new Date().toISOString()
+interface ViteDiagnosticEvent {
+  readonly source: 'vite'
+  readonly occurredAt: string
+  readonly error: SerializableViteError
+}
 
-function getElements(): BootstrapDiagnosticElements | null {
-  const root = document.getElementById('bootstrap-fallback')
-  const title = document.getElementById('bootstrap-fallback-title')
-  const description = document.getElementById(
-    'bootstrap-fallback-description',
-  )
-  const details = document.getElementById('bootstrap-fallback-details')
-  const diagnostic = document.getElementById(
-    'bootstrap-fallback-diagnostic',
-  )
-  const actions = document.getElementById('bootstrap-fallback-actions')
-  const reloadButton = document.getElementById(
-    'bootstrap-fallback-reload',
-  )
-  const copyButton = document.getElementById('bootstrap-fallback-copy')
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null
+}
+
+function getString(
+  record: UnknownRecord,
+  property: string,
+): string | undefined {
+  const value = record[property]
+  return typeof value === 'string' ? value : undefined
+}
+
+function getNumber(
+  record: UnknownRecord,
+  property: string,
+): number | undefined {
+  const value = record[property]
+  return typeof value === 'number' ? value : undefined
+}
+
+function serializeLocation(value: unknown): SerializableLocation | undefined {
+  if (!isRecord(value)) {
+    return undefined
+  }
+
+  const file =
+    getString(value, 'file') ??
+    getString(value, 'id')
+
+  const line =
+    getNumber(value, 'line') ??
+    getNumber(value, 'lineNumber')
+
+  const column =
+    getNumber(value, 'column') ??
+    getNumber(value, 'columnNumber')
 
   if (
-    !root ||
-    !title ||
-    !description ||
-    !details ||
-    !diagnostic ||
-    !actions ||
-    !(reloadButton instanceof HTMLButtonElement) ||
-    !(copyButton instanceof HTMLButtonElement)
+    file === undefined &&
+    line === undefined &&
+    column === undefined
   ) {
-    return null
+    return undefined
   }
 
   return {
-    root,
-    title,
-    description,
-    details,
-    diagnostic,
-    actions,
-    reloadButton,
-    copyButton,
+    file,
+    line,
+    column,
   }
 }
 
-function normalizeError(value: unknown): NormalizedError {
+function serializeViteError(value: unknown): SerializableViteError {
   if (value instanceof Error) {
+    const errorRecord = value as Error & UnknownRecord
+
     return {
       name: value.name || 'Error',
-      message: value.message || '未知错误',
+      message: value.message || '未知 Vite 错误',
       stack: value.stack,
+      plugin: getString(errorRecord, 'plugin'),
+      id: getString(errorRecord, 'id'),
+      frame: getString(errorRecord, 'frame'),
+      pluginCode: getString(errorRecord, 'pluginCode'),
+      location: serializeLocation(errorRecord.loc),
     }
   }
 
-  if (typeof value === 'string') {
+  if (!isRecord(value)) {
     return {
-      name: 'Error',
-      message: value,
+      name: 'ViteError',
+      message:
+        typeof value === 'string'
+          ? value
+          : String(value ?? '未知 Vite 错误'),
     }
   }
 
-  try {
-    return {
-      name: 'UnknownError',
-      message: JSON.stringify(value, null, 2),
-    }
-  } catch {
-    return {
-      name: 'UnknownError',
-      message: String(value),
-    }
+  return {
+    name: getString(value, 'name') ?? 'ViteError',
+    message:
+      getString(value, 'message') ??
+      getString(value, 'msg') ??
+      '未知 Vite 错误',
+    stack: getString(value, 'stack'),
+    plugin: getString(value, 'plugin'),
+    id: getString(value, 'id'),
+    frame: getString(value, 'frame'),
+    pluginCode: getString(value, 'pluginCode'),
+    location: serializeLocation(value.loc),
   }
 }
 
-function createDiagnostic(
-  error: NormalizedError,
-  source?: string,
-  line?: number,
-  column?: number,
-): string {
-  return [
-    \`时间: \${new Date().toISOString()}\`,
-    \`启动时间: \${startedAt}\`,
-    \`错误类型: \${error.name}\`,
-    \`错误信息: \${error.message}\`,
-    source ? \`来源: \${source}\` : undefined,
-    typeof line === 'number' ? \`行: \${line}\` : undefined,
-    typeof column === 'number' ? \`列: \${column}\` : undefined,
-    \`页面: \${window.location.href}\`,
-    \`User Agent: \${navigator.userAgent}\`,
-    error.stack ? \`\\nStack:\\n\${error.stack}\` : undefined,
-  ]
-    .filter((item): item is string => Boolean(item))
-    .join('\\n')
+function isViteErrorPayload(
+  payload: unknown,
+): payload is UnknownRecord & {
+  readonly type: 'error'
+  readonly err: unknown
+} {
+  return (
+    isRecord(payload) &&
+    payload.type === 'error' &&
+    'err' in payload
+  )
 }
 
-function showFatalError(diagnosticText: string): void {
-  const elements = getElements()
+/**
+ * Vite 暂时没有公开的自定义 Overlay 替换 API。
+ *
+ * 这里将兼容逻辑隔离在一个仅开发环境启用的插件中：
+ * - 不修改 Vite 客户端源码；
+ * - 不查询或删除 vite-error-overlay DOM；
+ * - 不进入生产构建；
+ * - 原始 Vite 错误仍正常转发给 HMR 客户端和终端；
+ * - 额外发送 Hybrid Canvas 自定义诊断事件。
+ */
+export function customErrorDiagnosticsPlugin(): Plugin {
+  return {
+    name: 'hybrid-canvas:custom-error-diagnostics',
+    apply: 'serve',
+    configureServer(server) {
+      const originalSend = server.ws.send.bind(server.ws)
 
-  if (!elements) {
-    console.error(diagnosticText)
-    return
-  }
+      const sendOriginal = originalSend as (
+        ...arguments_: readonly unknown[]
+      ) => unknown
 
-  elements.root.setAttribute('role', 'alert')
-  elements.title.textContent = '应用无法完成启动'
-  elements.description.textContent =
-    '应用启动期间发生了未处理错误。完整诊断信息如下。'
-  elements.diagnostic.textContent = diagnosticText
-  elements.details.dataset.visible = 'true'
-  elements.actions.dataset.visible = 'true'
+      server.ws.send = ((...arguments_: readonly unknown[]) => {
+        const payload = arguments_[0]
 
-  elements.reloadButton.onclick = () => {
-    window.location.reload()
-  }
+        if (isViteErrorPayload(payload)) {
+          const diagnostic: ViteDiagnosticEvent = {
+            source: 'vite',
+            occurredAt: new Date().toISOString(),
+            error: serializeViteError(payload.err),
+          }
 
-  elements.copyButton.onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(diagnosticText)
-      elements.copyButton.textContent = '已复制'
-    } catch {
-      elements.copyButton.textContent = '复制失败，请手动选择'
-    }
+          sendOriginal({
+            type: 'custom',
+            event: 'hybrid-canvas:diagnostic',
+            data: diagnostic,
+          })
+        }
+
+        return sendOriginal(...arguments_)
+      }) as typeof server.ws.send
+    },
   }
 }
-
-window.addEventListener(
-  'error',
-  (event) => {
-    const error = normalizeError(event.error ?? event.message)
-
-    showFatalError(
-      createDiagnostic(
-        error,
-        event.filename || undefined,
-        event.lineno || undefined,
-        event.colno || undefined,
-      ),
-    )
-  },
-  true,
-)
-
-window.addEventListener('unhandledrejection', (event) => {
-  const error = normalizeError(event.reason)
-  showFatalError(createDiagnostic(error))
-})
-
-export {}
 `
 
-const applicationErrorBoundarySource = `
-import { Button } from '@hybrid-canvas/design-system'
-import { error as reportError } from '@hybrid-canvas/foundations-observability'
-import {
-  AlertTriangle,
-  ClipboardCopy,
-  RotateCcw,
-} from 'lucide-react'
-import {
-  Component,
-  type ErrorInfo,
-  type ReactNode,
-} from 'react'
+const diagnosticBridgeMarker =
+  '// HYBRID_CANVAS_VITE_DIAGNOSTIC_BRIDGE'
 
-interface ApplicationErrorBoundaryProps {
-  readonly children: ReactNode
+const diagnosticBridgeSource = `
+
+// HYBRID_CANVAS_VITE_DIAGNOSTIC_BRIDGE
+
+interface ViteDiagnosticLocation {
+  readonly file?: string
+  readonly line?: number
+  readonly column?: number
 }
 
-interface ApplicationErrorBoundaryState {
-  readonly error: Error | null
-  readonly componentStack: string | null
-  readonly occurredAt: string | null
-  readonly copied: boolean
+interface ViteDiagnosticError {
+  readonly name?: string
+  readonly message?: string
+  readonly stack?: string
+  readonly plugin?: string
+  readonly id?: string
+  readonly frame?: string
+  readonly pluginCode?: string
+  readonly location?: ViteDiagnosticLocation
 }
 
-function createDiagnosticText(
-  error: Error,
-  componentStack: string | null,
-  occurredAt: string | null,
+interface ViteDiagnosticPayload {
+  readonly source?: string
+  readonly occurredAt?: string
+  readonly error?: ViteDiagnosticError
+}
+
+interface HybridCanvasHotContext {
+  readonly on: (
+    event: string,
+    listener: (payload: unknown) => void,
+  ) => void
+}
+
+function isUnknownRecord(
+  value: unknown,
+): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function readOptionalString(
+  value: Record<string, unknown>,
+  property: string,
+): string | undefined {
+  const candidate = value[property]
+  return typeof candidate === 'string' ? candidate : undefined
+}
+
+function readOptionalNumber(
+  value: Record<string, unknown>,
+  property: string,
+): number | undefined {
+  const candidate = value[property]
+  return typeof candidate === 'number' ? candidate : undefined
+}
+
+function parseViteDiagnosticPayload(
+  value: unknown,
+): ViteDiagnosticPayload {
+  if (!isUnknownRecord(value)) {
+    return {
+      source: 'vite',
+      occurredAt: new Date().toISOString(),
+      error: {
+        name: 'ViteError',
+        message: String(value),
+      },
+    }
+  }
+
+  const rawError = isUnknownRecord(value.error)
+    ? value.error
+    : {}
+
+  const rawLocation = isUnknownRecord(rawError.location)
+    ? rawError.location
+    : undefined
+
+  return {
+    source: readOptionalString(value, 'source') ?? 'vite',
+    occurredAt:
+      readOptionalString(value, 'occurredAt') ??
+      new Date().toISOString(),
+    error: {
+      name:
+        readOptionalString(rawError, 'name') ??
+        'ViteError',
+      message:
+        readOptionalString(rawError, 'message') ??
+        '未知 Vite 开发服务器错误',
+      stack: readOptionalString(rawError, 'stack'),
+      plugin: readOptionalString(rawError, 'plugin'),
+      id: readOptionalString(rawError, 'id'),
+      frame: readOptionalString(rawError, 'frame'),
+      pluginCode: readOptionalString(
+        rawError,
+        'pluginCode',
+      ),
+      location: rawLocation
+        ? {
+            file: readOptionalString(rawLocation, 'file'),
+            line: readOptionalNumber(rawLocation, 'line'),
+            column: readOptionalNumber(
+              rawLocation,
+              'column',
+            ),
+          }
+        : undefined,
+    },
+  }
+}
+
+function formatViteDiagnostic(
+  payload: ViteDiagnosticPayload,
 ): string {
+  const error = payload.error ?? {}
+  const location = error.location
+
   return [
-    \`时间: \${occurredAt ?? new Date().toISOString()}\`,
-    \`错误类型: \${error.name || 'Error'}\`,
-    \`错误信息: \${error.message || '未知错误'}\`,
-    \`页面: \${window.location.href}\`,
-    \`User Agent: \${navigator.userAgent}\`,
-    error.stack ? \`\\nJavaScript Stack:\\n\${error.stack}\` : undefined,
-    componentStack
-      ? \`\\nReact Component Stack:\\n\${componentStack}\`
+    '错误来源: Vite 开发服务器',
+    \`时间: \${
+      payload.occurredAt ?? new Date().toISOString()
+    }\`,
+    \`错误类型: \${error.name ?? 'ViteError'}\`,
+    \`错误信息: \${
+      error.message ?? '未知 Vite 开发服务器错误'
+    }\`,
+    error.plugin
+      ? \`Vite 插件: \${error.plugin}\`
+      : undefined,
+    error.id
+      ? \`模块 ID: \${error.id}\`
+      : undefined,
+    location?.file
+      ? \`文件: \${location.file}\`
+      : undefined,
+    typeof location?.line === 'number'
+      ? \`行: \${location.line}\`
+      : undefined,
+    typeof location?.column === 'number'
+      ? \`列: \${location.column}\`
+      : undefined,
+    error.frame
+      ? \`\\n代码定位:\\n\${error.frame}\`
+      : undefined,
+    error.pluginCode
+      ? \`\\n插件代码:\\n\${error.pluginCode}\`
+      : undefined,
+    error.stack
+      ? \`\\nStack:\\n\${error.stack}\`
       : undefined,
   ]
     .filter((item): item is string => Boolean(item))
     .join('\\n')
 }
 
-export class ApplicationErrorBoundary extends Component<
-  ApplicationErrorBoundaryProps,
-  ApplicationErrorBoundaryState
-> {
-  override state: ApplicationErrorBoundaryState = {
-    error: null,
-    componentStack: null,
-    occurredAt: null,
-    copied: false,
+const hybridCanvasHot = (
+  import.meta as ImportMeta & {
+    readonly hot?: HybridCanvasHotContext
   }
+).hot
 
-  static getDerivedStateFromError(
-    error: Error,
-  ): Partial<ApplicationErrorBoundaryState> {
-    return {
-      error,
-      occurredAt: new Date().toISOString(),
-      copied: false,
-    }
-  }
+hybridCanvasHot?.on(
+  'hybrid-canvas:diagnostic',
+  (rawPayload: unknown) => {
+    const payload = parseViteDiagnosticPayload(rawPayload)
+    const diagnostic = formatViteDiagnostic(payload)
 
-  override componentDidCatch(
-    error: Error,
-    errorInfo: ErrorInfo,
-  ): void {
-    const componentStack = errorInfo.componentStack ?? null
-
-    this.setState({ componentStack })
-
-    reportError('Application rendering failed', {
-      scope: 'application-error-boundary',
-      errorName: error.name,
-      errorMessage: error.message,
-      errorStack: error.stack,
-      componentStack,
-    })
-  }
-
-  private readonly copyDiagnostic = async (): Promise<void> => {
-    const { error, componentStack, occurredAt } = this.state
-
-    if (!error) {
-      return
-    }
-
-    const diagnostic = createDiagnosticText(
-      error,
-      componentStack,
-      occurredAt,
+    console.error(
+      '[Hybrid Canvas Vite Diagnostic]',
+      rawPayload,
     )
 
-    try {
-      await navigator.clipboard.writeText(diagnostic)
-      this.setState({ copied: true })
-    } catch (cause: unknown) {
-      reportError('Copying application diagnostic failed', {
-        scope: 'application-error-boundary',
-        cause,
-      })
-    }
-  }
-
-  override render(): ReactNode {
-    const {
-      error,
-      componentStack,
-      occurredAt,
-      copied,
-    } = this.state
-
-    if (!error) {
-      return this.props.children
-    }
-
-    const diagnostic = createDiagnosticText(
-      error,
-      componentStack,
-      occurredAt,
-    )
-
-    return (
-      <main
-        className="grid h-dvh place-items-center overflow-auto bg-background p-8 text-foreground"
-        role="alert"
-      >
-        <section className="w-full max-w-3xl rounded-2xl border bg-surface p-6 shadow-xl">
-          <div className="grid size-10 place-items-center rounded-xl bg-destructive/10 text-destructive">
-            <AlertTriangle className="size-5" />
-          </div>
-
-          <h1 className="mt-5 text-lg font-semibold">
-            应用遇到严重错误
-          </h1>
-
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Hybrid Canvas 无法继续显示当前界面。你可以复制完整诊断信息，
-            然后重新加载应用。
-          </p>
-
-          <details
-            className="mt-4 rounded-lg bg-muted p-3 text-xs text-muted-foreground"
-            open
-          >
-            <summary className="cursor-pointer font-medium">
-              完整技术详情
-            </summary>
-
-            <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5">
-              {diagnostic}
-            </pre>
-          </details>
-
-          <div className="mt-5 flex flex-wrap gap-2">
-            <Button
-              onClick={() => window.location.reload()}
-              type="button"
-            >
-              <RotateCcw className="size-4" />
-              重新加载
-            </Button>
-
-            <Button
-              onClick={() => {
-                void this.copyDiagnostic()
-              }}
-              type="button"
-              variant="outline"
-            >
-              <ClipboardCopy className="size-4" />
-              {copied ? '已复制' : '复制诊断信息'}
-            </Button>
-          </div>
-        </section>
-      </main>
-    )
-  }
-}
+    showFatalError(diagnostic)
+  },
+)
 `
+
+function updateBootstrapFallback(source) {
+  if (source.includes(diagnosticBridgeMarker)) {
+    return source
+  }
+
+  if (!source.includes('function showFatalError')) {
+    throw new Error(
+      'bootstrap-fallback.ts 中不存在 showFatalError。请先运行第一阶段脚本。',
+    )
+  }
+
+  return `${source.trimEnd()}${diagnosticBridgeSource}`
+}
 
 async function main() {
   await Promise.all([
     assertFileExists(paths.viteConfig),
-    assertFileExists(paths.indexHtml),
-    assertFileExists(paths.errorBoundary),
+    assertFileExists(paths.bootstrapFallback),
   ])
 
-  const [viteConfig, indexHtml] = await Promise.all([
+  const [viteConfig, bootstrapFallback] = await Promise.all([
     readUtf8(paths.viteConfig),
-    readUtf8(paths.indexHtml),
+    readUtf8(paths.bootstrapFallback),
   ])
 
   const nextViteConfig = updateViteConfig(viteConfig)
-  const nextIndexHtml = updateIndexHtml(indexHtml)
+  const nextBootstrapFallback =
+    updateBootstrapFallback(bootstrapFallback)
 
   await Promise.all([
     atomicWrite(paths.viteConfig, nextViteConfig),
-    atomicWrite(paths.indexHtml, nextIndexHtml),
-    atomicWrite(paths.bootstrapFallback, bootstrapFallbackSource),
-    atomicWrite(paths.errorBoundary, applicationErrorBoundarySource),
+    atomicWrite(paths.vitePlugin, vitePluginSource),
+    atomicWrite(
+      paths.bootstrapFallback,
+      nextBootstrapFallback,
+    ),
   ])
 
   console.log('')
-  console.log('修改完成。建议执行：')
-  console.log('  pnpm install')
+  console.log('Vite 开发诊断桥接安装完成。')
+  console.log('')
+  console.log('请执行：')
   console.log('  pnpm --filter @hybrid-canvas/desktop typecheck')
   console.log('  pnpm --filter @hybrid-canvas/desktop dev')
+  console.log('')
+  console.log('验证方法：')
+  console.log(
+    '  临时写入一个不存在的 import，确认只显示 Hybrid Canvas 错误 UI。',
+  )
+  console.log(
+    '  验证结束后删除临时 import，不要提交故意制造的错误。',
+  )
 }
 
 main().catch((error) => {
   console.error('')
-  console.error('修改失败：')
+  console.error('安装 Vite 开发诊断桥接失败：')
   console.error(error instanceof Error ? error.stack : error)
   process.exitCode = 1
 })
