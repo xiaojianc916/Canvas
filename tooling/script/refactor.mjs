@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * 将仓库许可证和仓库元数据统一为 Apache-2.0。
+ * 建立 scaffold 的 package/crate 级精确依赖许可。
  *
  * 使用：
  *   node tooling/script/refactor.mjs
@@ -13,32 +13,70 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const SCRIPT_NAME =
-  '008-unify-apache-license-metadata'
+  '009-enforce-package-crate-dependency-permissions'
 
-const REPOSITORY_URL =
-  'https://github.com/xiaojianc916/Canvas'
+const MANIFEST_PATH =
+  'architecture.scaffolds.json'
 
-const NPM_REPOSITORY_URL =
-  'git+https://github.com/xiaojianc916/Canvas.git'
+const ARCHITECTURE_CHECK_PATH =
+  'tests/architecture/check.mjs'
 
-const TARGET_PATHS = [
-  'package.json',
-  'Cargo.toml',
-  'apps/desktop/src-tauri/Cargo.toml',
-  'editor/assets/native/Cargo.toml',
-  'editor/persistence/native/Cargo.toml',
-  'editor/extensions/native/Cargo.toml',
-  'platforms/desktop-runtime/native/Cargo.toml',
-]
+const DEPENDENCY_CHECK_PATH =
+  'tests/architecture/check-scaffold-dependencies.mjs'
+
+const CHECK_IMPORT_LINE =
+  "await import('./check-scaffold-dependencies.mjs')"
 
 const argv = process.argv.slice(2)
 const writeMode = argv.includes('--write')
+
+const dependencyPermissions = {
+  'editor/assets/native': {
+    allowedPackages: [],
+    allowedCrates: [],
+  },
+  'editor/extensions/native': {
+    allowedPackages: [],
+    allowedCrates: [],
+  },
+  'platforms/desktop-runtime/native': {
+    allowedPackages: [],
+    allowedCrates: [],
+  },
+  'features/freehand': {
+    allowedPackages: [
+      '@hybrid-canvas/canvas',
+      '@hybrid-canvas/foundations-geometry',
+      '@hybrid-canvas/foundations-kernel',
+    ],
+    allowedCrates: [],
+  },
+  'features/scientific-plot': {
+    allowedPackages: [
+      '@hybrid-canvas/asset',
+      '@hybrid-canvas/canvas',
+      '@hybrid-canvas/foundations-geometry',
+      '@hybrid-canvas/foundations-kernel',
+    ],
+    allowedCrates: [],
+  },
+  'features/import-export': {
+    allowedPackages: [
+      '@hybrid-canvas/flowchart',
+      '@hybrid-canvas/freehand',
+      '@hybrid-canvas/foundations-kernel',
+      '@hybrid-canvas/scientific-plot',
+    ],
+    allowedCrates: [],
+  },
+}
 
 main()
 
@@ -46,11 +84,74 @@ function main() {
   validateArguments()
 
   const root = findRepositoryRoot()
-
   validateRepository(root)
-  validateApacheLicense(root)
 
-  const changes = buildChanges(root).filter(
+  const manifestPath =
+    join(root, MANIFEST_PATH)
+
+  const architectureCheckPath =
+    join(root, ARCHITECTURE_CHECK_PATH)
+
+  const dependencyCheckPath =
+    join(root, DEPENDENCY_CHECK_PATH)
+
+  const originalManifest =
+    readRequiredText(manifestPath)
+
+  const originalArchitectureCheck =
+    readRequiredText(architectureCheckPath)
+
+  const dependencyCheckExisted =
+    existsSync(dependencyCheckPath)
+
+  const originalDependencyCheck =
+    dependencyCheckExisted
+      ? readRequiredText(dependencyCheckPath)
+      : ''
+
+  const modifiedManifest =
+    transformManifest(originalManifest)
+
+  const modifiedArchitectureCheck =
+    transformArchitectureCheck(
+      originalArchitectureCheck,
+    )
+
+  const modifiedDependencyCheck =
+    createDependencyChecker()
+
+  const changes = [
+    {
+      relativePath: MANIFEST_PATH,
+      absolutePath: manifestPath,
+      original: originalManifest,
+      modified: modifiedManifest,
+      existedBefore: true,
+    },
+    {
+      relativePath:
+        ARCHITECTURE_CHECK_PATH,
+      absolutePath:
+        architectureCheckPath,
+      original:
+        originalArchitectureCheck,
+      modified:
+        modifiedArchitectureCheck,
+      existedBefore: true,
+    },
+    {
+      relativePath:
+        DEPENDENCY_CHECK_PATH,
+      absolutePath:
+        dependencyCheckPath,
+      original:
+        originalDependencyCheck,
+      modified:
+        modifiedDependencyCheck,
+      existedBefore:
+        dependencyCheckExisted,
+    },
+  ].filter(
     (change) =>
       normalizeNewlines(change.original) !==
       normalizeNewlines(change.modified),
@@ -58,7 +159,7 @@ function main() {
 
   if (changes.length === 0) {
     console.log(
-      '无需修改：许可证和仓库元数据已经统一为 Apache-2.0。',
+      '无需修改：package/crate 精确依赖许可已经启用。',
     )
     return
   }
@@ -76,25 +177,28 @@ function main() {
 
   console.log('\n变更摘要：')
   console.log(
-    '- 根 package.json 使用 Apache-2.0',
+    '- scaffold manifest 升级为版本 3',
   )
   console.log(
-    '- 增加 npm repository、bugs 和 homepage 元数据',
+    '- 删除粗粒度 allowedDependencies/forbiddenDependencies',
   )
   console.log(
-    '- Cargo workspace 使用 Apache-2.0',
+    '- 使用 allowedPackages 精确许可 workspace package',
   )
   console.log(
-    '- Cargo repository 指向真实 GitHub 仓库',
+    '- 使用 allowedCrates 精确许可 Rust crate',
   )
   console.log(
-    '- 所有 Rust crate 继承 workspace license',
+    '- 使用 TypeScript AST 分析源码依赖',
   )
   console.log(
-    '- 所有 Rust crate 继承 workspace repository',
+    '- 校验 package.json 运行时内部依赖',
   )
   console.log(
-    '- 保留现有标准 Apache-2.0 LICENSE 全文',
+    '- 校验 Cargo path dependency',
+  )
+  console.log(
+    '- 同层跨包依赖不再隐式允许',
   )
 
   if (!writeMode) {
@@ -116,6 +220,13 @@ function main() {
 
   try {
     for (const change of changes) {
+      mkdirSync(
+        dirname(change.absolutePath),
+        {
+          recursive: true,
+        },
+      )
+
       writeFileSync(
         change.absolutePath,
         ensureFinalNewline(
@@ -132,11 +243,12 @@ function main() {
         'biome',
         'format',
         '--write',
-        'package.json',
+        MANIFEST_PATH,
+        DEPENDENCY_CHECK_PATH,
       ],
       {
         cwd: root,
-        label: '格式化 package.json',
+        label: '格式化依赖许可文件',
       },
     )
 
@@ -148,26 +260,21 @@ function main() {
         'exec',
         'biome',
         'check',
-        'package.json',
+        MANIFEST_PATH,
+        DEPENDENCY_CHECK_PATH,
       ],
       {
         cwd: root,
-        label: '检查 package.json',
+        label: 'Biome 检查',
       },
     )
 
     run(
-      'cargo',
-      [
-        'metadata',
-        '--no-deps',
-        '--format-version',
-        '1',
-      ],
+      'node',
+      [DEPENDENCY_CHECK_PATH],
       {
         cwd: root,
-        label: '验证 Cargo workspace 元数据',
-        suppressOutput: true,
+        label: 'package/crate 依赖许可检查',
       },
     )
 
@@ -176,7 +283,7 @@ function main() {
       ['test:architecture'],
       {
         cwd: root,
-        label: '架构测试',
+        label: '完整架构测试',
       },
     )
 
@@ -186,7 +293,9 @@ function main() {
         'diff',
         '--check',
         '--',
-        ...TARGET_PATHS,
+        MANIFEST_PATH,
+        ARCHITECTURE_CHECK_PATH,
+        DEPENDENCY_CHECK_PATH,
       ],
       {
         cwd: root,
@@ -196,22 +305,18 @@ function main() {
 
     console.log('\n修改完成。')
     console.log(
-      '根 npm 包、Cargo workspace 和全部 Rust crate 已统一为 Apache-2.0。',
+      'scaffold 跨 package/crate 依赖现在必须显式许可。',
     )
   } catch (error) {
     console.error(
       '\n修改或验证失败，正在恢复原文件……',
     )
 
-    for (const change of changes) {
-      copyFileSync(
-        join(
-          backupRoot,
-          change.relativePath,
-        ),
-        change.absolutePath,
-      )
-    }
+    restoreBackup(
+      root,
+      backupRoot,
+      changes,
+    )
 
     console.error(
       '已恢复到脚本执行前状态。',
@@ -269,7 +374,10 @@ function validateRepository(root) {
     )
   }
 
-  for (const relativePath of TARGET_PATHS) {
+  for (const relativePath of [
+    MANIFEST_PATH,
+    ARCHITECTURE_CHECK_PATH,
+  ]) {
     if (
       !existsSync(join(root, relativePath))
     ) {
@@ -278,420 +386,782 @@ function validateRepository(root) {
       )
     }
   }
-}
 
-function validateApacheLicense(root) {
-  const license = readRequiredText(
-    join(root, 'LICENSE'),
+  const manifest = parseJson(
+    readRequiredText(
+      join(root, MANIFEST_PATH),
+    ),
+    MANIFEST_PATH,
   )
 
-  const requiredFragments = [
-    'Apache License',
-    'Version 2.0, January 2004',
-    'TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION',
-    'END OF TERMS AND CONDITIONS',
-  ]
+  if (!Array.isArray(manifest.scaffolds)) {
+    throw new Error(
+      `${MANIFEST_PATH} 缺少 scaffolds 数组`,
+    )
+  }
 
-  for (const fragment of requiredFragments) {
-    if (!license.includes(fragment)) {
+  const actualPaths = new Set(
+    manifest.scaffolds.map(
+      (scaffold) => scaffold.path,
+    ),
+  )
+
+  for (
+    const path of Object.keys(
+      dependencyPermissions,
+    )
+  ) {
+    if (!actualPaths.has(path)) {
       throw new Error(
-        [
-          '根 LICENSE 不是预期的 Apache-2.0 全文。',
-          `缺少：${fragment}`,
-          '脚本拒绝自动替换法律文本。',
-        ].join('\n'),
+        `manifest 中找不到预期 scaffold：${path}`,
+      )
+    }
+  }
+
+  for (const path of actualPaths) {
+    if (
+      !Object.hasOwn(
+        dependencyPermissions,
+        path,
+      )
+    ) {
+      throw new Error(
+        `存在未配置精确依赖许可的 scaffold：${String(path)}`,
       )
     }
   }
 }
 
-function buildChanges(root) {
-  return TARGET_PATHS.map(
-    (relativePath) => {
-      const absolutePath =
-        join(root, relativePath)
+function transformManifest(source) {
+  const manifest = parseJson(
+    source,
+    MANIFEST_PATH,
+  )
 
-      const original =
-        readRequiredText(absolutePath)
+  const scaffolds = manifest.scaffolds.map(
+    (scaffold) => {
+      const permission =
+        dependencyPermissions[
+          scaffold.path
+        ]
 
-      const modified =
-        relativePath === 'package.json'
-          ? transformPackageJson(original)
-          : relativePath === 'Cargo.toml'
-            ? transformWorkspaceCargo(
-                original,
-              )
-            : transformMemberCargo(
-                original,
-                relativePath,
-              )
+      if (!permission) {
+        throw new Error(
+          `缺少 scaffold 许可配置：${String(scaffold.path)}`,
+        )
+      }
+
+      const {
+        allowedDependencies:
+          _allowedDependencies,
+        forbiddenDependencies:
+          _forbiddenDependencies,
+        allowedPackages:
+          _allowedPackages,
+        allowedCrates:
+          _allowedCrates,
+        ...remaining
+      } = scaffold
 
       return {
-        relativePath,
-        absolutePath,
-        original,
-        modified,
+        ...remaining,
+        allowedPackages:
+          permission.allowedPackages,
+        allowedCrates:
+          permission.allowedCrates,
       }
     },
   )
-}
-
-function transformPackageJson(source) {
-  const packageJson = JSON.parse(source)
-
-  const {
-    name,
-    version,
-    private: isPrivate,
-    description,
-    license: _license,
-    repository: _repository,
-    bugs: _bugs,
-    homepage: _homepage,
-    ...remaining
-  } = packageJson
-
-  const transformed = {
-    name,
-    version,
-    private: isPrivate,
-    description,
-    license: 'Apache-2.0',
-    repository: {
-      type: 'git',
-      url: NPM_REPOSITORY_URL,
-    },
-    bugs: {
-      url: `${REPOSITORY_URL}/issues`,
-    },
-    homepage: `${REPOSITORY_URL}#readme`,
-    ...remaining,
-  }
 
   return `${JSON.stringify(
-    transformed,
+    {
+      ...manifest,
+      version: 3,
+      dependencyPolicy:
+        'explicit-package-and-crate',
+      scaffolds,
+    },
     null,
     2,
   )}\n`
 }
 
-function transformWorkspaceCargo(source) {
-  let next = normalizeNewlines(source)
-
-  next = replaceCargoMetadataValue(
-    next,
-    'license',
-    '"Apache-2.0"',
-  )
-
-  next = replaceCargoMetadataValue(
-    next,
-    'repository',
-    `"${REPOSITORY_URL}"`,
-  )
-
-  return next
-}
-
-function replaceCargoMetadataValue(
-  source,
-  property,
-  value,
-) {
-  const pattern = new RegExp(
-    `^${escapeRegExp(property)}\\s*=\\s*.+$`,
-    'mu',
-  )
-
-  const matches = source.match(
-    new RegExp(
-      `^${escapeRegExp(property)}\\s*=\\s*.+$`,
-      'gmu',
-    ),
-  )
-
-  if (!matches || matches.length !== 1) {
-    throw new Error(
-      `Cargo workspace 中 ${property} 应当且只能出现一次`,
-    )
-  }
-
-  return source.replace(
-    pattern,
-    `${property} = ${value}`,
-  )
-}
-
-function transformMemberCargo(
-  source,
-  relativePath,
-) {
-  let next = normalizeNewlines(source)
-
-  if (
-    !next.startsWith('[package]') &&
-    !next.startsWith('\uFEFF[package]')
-  ) {
-    throw new Error(
-      `${relativePath} 缺少 [package]`,
-    )
-  }
-
-  next = ensureWorkspaceField(
-    next,
-    relativePath,
-    'license',
-  )
-
-  next = ensureWorkspaceField(
-    next,
-    relativePath,
-    'repository',
-  )
-
-  return next
-}
-
-function ensureWorkspaceField(
-  source,
-  relativePath,
-  field,
-) {
-  const workspaceLine =
-    `${field}.workspace = true`
-
-  if (source.includes(workspaceLine)) {
+function transformArchitectureCheck(source) {
+  if (source.includes(CHECK_IMPORT_LINE)) {
     return source
   }
 
-  const explicitPattern = new RegExp(
-    `^${escapeRegExp(field)}\\s*=\\s*.+$`,
-    'mu',
+  return `${source.replace(/\s*$/u, '')}
+
+${CHECK_IMPORT_LINE}
+`
+}
+
+function createDependencyChecker() {
+  return String.raw`/* biome-ignore-all lint/suspicious/noConsole: architecture checks intentionally report violations to the terminal */
+
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { dirname, join, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import * as ts from 'typescript'
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+const manifestPath = join(root, 'architecture.scaffolds.json')
+const manifest = readJson(manifestPath)
+const violations = []
+
+const packageRoots = discoverPackageRoots()
+const packagesByName = new Map(
+  packageRoots.map((entry) => [entry.name, entry]),
+)
+const sortedPackageNames = [...packagesByName.keys()].sort(
+  (left, right) => right.length - left.length,
+)
+
+const crateRoots = discoverCrateRoots()
+const cratesByName = new Map(
+  crateRoots.map((entry) => [entry.name, entry]),
+)
+
+validateManifest()
+
+for (const scaffold of manifest.scaffolds) {
+  validateScaffold(scaffold)
+}
+
+if (violations.length > 0) {
+  console.error('Scaffold dependency permission violations:')
+
+  for (const violation of violations) {
+    console.error(§- ¤{violation}§)
+  }
+
+  process.exitCode = 1
+} else {
+  console.log(
+    §Scaffold dependency permissions OK: ¤{manifest.scaffolds.length} scaffolds, ¤{packageRoots.length} packages, ¤{crateRoots.length} crates§,
+  )
+}
+
+function validateManifest() {
+  if (manifest.version !== 3) {
+    addViolation(
+      §architecture.scaffolds.json: expected version 3, received ¤{String(manifest.version)}§,
+    )
+  }
+
+  if (manifest.dependencyPolicy !== 'explicit-package-and-crate') {
+    addViolation(
+      'architecture.scaffolds.json: dependencyPolicy must be explicit-package-and-crate',
+    )
+  }
+
+  if (!Array.isArray(manifest.scaffolds)) {
+    addViolation('architecture.scaffolds.json: scaffolds must be an array')
+  }
+}
+
+function validateScaffold(scaffold) {
+  if (!scaffold || typeof scaffold !== 'object') {
+    addViolation('architecture.scaffolds.json: scaffold must be an object')
+    return
+  }
+
+  if (typeof scaffold.path !== 'string') {
+    addViolation('architecture.scaffolds.json: scaffold path must be a string')
+    return
+  }
+
+  const scaffoldRoot = resolve(root, scaffold.path)
+
+  if (!isInsideRoot(scaffoldRoot) || !existsSync(scaffoldRoot)) {
+    addViolation(§¤{scaffold.path}: scaffold path does not exist§)
+    return
+  }
+
+  const allowedPackages = validatePermissionList(
+    scaffold,
+    'allowedPackages',
+    packagesByName,
+  )
+  const allowedCrates = validatePermissionList(
+    scaffold,
+    'allowedCrates',
+    cratesByName,
   )
 
-  if (explicitPattern.test(source)) {
-    return source.replace(
-      explicitPattern,
-      workspaceLine,
-    )
+  validateTypeScriptDependencies(scaffold, scaffoldRoot, allowedPackages)
+  validateRustDependencies(scaffold, scaffoldRoot, allowedCrates)
+}
+
+function validatePermissionList(scaffold, property, knownEntries) {
+  const value = scaffold[property]
+
+  if (!Array.isArray(value)) {
+    addViolation(§¤{scaffold.path}: ¤{property} must be an array§)
+    return new Set()
   }
 
-  const packageSectionEnd =
-    findTomlSectionEnd(source, '[package]')
+  const result = new Set()
 
-  if (packageSectionEnd < 0) {
-    throw new Error(
-      `${relativePath} 无法定位 [package] 结束位置`,
-    )
-  }
-
-  const packageSection =
-    source.slice(0, packageSectionEnd)
-
-  const insertionCandidates = [
-    'license.workspace = true',
-    'authors.workspace = true',
-    'rust-version.workspace = true',
-    'edition.workspace = true',
-    /^license\s*=\s*.+$/mu,
-    /^authors\s*=\s*.+$/mu,
-    /^edition\s*=\s*.+$/mu,
-    /^version\s*=\s*.+$/mu,
-    /^name\s*=\s*.+$/mu,
-  ]
-
-  for (
-    const candidate of insertionCandidates
-  ) {
-    const match =
-      typeof candidate === 'string'
-        ? findLiteralLine(
-            packageSection,
-            candidate,
-          )
-        : packageSection.match(candidate)
-
-    if (!match) {
+  for (const entry of value) {
+    if (typeof entry !== 'string' || entry.length === 0) {
+      addViolation(§¤{scaffold.path}: ¤{property} contains an invalid value§)
       continue
     }
 
-    const matchedText =
-      typeof match === 'string'
-        ? match
-        : match[0]
+    if (result.has(entry)) {
+      addViolation(§¤{scaffold.path}: duplicate ¤{property} entry ¤{entry}§)
+      continue
+    }
 
-    const insertionIndex =
-      packageSection.lastIndexOf(
-        matchedText,
-      ) + matchedText.length
+    if (!knownEntries.has(entry)) {
+      addViolation(§¤{scaffold.path}: unknown ¤{property} entry ¤{entry}§)
+      continue
+    }
 
-    return (
-      source.slice(0, insertionIndex) +
-      `\n${workspaceLine}` +
-      source.slice(insertionIndex)
+    result.add(entry)
+  }
+
+  return result
+}
+
+function validateTypeScriptDependencies(scaffold, scaffoldRoot, allowedPackages) {
+  const ownerPackage = findOwningPackage(scaffoldRoot)
+
+  if (!ownerPackage) {
+    if (containsTypeScriptSource(scaffoldRoot)) {
+      addViolation(§¤{scaffold.path}: TypeScript source has no owning package.json§)
+    }
+
+    return
+  }
+
+  if (allowedPackages.has(ownerPackage.name)) {
+    addViolation(
+      §¤{scaffold.path}: allowedPackages must not contain its own package ¤{ownerPackage.name}§,
     )
   }
 
-  throw new Error(
-    `${relativePath} 无法找到 ${field} 的安全插入位置`,
-  )
-}
+  validateDeclaredPackageDependencies(scaffold, ownerPackage, allowedPackages)
 
-function findTomlSectionEnd(
-  source,
-  section,
-) {
-  const sectionStart =
-    source.indexOf(section)
+  const sourceRoot = join(scaffoldRoot, 'src')
 
-  if (sectionStart < 0) {
-    return -1
+  if (!existsSync(sourceRoot)) {
+    return
   }
 
-  const nextSection = source.indexOf(
-    '\n[',
-    sectionStart + section.length,
-  )
-
-  return nextSection < 0
-    ? source.length
-    : nextSection + 1
+  for (const file of collectTypeScriptFiles(sourceRoot)) {
+    validateTypeScriptFile(scaffold, file, ownerPackage, allowedPackages)
+  }
 }
 
-function findLiteralLine(
-  source,
-  expected,
+function validateDeclaredPackageDependencies(
+  scaffold,
+  ownerPackage,
+  allowedPackages,
 ) {
-  return source
-    .split('\n')
-    .find(
-      (line) => line.trim() === expected,
+  const packageJson = readJson(ownerPackage.manifestPath)
+  const runtimeDependencies = {
+    ...packageJson.dependencies,
+    ...packageJson.optionalDependencies,
+  }
+
+  for (const dependencyName of Object.keys(runtimeDependencies)) {
+    if (!packagesByName.has(dependencyName)) {
+      continue
+    }
+
+    if (dependencyName === ownerPackage.name) {
+      addViolation(
+        §¤{relativePath(ownerPackage.manifestPath)}: package declares itself as a dependency§,
+      )
+      continue
+    }
+
+    if (!allowedPackages.has(dependencyName)) {
+      addViolation(
+        §¤{scaffold.path}: package.json dependency ¤{dependencyName} is not listed in allowedPackages§,
+      )
+    }
+  }
+}
+
+function validateTypeScriptFile(scaffold, file, ownerPackage, allowedPackages) {
+  for (const specifier of collectModuleSpecifiers(file)) {
+    const dependencyName = resolveWorkspacePackageName(specifier)
+
+    if (!dependencyName || dependencyName === ownerPackage.name) {
+      continue
+    }
+
+    if (!allowedPackages.has(dependencyName)) {
+      addViolation(
+        §¤{relativePath(file)}: ¤{dependencyName} is not listed in ¤{scaffold.path}.allowedPackages§,
+      )
+    }
+
+    const packageJson = readJson(ownerPackage.manifestPath)
+    const declaredDependencies = {
+      ...packageJson.dependencies,
+      ...packageJson.optionalDependencies,
+      ...packageJson.peerDependencies,
+    }
+
+    if (!Object.hasOwn(declaredDependencies, dependencyName)) {
+      addViolation(
+        §¤{relativePath(file)}: ¤{dependencyName} is imported but not declared as a runtime dependency§,
+      )
+    }
+  }
+}
+
+function collectModuleSpecifiers(file) {
+  const source = readFileSync(file, 'utf8')
+  const sourceFile = ts.createSourceFile(
+  file,
+  source,
+  ts.ScriptTarget.Latest,
+  true,
+)
+  const specifiers = new Set()
+
+  function visit(node) {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteralLike(node.moduleSpecifier)
+    ) {
+      specifiers.add(node.moduleSpecifier.text)
+    }
+
+    if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference) &&
+      node.moduleReference.expression &&
+      ts.isStringLiteralLike(node.moduleReference.expression)
+    ) {
+      specifiers.add(node.moduleReference.expression.text)
+    }
+
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments.length === 1 &&
+      ts.isStringLiteralLike(node.arguments[0])
+    ) {
+      specifiers.add(node.arguments[0].text)
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+
+  return specifiers
+}
+
+function resolveWorkspacePackageName(specifier) {
+  for (const packageName of sortedPackageNames) {
+    if (specifier === packageName || specifier.startsWith(§¤{packageName}/§)) {
+      return packageName
+    }
+  }
+
+  if (specifier.startsWith('@hybrid-canvas/')) {
+    addViolation(§unresolved internal package import: ¤{specifier}§)
+  }
+
+  return null
+}
+
+function validateRustDependencies(scaffold, scaffoldRoot, allowedCrates) {
+  const cargoPath = join(scaffoldRoot, 'Cargo.toml')
+
+  if (!existsSync(cargoPath)) {
+    if (containsRustSource(scaffoldRoot)) {
+      addViolation(§¤{scaffold.path}: Rust source has no Cargo.toml§)
+    }
+
+    return
+  }
+
+  const ownerCrate = crateRoots.find(
+    (entry) => entry.manifestPath === cargoPath,
+  )
+
+  if (!ownerCrate) {
+    addViolation(§¤{scaffold.path}: Cargo crate is not a workspace member§)
+    return
+  }
+
+  if (allowedCrates.has(ownerCrate.name)) {
+    addViolation(
+      §¤{scaffold.path}: allowedCrates must not contain its own crate ¤{ownerCrate.name}§,
     )
+  }
+
+  for (const dependency of collectCargoPathDependencies(cargoPath)) {
+    const dependencyRoot = resolve(ownerCrate.root, dependency.path)
+    const dependencyCrate = crateRoots.find(
+      (entry) => entry.root === dependencyRoot,
+    )
+
+    if (!dependencyCrate) {
+      addViolation(
+        §¤{relativePath(cargoPath)}: path dependency ¤{dependency.name} does not resolve to a workspace crate§,
+      )
+      continue
+    }
+
+    if (!allowedCrates.has(dependencyCrate.name)) {
+      addViolation(
+        §¤{scaffold.path}: crate ¤{dependencyCrate.name} is not listed in allowedCrates§,
+      )
+    }
+  }
+}
+
+function collectCargoPathDependencies(cargoPath) {
+  const source = readFileSync(cargoPath, 'utf8').replace(/^\uFEFF/u, '')
+  const dependencies = []
+  let currentSection = ''
+
+  for (const rawLine of source.split(/\r?\n/u)) {
+    const line = rawLine.trim()
+
+    if (line.startsWith('[') && line.endsWith(']')) {
+      currentSection = line.slice(1, -1)
+      continue
+    }
+
+    const isRuntimeDependencySection =
+      currentSection === 'dependencies' ||
+      currentSection.endsWith('.dependencies')
+
+    if (!isRuntimeDependencySection || !line || line.startsWith('#')) {
+      continue
+    }
+
+    const match = line.match(
+      /^([A-Za-z0-9_-]+)\s*=\s*\{[^}]*\bpath\s*=\s*"([^"]+)"[^}]*\}\s*$/u,
+    )
+
+    if (match) {
+      dependencies.push({
+        name: match[1],
+        path: match[2],
+      })
+    }
+  }
+
+  return dependencies
+}
+
+function discoverPackageRoots() {
+  const roots = [
+    'apps',
+    'editor',
+    'features',
+    'foundations',
+    'platforms',
+    'tooling',
+    'tests',
+  ]
+  const result = []
+
+  for (const rootName of roots) {
+    const workspaceRoot = join(root, rootName)
+
+    if (!existsSync(workspaceRoot)) {
+      continue
+    }
+
+    for (const entry of readdirSync(workspaceRoot)) {
+      const packageRoot = join(workspaceRoot, entry)
+      const manifestPath = join(packageRoot, 'package.json')
+
+      if (!isDirectory(packageRoot) || !existsSync(manifestPath)) {
+        continue
+      }
+
+      const packageJson = readJson(manifestPath)
+
+      if (typeof packageJson.name !== 'string') {
+        addViolation(§¤{relativePath(manifestPath)}: package name is missing§)
+        continue
+      }
+
+      result.push({
+        name: packageJson.name,
+        root: packageRoot,
+        manifestPath,
+      })
+    }
+  }
+
+  return result
+}
+
+function discoverCrateRoots() {
+  const workspaceCargoPath = join(root, 'Cargo.toml')
+  const source = readFileSync(workspaceCargoPath, 'utf8')
+  const membersMatch = source.match(/\bmembers\s*=\s*\[([\s\S]*?)\]/u)
+
+  if (!membersMatch) {
+    addViolation('Cargo.toml: workspace members array is missing')
+    return []
+  }
+
+  const result = []
+  const memberPattern = /"([^"]+)"/gu
+
+  for (const match of membersMatch[1].matchAll(memberPattern)) {
+    const crateRoot = resolve(root, match[1])
+    const manifestPath = join(crateRoot, 'Cargo.toml')
+
+    if (!existsSync(manifestPath)) {
+      addViolation(§Cargo workspace member does not exist: ¤{match[1]}§)
+      continue
+    }
+
+    const cargo = readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/u, '')
+    const packageSection = cargo.match(
+      /\[package\]([\s\S]*?)(?=\n\[|$)/u,
+    )
+    const nameMatch = packageSection?.[1].match(
+      /^name\s*=\s*"([^"]+)"$/mu,
+    )
+
+    if (!nameMatch) {
+      addViolation(§¤{relativePath(manifestPath)}: crate name is missing§)
+      continue
+    }
+
+    result.push({
+      name: nameMatch[1],
+      root: crateRoot,
+      manifestPath,
+    })
+  }
+
+  return result
+}
+
+function findOwningPackage(path) {
+  let current = path
+
+  while (isInsideRoot(current)) {
+    const manifestPath = join(current, 'package.json')
+
+    if (existsSync(manifestPath)) {
+      const packageJson = readJson(manifestPath)
+
+      return {
+        name: packageJson.name,
+        root: current,
+        manifestPath,
+      }
+    }
+
+    if (current === root) {
+      break
+    }
+
+    current = dirname(current)
+  }
+
+  return null
+}
+
+function collectTypeScriptFiles(directory) {
+  const files = []
+
+  for (const entry of readdirSync(directory)) {
+    const path = join(directory, entry)
+
+    if (isDirectory(path)) {
+      files.push(...collectTypeScriptFiles(path))
+      continue
+    }
+
+    if (/\.(?:cts|mts|ts|tsx)$/u.test(path) && !path.endsWith('.d.ts')) {
+      files.push(path)
+    }
+  }
+
+  return files
+}
+
+function containsTypeScriptSource(directory) {
+  return (
+    existsSync(join(directory, 'src')) &&
+    collectTypeScriptFiles(join(directory, 'src')).length > 0
+  )
+}
+
+function containsRustSource(directory) {
+  const sourceRoot = join(directory, 'src')
+
+  if (!existsSync(sourceRoot)) {
+    return false
+  }
+
+  return collectFilesWithExtension(sourceRoot, '.rs').length > 0
+}
+
+function collectFilesWithExtension(directory, extension) {
+  const files = []
+
+  for (const entry of readdirSync(directory)) {
+    const path = join(directory, entry)
+
+    if (isDirectory(path)) {
+      files.push(...collectFilesWithExtension(path, extension))
+    } else if (path.endsWith(extension)) {
+      files.push(path)
+    }
+  }
+
+  return files
+}
+
+function isDirectory(path) {
+  try {
+    return statSync(path).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+function isInsideRoot(path) {
+  const normalizedRoot = root.endsWith(sep) ? root : §¤{root}¤{sep}§
+  return path === root || path.startsWith(normalizedRoot)
+}
+
+function relativePath(path) {
+  return relative(root, path).replaceAll(sep, '/')
+}
+
+function readJson(path) {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/u, ''))
+  } catch (cause) {
+    throw new Error(§Cannot parse ¤{relativePath(path)}§, {
+      cause,
+    })
+  }
+}
+
+function addViolation(message) {
+  violations.push(message)
+}
+`
+    .replaceAll('§', '`')
+    .replaceAll('¤{', '${')
 }
 
 function assertPostconditions(root) {
-  const packageJson = JSON.parse(
+  const manifest = parseJson(
     readRequiredText(
-      join(root, 'package.json'),
+      join(root, MANIFEST_PATH),
     ),
+    MANIFEST_PATH,
   )
 
-  if (
-    packageJson.license !==
-    'Apache-2.0'
-  ) {
+  if (manifest.version !== 3) {
     throw new Error(
-      'package.json license 不是 Apache-2.0',
+      'scaffold manifest 未升级到版本 3',
     )
   }
 
   if (
-    packageJson.repository?.url !==
-    NPM_REPOSITORY_URL
+    manifest.dependencyPolicy !==
+    'explicit-package-and-crate'
   ) {
     throw new Error(
-      'package.json repository 不正确',
+      'scaffold manifest 缺少精确依赖策略',
     )
   }
 
-  if (
-    packageJson.bugs?.url !==
-    `${REPOSITORY_URL}/issues`
-  ) {
-    throw new Error(
-      'package.json bugs URL 不正确',
-    )
+  for (const scaffold of manifest.scaffolds) {
+    if (
+      !Array.isArray(
+        scaffold.allowedPackages,
+      )
+    ) {
+      throw new Error(
+        `${scaffold.path} 缺少 allowedPackages`,
+      )
+    }
+
+    if (
+      !Array.isArray(
+        scaffold.allowedCrates,
+      )
+    ) {
+      throw new Error(
+        `${scaffold.path} 缺少 allowedCrates`,
+      )
+    }
+
+    if (
+      Object.hasOwn(
+        scaffold,
+        'allowedDependencies',
+      ) ||
+      Object.hasOwn(
+        scaffold,
+        'forbiddenDependencies',
+      )
+    ) {
+      throw new Error(
+        `${scaffold.path} 仍残留层级依赖字段`,
+      )
+    }
   }
 
-  if (
-    packageJson.homepage !==
-    `${REPOSITORY_URL}#readme`
-  ) {
-    throw new Error(
-      'package.json homepage 不正确',
-    )
-  }
-
-  const workspaceCargo =
+  const architectureCheck =
     readRequiredText(
-      join(root, 'Cargo.toml'),
+      join(
+        root,
+        ARCHITECTURE_CHECK_PATH,
+      ),
     )
 
-  const workspaceFragments = [
-    'license = "Apache-2.0"',
-    `repository = "${REPOSITORY_URL}"`,
-  ]
-
-  for (
-    const fragment of workspaceFragments
+  if (
+    !architectureCheck.includes(
+      CHECK_IMPORT_LINE,
+    )
   ) {
-    if (
-      !workspaceCargo.includes(fragment)
-    ) {
-      throw new Error(
-        `Cargo workspace 缺少：${fragment}`,
-      )
-    }
+    throw new Error(
+      '主架构测试未加载 scaffold 依赖检查器',
+    )
   }
 
-  const forbiddenWorkspaceFragments = [
-    'license = "Proprietary"',
-    'example.invalid',
-  ]
-
-  for (
-    const fragment of forbiddenWorkspaceFragments
-  ) {
-    if (
-      workspaceCargo.includes(fragment)
-    ) {
-      throw new Error(
-        `Cargo workspace 仍残留旧元数据：${fragment}`,
-      )
-    }
-  }
-
-  for (
-    const relativePath of TARGET_PATHS.slice(2)
-  ) {
-    const cargo = readRequiredText(
-      join(root, relativePath),
+  const dependencyCheck =
+    readRequiredText(
+      join(
+        root,
+        DEPENDENCY_CHECK_PATH,
+      ),
     )
 
-    if (
-      !cargo.includes(
-        'license.workspace = true',
-      )
-    ) {
+  const requiredFragments = [
+    "import * as ts from 'typescript'",
+    'collectModuleSpecifiers',
+    'allowedPackages',
+    'allowedCrates',
+    'collectCargoPathDependencies',
+    'package.json dependency',
+    'is imported but not declared as a runtime dependency',
+  ]
+
+  for (const fragment of requiredFragments) {
+    if (!dependencyCheck.includes(fragment)) {
       throw new Error(
-        `${relativePath} 未继承 workspace license`,
+        `依赖检查器缺少：${fragment}`,
       )
-    }
-
-    if (
-      !cargo.includes(
-        'repository.workspace = true',
-      )
-    ) {
-      throw new Error(
-        `${relativePath} 未继承 workspace repository`,
-      )
-    }
-
-    const forbiddenMemberFragments = [
-      'license = "MIT OR Apache-2.0"',
-      'license = "Proprietary"',
-      'example.invalid',
-    ]
-
-    for (
-      const fragment of forbiddenMemberFragments
-    ) {
-      if (cargo.includes(fragment)) {
-        throw new Error(
-          `${relativePath} 仍残留旧许可证或仓库元数据：${fragment}`,
-        )
-      }
     }
   }
 }
@@ -700,15 +1170,21 @@ function ensureTargetsAreClean(
   root,
   changes,
 ) {
+  const existingPaths = changes
+    .filter(
+      (change) => change.existedBefore,
+    )
+    .map(
+      (change) => change.relativePath,
+    )
+
   const result = spawnSync(
     'git',
     [
       'status',
       '--porcelain',
       '--',
-      ...changes.map(
-        (change) => change.relativePath,
-      ),
+      ...existingPaths,
     ],
     {
       cwd: root,
@@ -747,6 +1223,10 @@ function createBackup(root, changes) {
   )
 
   for (const change of changes) {
+    if (!change.existedBefore) {
+      continue
+    }
+
     const destination = join(
       backupRoot,
       change.relativePath,
@@ -765,11 +1245,41 @@ function createBackup(root, changes) {
   return backupRoot
 }
 
-function escapeRegExp(value) {
-  return value.replace(
-    /[.*+?^${}()|[\]\\]/gu,
-    '\\$&',
-  )
+function restoreBackup(
+  root,
+  backupRoot,
+  changes,
+) {
+  for (const change of changes) {
+    if (change.existedBefore) {
+      copyFileSync(
+        join(
+          backupRoot,
+          change.relativePath,
+        ),
+        change.absolutePath,
+      )
+    } else {
+      rmSync(change.absolutePath, {
+        force: true,
+      })
+    }
+  }
+}
+
+function parseJson(source, label) {
+  try {
+    return JSON.parse(
+      source.replace(/^\uFEFF/u, ''),
+    )
+  } catch (cause) {
+    throw new Error(
+      `无法解析 ${label}`,
+      {
+        cause,
+      },
+    )
+  }
 }
 
 function normalizeNewlines(value) {
@@ -796,7 +1306,6 @@ function run(
   {
     cwd,
     label,
-    suppressOutput = false,
   },
 ) {
   const invocation =
@@ -816,9 +1325,7 @@ function run(
     {
       cwd,
       encoding: 'utf8',
-      stdio: suppressOutput
-        ? 'pipe'
-        : 'inherit',
+      stdio: 'inherit',
       shell: false,
       windowsHide: true,
     },
@@ -832,17 +1339,7 @@ function run(
 
   if (result.status !== 0) {
     throw new Error(
-      [
-        `${label} 失败，退出码 ${String(result.status)}`,
-        suppressOutput
-          ? result.stdout
-          : '',
-        suppressOutput
-          ? result.stderr
-          : '',
-      ]
-        .filter(Boolean)
-        .join('\n'),
+      `${label} 失败，退出码 ${String(result.status)}`,
     )
   }
 }
