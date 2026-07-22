@@ -1,1016 +1,548 @@
 #!/usr/bin/env node
 
-import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
+import { execFileSync } from 'node:child_process'
 
 const ROOT = process.cwd()
-const APPLY = process.argv.includes('--apply')
-const ALLOW_DIRTY = process.argv.includes('--allow-dirty')
+const APPLY =
+  process.argv.includes('--apply')
+const ALLOW_DIRTY =
+  process.argv.includes('--allow-dirty')
 
-const GENERATED_FILES = {
-  'features/workspace/src/presentation/shell/useWorkspaceLayout.ts': String.raw`import { useSyncExternalStore } from 'react'
+const TARGET =
+  'features/workspace/src/presentation/commands/CommandPalette.tsx'
 
-export type WorkspaceLayoutMode =
-  | 'wide'
-  | 'compact'
-  | 'narrow'
-
-function getSnapshot():
-  WorkspaceLayoutMode {
-  if (window.innerWidth >= 1280) {
-    return 'wide'
-  }
-
-  if (window.innerWidth >= 900) {
-    return 'compact'
-  }
-
-  return 'narrow'
-}
-
-function getServerSnapshot():
-  WorkspaceLayoutMode {
-  return 'wide'
-}
-
-function subscribe(
-  listener: () => void,
-): () => void {
-  window.addEventListener(
-    'resize',
-    listener,
-    {
-      passive: true,
-    },
-  )
-
-  return () => {
-    window.removeEventListener(
-      'resize',
-      listener,
-    )
-  }
-}
-
-export function useWorkspaceLayoutMode():
-  WorkspaceLayoutMode {
-  return useSyncExternalStore(
-    subscribe,
-    getSnapshot,
-    getServerSnapshot,
-  )
-}
-`,
-
-  'features/workspace/src/presentation/shell/SidebarSplitter.tsx': String.raw`export interface SidebarSplitterProps {
-  readonly width: number
-  readonly min: number
-  readonly max: number
-  readonly onResizeStart: () => void
-  readonly onResize:
-    (width: number) => void
-  readonly onCollapse: () => void
-}
-
-export function SidebarSplitter({
-  width,
-  min,
-  max,
-  onResizeStart,
-  onResize,
-  onCollapse,
-}: SidebarSplitterProps) {
-  const clamp = (
-    nextWidth: number,
-  ) => {
-    return Math.max(
-      min,
-      Math.min(
-        max,
-        nextWidth,
-      ),
-    )
-  }
-
-  return (
-    <div
-      aria-label="调整侧边栏宽度"
-      aria-orientation="vertical"
-      aria-valuemax={max}
-      aria-valuemin={min}
-      aria-valuenow={
-        Math.round(width)
-      }
-      className={[
-        'absolute right-0 top-0',
-        'z-20 h-full w-2',
-        'translate-x-1/2',
-        'cursor-col-resize',
-        'bg-transparent',
-        'outline-none',
-        'hover:bg-primary/15',
-        'focus-visible:bg-primary/25',
-      ].join(' ')}
-      onDoubleClick={onCollapse}
-      onKeyDown={(event) => {
-        switch (event.key) {
-          case 'ArrowLeft':
-            event.preventDefault()
-
-            onResize(
-              clamp(width - 16),
-            )
-            break
-
-          case 'ArrowRight':
-            event.preventDefault()
-
-            onResize(
-              clamp(width + 16),
-            )
-            break
-
-          case 'Home':
-            event.preventDefault()
-            onResize(min)
-            break
-
-          case 'End':
-            event.preventDefault()
-            onResize(max)
-            break
-        }
-      }}
-      onPointerDown={(event) => {
-        if (event.button !== 0) {
-          return
-        }
-
-        event.preventDefault()
-
-        document.body.style.cursor =
-          'col-resize'
-
-        document.body.style.userSelect =
-          'none'
-
-        onResizeStart()
-      }}
-      role="separator"
-      tabIndex={0}
-    />
-  )
-}
-`,
-
-  'features/workspace/src/presentation/shell/WorkspaceShell.tsx': String.raw`import {
-  Button,
-  TooltipProvider,
+const NEXT_SOURCE = String.raw`import {
+  Dialog,
+  EmptyState,
+  Input,
 } from '@hybrid-canvas/design-system'
 import {
-  PanelLeftClose,
-  PanelRightClose,
-  PanelRightOpen,
+  Command,
+  Search,
 } from 'lucide-react'
 import {
   useEffect,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import type {
-  WorkspaceShellProps,
-} from '../../contracts/shell-contract'
-import {
-  NoCanvasSurface,
-} from '../empty/NoCanvasSurface'
-import {
-  InspectorHost,
-} from '../inspector/InspectorHost'
-import {
-  StatusBarHost,
-} from '../status/StatusBarHost'
-import {
-  ActivityRail,
-  type CanvasNavigationItemId,
-} from './ActivityRail'
-import {
-  SidebarSplitter,
-} from './SidebarSplitter'
-import {
-  WorkspaceFrame,
-} from './WorkspaceFrame'
-import {
-  WorkspaceSidebar,
-} from './WorkspaceSidebar'
-import {
-  useWorkspaceLayoutMode,
-} from './useWorkspaceLayout'
+  CommandRegistry,
+} from '../../application/public-api'
+import type {
+  RegisteredCommand,
+} from '../../contracts/public-api'
 
-const SIDEBAR_MIN = 220
-const SIDEBAR_MAX = 420
-const SIDEBAR_DEFAULT = 280
+export interface CommandPaletteProps {
+  readonly open: boolean
+  readonly registry: CommandRegistry
+  readonly onOpenChange:
+    (open: boolean) => void
+}
 
-export function WorkspaceShell({
-  model,
-  actions,
-  pages,
-  renderChrome,
-  editor,
-  inspector,
-  statusLeft,
-  statusRight,
-  assistantOverlay,
-  overlays,
-}: WorkspaceShellProps) {
-  const mode =
-    useWorkspaceLayoutMode()
+export function CommandPalette({
+  open,
+  registry,
+  onOpenChange,
+}: CommandPaletteProps) {
+  const [
+    query,
+    setQuery,
+  ] = useState('')
 
   const [
-    isSidebarOpen,
-    setSidebarOpen,
-  ] = useState(true)
+    activeIndex,
+    setActiveIndex,
+  ] = useState(0)
 
-  const [
-    isInspectorOpen,
-    setInspectorOpen,
-  ] = useState(
-    mode === 'wide',
-  )
+  const inputRef =
+    useRef<HTMLInputElement>(null)
 
-  const [
-    activeNavigationItem,
-    setActiveNavigationItem,
-  ] = useState<
-    CanvasNavigationItemId
-  >('pages')
-
-  const [
-    sidebarWidth,
-    setSidebarWidth,
-  ] = useState(
-    SIDEBAR_DEFAULT,
-  )
-
-  const [
-    isResizing,
-    setResizing,
-  ] = useState(false)
-
-  const rootRef =
-    useRef<HTMLDivElement | null>(
-      null,
+  const commands =
+    useSyncExternalStore(
+      registry.subscribe,
+      registry.getSnapshot,
+      registry.getSnapshot,
     )
 
-  const previousModeRef =
-    useRef(mode)
+  const filteredCommands =
+    useMemo(
+      () =>
+        filterCommands(
+          commands,
+          query,
+        ),
+      [
+        commands,
+        query,
+      ],
+    )
 
-  const hasCanvas =
-    model.activeCanvas !== null
-
-  const dockSidebar =
-    mode !== 'narrow' &&
-    isSidebarOpen
-
-  const dockInspector =
-    mode === 'wide' &&
-    isInspectorOpen &&
-    hasCanvas
+  const activeCommand =
+    filteredCommands[activeIndex]
 
   useEffect(() => {
-    const previousMode =
-      previousModeRef.current
-
-    if (previousMode === mode) {
+    if (!open) {
       return
     }
 
-    previousModeRef.current = mode
+    setQuery('')
+    setActiveIndex(0)
 
-    if (mode === 'compact') {
-      setInspectorOpen(false)
-    }
-
-    if (mode === 'narrow') {
-      setSidebarOpen(false)
-      setInspectorOpen(false)
-    }
-  }, [
-    mode,
-  ])
-
-  useEffect(() => {
-    const handlePointerMove = (
-      event: PointerEvent,
-    ) => {
-      if (
-        !isResizing ||
-        !rootRef.current
-      ) {
-        return
-      }
-
-      const rootRectangle =
-        rootRef.current
-          .getBoundingClientRect()
-
-      const computedStyle =
-        window.getComputedStyle(
-          rootRef.current,
-        )
-
-      const railWidth =
-        Number.parseFloat(
-          computedStyle
-            .getPropertyValue(
-              '--activity-rail-width',
-            ),
-        ) || 48
-
-      const nextWidth =
-        event.clientX -
-        rootRectangle.left -
-        railWidth
-
-      setSidebarWidth(
-        Math.max(
-          SIDEBAR_MIN,
-          Math.min(
-            SIDEBAR_MAX,
-            nextWidth,
-          ),
-        ),
+    const animationFrame =
+      window.requestAnimationFrame(
+        () => {
+          inputRef.current?.focus()
+        },
       )
-    }
-
-    const stopResize = () => {
-      setResizing(false)
-
-      document.body.style
-        .removeProperty('cursor')
-
-      document.body.style
-        .removeProperty(
-          'user-select',
-        )
-    }
-
-    const handleKeyDown = (
-      event: KeyboardEvent,
-    ) => {
-      if (
-        event.key === 'Escape' &&
-        isResizing
-      ) {
-        stopResize()
-      }
-    }
-
-    window.addEventListener(
-      'pointermove',
-      handlePointerMove,
-    )
-
-    window.addEventListener(
-      'pointerup',
-      stopResize,
-    )
-
-    window.addEventListener(
-      'pointercancel',
-      stopResize,
-    )
-
-    window.addEventListener(
-      'blur',
-      stopResize,
-    )
-
-    document.addEventListener(
-      'keydown',
-      handleKeyDown,
-    )
 
     return () => {
-      window.removeEventListener(
-        'pointermove',
-        handlePointerMove,
+      window.cancelAnimationFrame(
+        animationFrame,
       )
-
-      window.removeEventListener(
-        'pointerup',
-        stopResize,
-      )
-
-      window.removeEventListener(
-        'pointercancel',
-        stopResize,
-      )
-
-      window.removeEventListener(
-        'blur',
-        stopResize,
-      )
-
-      document.removeEventListener(
-        'keydown',
-        handleKeyDown,
-      )
-
-      document.body.style
-        .removeProperty('cursor')
-
-      document.body.style
-        .removeProperty(
-          'user-select',
-        )
     }
   }, [
-    isResizing,
+    open,
   ])
 
   useEffect(() => {
     if (
-      mode === 'wide' ||
-      (
-        !isSidebarOpen &&
-        !isInspectorOpen
-      )
+      activeIndex <
+      filteredCommands.length
     ) {
       return
     }
 
-    const handleKeyDown = (
-      event: KeyboardEvent,
-    ) => {
-      if (event.key !== 'Escape') {
-        return
-      }
-
-      event.preventDefault()
-      setSidebarOpen(false)
-      setInspectorOpen(false)
-    }
-
-    document.addEventListener(
-      'keydown',
-      handleKeyDown,
+    setActiveIndex(
+      Math.max(
+        0,
+        filteredCommands.length - 1,
+      ),
     )
-
-    return () => {
-      document.removeEventListener(
-        'keydown',
-        handleKeyDown,
-      )
-    }
   }, [
-    isInspectorOpen,
-    isSidebarOpen,
-    mode,
+    activeIndex,
+    filteredCommands.length,
   ])
 
-  const openSidebar = () => {
-    if (mode === 'narrow') {
-      setInspectorOpen(false)
-    }
+  const executeCommand = (
+    command: RegisteredCommand,
+  ) => {
+    onOpenChange(false)
 
-    setSidebarOpen(true)
+    void registry.execute(
+      command.id,
+    )
   }
 
-  const openInspector = () => {
-    if (mode !== 'wide') {
-      setSidebarOpen(false)
-    }
-
-    setInspectorOpen(true)
-  }
-
-  const toggleSidebar = () => {
-    if (isSidebarOpen) {
-      setSidebarOpen(false)
+  const moveActiveIndex = (
+    direction: -1 | 1,
+  ) => {
+    if (
+      filteredCommands.length === 0
+    ) {
+      setActiveIndex(0)
       return
     }
 
-    openSidebar()
+    setActiveIndex(
+      (currentIndex) => {
+        const nextIndex =
+          currentIndex + direction
+
+        if (nextIndex < 0) {
+          return (
+            filteredCommands.length - 1
+          )
+        }
+
+        if (
+          nextIndex >=
+          filteredCommands.length
+        ) {
+          return 0
+        }
+
+        return nextIndex
+      },
+    )
   }
 
-  const columns = useMemo(
-    () =>
-      [
-        'var(--activity-rail-width)',
-
-        dockSidebar
-          ? sidebarWidth + 'px'
-          : '0px',
-
-        'minmax(0, 1fr)',
-
-        dockInspector
-          ? 'var(--inspector-width)'
-          : '0px',
-      ].join(' '),
-    [
-      dockInspector,
-      dockSidebar,
-      sidebarWidth,
-    ],
-  )
-
-  const rows = hasCanvas
-    ? [
-        'var(--chrome-height)',
-        'minmax(0, 1fr)',
-        'var(--status-height)',
-      ].join(' ')
-    : [
-        'var(--chrome-height)',
-        'minmax(0, 1fr)',
-      ].join(' ')
-
-  const chrome = (
-    <header
-      className={[
-        'col-span-full row-1',
-        'min-h-0 min-w-0',
-        'border-b border-divider',
-        'bg-chrome',
-      ].join(' ')}
+  return (
+    <Dialog
+      open={open}
+      className="max-w-xl"
+      description="搜索并执行工作区命令"
+      onOpenChange={onOpenChange}
+      title="命令面板"
     >
-      {renderChrome({
-        isSidebarOpen,
-        sidebarWidth:
-          dockSidebar
-            ? sidebarWidth
-            : 0,
-
-        tabs: model.tabs,
-
-        onSidebarToggle:
-          toggleSidebar,
-
-        onActivateCanvas:
-          actions.activateCanvas,
-
-        onCloseCanvas:
-          actions.closeCanvas,
-
-        onCreateCanvas:
-          actions.createCanvas,
-      })}
-    </header>
-  )
-
-  const rail = (
-    <div
-      className={[
-        'row-[2/-1]',
-        'min-h-0',
-        'border-r',
-        'border-divider',
-        'bg-sidebar',
-      ].join(' ')}
-      style={{
-        gridColumn: 1,
-      }}
-    >
-      <ActivityRail
-        activeItemId={
-          activeNavigationItem
-        }
-        onItemActivate={(item) => {
-          setActiveNavigationItem(
-            item,
-          )
-
-          openSidebar()
-        }}
-        onSettingsOpen={
-          actions.openSettingsWindow
-        }
-      />
-    </div>
-  )
-
-  const sidebarContent = (
-    <WorkspaceSidebar
-      activeNavigationItem={
-        activeNavigationItem
-      }
-      onActivatePage={
-        actions.activatePage
-      }
-      onClose={() => {
-        setSidebarOpen(false)
-      }}
-      onCreatePage={
-        actions.createPage
-      }
-      pages={pages}
-    />
-  )
-
-  const sidebar = (
-    <>
       <div
         className={[
-          'relative row-[2/-1]',
-          'min-h-0 min-w-0',
-          'border-r',
+          'flex items-center gap-2',
+          'border-b',
           'border-divider',
-          'bg-sidebar',
+          'px-4',
         ].join(' ')}
-        style={{
-          gridColumn: 2,
-        }}
       >
-        {dockSidebar
-          ? sidebarContent
-          : null}
-
-        {dockSidebar ? (
-          <SidebarSplitter
-            max={SIDEBAR_MAX}
-            min={SIDEBAR_MIN}
-            onCollapse={() => {
-              setSidebarOpen(false)
-            }}
-            onResize={
-              setSidebarWidth
-            }
-            onResizeStart={() => {
-              setResizing(true)
-            }}
-            width={sidebarWidth}
-          />
-        ) : null}
-      </div>
-
-      {mode === 'narrow' &&
-      isSidebarOpen ? (
-        <div
+        <Search
+          aria-hidden="true"
           className={[
-            'fixed inset-x-0',
-            'bottom-0',
-            'top-[var(--chrome-height)]',
-            'z-[var(--ui-z-popover)]',
+            'size-4',
+            'text-muted-foreground',
+          ].join(' ')}
+        />
+
+        <Input
+          ref={inputRef}
+          aria-activedescendant={
+            activeCommand
+              ? 'command-' +
+                activeCommand.id
+              : undefined
+          }
+          aria-autocomplete="list"
+          aria-controls="command-palette-results"
+          aria-expanded={open}
+          aria-label="搜索命令"
+          className={[
+            'h-12 border-0',
+            'px-0 shadow-none',
+            'focus-visible:ring-0',
+          ].join(' ')}
+          onChange={(event) => {
+            setQuery(
+              event.target.value,
+            )
+
+            setActiveIndex(0)
+          }}
+          onKeyDown={(event) => {
+            switch (event.key) {
+              case 'ArrowDown':
+                event.preventDefault()
+                moveActiveIndex(1)
+                break
+
+              case 'ArrowUp':
+                event.preventDefault()
+                moveActiveIndex(-1)
+                break
+
+              case 'Home':
+                event.preventDefault()
+                setActiveIndex(0)
+                break
+
+              case 'End':
+                event.preventDefault()
+
+                setActiveIndex(
+                  Math.max(
+                    0,
+                    filteredCommands.length -
+                      1,
+                  ),
+                )
+                break
+
+              case 'Enter':
+                if (!activeCommand) {
+                  return
+                }
+
+                event.preventDefault()
+
+                executeCommand(
+                  activeCommand,
+                )
+                break
+            }
+          }}
+          placeholder="输入命令名称…"
+          role="combobox"
+          value={query}
+        />
+
+        <kbd
+          className={[
+            'rounded border',
+            'bg-muted',
+            'px-1.5 py-0.5',
+            'text-[10px]',
+            'text-muted-foreground',
           ].join(' ')}
         >
-          <button
-            aria-label="关闭工作区导航"
-            className={[
-              'absolute inset-0',
-              'cursor-default',
-              'bg-black/35',
-            ].join(' ')}
-            onClick={() => {
-              setSidebarOpen(false)
-            }}
-            type="button"
-          />
+          Esc
+        </kbd>
+      </div>
 
-          <aside
-            aria-label="工作区导航"
-            className={[
-              'relative',
-              'ml-[var(--activity-rail-width)]',
-              'h-full',
-              'w-[min(82vw,320px)]',
-              'border-r',
-              'border-divider',
-              'bg-sidebar',
-              'shadow-2xl',
-            ].join(' ')}
-          >
-            <div className="relative h-full">
-              {sidebarContent}
-
-              <Button
-                aria-label="关闭侧边栏"
-                className={[
-                  'absolute',
-                  'right-2 top-2',
-                ].join(' ')}
-                onClick={() => {
-                  setSidebarOpen(false)
-                }}
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <PanelLeftClose
-                  aria-hidden="true"
-                  className="size-4"
-                />
-              </Button>
-            </div>
-          </aside>
-        </div>
-      ) : null}
-    </>
-  )
-
-  const canvas = (
-    <section
-      aria-label="内容区"
-      className={[
-        'row-2',
-        'min-h-0 min-w-0',
-        'overflow-hidden',
-      ].join(' ')}
-      style={{
-        gridColumn: 3,
-      }}
-    >
-      <main
+      <div
+        id="command-palette-results"
         className={[
-          'relative h-full',
-          'min-h-0 min-w-0',
-          'overflow-hidden',
+          'max-h-80',
+          'overflow-y-auto',
+          'p-2',
         ].join(' ')}
+        role="listbox"
       >
-        {hasCanvas
-          ? editor
-          : (
-              <NoCanvasSurface
-                onCreateDocument={
-                  actions.createCanvas
+        {filteredCommands.length >
+        0 ? (
+          filteredCommands.map(
+            (
+              command,
+              index,
+            ) => (
+              <button
+                key={command.id}
+                id={
+                  'command-' +
+                  command.id
                 }
-                onOpenDocument={
-                  actions.openCanvas
+                aria-selected={
+                  index === activeIndex
                 }
-              />
-            )}
-      </main>
-    </section>
-  )
-
-  const inspectorContent = (
-    <InspectorHost>
-      {inspector}
-    </InspectorHost>
-  )
-
-  const inspectorRegion =
-    hasCanvas ? (
-      <>
-        <aside
-          aria-label="属性检查器"
-          className={
-            dockInspector
-              ? [
-                  'row-[2/-1]',
-                  'min-h-0 min-w-0',
-                  'border-l',
-                  'border-divider',
-                ].join(' ')
-              : 'pointer-events-none'
-          }
-          style={{
-            gridColumn: 4,
-          }}
-        >
-          {dockInspector ? (
-            <div className="relative h-full">
-              <Button
-                aria-label="收起属性面板"
                 className={[
-                  'absolute -left-8',
-                  'top-3 z-30',
-                  'size-7',
-                  'rounded-r-none',
+                  'flex min-h-11',
+                  'w-full items-center',
+                  'gap-3 rounded-md',
+                  'px-3 text-left',
+                  'text-sm outline-none',
+                  'hover:bg-accent',
+                  'aria-selected:bg-accent',
+                  'focus-visible:ring-2',
+                  'focus-visible:ring-ring',
                 ].join(' ')}
                 onClick={() => {
-                  setInspectorOpen(false)
+                  executeCommand(
+                    command,
+                  )
                 }}
-                size="icon"
+                onFocus={() => {
+                  setActiveIndex(index)
+                }}
+                onMouseEnter={() => {
+                  setActiveIndex(index)
+                }}
+                role="option"
                 type="button"
-                variant="outline"
               >
-                <PanelRightClose
+                <Command
                   aria-hidden="true"
-                  className="size-3.5"
+                  className={[
+                    'size-4',
+                    'text-muted-foreground',
+                  ].join(' ')}
                 />
-              </Button>
 
-              {inspectorContent}
-            </div>
-          ) : null}
-        </aside>
+                <span
+                  className={[
+                    'min-w-0 flex-1',
+                    'truncate',
+                  ].join(' ')}
+                >
+                  {command.label}
+                </span>
 
-        {!dockInspector &&
-        !isInspectorOpen ? (
-          <Button
-            aria-expanded={false}
-            aria-label="展开属性面板"
-            className={[
-              'fixed right-0',
-              'top-[calc(var(--chrome-height)+12px)]',
-              'z-30',
-              'rounded-r-none',
-            ].join(' ')}
-            onClick={openInspector}
-            size="icon"
-            type="button"
-            variant="outline"
-          >
-            <PanelRightOpen
-              aria-hidden="true"
-              className="size-4"
-            />
-          </Button>
-        ) : null}
+                {command.category ? (
+                  <span
+                    className={[
+                      'text-xs',
+                      'text-muted-foreground',
+                    ].join(' ')}
+                  >
+                    {command.category}
+                  </span>
+                ) : null}
 
-        {mode !== 'wide' &&
-        isInspectorOpen ? (
-          <div
-            className={[
-              'fixed inset-x-0',
-              'bottom-0',
-              'top-[var(--chrome-height)]',
-              'z-[var(--ui-z-popover)]',
-            ].join(' ')}
-          >
-            <button
-              aria-label="关闭属性检查器"
-              className={[
-                'absolute inset-0',
-                'cursor-default',
-                'bg-black/35',
-              ].join(' ')}
-              onClick={() => {
-                setInspectorOpen(false)
-              }}
-              type="button"
-            />
-
-            <aside
-              aria-label="属性检查器"
-              className={[
-                'relative ml-auto',
-                'h-full',
-                'w-[min(92vw,340px)]',
-                'border-l',
-                'border-divider',
-                'bg-sidebar',
-                'shadow-2xl',
-              ].join(' ')}
-            >
-              {inspectorContent}
-            </aside>
-          </div>
-        ) : null}
-      </>
-    ) : null
-
-  const status = hasCanvas ? (
-    <div
-      className="min-w-0"
-      style={{
-        gridColumn: 3,
-        gridRow: 3,
-      }}
-    >
-      <StatusBarHost
-        left={statusLeft}
-        right={statusRight}
-      />
-    </div>
-  ) : null
-
-  return (
-    <TooltipProvider
-      delayDuration={450}
-    >
-      <WorkspaceFrame
-        rootRef={rootRef}
-        chrome={chrome}
-        rail={rail}
-        sidebar={sidebar}
-        canvas={canvas}
-        inspector={inspectorRegion}
-        statusBar={status}
-        overlays={
-          <>
-            {assistantOverlay}
-            {overlays}
-          </>
-        }
-        gridTemplateColumns={
-          columns
-        }
-        gridTemplateRows={rows}
-      />
-    </TooltipProvider>
+                {command.shortcut ? (
+                  <kbd
+                    className={[
+                      'text-xs',
+                      'text-muted-foreground',
+                    ].join(' ')}
+                  >
+                    {command.shortcut}
+                  </kbd>
+                ) : null}
+              </button>
+            ),
+          )
+        ) : (
+          <EmptyState
+            description="尝试输入其他命令名称或分类。"
+            title="没有匹配的命令"
+          />
+        )}
+      </div>
+    </Dialog>
   )
 }
-`,
+
+function filterCommands(
+  commands:
+    readonly RegisteredCommand[],
+  query: string,
+): readonly RegisteredCommand[] {
+  const normalizedQuery =
+    query
+      .trim()
+      .toLocaleLowerCase()
+
+  if (!normalizedQuery) {
+    return commands
+  }
+
+  return commands.filter(
+    (command) => {
+      const searchableText = [
+        command.category ?? '',
+        command.label,
+        command.id,
+      ]
+        .join(' ')
+        .toLocaleLowerCase()
+
+      return searchableText.includes(
+        normalizedQuery,
+      )
+    },
+  )
 }
+`
 
 function absolute(relativePath) {
-  return path.join(ROOT, relativePath)
+  return path.join(
+    ROOT,
+    relativePath,
+  )
 }
 
 function assertRepository() {
-  const packageFile = absolute('package.json')
+  const packageFile =
+    absolute('package.json')
 
   if (!fs.existsSync(packageFile)) {
-    throw new Error('请在 Canvas 仓库根目录运行脚本。')
+    throw new Error(
+      '请在 Canvas 仓库根目录运行脚本。',
+    )
   }
 
-  const packageJson = JSON.parse(fs.readFileSync(packageFile, 'utf8'))
+  const packageJson = JSON.parse(
+    fs.readFileSync(
+      packageFile,
+      'utf8',
+    ),
+  )
 
-  if (packageJson.name !== 'hybrid-canvas') {
-    throw new Error('当前目录不是 hybrid-canvas 仓库。')
+  if (
+    packageJson.name !==
+    'hybrid-canvas'
+  ) {
+    throw new Error(
+      '当前目录不是 hybrid-canvas 仓库。',
+    )
   }
 
-  for (const relativePath of Object.keys(GENERATED_FILES)) {
-    if (!fs.existsSync(absolute(relativePath))) {
-      throw new Error('缺少目标文件：' + relativePath)
-    }
+  if (
+    !fs.existsSync(
+      absolute(TARGET),
+    )
+  ) {
+    throw new Error(
+      '缺少目标文件：' + TARGET,
+    )
   }
 
   if (ALLOW_DIRTY) {
     return
   }
 
-  const status = execFileSync('git', ['status', '--porcelain'], {
-    cwd: ROOT,
-    encoding: 'utf8',
-  }).trim()
+  const status = execFileSync(
+    'git',
+    ['status', '--porcelain'],
+    {
+      cwd: ROOT,
+      encoding: 'utf8',
+    },
+  ).trim()
 
   if (status.length > 0) {
-    throw new Error('Git 工作区不干净。' + '请先提交，或显式使用 --allow-dirty。')
-  }
-}
-
-function buildChanges() {
-  return Object.entries(GENERATED_FILES)
-    .map(([relativePath, nextContent]) => ({
-      relativePath,
-
-      currentContent: fs.readFileSync(absolute(relativePath), 'utf8'),
-
-      nextContent,
-    }))
-    .filter((change) => change.currentContent !== change.nextContent)
-}
-
-function applyChanges(changes) {
-  for (const change of changes) {
-    fs.mkdirSync(path.dirname(absolute(change.relativePath)), {
-      recursive: true,
-    })
-
-    fs.writeFileSync(absolute(change.relativePath), change.nextContent, 'utf8')
-  }
-
-  execFileSync('git', ['diff', '--check'], {
-    cwd: ROOT,
-    stdio: 'inherit',
-  })
-}
-
-function printPlan(changes) {
-  console.log('Phase 3 将修改 ' + changes.length + ' 个文件：')
-
-  for (const change of changes) {
-    console.log('- ' + change.relativePath)
+    throw new Error(
+      'Git 工作区不干净。' +
+        '请先提交，或显式使用 --allow-dirty。',
+    )
   }
 }
 
 function main() {
   assertRepository()
 
-  const changes = buildChanges()
+  const currentSource =
+    fs.readFileSync(
+      absolute(TARGET),
+      'utf8',
+    )
 
-  if (changes.length === 0) {
-    console.log('Phase 3 没有需要应用的修改。')
+  if (
+    currentSource === NEXT_SOURCE
+  ) {
+    console.log(
+      'Phase 4A 没有需要应用的修改。',
+    )
 
     return
   }
 
-  printPlan(changes)
+  console.log(
+    'Phase 4A 将重构：',
+  )
+
+  console.log(
+    '- ' + TARGET,
+  )
 
   if (!APPLY) {
     console.log('')
-    console.log('当前为预检模式，没有写入文件。')
+    console.log(
+      '当前为预检模式，没有写入文件。',
+    )
 
-    console.log('应用命令：')
+    console.log(
+      '应用命令：',
+    )
 
-    console.log('node tooling/script/refactor-ui-phase-3.mjs --apply')
+    console.log(
+      'node tooling/script/refactor-ui-phase-4a.mjs --apply',
+    )
 
     return
   }
 
-  applyChanges(changes)
+  fs.writeFileSync(
+    absolute(TARGET),
+    NEXT_SOURCE,
+    'utf8',
+  )
+
+  execFileSync(
+    'git',
+    ['diff', '--check'],
+    {
+      cwd: ROOT,
+      stdio: 'inherit',
+    },
+  )
 
   console.log('')
-  console.log('Phase 3 Workspace 响应式重构已写入。')
+  console.log(
+    'Phase 4A Command Palette 重构已写入。',
+  )
 
   console.log('')
-  console.log('请依次执行：')
+  console.log('请执行：')
   console.log('pnpm format')
   console.log('pnpm lint')
   console.log('pnpm typecheck')
@@ -1019,15 +551,23 @@ function main() {
   console.log('pnpm build:desktop')
 
   console.log('')
-  console.log('放弃本阶段未提交修改：')
+  console.log(
+    '放弃本阶段修改：',
+  )
 
-  console.log('git restore -- ' + changes.map((change) => change.relativePath).join(' '))
+  console.log(
+    'git restore -- ' + TARGET,
+  )
 }
 
 try {
   main()
 } catch (error) {
-  console.error(error instanceof Error ? error.message : error)
+  console.error(
+    error instanceof Error
+      ? error.message
+      : error,
+  )
 
   process.exitCode = 1
 }
