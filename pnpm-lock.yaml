@@ -123,9 +123,6 @@ importers:
       '@hybrid-canvas/document':
         specifier: workspace:*
         version: link:../../editor/document
-      '@hybrid-canvas/file':
-        specifier: workspace:*
-        version: link:../../editor/persistence
       '@hybrid-canvas/flowchart':
         specifier: workspace:*
         version: link:../../features/flowchart
@@ -141,9 +138,6 @@ importers:
       '@hybrid-canvas/workspace':
         specifier: workspace:*
         version: link:../../features/workspace
-      '@tauri-apps/api':
-        specifier: catalog:tauri
-        version: 2.11.1
       lucide-react:
         specifier: 'catalog:'
         version: 1.25.0(react@19.2.7)

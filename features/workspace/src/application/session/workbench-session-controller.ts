@@ -3,19 +3,49 @@ import type {
   CanvasSessionId,
   CanvasTabViewModel,
   CreateCanvasRequest,
+  OpenWorkspaceSurfaceRequest,
   WorkbenchSessionStore,
+  WorkbenchSurfaceViewModel,
+  WorkbenchTabId,
+  WorkbenchTabViewModel,
   WorkbenchViewModel,
+  WorkspaceSurfaceViewModel,
+  WorkspaceTabViewModel,
 } from '../../contracts/public-api'
-import { EMPTY_WORKBENCH_VIEW_MODEL } from '../../contracts/public-api'
+import { EMPTY_WORKBENCH_VIEW_MODEL, START_TAB_ID } from '../../contracts/public-api'
 
 export function createWorkbenchSessionController(): WorkbenchSessionStore {
   let snapshot = EMPTY_WORKBENCH_VIEW_MODEL
-  const canvases = new Map<CanvasSessionId, ActiveCanvasViewModel>()
   const listeners = new Set<() => void>()
+  const surfaces = new Map<WorkbenchTabId, WorkbenchSurfaceViewModel>([
+    [START_TAB_ID, EMPTY_WORKBENCH_VIEW_MODEL.activeSurface],
+  ])
 
-  function emit(nextSnapshot: WorkbenchViewModel): void {
+  function publish(tabs: readonly WorkbenchTabViewModel[], activeTabId: WorkbenchTabId): void {
+    const activeSurface = surfaces.get(activeTabId)
+
+    if (!activeSurface) {
+      throw new Error('WORKBENCH_SURFACE_NOT_FOUND')
+    }
+
+    const normalizedTabs = tabs.map((tab) => ({
+      ...tab,
+      isActive: tab.id === activeTabId,
+    }))
+
+    const activeCanvas = activeSurface.kind === 'canvas' ? activeSurface : null
+
+    const nextSnapshot: WorkbenchViewModel = {
+      activeTabId,
+      activeSessionId: activeCanvas?.sessionId ?? null,
+      tabs: normalizedTabs,
+      activeSurface,
+      activeCanvas,
+    }
+
     assertWorkbenchInvariants(nextSnapshot)
     snapshot = nextSnapshot
+
     for (const listener of listeners) {
       listener()
     }
@@ -24,106 +54,192 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
   function createCanvas(request: CreateCanvasRequest): void {
     const canvasId = request.canvasId ?? crypto.randomUUID()
     const sessionId = request.sessionId ?? crypto.randomUUID()
-    const activeCanvas: ActiveCanvasViewModel = {
-      canvasId,
-      sessionId,
-      title: request.title,
-    }
-    canvases.set(sessionId, activeCanvas)
-    const tabs = snapshot.tabs.map((tab): CanvasTabViewModel => ({ ...tab, isActive: false }))
-    emit({
-      activeSessionId: sessionId,
-      activeCanvas,
-      tabs: [
-        ...tabs,
-        {
-          sessionId,
-          canvasId,
-          title: request.title,
-          isActive: true,
-          canClose: true,
-        },
-      ],
-    })
-  }
+    const existing = findCanvasTabBySessionId(snapshot.tabs, sessionId)
 
-  function activateCanvas(sessionId: CanvasSessionId): void {
-    const target = snapshot.tabs.find((tab) => tab.sessionId === sessionId)
-    if (!target || target.isActive) {
+    if (existing) {
+      activateTab(existing.id)
       return
     }
-    const activeCanvas = canvases.get(sessionId)
-    if (!activeCanvas) {
-      throw new Error('WORKBENCH_CANVAS_NOT_FOUND')
+
+    const tabId = 'canvas:' + sessionId
+
+    const surface: ActiveCanvasViewModel = {
+      kind: 'canvas',
+      tabId,
+      sessionId,
+      canvasId,
+      title: request.title,
     }
-    emit({
-      activeSessionId: sessionId,
-      activeCanvas,
-      tabs: snapshot.tabs.map((tab) => ({ ...tab, isActive: tab.sessionId === sessionId })),
-    })
+
+    const tab: CanvasTabViewModel = {
+      id: tabId,
+      kind: 'canvas',
+      sessionId,
+      canvasId,
+      title: request.title,
+      isActive: true,
+      canClose: true,
+    }
+
+    surfaces.set(tabId, surface)
+    publish([...snapshot.tabs, tab], tabId)
   }
 
-  function closeCanvas(sessionId: CanvasSessionId): void {
-    const closingIndex = snapshot.tabs.findIndex((tab) => tab.sessionId === sessionId)
+  function openWorkspaceSurface(request: OpenWorkspaceSurfaceRequest): void {
+    const tabId = 'workspace:' + request.surfaceId
+    const existing = snapshot.tabs.find((tab) => tab.id === tabId)
+
+    if (existing) {
+      activateTab(existing.id)
+      return
+    }
+
+    const surface: WorkspaceSurfaceViewModel = {
+      kind: 'workspace',
+      tabId,
+      surfaceId: request.surfaceId,
+      title: request.title,
+    }
+
+    const tab: WorkspaceTabViewModel = {
+      id: tabId,
+      kind: 'workspace',
+      surfaceId: request.surfaceId,
+      title: request.title,
+      isActive: true,
+      canClose: true,
+    }
+
+    surfaces.set(tabId, surface)
+    publish([...snapshot.tabs, tab], tabId)
+  }
+
+  function activateTab(tabId: WorkbenchTabId): void {
+    if (tabId === snapshot.activeTabId) {
+      return
+    }
+
+    if (!snapshot.tabs.some((tab) => tab.id === tabId)) {
+      return
+    }
+
+    publish(snapshot.tabs, tabId)
+  }
+
+  function closeTab(tabId: WorkbenchTabId): void {
+    const closingIndex = snapshot.tabs.findIndex((tab) => tab.id === tabId)
+
     if (closingIndex < 0) {
       return
     }
-    const remainingTabs = snapshot.tabs.filter((tab) => tab.sessionId !== sessionId)
-    canvases.delete(sessionId)
-    if (snapshot.activeSessionId !== sessionId) {
-      emit({ ...snapshot, tabs: remainingTabs })
+
+    const closingTab = snapshot.tabs[closingIndex]
+
+    if (!closingTab?.canClose) {
       return
     }
-    const nextTab = remainingTabs[Math.min(closingIndex, remainingTabs.length - 1)] ?? null
+
+    const remainingTabs = snapshot.tabs.filter((tab) => tab.id !== tabId)
+    surfaces.delete(tabId)
+
+    if (snapshot.activeTabId !== tabId) {
+      publish(remainingTabs, snapshot.activeTabId)
+      return
+    }
+
+    const adjacentIndex = Math.min(closingIndex, remainingTabs.length - 1)
+
+    const nextTab =
+      remainingTabs[adjacentIndex] ?? remainingTabs[adjacentIndex - 1] ?? remainingTabs[0]
+
     if (!nextTab) {
-      emit(EMPTY_WORKBENCH_VIEW_MODEL)
-      return
+      throw new Error('WORKBENCH_PERMANENT_TAB_MISSING')
     }
-    const activeCanvas = canvases.get(nextTab.sessionId)
-    if (!activeCanvas) {
-      throw new Error('WORKBENCH_CANVAS_NOT_FOUND')
+
+    publish(remainingTabs, nextTab.id)
+  }
+
+  function activateCanvas(sessionId: CanvasSessionId): void {
+    const tab = findCanvasTabBySessionId(snapshot.tabs, sessionId)
+
+    if (tab) {
+      activateTab(tab.id)
     }
-    emit({
-      activeSessionId: nextTab.sessionId,
-      activeCanvas,
-      tabs: remainingTabs.map((tab) => ({ ...tab, isActive: tab.sessionId === nextTab.sessionId })),
-    })
+  }
+
+  function closeCanvas(sessionId: CanvasSessionId): void {
+    const tab = findCanvasTabBySessionId(snapshot.tabs, sessionId)
+
+    if (tab) {
+      closeTab(tab.id)
+    }
   }
 
   return {
     getSnapshot: () => snapshot,
+
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+
     createCanvas,
+    openWorkspaceSurface,
+    activateTab,
+    closeTab,
     activateCanvas,
     closeCanvas,
   }
 }
 
+function findCanvasTabBySessionId(
+  tabs: readonly WorkbenchTabViewModel[],
+  sessionId: CanvasSessionId,
+): CanvasTabViewModel | undefined {
+  return tabs.find(
+    (tab): tab is CanvasTabViewModel => tab.kind === 'canvas' && tab.sessionId === sessionId,
+  )
+}
+
 function assertWorkbenchInvariants(snapshot: WorkbenchViewModel): void {
+  if (snapshot.tabs.length === 0) {
+    throw new Error('WORKBENCH_REQUIRES_PERMANENT_TAB')
+  }
+
+  const ids = new Set(snapshot.tabs.map((tab) => tab.id))
+
+  if (ids.size !== snapshot.tabs.length) {
+    throw new Error('WORKBENCH_DUPLICATE_TAB_ID')
+  }
+
+  const startTab = snapshot.tabs.find((tab) => tab.id === START_TAB_ID)
+
+  if (!startTab || startTab.kind !== 'start' || startTab.canClose) {
+    throw new Error('WORKBENCH_INVALID_START_TAB')
+  }
+
   const activeTabs = snapshot.tabs.filter((tab) => tab.isActive)
-  const sessionIds = new Set(snapshot.tabs.map((tab) => tab.sessionId))
-  if (sessionIds.size !== snapshot.tabs.length) {
-    throw new Error('WORKBENCH_DUPLICATE_SESSION_ID')
-  }
-  if (activeTabs.length > 1) {
-    throw new Error('WORKBENCH_MULTIPLE_ACTIVE_SESSIONS')
-  }
-  if (snapshot.activeSessionId === null) {
-    if (activeTabs.length !== 0 || snapshot.activeCanvas !== null) {
-      throw new Error('WORKBENCH_EMPTY_STATE_INCONSISTENT')
-    }
-    return
-  }
-  if (!sessionIds.has(snapshot.activeSessionId)) {
-    throw new Error('WORKBENCH_ACTIVE_SESSION_NOT_FOUND')
-  }
-  if (activeTabs[0]?.sessionId !== snapshot.activeSessionId) {
+
+  if (activeTabs.length !== 1 || activeTabs[0]?.id !== snapshot.activeTabId) {
     throw new Error('WORKBENCH_ACTIVE_TAB_INCONSISTENT')
   }
-  if (snapshot.activeCanvas?.sessionId !== snapshot.activeSessionId) {
-    throw new Error('WORKBENCH_ACTIVE_CANVAS_INCONSISTENT')
+
+  if (snapshot.activeSurface.tabId !== snapshot.activeTabId) {
+    throw new Error('WORKBENCH_ACTIVE_SURFACE_INCONSISTENT')
+  }
+
+  if (snapshot.activeSurface.kind === 'canvas') {
+    if (
+      snapshot.activeCanvas?.tabId !== snapshot.activeTabId ||
+      snapshot.activeSessionId !== snapshot.activeSurface.sessionId
+    ) {
+      throw new Error('WORKBENCH_ACTIVE_CANVAS_INCONSISTENT')
+    }
+
+    return
+  }
+
+  if (snapshot.activeCanvas !== null || snapshot.activeSessionId !== null) {
+    throw new Error('WORKBENCH_NON_CANVAS_SESSION_INCONSISTENT')
   }
 }
