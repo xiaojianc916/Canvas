@@ -21,6 +21,7 @@ export {
 export { EmptyState, ErrorState, LoadingState } from './components/ui/feedback'
 export { Field, type FieldControlIds, type FieldProps } from './components/ui/field'
 export { Input, type InputProps } from './components/ui/input'
+export { Label, type LabelProps } from './components/ui/label'
 export { ScrollArea, ScrollBar } from './components/ui/scroll-area'
 export {
   ComboboxEmpty,
@@ -44,7 +45,7 @@ export {
   type SelectTriggerProps,
 } from './components/ui/select'
 export { Separator } from './components/ui/separator'
-export { Switch } from './components/ui/switch'
+export { Switch, type SwitchProps } from './components/ui/switch'
 export { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 export {
   Tooltip,

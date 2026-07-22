@@ -4,6 +4,7 @@ import {
   Dialog,
   ErrorState,
   Field,
+  Label,
   LoadingState,
   Select,
   SelectContent,
@@ -15,7 +16,7 @@ import {
   Switch,
 } from '@hybrid-canvas/design-system'
 import type { AppSettings, SettingsStore, ThemeMode } from '@hybrid-canvas/settings'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 
 type SettingsSection = 'general' | 'canvas' | 'about'
 
@@ -610,27 +611,35 @@ interface SettingsToggleProps {
 }
 
 function SettingsToggle({ checked, label, description, onChange }: SettingsToggleProps) {
+  const descriptionId = useId()
+
   return (
     <div
       className={[
-        'flex min-h-14',
-        'items-center',
-        'justify-between',
-        'gap-5',
-        'border-b',
-        'border-divider',
+        'grid min-h-14 gap-2',
+        'border-b border-divider',
         'py-3',
       ].join(' ')}
     >
-      <div>
-        <div className="text-sm font-medium">{label}</div>
+      <Label className="flex w-fit cursor-pointer items-center gap-2">
+        <Switch
+          aria-describedby={descriptionId}
+          checked={checked}
+          onCheckedChange={onChange}
+        />
 
-        <p className={['mt-1 text-xs', 'leading-5', 'text-muted-foreground'].join(' ')}>
-          {description}
-        </p>
-      </div>
+        <span>{label}</span>
+      </Label>
 
-      <Switch aria-label={label} checked={checked} onCheckedChange={onChange} />
+      <p
+        className={[
+          'pl-11 text-xs leading-5',
+          'text-muted-foreground',
+        ].join(' ')}
+        id={descriptionId}
+      >
+        {description}
+      </p>
     </div>
   )
 }
