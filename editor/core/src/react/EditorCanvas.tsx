@@ -4,10 +4,7 @@ import { type Editor, Tldraw, type TldrawProps, useValue } from 'tldraw'
 
 import type { EditorSession } from '../runtime/editor-session'
 import { CanvasToolbar } from './CanvasToolbar'
-import { useBindEditorSession, useEditor } from './editor-context'
-
-const TLDRAW_LICENSE_KEY =
-  'tldraw-2026-10-28/WyJKRWdfbFdwZyIsWyIqIl0sMTYsIjIwMjYtMTAtMjgiXQ.lmi81fI8OPFbKs0/HJEW9FHFXxwCvSb/rS29gNvSO9+nXHlk/d62Tg4yzjBBRqfIqNb5Bcuo1lhf/JZ3DOeuYw'
+import { useBindEditorSession, useEditor, useTldrawLicenseKey } from './editor-context'
 
 export interface EditorCanvasProps {
   readonly session: EditorSession
@@ -16,6 +13,7 @@ export interface EditorCanvasProps {
 }
 
 export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasProps) {
+  const licenseKey = useTldrawLicenseKey()
   const [editor, setEditor] = useState<Editor | null>(null)
   const { registration, store } = session
   useBindEditorSession(isActive ? editor : null, isActive ? registration : null)
@@ -24,7 +22,7 @@ export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasP
   const tldrawProps = useMemo((): TldrawProps => {
     const base: TldrawProps = {
       hideUi: true,
-      licenseKey: TLDRAW_LICENSE_KEY,
+      licenseKey,
       store,
       onMount: setEditor,
       options: {
@@ -37,7 +35,7 @@ export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasP
       base.tools = registration.tools
     }
     return base
-  }, [store, registration, hasTools])
+  }, [store, registration, hasTools, licenseKey])
 
   useEffect(() => {
     if (!editor) {

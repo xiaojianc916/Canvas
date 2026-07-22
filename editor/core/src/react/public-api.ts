@@ -11,4 +11,9 @@ export {
   type EditorSessionHostEntry,
   type EditorSessionHostProps,
 } from './EditorSessionHost'
-export { EditorProvider, useEditor } from './editor-context'
+export {
+  EditorProvider,
+  type EditorProviderProps,
+  useEditor,
+  useTldrawLicenseKey,
+} from './editor-context'

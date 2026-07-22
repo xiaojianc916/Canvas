@@ -21,6 +21,7 @@ export interface AppShellRuntime {
   readonly termination: ApplicationTerminationCoordinator
   readonly mainWindow: MainWindowController
   readonly settings: SettingsStore
+  readonly tldrawLicenseKey: string
 }
 
 export interface AppShellProps {
@@ -167,7 +168,7 @@ export function AppShell({ runtime }: AppShellProps) {
   )
 
   return (
-    <EditorProvider>
+    <EditorProvider licenseKey={runtime.tldrawLicenseKey}>
       <UiErrorBoundary area="工作区">
         <WorkspaceContainer
           isWindowMaximized={isWindowMaximized}
@@ -230,9 +231,7 @@ export function AppShell({ runtime }: AppShellProps) {
   )
 }
 
-function useWindowMaximizedState(
-  mainWindow: MainWindowController,
-): boolean {
+function useWindowMaximizedState(mainWindow: MainWindowController): boolean {
   const [isMaximized, setMaximized] = useState(false)
 
   useEffect(() => {
@@ -245,10 +244,7 @@ function useWindowMaximizedState(
 
       void mainWindow.isMaximized().then(
         (nextIsMaximized) => {
-          if (
-            !active ||
-            currentVersion !== requestVersion
-          ) {
+          if (!active || currentVersion !== requestVersion) {
             return
           }
 
@@ -270,9 +266,7 @@ function useWindowMaximizedState(
 
     synchronizeMaximizedState()
 
-    void mainWindow.onResized(
-      synchronizeMaximizedState,
-    ).then(
+    void mainWindow.onResized(synchronizeMaximizedState).then(
       (nextUnsubscribe) => {
         if (!active) {
           nextUnsubscribe()

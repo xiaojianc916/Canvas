@@ -10,7 +10,9 @@ export interface MountedReactApplication {
 }
 
 export function mountReactApplication(container: HTMLElement): MountedReactApplication {
-  const runtime = createApplicationRuntime()
+  const runtime = createApplicationRuntime({
+    tldrawLicenseKey: readTldrawLicenseKey(),
+  })
   const root: Root = createRoot(container)
 
   root.render(
@@ -26,4 +28,14 @@ export function mountReactApplication(container: HTMLElement): MountedReactAppli
       runtime.dispose()
     },
   }
+}
+
+function readTldrawLicenseKey(): string {
+  const licenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY?.trim()
+
+  if (!licenseKey) {
+    throw new Error('VITE_TLDRAW_LICENSE_KEY_MISSING')
+  }
+
+  return licenseKey
 }

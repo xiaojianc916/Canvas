@@ -22,6 +22,10 @@ import {
   createApplicationTerminationCoordinator,
 } from '../application/termination/application-termination-coordinator'
 
+export interface CreateApplicationRuntimeOptions {
+  readonly tldrawLicenseKey: string
+}
+
 export interface ApplicationRuntime {
   readonly workspace: WorkbenchSessionStore
   readonly commands: CommandRegistry
@@ -29,10 +33,13 @@ export interface ApplicationRuntime {
   readonly termination: ApplicationTerminationCoordinator
   readonly mainWindow: MainWindowController
   readonly settings: SettingsStore
+  readonly tldrawLicenseKey: string
   readonly dispose: () => void
 }
 
-export function createApplicationRuntime(): ApplicationRuntime {
+export function createApplicationRuntime({
+  tldrawLicenseKey,
+}: CreateApplicationRuntimeOptions): ApplicationRuntime {
   const workspace = createWorkbenchSessionController()
   const commands = createCommandRegistry()
   const drawFiles = createDrawFileCommands()
@@ -89,6 +96,7 @@ export function createApplicationRuntime(): ApplicationRuntime {
     termination,
     mainWindow,
     settings,
+    tldrawLicenseKey,
 
     dispose() {
       termination.dispose()

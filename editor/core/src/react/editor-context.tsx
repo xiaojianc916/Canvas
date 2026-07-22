@@ -9,6 +9,7 @@ export type { ExtensionRegistration } from '../contracts/public-api'
 interface EditorContextValue {
   readonly editor: Editor | null
   readonly registration: ExtensionRegistration | null
+  readonly licenseKey: string
 }
 
 interface EditorBindingContextValue extends EditorContextValue {
@@ -22,7 +23,12 @@ interface EditorBindingContextValue extends EditorContextValue {
 
 const EditorCtx = createContext<EditorBindingContextValue | null>(null)
 
-export function EditorProvider({ children }: { readonly children: ReactNode }) {
+export interface EditorProviderProps {
+  readonly children: ReactNode
+  readonly licenseKey: string
+}
+
+export function EditorProvider({ children, licenseKey }: EditorProviderProps) {
   const [session, setSession] = useState<{
     readonly editor: Editor | null
     readonly registration: ExtensionRegistration | null
@@ -45,10 +51,11 @@ export function EditorProvider({ children }: { readonly children: ReactNode }) {
   const value = useMemo<EditorBindingContextValue>(
     () => ({
       ...session,
+      licenseKey,
       bindSession,
       unbindSession,
     }),
-    [session, bindSession, unbindSession],
+    [session, licenseKey, bindSession, unbindSession],
   )
 
   return <EditorCtx.Provider value={value}>{children}</EditorCtx.Provider>
@@ -56,6 +63,16 @@ export function EditorProvider({ children }: { readonly children: ReactNode }) {
 
 export function useEditor(): Editor | null {
   return useContext(EditorCtx)?.editor ?? null
+}
+
+export function useTldrawLicenseKey(): string {
+  const licenseKey = useContext(EditorCtx)?.licenseKey
+
+  if (!licenseKey) {
+    throw new Error('TLDRAW_LICENSE_KEY_NOT_CONFIGURED')
+  }
+
+  return licenseKey
 }
 
 export function useExtensionRegistration(): ExtensionRegistration | null {

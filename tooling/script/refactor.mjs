@@ -1,600 +1,1269 @@
-// refactor-sidebar-resize.mjs
-// 放在仓库根目录执行：
-// node refactor-sidebar-resize.mjs
+#!/usr/bin/env node
 
-import { readFile, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+/**
+ * 将硬编码的 tldraw License Key 移出 editor/core。
+ *
+ * 使用：
+ *   node tooling/script/refactor.mjs
+ *   node tooling/script/refactor.mjs --write
+ */
 
-const sidebarSplitterPath = resolve(
-  'features/workspace/src/presentation/shell/SidebarSplitter.tsx',
-)
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
-const workspaceShellPath = resolve(
-  'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
-)
+const SCRIPT_NAME =
+  '004-externalize-tldraw-license'
 
-const sidebarSplitterSource = `import {
-  type KeyboardEvent,
-  type PointerEvent,
-  useEffect,
-  useRef,
-} from 'react'
-
-export interface SidebarSplitterProps {
-  readonly width: number
-  readonly min: number
-  readonly max: number
-  readonly onResizeStart?: () => void
-  readonly onResize: (width: number) => void
-  readonly onResizeEnd?: () => void
-  readonly onCollapse: () => void
+const PATHS = {
+  editorCanvas:
+    'editor/core/src/react/EditorCanvas.tsx',
+  editorContext:
+    'editor/core/src/react/editor-context.tsx',
+  reactPublicApi:
+    'editor/core/src/react/public-api.ts',
+  appShell:
+    'apps/desktop/src/presentation/AppShell.tsx',
+  application:
+    'apps/desktop/src/bootstrap/application.ts',
+  reactRoot:
+    'apps/desktop/src/bootstrap/react-root.tsx',
+  viteEnv:
+    'apps/desktop/src/vite-env.d.ts',
+  envExample:
+    'apps/desktop/.env.example',
+  envLocal:
+    'apps/desktop/.env.local',
+  gitignore:
+    '.gitignore',
 }
 
-interface SidebarDragSession {
-  readonly pointerId: number
-  readonly element: HTMLDivElement
-  readonly startX: number
-  readonly startWidth: number
-  readonly previousBodyCursor: string
-  readonly previousBodyUserSelect: string
-}
+const argv = process.argv.slice(2)
+const writeMode = argv.includes('--write')
 
-export function SidebarSplitter({
-  width,
-  min,
-  max,
-  onResizeStart,
-  onResize,
-  onResizeEnd,
-  onCollapse,
-}: SidebarSplitterProps) {
-  const dragSessionRef =
-    useRef<SidebarDragSession | null>(null)
+main()
 
-  const resizeEndRef = useRef(onResizeEnd)
+function main() {
+  validateArguments()
 
-  resizeEndRef.current = onResizeEnd
+  const root = findRepositoryRoot()
 
-  const clamp = (nextWidth: number) => {
-    return Math.max(
-      min,
-      Math.min(max, nextWidth),
-    )
-  }
+  validateRepository(root)
 
-  const restoreBodyInteraction = (
-    session: SidebarDragSession,
-  ) => {
-    document.body.style.cursor =
-      session.previousBodyCursor
-
-    document.body.style.userSelect =
-      session.previousBodyUserSelect
-  }
-
-  const finishResize = () => {
-    const session = dragSessionRef.current
-
-    if (!session) {
-      return
-    }
-
-    /*
-     * 先清除会话，再释放 pointer capture。
-     * releasePointerCapture 会触发 lostpointercapture，
-     * 先清除可以避免重复执行结束逻辑。
-     */
-    dragSessionRef.current = null
-
-    if (
-      session.element.hasPointerCapture(
-        session.pointerId,
-      )
-    ) {
-      session.element.releasePointerCapture(
-        session.pointerId,
-      )
-    }
-
-    restoreBodyInteraction(session)
-    resizeEndRef.current?.()
-  }
-
-  useEffect(() => {
-    return () => {
-      const session = dragSessionRef.current
-
-      if (!session) {
-        return
-      }
-
-      dragSessionRef.current = null
-      restoreBodyInteraction(session)
-    }
-  }, [])
-
-  const handlePointerDown = (
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
-    if (event.button !== 0) {
-      return
-    }
-
-    event.preventDefault()
-    event.stopPropagation()
-
-    /*
-     * 理论上不会同时存在两个拖拽会话，
-     * 但如果旧会话因平台事件异常尚未结束，
-     * 在开始新会话前先完成清理。
-     */
-    finishResize()
-
-    const element = event.currentTarget
-
-    const session: SidebarDragSession = {
-      pointerId: event.pointerId,
-      element,
-      startX: event.clientX,
-      startWidth: width,
-      previousBodyCursor:
-        document.body.style.cursor,
-      previousBodyUserSelect:
-        document.body.style.userSelect,
-    }
-
-    dragSessionRef.current = session
-
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-
-    /*
-     * Pointer Capture 是拖拽可靠性的关键。
-     * 即使指针进入 tldraw 画布、其他面板或离开
-     * 分隔条的可见区域，后续事件仍发送给此元素。
-     */
-    element.setPointerCapture(event.pointerId)
-
-    onResizeStart?.()
-  }
-
-  const handlePointerMove = (
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
-    const session = dragSessionRef.current
-
-    if (
-      !session ||
-      session.pointerId !== event.pointerId
-    ) {
-      return
-    }
-
-    event.preventDefault()
-
-    const deltaX =
-      event.clientX - session.startX
-
-    const nextWidth = clamp(
-      session.startWidth + deltaX,
-    )
-
-    onResize(nextWidth)
-  }
-
-  const handlePointerUp = (
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
-    const session = dragSessionRef.current
-
-    if (
-      !session ||
-      session.pointerId !== event.pointerId
-    ) {
-      return
-    }
-
-    event.preventDefault()
-    finishResize()
-  }
-
-  const handlePointerCancel = (
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
-    const session = dragSessionRef.current
-
-    if (
-      !session ||
-      session.pointerId !== event.pointerId
-    ) {
-      return
-    }
-
-    finishResize()
-  }
-
-  const handleLostPointerCapture = (
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
-    const session = dragSessionRef.current
-
-    if (
-      !session ||
-      session.pointerId !== event.pointerId
-    ) {
-      return
-    }
-
-    finishResize()
-  }
-
-  const handleKeyDown = (
-    event: KeyboardEvent<HTMLDivElement>,
-  ) => {
-    switch (event.key) {
-      case 'ArrowLeft':
-        event.preventDefault()
-        onResize(clamp(width - 16))
-        break
-
-      case 'ArrowRight':
-        event.preventDefault()
-        onResize(clamp(width + 16))
-        break
-
-      case 'Home':
-        event.preventDefault()
-        onResize(min)
-        break
-
-      case 'End':
-        event.preventDefault()
-        onResize(max)
-        break
-    }
-  }
-
-  return (
-    <div
-      aria-label="调整侧边栏宽度"
-      aria-orientation="vertical"
-      aria-valuemax={max}
-      aria-valuemin={min}
-      aria-valuenow={Math.round(width)}
-      className={[
-        'absolute -right-1 top-0',
-        'z-40 h-full w-2',
-        'cursor-col-resize',
-        'touch-none select-none',
-        'bg-transparent',
-        'outline-none',
-        'transition-colors',
-        'hover:bg-primary/15',
-        'focus-visible:bg-primary/25',
-        'data-[resizing=true]:bg-primary/25',
-      ].join(' ')}
-      data-resizing={
-        dragSessionRef.current !== null
-      }
-      data-window-drag-exclude
-      onDoubleClick={(event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        onCollapse()
-      }}
-      onKeyDown={handleKeyDown}
-      onLostPointerCapture={
-        handleLostPointerCapture
-      }
-      onPointerCancel={handlePointerCancel}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      role="separator"
-      tabIndex={0}
-    />
-  )
-}
-`
-
-function replaceRequired(
-  source,
-  oldCode,
-  newCode,
-  description,
-) {
-  if (source.includes(newCode)) {
-    console.log(`⏭️ 已存在：${description}`)
-    return source
-  }
-
-  if (!source.includes(oldCode)) {
-    throw new Error(
-      `无法找到修改位置：${description}`,
-    )
-  }
-
-  return source.replace(oldCode, newCode)
-}
-
-async function updateSidebarSplitter() {
-  await writeFile(
-    sidebarSplitterPath,
-    sidebarSplitterSource,
-    'utf8',
+  const editorCanvasPath = join(
+    root,
+    PATHS.editorCanvas,
   )
 
-  console.log(
-    '✅ 已重写 SidebarSplitter 拖拽生命周期',
-  )
-}
+  const originalEditorCanvas =
+    readRequiredText(editorCanvasPath)
 
-async function updateWorkspaceShell() {
-  let source = await readFile(
-    workspaceShellPath,
-    'utf8',
-  )
-
-  /*
-   * rootRef 只被旧的全局 pointermove 实现用于计算位置。
-   * 新实现使用 startX + deltaX，不再需要 rootRef。
-   */
-  source = replaceRequired(
-    source,
-    `import { useEffect, useMemo, useRef, useState } from 'react'`,
-    `import { useEffect, useMemo, useState } from 'react'`,
-    '删除 WorkspaceShell 的 useRef 导入',
-  )
-
-  source = replaceRequired(
-    source,
-    `  const mode = useWorkspaceLayoutMode()
-  const rootRef = useRef<HTMLDivElement | null>(null)
-  const previousModeRef = useRef(mode)`,
-    `  const mode = useWorkspaceLayoutMode()
-  const previousModeRef = useRef(mode)`,
-    '删除旧 rootRef',
-  )
-
-  /*
-   * previousModeRef 和 previousInspectorSelectionKeyRef
-   * 仍然需要 useRef，因此恢复 useRef 导入。
-   *
-   * 上面的替换只是为了明确删除 rootRef 本身，
-   * 不能删除 React useRef。
-   */
-  source = replaceRequired(
-    source,
-    `import { useEffect, useMemo, useState } from 'react'`,
-    `import { useEffect, useMemo, useRef, useState } from 'react'`,
-    '保留其他状态引用需要的 useRef',
-  )
-
-  /*
-   * 删除父组件中旧的全局拖拽生命周期。
-   */
-  const oldGlobalResizeEffect =
-    /  useEffect\(\(\) => \{\n    const handlePointerMove = \(event: PointerEvent\) => \{[\s\S]*?\n  \}, \[isResizing\]\)\n\n/
-
-  if (oldGlobalResizeEffect.test(source)) {
-    source = source.replace(
-      oldGlobalResizeEffect,
-      '',
-    )
-
+  if (isAlreadyComplete(root, originalEditorCanvas)) {
     console.log(
-      '✅ 已删除旧 window pointermove/pointerup 监听',
+      '无需修改：tldraw License Key 已完成外部配置化。',
     )
-  } else if (
-    source.includes(
-      "window.addEventListener('pointermove'",
-    )
-  ) {
-    throw new Error(
-      '检测到旧 pointermove 实现，但无法安全删除。',
-    )
-  } else {
-    console.log(
-      '⏭️ 旧全局 Pointer 监听已经删除',
-    )
-  }
-
-  /*
-   * 提高整个侧边栏区域层级。
-   * 分隔条向右延伸到画布区域时不会被画布覆盖。
-   */
-  source = replaceRequired(
-    source,
-    `className="relative row-[2/-1] min-h-0 min-w-0 overflow-visible border-r border-divider bg-sidebar"`,
-    `className="relative z-20 row-[2/-1] min-h-0 min-w-0 overflow-visible border-r border-divider bg-sidebar"`,
-    '提高侧边栏和分隔条层级',
-  )
-
-  /*
-   * 新的 SidebarSplitter 自己拥有 pointermove/up/cancel，
-   * 父组件只负责接收宽度及控制布局动画。
-   */
-  source = replaceRequired(
-    source,
-    `            onCollapse={() => setSidebarOpen(false)}
-            onResize={setSidebarWidth}
-            onResizeStart={() => setResizing(true)}
-            width={sidebarWidth}`,
-    `            onCollapse={() => setSidebarOpen(false)}
-            onResize={setSidebarWidth}
-            onResizeEnd={() => setResizing(false)}
-            onResizeStart={() => setResizing(true)}
-            width={sidebarWidth}`,
-    '连接拖拽结束事件',
-  )
-
-  /*
-   * WorkspaceFrame 不再需要旧的拖拽位置引用。
-   */
-  source = source.replace(
-    /^\s*rootRef=\{rootRef\}\n/m,
-    '',
-  )
-
-  await writeFile(
-    workspaceShellPath,
-    source,
-    'utf8',
-  )
-
-  console.log('✅ 已更新 WorkspaceShell')
-}
-
-async function verifyResult() {
-  const [
-    splitterSource,
-    shellSource,
-  ] = await Promise.all([
-    readFile(sidebarSplitterPath, 'utf8'),
-    readFile(workspaceShellPath, 'utf8'),
-  ])
-
-  const checks = [
-    {
-      passed: splitterSource.includes(
-        'setPointerCapture(event.pointerId)',
-      ),
-      message:
-        'SidebarSplitter 缺少 setPointerCapture',
-    },
-    {
-      passed: splitterSource.includes(
-        'releasePointerCapture',
-      ),
-      message:
-        'SidebarSplitter 缺少 releasePointerCapture',
-    },
-    {
-      passed: splitterSource.includes(
-        'onLostPointerCapture',
-      ),
-      message:
-        'SidebarSplitter 缺少 lostpointercapture 处理',
-    },
-    {
-      passed: splitterSource.includes(
-        'onPointerCancel',
-      ),
-      message:
-        'SidebarSplitter 缺少 pointercancel 处理',
-    },
-    {
-      passed: splitterSource.includes(
-        'startWidth + deltaX',
-      ),
-      message:
-        'SidebarSplitter 没有使用相对位移计算宽度',
-    },
-    {
-      passed: splitterSource.includes(
-        'touch-none select-none',
-      ),
-      message:
-        'SidebarSplitter 缺少触摸和选择保护',
-    },
-    {
-      passed: splitterSource.includes(
-        'data-window-drag-exclude',
-      ),
-      message:
-        'SidebarSplitter 缺少窗口拖拽排除标记',
-    },
-    {
-      passed: shellSource.includes(
-        'onResizeEnd={() => setResizing(false)}',
-      ),
-      message:
-        'WorkspaceShell 缺少 resize end 状态处理',
-    },
-    {
-      passed: !shellSource.includes(
-        "window.addEventListener('pointermove'",
-      ),
-      message:
-        'WorkspaceShell 仍然残留全局 pointermove',
-    },
-    {
-      passed: !shellSource.includes(
-        "window.addEventListener('pointerup'",
-      ),
-      message:
-        'WorkspaceShell 仍然残留全局 pointerup',
-    },
-    {
-      passed: !shellSource.includes(
-        "document.body.style.removeProperty('cursor')",
-      ),
-      message:
-        'WorkspaceShell 仍然拥有旧 body 清理逻辑',
-    },
-    {
-      passed: !shellSource.includes(
-        'rootRef={rootRef}',
-      ),
-      message:
-        'WorkspaceShell 仍然传递旧 rootRef',
-    },
-  ]
-
-  const failures = checks.filter(
-    (check) => !check.passed,
-  )
-
-  if (failures.length > 0) {
-    console.error('❌ 验证失败：')
-
-    for (const failure of failures) {
-      console.error(`   - ${failure.message}`)
-    }
-
-    process.exitCode = 1
     return
   }
 
-  console.log(
-    '✅ 已确认旧全局拖拽实现删除干净',
+  const licenseKey =
+    extractLicenseKey(originalEditorCanvas)
+
+  const changes = buildChanges(
+    root,
+    licenseKey,
+  )
+
+  const effectiveChanges = changes.filter(
+    (change) =>
+      change.original !== change.modified,
   )
 
   console.log(
-    '✅ 已确认 Pointer Capture 生命周期完整',
+    `\n模式：${writeMode ? 'WRITE' : 'DRY-RUN'}`,
   )
-}
+  console.log(`仓库：${root}`)
 
-async function main() {
+  console.log('\n计划修改：')
+
+  for (const change of effectiveChanges) {
+    console.log(`- ${change.relativePath}`)
+  }
+
+  console.log('\n变更摘要：')
+  console.log(
+    '- 删除 editor/core 中硬编码的许可证',
+  )
+  console.log(
+    '- ApplicationRuntime 显式拥有许可证配置',
+  )
+  console.log(
+    '- EditorProvider 负责向画布提供许可证',
+  )
+  console.log(
+    '- 许可证迁移到被忽略的 .env.local',
+  )
+  console.log(
+    '- 提交无敏感信息的 .env.example',
+  )
+
+  if (!writeMode) {
+    console.log('\n当前为 dry-run，没有写入文件。')
+    console.log(
+      '执行：node tooling/script/refactor.mjs --write',
+    )
+    return
+  }
+
+  ensureTrackedTargetsAreClean(
+    root,
+    effectiveChanges,
+  )
+
+  const backupRoot = createBackup(
+    root,
+    effectiveChanges,
+  )
+
+  console.log(
+    `\n备份目录：${relative(root, backupRoot)}`,
+  )
+
   try {
-    await updateSidebarSplitter()
-    await updateWorkspaceShell()
-    await verifyResult()
+    for (const change of effectiveChanges) {
+      mkdirSync(
+        dirname(change.absolutePath),
+        {
+          recursive: true,
+        },
+      )
 
-    if (process.exitCode) {
-      return
+      writeFileSync(
+        change.absolutePath,
+        change.modified,
+        'utf8',
+      )
     }
 
-    console.log('')
-    console.log('🎉 侧边栏拖拽重构完成')
-    console.log('')
-    console.log('请执行：')
-    console.log('  pnpm format')
-    console.log('  pnpm typecheck')
-    console.log('  pnpm test:architecture')
-    console.log('  pnpm build:desktop')
-    console.log('  git diff --check')
+    ensureLocalEnvIsIgnored(root)
+
+    const sourceFiles = effectiveChanges
+      .map((change) => change.relativePath)
+      .filter((path) =>
+        /\.(?:ts|tsx)$/u.test(path),
+      )
+
+    if (sourceFiles.length > 0) {
+      run(
+        'pnpm',
+        [
+          'exec',
+          'biome',
+          'format',
+          '--write',
+          ...sourceFiles,
+        ],
+        {
+          cwd: root,
+          label: '格式化修改文件',
+        },
+      )
+    }
+
+    assertPostconditions(root)
+
+    if (sourceFiles.length > 0) {
+      run(
+        'pnpm',
+        [
+          'exec',
+          'biome',
+          'check',
+          ...sourceFiles,
+        ],
+        {
+          cwd: root,
+          label: 'Biome 检查',
+        },
+      )
+    }
+
+    run(
+      'pnpm',
+      ['test:architecture'],
+      {
+        cwd: root,
+        label: '架构测试',
+      },
+    )
+
+    run(
+      'pnpm',
+      [
+        '--filter',
+        '@hybrid-canvas/canvas',
+        'typecheck',
+      ],
+      {
+        cwd: root,
+        label: 'Canvas 类型检查',
+      },
+    )
+
+    run(
+      'pnpm',
+      [
+        '--filter',
+        '@hybrid-canvas/desktop',
+        'typecheck',
+      ],
+      {
+        cwd: root,
+        label: 'Desktop 类型检查',
+      },
+    )
+
+    run(
+      'git',
+      [
+        'diff',
+        '--check',
+        '--',
+        ...effectiveChanges
+          .filter(
+            (change) =>
+              change.relativePath !==
+              PATHS.envLocal,
+          )
+          .map(
+            (change) =>
+              change.relativePath,
+          ),
+      ],
+      {
+        cwd: root,
+        label: 'Git diff 检查',
+      },
+    )
+
+    console.log('\n修改完成。')
+    console.log(
+      'tldraw License Key 已从源码迁移到 apps/desktop/.env.local。',
+    )
+    console.log(
+      '该本地配置文件已验证为 Git ignored。',
+    )
+    console.log(
+      '由于许可证曾经进入 Git 历史，仍应在 tldraw 后台轮换旧许可证。',
+    )
   } catch (error) {
-    console.error('❌ 重构失败')
+    console.error(
+      '\n修改或验证失败，正在恢复原文件……',
+    )
 
-    if (error instanceof Error) {
-      console.error(error.message)
-    } else {
-      console.error(error)
-    }
+    restoreBackup(
+      root,
+      backupRoot,
+      effectiveChanges,
+    )
 
-    process.exit(1)
+    console.error(
+      '已恢复到脚本执行前状态。',
+    )
+
+    throw error
   }
 }
 
-await main()
+function validateArguments() {
+  for (const argument of argv) {
+    if (argument !== '--write') {
+      throw new Error(`未知参数：${argument}`)
+    }
+  }
+}
+
+function findRepositoryRoot() {
+  const result = spawnSync(
+    'git',
+    ['rev-parse', '--show-toplevel'],
+    {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      windowsHide: true,
+    },
+  )
+
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      [
+        '当前目录不在 Git 仓库中。',
+        result.error?.message,
+        result.stdout,
+        result.stderr,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    )
+  }
+
+  return resolve(result.stdout.trim())
+}
+
+function validateRepository(root) {
+  const packageJsonPath =
+    join(root, 'package.json')
+
+  const packageJson = JSON.parse(
+    readRequiredText(packageJsonPath),
+  )
+
+  if (packageJson.name !== 'hybrid-canvas') {
+    throw new Error(
+      `仓库识别失败：${String(packageJson.name)}`,
+    )
+  }
+
+  const requiredFiles = [
+    PATHS.editorCanvas,
+    PATHS.editorContext,
+    PATHS.reactPublicApi,
+    PATHS.appShell,
+    PATHS.application,
+    PATHS.reactRoot,
+    PATHS.gitignore,
+  ]
+
+  for (const relativePath of requiredFiles) {
+    if (
+      !existsSync(join(root, relativePath))
+    ) {
+      throw new Error(
+        `必要文件不存在：${relativePath}`,
+      )
+    }
+  }
+}
+
+function extractLicenseKey(source) {
+  const match = source.match(
+    /const TLDRAW_LICENSE_KEY\s*=\s*\n\s*'([^']+)'/u,
+  )
+
+  if (!match?.[1]) {
+    throw new Error(
+      [
+        '无法从 EditorCanvas.tsx 提取现有许可证。',
+        '文件可能处于部分修改状态，脚本已停止。',
+      ].join('\n'),
+    )
+  }
+
+  return match[1]
+}
+
+function isAlreadyComplete(
+  root,
+  editorCanvas,
+) {
+  return (
+    !editorCanvas.includes(
+      'const TLDRAW_LICENSE_KEY',
+    ) &&
+    editorCanvas.includes(
+      'useTldrawLicenseKey',
+    ) &&
+    existsSync(
+      join(root, PATHS.viteEnv),
+    ) &&
+    existsSync(
+      join(root, PATHS.envExample),
+    )
+  )
+}
+
+function buildChanges(root, licenseKey) {
+  const changes = []
+
+  addTransformedFile(
+    changes,
+    root,
+    PATHS.editorCanvas,
+    transformEditorCanvas,
+  )
+
+  addTransformedFile(
+    changes,
+    root,
+    PATHS.editorContext,
+    transformEditorContext,
+  )
+
+  addTransformedFile(
+    changes,
+    root,
+    PATHS.reactPublicApi,
+    transformReactPublicApi,
+  )
+
+  addTransformedFile(
+    changes,
+    root,
+    PATHS.appShell,
+    transformAppShell,
+  )
+
+  addTransformedFile(
+    changes,
+    root,
+    PATHS.application,
+    transformApplication,
+  )
+
+  addTransformedFile(
+    changes,
+    root,
+    PATHS.reactRoot,
+    transformReactRoot,
+  )
+
+  addGeneratedFile(
+    changes,
+    root,
+    PATHS.viteEnv,
+    createViteEnvDeclaration(),
+  )
+
+  addGeneratedFile(
+    changes,
+    root,
+    PATHS.envExample,
+    createEnvExample(
+      readOptionalText(
+        join(root, PATHS.envExample),
+      ),
+    ),
+  )
+
+  addGeneratedFile(
+    changes,
+    root,
+    PATHS.envLocal,
+    createLocalEnv(
+      readOptionalText(
+        join(root, PATHS.envLocal),
+      ),
+      licenseKey,
+    ),
+  )
+
+  const gitignorePath = join(
+    root,
+    PATHS.gitignore,
+  )
+
+  addGeneratedFile(
+    changes,
+    root,
+    PATHS.gitignore,
+    ensureGitignoreRule(
+      readRequiredText(gitignorePath),
+    ),
+  )
+
+  return changes
+}
+
+function addTransformedFile(
+  changes,
+  root,
+  relativePath,
+  transform,
+) {
+  const absolutePath =
+    join(root, relativePath)
+
+  const original =
+    readRequiredText(absolutePath)
+
+  changes.push({
+    relativePath,
+    absolutePath,
+    original,
+    modified: transform(original),
+    existedBefore: true,
+  })
+}
+
+function addGeneratedFile(
+  changes,
+  root,
+  relativePath,
+  modified,
+) {
+  const absolutePath =
+    join(root, relativePath)
+
+  const existedBefore =
+    existsSync(absolutePath)
+
+  const original = existedBefore
+    ? readRequiredText(absolutePath)
+    : ''
+
+  changes.push({
+    relativePath,
+    absolutePath,
+    original,
+    modified,
+    existedBefore,
+  })
+}
+
+function transformEditorCanvas(source) {
+  const licenseBlockPattern =
+    /const TLDRAW_LICENSE_KEY\s*=\s*\n\s*'[^']+'\n\n/u
+
+  if (!licenseBlockPattern.test(source)) {
+    throw new Error(
+      `${PATHS.editorCanvas} 中找不到许可证常量`,
+    )
+  }
+
+  let next = source.replace(
+    licenseBlockPattern,
+    '',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    "import { useBindEditorSession, useEditor } from './editor-context'",
+    "import { useBindEditorSession, useEditor, useTldrawLicenseKey } from './editor-context'",
+    'EditorCanvas context import',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    `export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasProps) {
+  const [editor, setEditor] = useState<Editor | null>(null)`,
+    `export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasProps) {
+  const licenseKey = useTldrawLicenseKey()
+  const [editor, setEditor] = useState<Editor | null>(null)`,
+    'EditorCanvas license hook',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    '      licenseKey: TLDRAW_LICENSE_KEY,',
+    '      licenseKey,',
+    'Tldraw license prop',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    '  }, [store, registration, hasTools])',
+    '  }, [store, registration, hasTools, licenseKey])',
+    'EditorCanvas memo dependencies',
+  )
+
+  return next
+}
+
+function transformEditorContext(source) {
+  let next = replaceExactlyOnce(
+    source,
+    `interface EditorContextValue {
+  readonly editor: Editor | null
+  readonly registration: ExtensionRegistration | null
+}`,
+    `interface EditorContextValue {
+  readonly editor: Editor | null
+  readonly registration: ExtensionRegistration | null
+  readonly licenseKey: string
+}`,
+    'EditorContextValue',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    `const EditorCtx = createContext<EditorBindingContextValue | null>(null)
+
+export function EditorProvider({ children }: { readonly children: ReactNode }) {`,
+    `const EditorCtx = createContext<EditorBindingContextValue | null>(null)
+
+export interface EditorProviderProps {
+  readonly children: ReactNode
+  readonly licenseKey: string
+}
+
+export function EditorProvider({ children, licenseKey }: EditorProviderProps) {`,
+    'EditorProvider props',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    `    () => ({
+      ...session,
+      bindSession,
+      unbindSession,
+    }),
+    [session, bindSession, unbindSession],`,
+    `    () => ({
+      ...session,
+      licenseKey,
+      bindSession,
+      unbindSession,
+    }),
+    [session, licenseKey, bindSession, unbindSession],`,
+    'EditorProvider context value',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    `export function useEditor(): Editor | null {
+  return useContext(EditorCtx)?.editor ?? null
+}
+
+export function useExtensionRegistration()`,
+    `export function useEditor(): Editor | null {
+  return useContext(EditorCtx)?.editor ?? null
+}
+
+export function useTldrawLicenseKey(): string {
+  const licenseKey = useContext(EditorCtx)?.licenseKey
+
+  if (!licenseKey) {
+    throw new Error('TLDRAW_LICENSE_KEY_NOT_CONFIGURED')
+  }
+
+  return licenseKey
+}
+
+export function useExtensionRegistration()`,
+    'license hook',
+  )
+
+  return next
+}
+
+function transformReactPublicApi(source) {
+  return replaceExactlyOnce(
+    source,
+    'export { EditorProvider, useEditor } from \'./editor-context\'',
+    `export {
+  EditorProvider,
+  type EditorProviderProps,
+  useEditor,
+  useTldrawLicenseKey,
+} from './editor-context'`,
+    'react public API',
+  )
+}
+
+function transformAppShell(source) {
+  let next = replaceExactlyOnce(
+    source,
+    `  readonly settings: SettingsStore
+}`,
+    `  readonly settings: SettingsStore
+  readonly tldrawLicenseKey: string
+}`,
+    'AppShellRuntime license',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    '    <EditorProvider>',
+    '    <EditorProvider licenseKey={runtime.tldrawLicenseKey}>',
+    'EditorProvider license prop',
+  )
+
+  return next
+}
+
+function transformApplication(source) {
+  let next = replaceExactlyOnce(
+    source,
+    `export interface ApplicationRuntime {
+  readonly workspace: WorkbenchSessionStore`,
+    `export interface CreateApplicationRuntimeOptions {
+  readonly tldrawLicenseKey: string
+}
+
+export interface ApplicationRuntime {
+  readonly workspace: WorkbenchSessionStore`,
+    'ApplicationRuntime options',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    `  readonly settings: SettingsStore
+  readonly dispose: () => void`,
+    `  readonly settings: SettingsStore
+  readonly tldrawLicenseKey: string
+  readonly dispose: () => void`,
+    'ApplicationRuntime license field',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    `export function createApplicationRuntime(): ApplicationRuntime {`,
+    `export function createApplicationRuntime({
+  tldrawLicenseKey,
+}: CreateApplicationRuntimeOptions): ApplicationRuntime {`,
+    'createApplicationRuntime signature',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    `    mainWindow,
+    settings,
+
+    dispose()`,
+    `    mainWindow,
+    settings,
+    tldrawLicenseKey,
+
+    dispose()`,
+    'ApplicationRuntime return value',
+  )
+
+  return next
+}
+
+function transformReactRoot(source) {
+  let next = replaceExactlyOnce(
+    source,
+    '  const runtime = createApplicationRuntime()',
+    `  const runtime = createApplicationRuntime({
+    tldrawLicenseKey: readTldrawLicenseKey(),
+  })`,
+    'runtime configuration',
+  )
+
+  next += `
+
+function readTldrawLicenseKey(): string {
+  const licenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY?.trim()
+
+  if (!licenseKey) {
+    throw new Error('VITE_TLDRAW_LICENSE_KEY_MISSING')
+  }
+
+  return licenseKey
+}
+`
+
+  return next
+}
+
+function createViteEnvDeclaration() {
+  return `interface ImportMetaEnv {
+  readonly VITE_TLDRAW_LICENSE_KEY?: string
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv
+}
+`
+}
+
+function createEnvExample(existing) {
+  if (
+    existing.includes(
+      'VITE_TLDRAW_LICENSE_KEY=',
+    )
+  ) {
+    return existing
+  }
+
+  return appendSection(
+    existing,
+    'VITE_TLDRAW_LICENSE_KEY=replace-with-your-tldraw-license-key',
+  )
+}
+
+function createLocalEnv(
+  existing,
+  licenseKey,
+) {
+  if (
+    existing.includes(
+      'VITE_TLDRAW_LICENSE_KEY=',
+    )
+  ) {
+    return existing
+  }
+
+  return appendSection(
+    existing,
+    `VITE_TLDRAW_LICENSE_KEY=${licenseKey}`,
+  )
+}
+
+function ensureGitignoreRule(existing) {
+  const ignoredPatterns = [
+    '.env.local',
+    '*.local',
+    '.env.*',
+  ]
+
+  if (
+    ignoredPatterns.some((pattern) =>
+      existing
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .includes(pattern),
+    )
+  ) {
+    return existing
+  }
+
+  return appendSection(
+    existing,
+    '/apps/desktop/.env.local',
+  )
+}
+
+function appendSection(existing, line) {
+  const normalized =
+    existing.replace(/\s*$/u, '')
+
+  return normalized
+    ? `${normalized}\n\n${line}\n`
+    : `${line}\n`
+}
+
+function ensureTrackedTargetsAreClean(
+  root,
+  changes,
+) {
+  const trackedPaths = changes
+    .filter(
+      (change) =>
+        change.relativePath !==
+        PATHS.envLocal,
+    )
+    .map(
+      (change) =>
+        change.relativePath,
+    )
+
+  const result = spawnSync(
+    'git',
+    [
+      'status',
+      '--porcelain',
+      '--',
+      ...trackedPaths,
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      windowsHide: true,
+    },
+  )
+
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      '无法检查目标文件状态',
+    )
+  }
+
+  if (result.stdout.trim()) {
+    throw new Error(
+      [
+        '目标文件存在未提交修改，脚本拒绝覆盖：',
+        result.stdout.trim(),
+      ].join('\n'),
+    )
+  }
+}
+
+function createBackup(
+  root,
+  changes,
+) {
+  const timestamp = new Date()
+    .toISOString()
+    .replaceAll(':', '-')
+    .replaceAll('.', '-')
+
+  const backupRoot = join(
+    root,
+    '.refactor-backup',
+    SCRIPT_NAME,
+    timestamp,
+  )
+
+  const manifest = []
+
+  for (const change of changes) {
+    manifest.push({
+      relativePath:
+        change.relativePath,
+      existedBefore:
+        change.existedBefore,
+    })
+
+    if (!change.existedBefore) {
+      continue
+    }
+
+    const destination = join(
+      backupRoot,
+      change.relativePath,
+    )
+
+    mkdirSync(
+      dirname(destination),
+      {
+        recursive: true,
+      },
+    )
+
+    copyFileSync(
+      change.absolutePath,
+      destination,
+    )
+  }
+
+  mkdirSync(backupRoot, {
+    recursive: true,
+  })
+
+  writeFileSync(
+    join(backupRoot, 'manifest.json'),
+    `${JSON.stringify(
+      manifest,
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  )
+
+  return backupRoot
+}
+
+function restoreBackup(
+  root,
+  backupRoot,
+  changes,
+) {
+  for (const change of changes) {
+    const backupPath = join(
+      backupRoot,
+      change.relativePath,
+    )
+
+    if (change.existedBefore) {
+      copyFileSync(
+        backupPath,
+        change.absolutePath,
+      )
+    } else {
+      rmSync(change.absolutePath, {
+        force: true,
+      })
+    }
+  }
+}
+
+function ensureLocalEnvIsIgnored(root) {
+  const result = spawnSync(
+    'git',
+    [
+      'check-ignore',
+      '--quiet',
+      '--',
+      PATHS.envLocal,
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      windowsHide: true,
+    },
+  )
+
+  if (result.status !== 0) {
+    throw new Error(
+      `${PATHS.envLocal} 没有被 Git 忽略，拒绝继续`,
+    )
+  }
+
+  const tracked = spawnSync(
+    'git',
+    [
+      'ls-files',
+      '--error-unmatch',
+      PATHS.envLocal,
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      windowsHide: true,
+    },
+  )
+
+  if (tracked.status === 0) {
+    throw new Error(
+      `${PATHS.envLocal} 已被 Git 跟踪，拒绝保存许可证`,
+    )
+  }
+}
+
+function assertPostconditions(root) {
+  const editorCanvas = readRequiredText(
+    join(root, PATHS.editorCanvas),
+  )
+
+  const editorContext = readRequiredText(
+    join(root, PATHS.editorContext),
+  )
+
+  const application = readRequiredText(
+    join(root, PATHS.application),
+  )
+
+  const appShell = readRequiredText(
+    join(root, PATHS.appShell),
+  )
+
+  const reactRoot = readRequiredText(
+    join(root, PATHS.reactRoot),
+  )
+
+  if (
+    editorCanvas.includes(
+      'const TLDRAW_LICENSE_KEY',
+    )
+  ) {
+    throw new Error(
+      'EditorCanvas 仍然包含硬编码许可证',
+    )
+  }
+
+  const requiredFragments = [
+    [
+      editorCanvas,
+      'useTldrawLicenseKey',
+    ],
+    [
+      editorContext,
+      'readonly licenseKey: string',
+    ],
+    [
+      application,
+      'readonly tldrawLicenseKey: string',
+    ],
+    [
+      appShell,
+      '<EditorProvider licenseKey={runtime.tldrawLicenseKey}>',
+    ],
+    [
+      reactRoot,
+      'import.meta.env.VITE_TLDRAW_LICENSE_KEY',
+    ],
+  ]
+
+  for (const [source, fragment] of requiredFragments) {
+    if (!source.includes(fragment)) {
+      throw new Error(
+        `修改后缺少预期代码：${fragment}`,
+      )
+    }
+  }
+
+  const envLocal = readRequiredText(
+    join(root, PATHS.envLocal),
+  )
+
+  if (
+    !envLocal.includes(
+      'VITE_TLDRAW_LICENSE_KEY=',
+    )
+  ) {
+    throw new Error(
+      '.env.local 中缺少许可证配置',
+    )
+  }
+
+  const envExample = readRequiredText(
+    join(root, PATHS.envExample),
+  )
+
+  if (
+    /tldraw-\d{4}-/u.test(envExample)
+  ) {
+    throw new Error(
+      '.env.example 不得包含真实许可证',
+    )
+  }
+}
+
+function replaceExactlyOnce(
+  source,
+  oldText,
+  newText,
+  description,
+) {
+  const first = source.indexOf(oldText)
+  const last = source.lastIndexOf(oldText)
+
+  if (first < 0) {
+    throw new Error(
+      `找不到预期代码：${description}`,
+    )
+  }
+
+  if (first !== last) {
+    throw new Error(
+      `预期代码出现多次：${description}`,
+    )
+  }
+
+  return source.replace(
+    oldText,
+    newText,
+  )
+}
+
+function readRequiredText(path) {
+  if (!existsSync(path)) {
+    throw new Error(
+      `文件不存在：${path}`,
+    )
+  }
+
+  return readFileSync(path, 'utf8')
+}
+
+function readOptionalText(path) {
+  return existsSync(path)
+    ? readFileSync(path, 'utf8')
+    : ''
+}
+
+function run(
+  command,
+  commandArgs,
+  {
+    cwd,
+    label,
+  },
+) {
+  const invocation =
+    createCommandInvocation(
+      command,
+      commandArgs,
+    )
+
+  console.log(`\n[${label}]`)
+  console.log(
+    `$ ${command} ${commandArgs.join(' ')}`,
+  )
+
+  const result = spawnSync(
+    invocation.command,
+    invocation.args,
+    {
+      cwd,
+      encoding: 'utf8',
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+    },
+  )
+
+  if (result.error) {
+    throw new Error(
+      `${label} 无法启动：${result.error.message}`,
+    )
+  }
+
+  if (result.status !== 0) {
+    throw new Error(
+      `${label} 失败，退出码 ${String(result.status)}`,
+    )
+  }
+}
+
+function createCommandInvocation(
+  command,
+  commandArgs,
+) {
+  if (process.platform !== 'win32') {
+    return {
+      command,
+      args: commandArgs,
+    }
+  }
+
+  const commandsRequiringCmd =
+    new Set([
+      'corepack',
+      'npm',
+      'npx',
+      'pnpm',
+      'yarn',
+    ])
+
+  if (
+    !commandsRequiringCmd.has(command)
+  ) {
+    return {
+      command,
+      args: commandArgs,
+    }
+  }
+
+  const comspec =
+    process.env.ComSpec ||
+    process.env.COMSPEC ||
+    'C:\\Windows\\System32\\cmd.exe'
+
+  const commandLine = [
+    quoteWindowsCommandArgument(command),
+    ...commandArgs.map(
+      quoteWindowsCommandArgument,
+    ),
+  ].join(' ')
+
+  return {
+    command: comspec,
+    args: [
+      '/d',
+      '/s',
+      '/c',
+      commandLine,
+    ],
+  }
+}
+
+function quoteWindowsCommandArgument(
+  value,
+) {
+  const text = String(value)
+
+  if (/[\r\n&|<>^%!]/u.test(text)) {
+    throw new Error(
+      `命令参数包含不允许的字符：${text}`,
+    )
+  }
+
+  if (text.length === 0) {
+    return '""'
+  }
+
+  if (!/[\s"]/u.test(text)) {
+    return text
+  }
+
+  return `"${text.replaceAll('"', '""')}"`
+}
