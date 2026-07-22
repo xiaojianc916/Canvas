@@ -33,7 +33,8 @@
   },
   "dependencies": {
     "@hybrid-canvas/design-system": "workspace:*",
-    "lucide-react": "catalog:"
+    "lucide-react": "catalog:",
+    "motion": "catalog:"
   },
   "devDependencies": {
     "@types/react": "catalog:",

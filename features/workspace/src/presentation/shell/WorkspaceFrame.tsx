@@ -1,3 +1,4 @@
+import { motion, useReducedMotion } from 'motion/react'
 import type { ReactNode, Ref } from 'react'
 
 export interface WorkspaceFrameProps {
@@ -11,6 +12,7 @@ export interface WorkspaceFrameProps {
   readonly overlays?: ReactNode
   readonly gridTemplateColumns: string
   readonly gridTemplateRows: string
+  readonly disableLayoutAnimation?: boolean
 }
 
 export function WorkspaceFrame({
@@ -24,12 +26,31 @@ export function WorkspaceFrame({
   overlays,
   gridTemplateColumns,
   gridTemplateRows,
+  disableLayoutAnimation = false,
 }: WorkspaceFrameProps) {
+  const shouldReduceMotion = useReducedMotion()
+
+  const transition =
+    disableLayoutAnimation || shouldReduceMotion
+      ? { duration: 0 }
+      : {
+          type: 'spring' as const,
+          stiffness: 420,
+          damping: 38,
+          mass: 0.8,
+        }
+
   return (
-    <div
+    <motion.div
+      animate={{ gridTemplateColumns }}
       className="workspace-shell relative grid h-dvh w-full min-h-0 overflow-hidden bg-background text-foreground"
+      initial={false}
       ref={rootRef}
-      style={{ gridTemplateColumns, gridTemplateRows }}
+      style={{
+        gridTemplateRows,
+        willChange: disableLayoutAnimation ? 'auto' : 'grid-template-columns',
+      }}
+      transition={transition}
     >
       {/* Layout ownership lives here so borders stay single-source and predictable. */}
       {chrome}
@@ -39,6 +60,6 @@ export function WorkspaceFrame({
       {inspector}
       {statusBar}
       {overlays}
-    </div>
+    </motion.div>
   )
 }

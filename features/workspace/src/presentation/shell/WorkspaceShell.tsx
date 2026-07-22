@@ -207,10 +207,21 @@ export function WorkspaceShell({
   const sidebar = (
     <>
       <div
-        className="relative row-[2/-1] min-h-0 min-w-0 border-r border-divider bg-sidebar"
-        style={{ gridColumn: 2 }}
+        aria-hidden={!dockSidebar}
+        className="relative row-[2/-1] min-h-0 min-w-0 overflow-visible border-r border-divider bg-sidebar"
+        style={{
+          gridColumn: 2,
+          pointerEvents: dockSidebar ? 'auto' : 'none',
+        }}
       >
-        {dockSidebar ? sidebarContent : null}
+        {mode !== 'narrow' ? (
+          <div
+            className="h-full min-h-0 overflow-hidden"
+            style={{ width: sidebarWidth }}
+          >
+            {sidebarContent}
+          </div>
+        ) : null}
 
         {dockSidebar ? (
           <SidebarSplitter
@@ -260,7 +271,7 @@ export function WorkspaceShell({
   const canvas = (
     <section
       aria-label="内容区"
-      className="row-2 min-h-0 min-w-0 overflow-hidden"
+      className="relative z-10 row-2 min-h-0 min-w-0 overflow-hidden border-l border-divider bg-background shadow-[-12px_0_28px_-22px_rgba(0,0,0,0.45)]"
       style={{ gridColumn: 3 }}
     >
       <main
@@ -346,7 +357,10 @@ export function WorkspaceShell({
   ) : null
 
   const status = hasCanvas ? (
-    <div className="min-w-0" style={{ gridColumn: 3, gridRow: 3 }}>
+    <div
+      className="relative z-10 min-w-0 border-l border-divider bg-background"
+      style={{ gridColumn: 3, gridRow: 3 }}
+    >
       <StatusBarHost left={statusLeft} right={statusRight} />
     </div>
   ) : null
@@ -356,6 +370,7 @@ export function WorkspaceShell({
       <WorkspaceFrame
         canvas={canvas}
         chrome={chrome}
+        disableLayoutAnimation={isResizing}
         gridTemplateColumns={columns}
         gridTemplateRows={rows}
         inspector={inspectorRegion}
