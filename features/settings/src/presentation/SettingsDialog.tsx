@@ -584,7 +584,7 @@ interface SettingsFooterProps {
   readonly busy: boolean
   readonly canSave: boolean
   readonly canReset: boolean
-  readonly operation?: 'save' | 'reset'
+  readonly operation: 'save' | 'reset' | undefined
   readonly onSave: () => void
   readonly onReset: () => void
   readonly onCancel: () => void
