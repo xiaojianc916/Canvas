@@ -134,7 +134,10 @@ export function createCanvasDocumentService({
       extensions,
     })
 
-    sessions.set(sessionId, createOwnedSession(editor, null, 'dirty'))
+    sessions.set(
+  sessionId,
+  createOwnedSession(editor, null, 'clean'),
+)
 
     return {
       canvasId,
