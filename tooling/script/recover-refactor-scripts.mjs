@@ -10,28 +10,33 @@ const APPLY = process.argv.includes('--apply')
 const ROLLBACK = process.argv.includes('--rollback')
 const ALLOW_DIRTY = process.argv.includes('--allow-dirty')
 
-const BACKUP_DIR = path.join(ROOT, '.canvas-ui-refactor-backup')
-const MANIFEST_FILE = path.join(BACKUP_DIR, 'manifest.json')
+const BACKUP_DIRECTORY = path.join(
+  ROOT,
+  '.canvas-ui-phase-2a-backup',
+)
+
+const MANIFEST_FILE = path.join(
+  BACKUP_DIRECTORY,
+  'manifest.json',
+)
 
 const FILES = {
   rootPackage: 'package.json',
-  appCss: 'apps/desktop/src/app.css',
-  designSystemPackage: 'foundations/design-system/package.json',
-  designSystemPublicApi: 'foundations/design-system/src/public-api.ts',
-  tokens: 'foundations/design-system/src/styles/index.css',
-  themeController: 'foundations/design-system/src/theme-controller.ts',
-  select: 'foundations/design-system/src/components/ui/select.tsx',
-  feedback: 'foundations/design-system/src/components/ui/feedback.tsx',
-  workspaceLayout:
-    'features/workspace/src/presentation/shell/useWorkspaceLayout.ts',
-  tldrawOverrides: 'apps/desktop/src/styles/tldraw-overrides.css',
-  architectureCheck: 'tests/architecture/check-ui-architecture.mjs',
-  canvasTabs:
-    'features/workspace/src/presentation/shell/CanvasTabs.tsx',
-  documentTabs:
-    'features/workspace/src/presentation/shell/DocumentTabs.tsx',
-  activityRail:
-    'features/workspace/src/presentation/shell/ActivityRail.tsx',
+
+  publicApi:
+    'foundations/design-system/src/public-api.ts',
+
+  dialog:
+    'foundations/design-system/src/components/ui/dialog.tsx',
+
+  field:
+    'foundations/design-system/src/components/ui/field.tsx',
+
+  confirmationDialog:
+    'foundations/design-system/src/components/ui/confirmation-dialog.tsx',
+
+  architectureCheck:
+    'tests/architecture/check-ui-dialogs.mjs',
 }
 
 function absolute(relativePath) {
@@ -58,42 +63,24 @@ function write(relativePath, content) {
   fs.writeFileSync(filePath, content, 'utf8')
 }
 
-function countOccurrences(content, search) {
-  return content.split(search).length - 1
-}
-
-function replaceExactlyOnce(content, search, replacement, label) {
-  const count = countOccurrences(content, search)
-
-  if (count !== 1) {
-    throw new Error(
-      `${label}：预期匹配 1 次，实际匹配 ${count} 次。` +
-        '仓库代码可能已变化，已停止执行。',
-    )
-  }
-
-  return content.replace(search, replacement)
-}
-
 function assertRepository() {
-  const packageFile = absolute(FILES.rootPackage)
+  const packageFile = absolute(
+    FILES.rootPackage,
+  )
 
   if (!fs.existsSync(packageFile)) {
-    throw new Error('请在 Canvas 仓库根目录运行脚本。')
+    throw new Error(
+      '请在 Canvas 仓库根目录运行脚本。',
+    )
   }
 
   const packageJson = JSON.parse(
     fs.readFileSync(packageFile, 'utf8'),
   )
 
-  const workspaceFile = absolute('pnpm-workspace.yaml')
-
-  if (
-    packageJson.name !== 'hybrid-canvas' ||
-    !fs.existsSync(workspaceFile)
-  ) {
+  if (packageJson.name !== 'hybrid-canvas') {
     throw new Error(
-      `当前目录不是目标 Canvas 仓库：${ROOT}`,
+      `当前目录不是目标仓库：${packageJson.name}`,
     )
   }
 
@@ -112,430 +99,511 @@ function assertRepository() {
 
   if (status.length > 0) {
     throw new Error(
-      '当前 Git 工作区不干净。请先提交修改，' +
-        '或确认风险后添加 --allow-dirty。',
+      '当前 Git 工作区存在未提交修改。' +
+        '请先提交，或使用 --allow-dirty。',
     )
   }
 }
 
-const TOKENS_CSS = String.raw`@theme {
-  --color-background: var(--ui-background);
-  --color-foreground: var(--ui-foreground);
-  --color-surface: var(--ui-surface);
-  --color-chrome: var(--ui-chrome);
-  --color-canvas: var(--ui-canvas);
-  --color-sidebar: var(--ui-sidebar);
-  --color-sidebar-accent: var(--ui-sidebar-accent);
-  --color-sidebar-accent-foreground: var(--ui-sidebar-accent-foreground);
-  --color-divider: var(--ui-divider);
-  --color-border: var(--ui-border);
-  --color-input: var(--ui-input);
-  --color-ring: var(--ui-ring);
-  --color-primary: var(--ui-primary);
-  --color-primary-foreground: var(--ui-primary-foreground);
-  --color-secondary: var(--ui-secondary);
-  --color-secondary-foreground: var(--ui-secondary-foreground);
-  --color-muted: var(--ui-muted);
-  --color-muted-foreground: var(--ui-muted-foreground);
-  --color-accent: var(--ui-accent);
-  --color-accent-foreground: var(--ui-accent-foreground);
-  --color-popover: var(--ui-popover);
-  --color-popover-foreground: var(--ui-popover-foreground);
-  --color-destructive: var(--ui-destructive);
-  --color-destructive-foreground: var(--ui-destructive-foreground);
-  --font-family-sans: var(--ui-font-sans);
+const DIALOG_COMPONENT = String.raw`import { X } from 'lucide-react'
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useRef,
+} from 'react'
+import { createPortal } from 'react-dom'
+import { cn } from '../../lib/utils'
+import { Button } from './button'
+
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+export interface DialogProps {
+  readonly open: boolean
+  readonly title: string
+  readonly description?: string
+  readonly children: ReactNode
+  readonly footer?: ReactNode
+  readonly className?: string
+  readonly contentClassName?: string
+  readonly busy?: boolean
+  readonly closeLabel?: string
+  readonly closeOnOverlayClick?: boolean
+  readonly onOpenChange: (open: boolean) => void
 }
 
-:root {
-  color-scheme: light;
+export function Dialog({
+  open,
+  title,
+  description,
+  children,
+  footer,
+  className,
+  contentClassName,
+  busy = false,
+  closeLabel = '关闭',
+  closeOnOverlayClick = true,
+  onOpenChange,
+}: DialogProps) {
+  const titleId = useId()
+  const descriptionId = useId()
 
-  --ui-background: oklch(0.994 0.001 90);
-  --ui-foreground: oklch(0.19 0.01 90);
-  --ui-surface: oklch(1 0 0);
-  --ui-chrome: oklch(0.962 0.002 90);
-  --ui-canvas: oklch(0.985 0.001 90);
+  const panelRef =
+    useRef<HTMLDivElement>(null)
 
-  --ui-sidebar: oklch(0.962 0.002 90);
-  --ui-sidebar-accent: oklch(0.925 0.007 90);
-  --ui-sidebar-accent-foreground: oklch(0.18 0.01 90);
+  const closeButtonRef =
+    useRef<HTMLButtonElement>(null)
 
-  --ui-divider: oklch(0.885 0.004 90);
-  --ui-border: var(--ui-divider);
-  --ui-input: oklch(0.84 0.006 90);
-  --ui-ring: oklch(0.55 0.19 255);
+  useEffect(() => {
+    if (!open) {
+      return
+    }
 
-  --ui-primary: oklch(0.55 0.19 255);
-  --ui-primary-foreground: oklch(0.99 0 0);
+    const previouslyFocused =
+      document.activeElement
 
-  --ui-secondary: oklch(0.945 0.005 90);
-  --ui-secondary-foreground: oklch(0.22 0.01 90);
+    const animationFrame =
+      window.requestAnimationFrame(() => {
+        closeButtonRef.current?.focus()
+      })
 
-  --ui-muted: oklch(0.95 0.004 90);
-  --ui-muted-foreground: oklch(0.47 0.012 90);
+    const handleDocumentKeyDown = (
+      event: KeyboardEvent,
+    ) => {
+      if (
+        event.key === 'Escape' &&
+        !busy
+      ) {
+        event.preventDefault()
+        onOpenChange(false)
+      }
+    }
 
-  --ui-accent: oklch(0.925 0.007 90);
-  --ui-accent-foreground: oklch(0.2 0.01 90);
+    document.addEventListener(
+      'keydown',
+      handleDocumentKeyDown,
+    )
 
-  --ui-popover: var(--ui-surface);
-  --ui-popover-foreground: var(--ui-foreground);
+    return () => {
+      window.cancelAnimationFrame(
+        animationFrame,
+      )
 
-  --ui-destructive: oklch(0.56 0.22 28);
-  --ui-destructive-foreground: oklch(0.99 0 0);
+      document.removeEventListener(
+        'keydown',
+        handleDocumentKeyDown,
+      )
 
-  --ui-font-sans:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+      if (
+        previouslyFocused instanceof
+        HTMLElement
+      ) {
+        previouslyFocused.focus()
+      }
+    }
+  }, [
+    busy,
+    onOpenChange,
+    open,
+  ])
 
-  --activity-rail-width: 48px;
-  --workspace-sidebar-min: 220px;
-  --workspace-sidebar-max: 420px;
-  --workspace-sidebar-default: 280px;
-  --inspector-width: 276px;
-  --chrome-height: 36px;
-  --status-height: 30px;
-
-  --ui-z-canvas: 0;
-  --ui-z-chrome: 20;
-  --ui-z-popover: 60;
-  --ui-z-dialog: 100;
-  --ui-z-toast: 120;
-
-  --ui-duration-fast: 120ms;
-  --ui-duration-normal: 180ms;
-  --ui-ease-standard: cubic-bezier(0.2, 0, 0, 1);
-}
-
-:root[data-theme='dark'] {
-  color-scheme: dark;
-
-  --ui-background: #191919;
-  --ui-foreground: #ffffff;
-  --ui-surface: #202020;
-  --ui-chrome: #242424;
-  --ui-canvas: #1d1d1d;
-
-  --ui-sidebar: #242424;
-  --ui-sidebar-accent: #383836;
-  --ui-sidebar-accent-foreground: #ffffff;
-
-  --ui-divider: rgb(255 255 255 / 16%);
-  --ui-border: var(--ui-divider);
-  --ui-input: rgb(255 255 255 / 24%);
-  --ui-ring: #5e9fe8;
-
-  --ui-primary: #5e9fe8;
-  --ui-primary-foreground: #111111;
-
-  --ui-secondary: #30302f;
-  --ui-secondary-foreground: #ffffff;
-
-  --ui-muted: #30302f;
-  --ui-muted-foreground: rgb(255 255 255 / 65%);
-
-  --ui-accent: #383836;
-  --ui-accent-foreground: #ffffff;
-
-  --ui-popover: #242424;
-  --ui-popover-foreground: #ffffff;
-
-  --ui-destructive: #e97366;
-  --ui-destructive-foreground: #111111;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  if (!open) {
+    return null
   }
+
+  const handlePanelKeyDown = (
+    event:
+      ReactKeyboardEvent<HTMLDivElement>,
+  ) => {
+    if (event.key !== 'Tab') {
+      return
+    }
+
+    const focusableElements =
+      Array.from(
+        panelRef.current
+          ?.querySelectorAll<HTMLElement>(
+            FOCUSABLE_SELECTOR,
+          ) ?? [],
+      )
+
+    const firstElement =
+      focusableElements[0]
+
+    const lastElement =
+      focusableElements[
+        focusableElements.length - 1
+      ]
+
+    if (!firstElement || !lastElement) {
+      event.preventDefault()
+      panelRef.current?.focus()
+      return
+    }
+
+    if (
+      event.shiftKey &&
+      document.activeElement ===
+        firstElement
+    ) {
+      event.preventDefault()
+      lastElement.focus()
+      return
+    }
+
+    if (
+      !event.shiftKey &&
+      document.activeElement ===
+        lastElement
+    ) {
+      event.preventDefault()
+      firstElement.focus()
+    }
+  }
+
+  return createPortal(
+    <div
+      className={cn(
+        'fixed inset-0',
+        'z-[var(--ui-z-dialog)]',
+        'grid place-items-center',
+        'bg-black/40 p-4',
+        'backdrop-blur-[2px]',
+      )}
+      onMouseDown={(event) => {
+        if (
+          event.target ===
+            event.currentTarget &&
+          closeOnOverlayClick &&
+          !busy
+        ) {
+          onOpenChange(false)
+        }
+      }}
+      role="presentation"
+    >
+      <div
+        ref={panelRef}
+        aria-busy={
+          busy || undefined
+        }
+        aria-describedby={
+          description
+            ? descriptionId
+            : undefined
+        }
+        aria-labelledby={titleId}
+        aria-modal="true"
+        className={cn(
+          'flex w-full max-w-lg',
+          'max-h-[calc(100dvh-2rem)]',
+          'flex-col overflow-hidden',
+          'rounded-xl border',
+          'border-divider',
+          'bg-background',
+          'text-foreground',
+          'shadow-2xl outline-none',
+          'max-sm:max-h-dvh',
+          'max-sm:h-dvh',
+          'max-sm:max-w-none',
+          'max-sm:rounded-none',
+          className,
+        )}
+        onKeyDown={
+          handlePanelKeyDown
+        }
+        role="dialog"
+        tabIndex={-1}
+      >
+        <header
+          className={cn(
+            'flex min-h-14',
+            'shrink-0 items-start',
+            'justify-between gap-4',
+            'border-b border-divider',
+            'px-5 py-4',
+          )}
+        >
+          <div className="min-w-0">
+            <h2
+              id={titleId}
+              className="text-base font-semibold"
+            >
+              {title}
+            </h2>
+
+            {description ? (
+              <p
+                id={descriptionId}
+                className={cn(
+                  'mt-1 text-sm',
+                  'leading-5',
+                  'text-muted-foreground',
+                )}
+              >
+                {description}
+              </p>
+            ) : null}
+          </div>
+
+          <Button
+            ref={closeButtonRef}
+            aria-label={closeLabel}
+            disabled={busy}
+            onClick={() => {
+              onOpenChange(false)
+            }}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <X
+              aria-hidden="true"
+              className="size-4"
+            />
+          </Button>
+        </header>
+
+        <div
+          className={cn(
+            'min-h-0 flex-1',
+            'overflow-auto',
+            contentClassName,
+          )}
+        >
+          {children}
+        </div>
+
+        {footer ? (
+          <footer
+            className={cn(
+              'shrink-0',
+              'border-t border-divider',
+              'px-5 py-3',
+            )}
+          >
+            {footer}
+          </footer>
+        ) : null}
+      </div>
+    </div>,
+    document.body,
+  )
 }
 `
 
-const THEME_CONTROLLER = String.raw`export type ThemePreference =
-  | 'light'
-  | 'dark'
-  | 'system'
-
-const DARK_QUERY = '(prefers-color-scheme: dark)'
-
-let removeSystemListener: (() => void) | undefined
-
-export function applyThemePreference(
-  theme: ThemePreference,
-): void {
-  removeSystemListener?.()
-  removeSystemListener = undefined
-
-  const root = document.documentElement
-
-  const apply = (dark: boolean) => {
-    root.dataset.theme = dark ? 'dark' : 'light'
-  }
-
-  if (theme === 'light' || theme === 'dark') {
-    apply(theme === 'dark')
-    return
-  }
-
-  const query = window.matchMedia(DARK_QUERY)
-  const synchronize = () => apply(query.matches)
-
-  query.addEventListener('change', synchronize)
-
-  removeSystemListener = () => {
-    query.removeEventListener('change', synchronize)
-  }
-
-  synchronize()
-}
-`
-
-const SELECT_COMPONENT = String.raw`import {
-  forwardRef,
-  type SelectHTMLAttributes,
+const FIELD_COMPONENT = String.raw`import {
+  type ReactNode,
+  useId,
 } from 'react'
 import { cn } from '../../lib/utils'
 
-export interface SelectProps
-  extends SelectHTMLAttributes<HTMLSelectElement> {}
+export interface FieldControlIds {
+  readonly inputId: string
+  readonly descriptionId?: string
+  readonly errorId?: string
+  readonly describedBy?: string
+}
 
-export const Select = forwardRef<
-  HTMLSelectElement,
-  SelectProps
->(function Select(
-  {
-    className,
-    ...props
-  },
-  ref,
-) {
-  return (
-    <select
-      ref={ref}
-      className={cn(
-        'h-10 w-full rounded-md border border-input',
-        'bg-background px-3 text-sm text-foreground',
-        'shadow-sm outline-none',
-        'focus-visible:ring-2 focus-visible:ring-ring',
-        'disabled:cursor-not-allowed disabled:opacity-50',
-        className,
-      )}
-      {...props}
-    />
-  )
-})
-`
+export interface FieldProps {
+  readonly label: string
+  readonly description?: string
+  readonly error?: string
+  readonly required?: boolean
+  readonly className?: string
+  readonly children: (
+    ids: FieldControlIds,
+  ) => ReactNode
+}
 
-const FEEDBACK_COMPONENTS = String.raw`import {
-  AlertCircle,
-  Inbox,
-  LoaderCircle,
-} from 'lucide-react'
-import type { ReactNode } from 'react'
-import { Button } from './button'
+export function Field({
+  label,
+  description,
+  error,
+  required = false,
+  className,
+  children,
+}: FieldProps) {
+  const inputId = useId()
 
-export function LoadingState({
-  label = '正在加载…',
-}: {
-  readonly label?: string
-}) {
+  const descriptionId =
+  description
+    ? inputId + '-description'
+    : undefined
+
+  const errorId =
+  error
+    ? inputId + '-error'
+    : undefined
+
+  const describedBy = [
+    descriptionId,
+    errorId,
+  ]
+    .filter(Boolean)
+    .join(' ') || undefined
+
   return (
     <div
-      className="grid min-h-32 place-items-center text-sm text-muted-foreground"
-      role="status"
+      className={cn(
+        'grid gap-2',
+        className,
+      )}
     >
-      <span className="flex items-center gap-2">
-        <LoaderCircle
-          aria-hidden="true"
-          className="size-4 animate-spin"
-        />
+      <label
+        className="text-sm font-medium"
+        htmlFor={inputId}
+      >
         {label}
-      </span>
+
+        {required ? (
+          <>
+            <span
+              aria-hidden="true"
+              className="ml-1 text-destructive"
+            >
+              *
+            </span>
+
+            <span className="sr-only">
+              必填
+            </span>
+          </>
+        ) : null}
+      </label>
+
+      {description ? (
+        <p
+          id={descriptionId}
+          className={cn(
+            'text-xs leading-5',
+            'text-muted-foreground',
+          )}
+        >
+          {description}
+        </p>
+      ) : null}
+
+      {children({
+        inputId,
+        descriptionId,
+        errorId,
+        describedBy,
+      })}
+
+      {error ? (
+        <p
+          id={errorId}
+          className={cn(
+            'flex items-start gap-1',
+            'text-xs leading-5',
+            'text-destructive',
+          )}
+          role="alert"
+        >
+          {error}
+        </p>
+      ) : null}
     </div>
   )
 }
+`
 
-export function EmptyState({
-  title,
-  description,
-  action,
-}: {
+const CONFIRMATION_DIALOG_COMPONENT = String.raw`import { Button } from './button'
+import { Dialog } from './dialog'
+
+export interface ConfirmationDialogProps {
+  readonly open: boolean
   readonly title: string
   readonly description: string
-  readonly action?: ReactNode
-}) {
-  return (
-    <section className="grid min-h-40 place-items-center px-6 text-center">
-      <div>
-        <Inbox
-          aria-hidden="true"
-          className="mx-auto size-5 text-muted-foreground"
-        />
-
-        <h3 className="mt-3 text-sm font-semibold">
-          {title}
-        </h3>
-
-        <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">
-          {description}
-        </p>
-
-        {action ? (
-          <div className="mt-4">
-            {action}
-          </div>
-        ) : null}
-      </div>
-    </section>
-  )
+  readonly confirmLabel: string
+  readonly cancelLabel?: string
+  readonly destructive?: boolean
+  readonly busy?: boolean
+  readonly onConfirm: () => void
+  readonly onCancel: () => void
 }
 
-export function ErrorState({
-  title = '暂时无法完成操作',
-  message,
-  onRetry,
-}: {
-  readonly title?: string
-  readonly message: string
-  readonly onRetry?: () => void
-}) {
+export function ConfirmationDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  cancelLabel = '取消',
+  destructive = false,
+  busy = false,
+  onConfirm,
+  onCancel,
+}: ConfirmationDialogProps) {
   return (
-    <section
-      className="grid min-h-40 place-items-center px-6 text-center"
-      role="alert"
-    >
-      <div>
-        <AlertCircle
-          aria-hidden="true"
-          className="mx-auto size-5 text-destructive"
-        />
-
-        <h3 className="mt-3 text-sm font-semibold">
-          {title}
-        </h3>
-
-        <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">
-          {message}
-        </p>
-
-        {onRetry ? (
+    <Dialog
+      open={open}
+      title={title}
+      description={description}
+      busy={busy}
+      closeOnOverlayClick={!busy}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          onCancel()
+        }
+      }}
+      footer={
+        <div
+          className={cnFooter()}
+        >
           <Button
-            className="mt-4"
-            onClick={onRetry}
-            size="sm"
+            disabled={busy}
+            onClick={onCancel}
             type="button"
-            variant="outline"
+            variant="ghost"
           >
-            重试
+            {cancelLabel}
           </Button>
-        ) : null}
+
+          <Button
+            aria-busy={
+              busy || undefined
+            }
+            disabled={busy}
+            onClick={onConfirm}
+            type="button"
+            variant={
+              destructive
+                ? 'destructive'
+                : 'default'
+            }
+          >
+            {busy
+              ? '处理中…'
+              : confirmLabel}
+          </Button>
+        </div>
+      }
+    >
+      <div className="sr-only">
+        {description}
       </div>
-    </section>
+    </Dialog>
   )
+}
+
+function cnFooter(): string {
+  return [
+    'flex flex-wrap',
+    'justify-end gap-2',
+  ].join(' ')
 }
 `
 
-const WORKSPACE_LAYOUT = String.raw`import {
-  useSyncExternalStore,
-} from 'react'
-
-export type WorkspaceLayoutMode =
-  | 'wide'
-  | 'compact'
-  | 'narrow'
-
-function getSnapshot(): WorkspaceLayoutMode {
-  if (window.innerWidth >= 1280) {
-    return 'wide'
-  }
-
-  if (window.innerWidth >= 900) {
-    return 'compact'
-  }
-
-  return 'narrow'
-}
-
-function getServerSnapshot(): WorkspaceLayoutMode {
-  return 'wide'
-}
-
-function subscribe(
-  listener: () => void,
-): () => void {
-  window.addEventListener(
-    'resize',
-    listener,
-    {
-      passive: true,
-    },
-  )
-
-  return () => {
-    window.removeEventListener(
-      'resize',
-      listener,
-    )
-  }
-}
-
-export function useWorkspaceLayoutMode():
-  WorkspaceLayoutMode {
-  return useSyncExternalStore(
-    subscribe,
-    getSnapshot,
-    getServerSnapshot,
-  )
-}
-`
-
-const TLDRAW_OVERRIDES = String.raw`/*
- * tldraw 5.2.5 UI override boundary.
- * Revalidate these selectors when upgrading tldraw.
- */
-
-.tl-canvas,
-.tl-background {
-  background-color: var(--color-canvas);
-}
-
-.tlui-help-menu,
-.tlui-menu-zone,
-.tlui-navigation-zone,
-.tlui-debug-panel {
-  display: none;
-}
-
-.tlui-toolbar__tools {
-  border-radius: 10px;
-}
-
-.tlui-page-menu {
-  --tl-page-menu-y: auto;
-}
-
-[data-workbench-state='empty'] .tl-container {
-  display: none;
-}
-
-.workspace-shell .tl-container,
-.workspace-shell .tlui-layout {
-  width: 100%;
-  height: 100%;
-}
-
-.workspace-shell .tlui-layout {
-  overflow: hidden;
-}
-`
-
-const ARCHITECTURE_CHECK = String.raw`#!/usr/bin/env node
+const DIALOG_ARCHITECTURE_CHECK = String.raw`#!/usr/bin/env node
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -547,6 +615,7 @@ const IGNORED_DIRECTORIES = new Set([
   '.git',
   '.turbo',
   '.canvas-ui-refactor-backup',
+  '.canvas-ui-phase-2a-backup',
   'dist',
   'node_modules',
   'target',
@@ -554,33 +623,39 @@ const IGNORED_DIRECTORIES = new Set([
 
 function walk(directory) {
   return fs
-    .readdirSync(directory, {
-      withFileTypes: true,
-    })
+    .readdirSync(
+      directory,
+      {
+        withFileTypes: true,
+      },
+    )
     .flatMap((entry) => {
-      if (IGNORED_DIRECTORIES.has(entry.name)) {
+      if (
+        IGNORED_DIRECTORIES.has(
+          entry.name,
+        )
+      ) {
         return []
       }
 
-      const filePath = path.join(
+      const entryPath = path.join(
         directory,
         entry.name,
       )
 
       if (entry.isDirectory()) {
-        return walk(filePath)
+        return walk(entryPath)
       }
 
       return entry.isFile()
-        ? [filePath]
+        ? [entryPath]
         : []
     })
 }
 
 const sourceFiles = walk(ROOT).filter(
   (filePath) =>
-    filePath.endsWith('.tsx') ||
-    filePath.endsWith('.css'),
+    filePath.endsWith('.tsx'),
 )
 
 const failures = []
@@ -589,212 +664,113 @@ for (const filePath of sourceFiles) {
   const relativePath =
     path.relative(ROOT, filePath)
 
+  const normalizedPath =
+    relativePath.split(path.sep).join('/')
+
   const content =
-    fs.readFileSync(filePath, 'utf8')
-
-  if (
-    filePath.endsWith('.tsx') &&
-    /<button\b[^>]*>[\s\S]*?<button\b/.test(content)
-  ) {
-    failures.push(
-      relativePath +
-        ': 可能存在嵌套 button',
+    fs.readFileSync(
+      filePath,
+      'utf8',
     )
-  }
 
-  if (
-    filePath.endsWith('.tsx') &&
-    /\b(bg-white|text-black)\b/.test(content)
-  ) {
-    failures.push(
-      relativePath +
-        ': 使用硬编码主题颜色',
+  const isDesignSystemDialog =
+    normalizedPath.startsWith(
+      'foundations/design-system/' +
+        'src/components/ui/',
     )
-  }
 
   if (
-    filePath.endsWith('.tsx') &&
-    /fixed\s+inset-0[\s\S]{0,300}role=["']dialog["']/.test(
+    !isDesignSystemDialog &&
+    /role=["']dialog["']/.test(content) &&
+    /fixed[\s\S]{0,300}inset-0/.test(
       content,
-    ) &&
-    !relativePath.includes(
-      'foundations' +
-        path.sep +
-        'design-system',
     )
   ) {
     failures.push(
-      relativePath +
-        ': Feature 自行实现 Dialog Overlay',
+      normalizedPath +
+        ': Feature 不应自行实现 Dialog Overlay',
     )
   }
-}
 
-const tokenFile = path.join(
-  ROOT,
-  'foundations/design-system/src/styles/index.css',
-)
+  if (
+    /role=["']dialog["']/.test(content) &&
+    !/aria-labelledby=/.test(content)
+  ) {
+    failures.push(
+      normalizedPath +
+        ': Dialog 缺少 aria-labelledby',
+    )
+  }
 
-if (!fs.existsSync(tokenFile)) {
-  failures.push(
-    '缺少 Design System Token 文件',
-  )
-} else {
-  const tokenContent =
-    fs.readFileSync(tokenFile, 'utf8')
-
-  const requiredTokens = [
-    '--ui-primary',
-    '--ui-destructive',
-    '--ui-ring',
-    '--ui-z-dialog',
-    'prefers-reduced-motion',
-  ]
-
-  for (const token of requiredTokens) {
-    if (!tokenContent.includes(token)) {
-      failures.push(
-        '缺少 Design Token：' + token,
-      )
-    }
+  if (
+    /role=["']dialog["']/.test(content) &&
+    !/aria-modal=/.test(content)
+  ) {
+    failures.push(
+      normalizedPath +
+        ': Dialog 缺少 aria-modal',
+    )
   }
 }
 
 if (failures.length > 0) {
   console.error(
-    failures
-      .map((failure) => '- ' + failure)
-      .join('\n'),
-  )
 
   process.exitCode = 1
 } else {
   console.log(
-    'UI architecture checks passed.',
+    'Dialog architecture checks passed.',
   )
 }
 `
 
 const GENERATED_FILES = new Map([
-  [FILES.tokens, TOKENS_CSS],
-  [FILES.themeController, THEME_CONTROLLER],
-  [FILES.select, SELECT_COMPONENT],
-  [FILES.feedback, FEEDBACK_COMPONENTS],
-  [FILES.workspaceLayout, WORKSPACE_LAYOUT],
-  [FILES.tldrawOverrides, TLDRAW_OVERRIDES],
-  [FILES.architectureCheck, ARCHITECTURE_CHECK],
+  [
+    FILES.dialog,
+    DIALOG_COMPONENT,
+  ],
+  [
+    FILES.field,
+    FIELD_COMPONENT,
+  ],
+  [
+    FILES.confirmationDialog,
+    CONFIRMATION_DIALOG_COMPONENT,
+  ],
+  [
+    FILES.architectureCheck,
+    DIALOG_ARCHITECTURE_CHECK,
+  ],
 ])
 
-function transformAppCss(content) {
-  const designSystemImport =
-    '@import "@hybrid-canvas/design-system/styles.css";'
-
-  const overrideImport =
-    '@import "./styles/tldraw-overrides.css";'
-
-  let next = content
-
-  if (!next.includes(designSystemImport)) {
-    const tldrawImport =
-      '@import "tldraw/tldraw.css";'
-
-    if (!next.includes(tldrawImport)) {
-      throw new Error(
-        'app.css 中没有找到 tldraw CSS import。',
-      )
-    }
-
-    next = next.replace(
-      tldrawImport,
-      [
-        tldrawImport,
-        designSystemImport,
-      ].join('\n'),
-    )
-  }
-
-  if (!next.includes(overrideImport)) {
-    const tailwindImportPattern =
-      /@import\s+"tailwindcss"[^;]*;/
-
-    const match = next.match(
-      tailwindImportPattern,
-    )
-
-    if (!match) {
-      throw new Error(
-        'app.css 中没有找到 Tailwind CSS import。',
-      )
-    }
-
-    next = next.replace(
-      match[0],
-      [
-        match[0],
-        overrideImport,
-      ].join('\n'),
-    )
-  }
-
-  return next
-}
-
-function transformDesignSystemPackage(content) {
-  const packageJson = JSON.parse(content)
-
-  packageJson.exports ??= {}
-
-  packageJson.exports['./styles.css'] =
-    './src/styles/index.css'
-
-  return (
-    JSON.stringify(
-      packageJson,
-      null,
-      2,
-    ) + '\n'
-  )
-}
-
-function transformRootPackage(content) {
-  const packageJson = JSON.parse(content)
-
-  packageJson.scripts ??= {}
-
-  const checkCommand =
-    'node tests/architecture/check-ui-architecture.mjs'
-
-  const existing =
-    packageJson.scripts['test:architecture']
-
-  if (!existing) {
-    packageJson.scripts['test:architecture'] =
-      checkCommand
-  } else if (!existing.includes(checkCommand)) {
-    packageJson.scripts['test:architecture'] =
-      `${existing} && ${checkCommand}`
-  }
-
-  return (
-    JSON.stringify(
-      packageJson,
-      null,
-      2,
-    ) + '\n'
-  )
-}
-
-function transformDesignSystemPublicApi(content) {
+function transformPublicApi(content) {
   const exportsToAdd = [
-    "export { Select, type SelectProps } from './components/ui/select'",
-    "export { EmptyState, ErrorState, LoadingState } from './components/ui/feedback'",
-    "export { applyThemePreference, type ThemePreference } from './theme-controller'",
+    "export { Dialog, type DialogProps } from './components/ui/dialog'",
+    "export { Field, type FieldControlIds, type FieldProps } from './components/ui/field'",
+    "export { ConfirmationDialog, type ConfirmationDialogProps } from './components/ui/confirmation-dialog'",
   ]
 
   let next = content.trimEnd()
 
   for (const exportLine of exportsToAdd) {
-    if (!next.includes(exportLine)) {
+    const modulePath =
+      exportLine.match(/from '([^']+)'/)?.[1]
+
+    if (!modulePath) {
+      throw new Error(
+        `无法解析导出语句：${exportLine}`,
+      )
+    }
+
+    const existingExportPattern =
+      new RegExp(
+        `export\\s+\\{[^}]*\\}\\s+from\\s+['"]${escapeRegExp(modulePath)}['"]`,
+        's',
+      )
+
+    if (
+      !existingExportPattern.test(next)
+    ) {
       next += `\n${exportLine}`
     }
   }
@@ -802,162 +778,53 @@ function transformDesignSystemPublicApi(content) {
   return `${next}\n`
 }
 
-function transformTabs(content, label) {
-  let next = content
+function transformRootPackage(content) {
+  const packageJson = JSON.parse(content)
 
-  const buttonMap =
-    'useRef(new Map<CanvasSessionId, HTMLButtonElement>())'
+  packageJson.scripts ??= {}
 
-  if (next.includes(buttonMap)) {
-    next = replaceExactlyOnce(
-      next,
-      buttonMap,
-      'useRef(new Map<CanvasSessionId, HTMLDivElement>())',
-      `${label} tab refs`,
-    )
+  const command =
+    'node tests/architecture/check-ui-dialogs.mjs'
+
+  const existing =
+    packageJson.scripts[
+      'test:architecture'
+    ]
+
+  if (!existing) {
+    packageJson.scripts[
+      'test:architecture'
+    ] = command
+  } else if (!existing.includes(command)) {
+    packageJson.scripts[
+      'test:architecture'
+    ] = `${existing} && ${command}`
   }
 
-  const forwardRefDeclaration =
-    'const DocumentTab = forwardRef<HTMLButtonElement, DocumentTabProps>'
-
-  if (next.includes(forwardRefDeclaration)) {
-    next = replaceExactlyOnce(
-      next,
-      forwardRefDeclaration,
-      'const DocumentTab = forwardRef<HTMLDivElement, DocumentTabProps>',
-      `${label} forwardRef`,
-    )
-  }
-
-  const openingButton = [
-    '    <button',
-    '      ref={ref}',
-    '      aria-selected={model.isActive}',
-  ].join('\n')
-
-  const openingDiv = [
-    '    <div',
-    '      ref={ref}',
-    '      aria-selected={model.isActive}',
-  ].join('\n')
-
-  if (next.includes(openingButton)) {
-    next = replaceExactlyOnce(
-      next,
-      openingButton,
-      openingDiv,
-      `${label} outer tab element`,
-    )
-  }
-
-  const clickAndRole = [
-    '      onClick={() => onActivate(model.sessionId)}',
-    '      role="tab"',
-  ].join('\n')
-
-  const keyboardActivation = [
-    '      onClick={() => onActivate(model.sessionId)}',
-    '      onKeyDown={(event) => {',
-    "        if (event.key === 'Enter' || event.key === ' ') {",
-    '          event.preventDefault()',
-    '          onActivate(model.sessionId)',
-    '        }',
-    '      }}',
-    '      role="tab"',
-  ].join('\n')
-
-  if (next.includes(clickAndRole)) {
-    next = replaceExactlyOnce(
-      next,
-      clickAndRole,
-      keyboardActivation,
-      `${label} keyboard activation`,
-    )
-  }
-
-  const divTypeAttribute = [
-    '      type="button"',
-    '    >',
-    '      <DocumentIcon />',
-  ].join('\n')
-
-  const divWithoutType = [
-    '    >',
-    '      <DocumentIcon />',
-  ].join('\n')
-
-  if (next.includes(divTypeAttribute)) {
-    next = replaceExactlyOnce(
-      next,
-      divTypeAttribute,
-      divWithoutType,
-      `${label} invalid div type attribute`,
-    )
-  }
-
-  const closingButton = [
-    '      ) : null}',
-    '    </button>',
-    '  )',
-    '})',
-  ].join('\n')
-
-  const closingDiv = [
-    '      ) : null}',
-    '    </div>',
-    '  )',
-    '})',
-  ].join('\n')
-
-  if (next.includes(closingButton)) {
-    next = replaceExactlyOnce(
-      next,
-      closingButton,
-      closingDiv,
-      `${label} outer closing element`,
-    )
-  }
-
-  return next
+  return (
+    JSON.stringify(
+      packageJson,
+      null,
+      2,
+    ) + '\n'
+  )
 }
 
-function transformActivityRail(content) {
-  return content
-    .replaceAll('bg-white', 'bg-popover')
-    .replaceAll('text-black', 'text-foreground')
-    .replaceAll(
-      'border-black/5',
-      'border-divider',
-    )
+function escapeRegExp(value) {
+  return value.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    '\\$&',
+  )
 }
 
 const TRANSFORMS = new Map([
-  [FILES.appCss, transformAppCss],
   [
-    FILES.designSystemPackage,
-    transformDesignSystemPackage,
-  ],
-  [
-    FILES.designSystemPublicApi,
-    transformDesignSystemPublicApi,
+    FILES.publicApi,
+    transformPublicApi,
   ],
   [
     FILES.rootPackage,
     transformRootPackage,
-  ],
-  [
-    FILES.canvasTabs,
-    (content) =>
-      transformTabs(content, 'CanvasTabs'),
-  ],
-  [
-    FILES.documentTabs,
-    (content) =>
-      transformTabs(content, 'DocumentTabs'),
-  ],
-  [
-    FILES.activityRail,
-    transformActivityRail,
   ],
 ])
 
@@ -1012,9 +879,9 @@ function buildChanges() {
   return changes
 }
 
-function backupChange(change) {
+function backup(change) {
   const backupFile = path.join(
-    BACKUP_DIR,
+    BACKUP_DIRECTORY,
     change.relativePath,
   )
 
@@ -1043,19 +910,22 @@ function backupChange(change) {
 }
 
 function applyChanges(changes) {
-  if (fs.existsSync(BACKUP_DIR)) {
+  if (fs.existsSync(BACKUP_DIRECTORY)) {
     throw new Error(
-      '备份目录已经存在。请先执行 --rollback，' +
-        '或手动检查 .canvas-ui-refactor-backup。',
+      'Phase 2A 备份目录已经存在。' +
+        '请先执行 --rollback。',
     )
   }
 
-  fs.mkdirSync(BACKUP_DIR, {
-    recursive: true,
-  })
+  fs.mkdirSync(
+    BACKUP_DIRECTORY,
+    {
+      recursive: true,
+    },
+  )
 
   for (const change of changes) {
-    backupChange(change)
+    backup(change)
 
     write(
       change.relativePath,
@@ -1064,9 +934,12 @@ function applyChanges(changes) {
   }
 
   const manifest = {
-    createdAt: new Date().toISOString(),
+    createdAt:
+      new Date().toISOString(),
+
     files: changes.map(
-      (change) => change.relativePath,
+      (change) =>
+        change.relativePath,
     ),
   }
 
@@ -1084,8 +957,7 @@ function applyChanges(changes) {
 function rollbackChanges() {
   if (!fs.existsSync(MANIFEST_FILE)) {
     throw new Error(
-      '没有找到回滚清单：' +
-        MANIFEST_FILE,
+      '没有找到 Phase 2A 回滚清单。',
     )
   }
 
@@ -1096,9 +968,11 @@ function rollbackChanges() {
     ),
   )
 
-  for (const relativePath of manifest.files) {
+  for (
+    const relativePath of manifest.files
+  ) {
     const backupFile = path.join(
-      BACKUP_DIR,
+      BACKUP_DIRECTORY,
       relativePath,
     )
 
@@ -1140,19 +1014,21 @@ function rollbackChanges() {
   }
 
   fs.rmSync(
-    BACKUP_DIR,
+    BACKUP_DIRECTORY,
     {
-      force: true,
       recursive: true,
+      force: true,
     },
   )
 
-  console.log('已回滚 UI 重构。')
+  console.log(
+    'Phase 2A 已回滚。',
+  )
 }
 
 function printPlan(changes) {
   console.log(
-    `将修改 ${changes.length} 个文件：`,
+    `Phase 2A 将修改 ${changes.length} 个文件：`,
   )
 
   for (const change of changes) {
@@ -1178,7 +1054,10 @@ function main() {
   const changes = buildChanges()
 
   if (changes.length === 0) {
-    console.log('没有需要应用的修改。')
+    console.log(
+      'Phase 2A 没有需要应用的修改。',
+    )
+
     return
   }
 
@@ -1186,19 +1065,26 @@ function main() {
 
   if (!APPLY) {
     console.log('')
-    console.log('当前为预检模式，未写入文件。')
     console.log(
-      '应用修改：node tooling/script/recover-refactor-scripts.mjs --apply',
+      '当前为预检模式，没有写入文件。',
     )
+
+    console.log(
+      '应用命令：node tooling/script/refactor-ui-phase-2a.mjs --apply',
+    )
+
     return
   }
 
   applyChanges(changes)
 
   console.log('')
-  console.log('UI 重构已应用。')
+  console.log(
+    'Phase 2A 已应用。',
+  )
+
   console.log('')
-  console.log('请继续执行：')
+  console.log('请执行：')
   console.log('pnpm format')
   console.log('pnpm lint')
   console.log('pnpm typecheck')
@@ -1206,9 +1092,9 @@ function main() {
   console.log('pnpm test')
   console.log('pnpm build:desktop')
   console.log('')
-  console.log('需要回滚时执行：')
+  console.log('回滚命令：')
   console.log(
-    'node tooling/script/recover-refactor-scripts.mjs --rollback --allow-dirty',
+    'node tooling/script/refactor-ui-phase-2a.mjs --rollback --allow-dirty',
   )
 }
 
