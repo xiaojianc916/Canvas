@@ -1,113 +1,145 @@
-import { readFile, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { resolve, join } from 'node:path'
 
-const args = process.argv.slice(2)
-const apply = args.includes('--apply')
+const argumentsList = process.argv.slice(2)
 
-const allowedArguments = new Set(['--apply', '--allow-dirty'])
+let apply = false
+let repositoryRoot = process.cwd()
 
-for (const argument of args) {
-  if (!allowedArguments.has(argument)) {
-    throw new Error(`未知参数：${argument}`)
+for (let index = 0; index < argumentsList.length; index += 1) {
+  const argument = argumentsList[index]
+
+  if (argument === '--apply') {
+    apply = true
+    continue
+  }
+
+  // 为兼容现有脚本调用约定而接受；本脚本不会检查 Git 状态。
+  if (argument === '--allow-dirty') {
+    continue
+  }
+
+  if (argument === '--root') {
+    const rootArgument = argumentsList[index + 1]
+
+    if (!rootArgument || rootArgument.startsWith('--')) {
+      throw new Error('--root 后必须提供仓库路径')
+    }
+
+    repositoryRoot = resolve(rootArgument)
+    index += 1
+    continue
+  }
+
+  if (argument === '--help' || argument === '-h') {
+    console.log(`
+用法：
+  node tooling/script/fix-empty-vitest.mjs [选项]
+
+选项：
+  --apply            实际写入修改
+  --allow-dirty      兼容参数
+  --root <路径>      指定仓库根目录
+  -h, --help         显示帮助
+`)
+    process.exit(0)
+  }
+
+  throw new Error(`未知参数：${argument}`)
+}
+
+repositoryRoot = resolve(repositoryRoot)
+
+const ignoredDirectories = new Set([
+  '.git',
+  '.turbo',
+  '.idea',
+  '.vscode',
+  'node_modules',
+  'target',
+  'dist',
+  'build',
+  'coverage',
+])
+
+const packageJsonPaths = []
+
+async function findPackageJsonFiles(directory) {
+  const entries = await readdir(directory, {
+    withFileTypes: true,
+  })
+
+  for (const entry of entries) {
+    if (entry.isDirectory() && ignoredDirectories.has(entry.name)) {
+      continue
+    }
+
+    const entryPath = join(directory, entry.name)
+
+    if (entry.isDirectory()) {
+      await findPackageJsonFiles(entryPath)
+      continue
+    }
+
+    if (entry.isFile() && entry.name === 'package.json') {
+      packageJsonPaths.push(entryPath)
+    }
   }
 }
 
-const filePath = resolve(
-  process.cwd(),
-  'apps/desktop/src/application/termination/application-termination-coordinator.test.ts',
-)
+await findPackageJsonFiles(repositoryRoot)
 
-const currentSource = await readFile(filePath, 'utf8')
+const changes = []
 
-const updatedSource = `import { describe, expect, it, vi } from 'vitest'
+const testScriptPattern = /("test"\s*:\s*)"vitest run"/g
+const replacement = '$1"vitest run --passWithNoTests"'
 
-import { createApplicationTerminationCoordinator } from './application-termination-coordinator'
+for (const packageJsonPath of packageJsonPaths) {
+  const source = await readFile(packageJsonPath, 'utf8')
 
-describe('ApplicationTerminationCoordinator', () => {
-  it('dispatches the requested native termination intent', () => {
-    const terminate = vi.fn()
+  if (!testScriptPattern.test(source)) {
+    testScriptPattern.lastIndex = 0
+    continue
+  }
 
-    const coordinator = createApplicationTerminationCoordinator(
-      {
-        planApplicationClose: () => ({ kind: 'close-now' }),
-        discardAllAndClose: vi.fn(),
-      },
-      { terminate },
-    )
+  testScriptPattern.lastIndex = 0
 
-    coordinator.request('update-restart')
+  const updatedSource = source.replace(testScriptPattern, replacement)
 
-    expect(terminate).toHaveBeenCalledTimes(1)
-    expect(terminate).toHaveBeenCalledWith('update-restart')
-    expect(coordinator.getSnapshot()).toEqual({
-      state: 'terminating',
-      intent: 'update-restart',
-    })
+  changes.push({
+    packageJsonPath,
+    updatedSource,
   })
+}
 
-  it('ignores additional requests after native termination begins', () => {
-    const terminate = vi.fn()
-
-    const coordinator = createApplicationTerminationCoordinator(
-      {
-        planApplicationClose: () => ({ kind: 'close-now' }),
-        discardAllAndClose: vi.fn(),
-      },
-      { terminate },
-    )
-
-    coordinator.request('window-close')
-    coordinator.request('application-exit')
-
-    expect(terminate).toHaveBeenCalledTimes(1)
-    expect(terminate).toHaveBeenCalledWith('window-close')
-    expect(coordinator.getSnapshot()).toEqual({
-      state: 'terminating',
-      intent: 'window-close',
-    })
-  })
-
-  it('does not cancel after native termination begins', () => {
-    const terminate = vi.fn()
-
-    const coordinator = createApplicationTerminationCoordinator(
-      {
-        planApplicationClose: () => ({ kind: 'close-now' }),
-        discardAllAndClose: vi.fn(),
-      },
-      { terminate },
-    )
-
-    coordinator.request('window-close')
-    coordinator.cancel()
-
-    expect(terminate).toHaveBeenCalledTimes(1)
-    expect(coordinator.getSnapshot()).toEqual({
-      state: 'terminating',
-      intent: 'window-close',
-    })
-  })
-})
-`
-
-if (currentSource === updatedSource) {
-  console.log('无需修改：终止协调器测试已经是最新版本。')
+if (changes.length === 0) {
+  console.log('无需修改：没有发现使用裸 `vitest run` 的 test 脚本。')
   process.exit(0)
 }
 
-console.log(`目标文件：${filePath}`)
-console.log('将移除过时的失败重试测试，并匹配当前单向终止行为。')
+console.log('将修改以下文件：')
+
+for (const change of changes) {
+  console.log(`- ${change.packageJsonPath}`)
+}
+
+console.log('\n修改内容：')
+console.log('- "test": "vitest run"')
+console.log('+ "test": "vitest run --passWithNoTests"')
 
 if (!apply) {
-  console.log('\n当前是预览模式，未写入文件。')
-  console.log('添加 --apply 后执行实际修改。')
+  console.log('\n当前为预览模式，尚未写入文件。')
+  console.log('确认后添加 --apply 重新运行。')
   process.exit(0)
 }
 
-await writeFile(filePath, updatedSource, 'utf8')
+for (const change of changes) {
+  await writeFile(
+    change.packageJsonPath,
+    change.updatedSource,
+    'utf8',
+  )
+}
 
-console.log('\n修改完成。')
-console.log('请运行：')
-console.log('pnpm --filter @hybrid-canvas/desktop typecheck')
-console.log('pnpm --filter @hybrid-canvas/desktop test')
-console.log('pnpm typecheck')
+console.log(`\n修改完成，共更新 ${changes.length} 个 package.json。`)
+console.log('请重新运行：pnpm test')

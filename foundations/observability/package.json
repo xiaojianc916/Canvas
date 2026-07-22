@@ -14,7 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome lint src",
     "lint:fix": "biome lint --write src",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "clean": "rm -rf node_modules dist"
   },
   "devDependencies": {

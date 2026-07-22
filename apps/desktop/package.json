@@ -13,7 +13,7 @@
     "format": "biome format --write src",
     "format:check": "biome format src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:e2e": "playwright test"
   },
   "dependencies": {
