@@ -35,7 +35,12 @@ export function DesktopTitleBar({
   return (
     <div className="flex h-full min-h-0 min-w-0 bg-chrome" data-tauri-drag-region>
       {/* Chrome owns drag behavior; only button elements opt out. */}
-      <div className="flex h-full min-h-0 w-full items-stretch" onMouseDown={handleDragMouseDown}>
+      <div
+        aria-label="窗口标题栏"
+        className="flex h-full min-h-0 w-full items-stretch"
+        onMouseDown={handleDragMouseDown}
+        role="toolbar"
+      >
         <div
           className="flex w-(--activity-rail-width) shrink-0 items-center justify-center border-b border-divider"
           data-tauri-drag-region

@@ -1,9 +1,0 @@
-{
-  "createdAt": "2026-07-21T16:38:46.458Z",
-  "files": [
-    "apps/desktop/src/app.css",
-    "features/workspace/src/presentation/shell/CanvasTabs.tsx",
-    "features/workspace/src/presentation/shell/DocumentTabs.tsx",
-    "features/workspace/src/presentation/shell/ActivityRail.tsx"
-  ]
-}
