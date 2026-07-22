@@ -1,0 +1,21 @@
+{
+  "name": "@hybrid-canvas/test-cross-domain-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --project tsconfig.json --noEmit",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "vitest run document-lifecycle"
+  },
+  "dependencies": {
+    "@hybrid-canvas/canvas": "workspace:*",
+    "@hybrid-canvas/document": "workspace:*",
+    "tldraw": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

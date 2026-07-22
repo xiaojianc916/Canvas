@@ -12,34 +12,34 @@ import {
 } from 'react'
 import { cn } from '../../lib/utils'
 
-export interface ComboboxDataItem {
+export interface SelectOption {
   readonly value: string
   readonly label: string
 }
 
-interface ComboboxContextValue {
-  readonly data: readonly ComboboxDataItem[]
+interface SelectContextValue {
+  readonly data: readonly SelectOption[]
   readonly type: string
   readonly value: string
   readonly width: number
   readonly setWidth: (width: number) => void
 }
 
-const ComboboxContext = createContext<ComboboxContextValue | null>(null)
+const SelectContext = createContext<SelectContextValue | null>(null)
 
-function useComboboxContext(): ComboboxContextValue {
-  const context = useContext(ComboboxContext)
+function useSelectContext(): SelectContextValue {
+  const context = useContext(SelectContext)
 
   if (!context) {
-    throw new Error('Combobox components must be rendered inside <Combobox>.')
+    throw new Error('Select components must be rendered inside <Select>.')
   }
 
   return context
 }
 
-export interface ComboboxProps {
+export interface SelectProps {
   readonly children: ReactNode
-  readonly data: readonly ComboboxDataItem[]
+  readonly data: readonly SelectOption[]
   readonly type: string
   readonly value: string
   readonly open: boolean
@@ -48,7 +48,7 @@ export interface ComboboxProps {
   readonly onOpenChange: (open: boolean) => void
 }
 
-export function Combobox({
+export function Select({
   children,
   data,
   type,
@@ -57,11 +57,11 @@ export function Combobox({
   disabled = false,
   onValueChange,
   onOpenChange,
-}: ComboboxProps) {
+}: SelectProps) {
   const [width, setWidth] = useState(200)
 
   return (
-    <ComboboxContext.Provider
+    <SelectContext.Provider
       value={{
         data,
         type,
@@ -85,19 +85,19 @@ export function Combobox({
       >
         {children}
       </BaseCombobox.Root>
-    </ComboboxContext.Provider>
+    </SelectContext.Provider>
   )
 }
 
-export type ComboboxTriggerProps = ComponentPropsWithoutRef<
+export type SelectTriggerProps = ComponentPropsWithoutRef<
   typeof BaseCombobox.Trigger
 >
 
-export const ComboboxTrigger = forwardRef<
+export const SelectTrigger = forwardRef<
   HTMLButtonElement,
-  ComboboxTriggerProps
->(function ComboboxTrigger({ children, className, ...props }, forwardedRef) {
-  const { data, type, value, setWidth } = useComboboxContext()
+  SelectTriggerProps
+>(function SelectTrigger({ children, className, ...props }, forwardedRef) {
+  const { data, type, value, setWidth } = useSelectContext()
   const localRef = useRef<HTMLButtonElement | null>(null)
 
   useEffect(() => {
@@ -167,15 +167,15 @@ export const ComboboxTrigger = forwardRef<
   )
 })
 
-export type ComboboxContentProps = ComponentPropsWithoutRef<
+export type SelectContentProps = ComponentPropsWithoutRef<
   typeof BaseCombobox.Popup
 >
 
-export const ComboboxContent = forwardRef<
+export const SelectContent = forwardRef<
   HTMLDivElement,
-  ComboboxContentProps
->(function ComboboxContent({ className, style, ...props }, ref) {
-  const { width } = useComboboxContext()
+  SelectContentProps
+>(function SelectContent({ className, style, ...props }, ref) {
+  const { width } = useSelectContext()
 
   return (
     <BaseCombobox.Portal>
@@ -221,7 +221,7 @@ export const ComboboxInput = forwardRef<
   HTMLInputElement,
   ComboboxInputProps
 >(function ComboboxInput({ className, placeholder, ...props }, ref) {
-  const { type } = useComboboxContext()
+  const { type } = useSelectContext()
 
   return (
     <div className="flex items-center gap-2 border-b border-divider px-3">
@@ -256,7 +256,7 @@ export const ComboboxEmpty = forwardRef<
   HTMLDivElement,
   ComboboxEmptyProps
 >(function ComboboxEmpty({ children, className, ...props }, ref) {
-  const { type } = useComboboxContext()
+  const { type } = useSelectContext()
 
   return (
     <BaseCombobox.Empty
@@ -272,14 +272,14 @@ export const ComboboxEmpty = forwardRef<
   )
 })
 
-export type ComboboxListProps = ComponentPropsWithoutRef<
+export type SelectListProps = ComponentPropsWithoutRef<
   typeof BaseCombobox.List
 >
 
-export const ComboboxList = forwardRef<
+export const SelectList = forwardRef<
   HTMLDivElement,
-  ComboboxListProps
->(function ComboboxList({ className, ...props }, ref) {
+  SelectListProps
+>(function SelectList({ className, ...props }, ref) {
   return (
     <BaseCombobox.List
       className={cn(
@@ -293,14 +293,14 @@ export const ComboboxList = forwardRef<
   )
 })
 
-export type ComboboxGroupProps = ComponentPropsWithoutRef<
+export type SelectGroupProps = ComponentPropsWithoutRef<
   typeof BaseCombobox.Group
 >
 
-export const ComboboxGroup = forwardRef<
+export const SelectGroup = forwardRef<
   HTMLDivElement,
-  ComboboxGroupProps
->(function ComboboxGroup({ className, ...props }, ref) {
+  SelectGroupProps
+>(function SelectGroup({ className, ...props }, ref) {
   return (
     <BaseCombobox.Group
       className={cn('grid gap-0.5', className)}
@@ -310,17 +310,17 @@ export const ComboboxGroup = forwardRef<
   )
 })
 
-export type ComboboxItemProps = Omit<
+export type SelectItemProps = Omit<
   ComponentPropsWithoutRef<typeof BaseCombobox.Item>,
   'value'
 > & {
   readonly value: string
 }
 
-export const ComboboxItem = forwardRef<
+export const SelectItem = forwardRef<
   HTMLDivElement,
-  ComboboxItemProps
->(function ComboboxItem({ children, className, value, ...props }, ref) {
+  SelectItemProps
+>(function SelectItem({ children, className, value, ...props }, ref) {
   return (
     <BaseCombobox.Item
       className={cn(
@@ -347,14 +347,14 @@ export const ComboboxItem = forwardRef<
   )
 })
 
-export type ComboboxSeparatorProps = ComponentPropsWithoutRef<
+export type SelectSeparatorProps = ComponentPropsWithoutRef<
   typeof BaseCombobox.Separator
 >
 
-export const ComboboxSeparator = forwardRef<
+export const SelectSeparator = forwardRef<
   HTMLDivElement,
-  ComboboxSeparatorProps
->(function ComboboxSeparator({ className, ...props }, ref) {
+  SelectSeparatorProps
+>(function SelectSeparator({ className, ...props }, ref) {
   return (
     <BaseCombobox.Separator
       className={cn('-mx-1 my-1 h-px bg-divider', className)}

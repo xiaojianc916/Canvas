@@ -3,10 +3,20 @@ import type { HybridCanvasExtension } from '@hybrid-canvas/canvas/extensions'
 import { parseDrawDocument, serializeDrawDocument } from '@hybrid-canvas/file'
 import type { TLEditorSnapshot } from 'tldraw'
 
+import {
+  createDocumentSession,
+  type DocumentSaveTicket,
+  type DocumentSession,
+  type DocumentPersistenceState,
+} from '../domain/document-session'
+import type { EditorDocumentEvent, EditorDocumentPort } from '../ports/editor-document-port'
+
+// Tests: tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts
+
 export type CanvasId = string
 export type CanvasSessionId = string
 
-export type CanvasPersistenceState = 'clean' | 'dirty' | 'saving' | 'failed'
+export type CanvasPersistenceState = DocumentPersistenceState
 
 export interface OpenedCanvasSession {
   readonly canvasId: CanvasId
@@ -20,7 +30,9 @@ export interface CanvasSessionSnapshot {
 }
 
 export type CanvasCloseDecision =
-  | { readonly kind: 'close-now' }
+  | {
+      readonly kind: 'close-now'
+    }
   | {
       readonly kind: 'confirm-discard'
       readonly persistence: 'dirty' | 'failed'
@@ -29,10 +41,14 @@ export type CanvasCloseDecision =
       readonly kind: 'wait-for-save'
       readonly operation: Promise<void>
     }
-  | { readonly kind: 'not-found' }
+  | {
+      readonly kind: 'not-found'
+    }
 
 export type ApplicationClosePlan =
-  | { readonly kind: 'close-now' }
+  | {
+      readonly kind: 'close-now'
+    }
   | {
       readonly kind: 'confirm-discard'
       readonly sessionIds: readonly CanvasSessionId[]
@@ -44,67 +60,65 @@ export type ApplicationClosePlan =
 
 export interface CanvasDocumentService {
   readonly create: (title: string) => OpenedCanvasSession
+
   readonly open: () => Promise<OpenedCanvasSession | null>
+
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
+
   readonly requestClose: (sessionId: CanvasSessionId) => CanvasCloseDecision
+
   readonly discardAndClose: (sessionId: CanvasSessionId) => void
+
   readonly planApplicationClose: () => ApplicationClosePlan
+
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
+
   readonly getSessionSnapshot: (sessionId: CanvasSessionId) => CanvasSessionSnapshot | null
-  /**
-   * Monotonically increasing external-store snapshot.
-   *
-   * React consumers subscribe through subscribe() and read this value through
-   * useSyncExternalStore(). The value changes whenever a public session
-   * snapshot may have changed.
-   */
+
   readonly getVersion: () => number
+
   readonly subscribe: (listener: () => void) => () => void
+
   readonly dispose: () => void
 }
 
 export interface CanvasEditorSessionRegistryPort {
   readonly create: EditorSessionRegistry['create']
+
   readonly close: EditorSessionRegistry['close']
+
   readonly dispose: EditorSessionRegistry['dispose']
 }
 
 export interface DrawPersistencePort {
   readonly read: (path: string) => Promise<string>
+
   readonly write: (path: string, content: string) => Promise<void>
 }
 
 export interface CanvasFileSelectionPort {
   readonly selectOpenPath: () => Promise<string | null>
+
   readonly selectSavePath: (suggestedName: string) => Promise<string | null>
 }
 
 export interface CreateCanvasDocumentServiceDependencies {
   readonly editorSessions: CanvasEditorSessionRegistryPort
+
   readonly persistence: DrawPersistencePort
+
   readonly fileSelection: CanvasFileSelectionPort
+
   readonly extensions: readonly HybridCanvasExtension[]
 }
 
-type CanvasSessionState = 'clean' | 'dirty' | 'saving' | 'failed' | 'closing' | 'closed'
-
 interface OwnedCanvasSession {
   readonly editor: EditorSession
-  stopObserving: () => void
-  filePath: string | null
-  currentFingerprint: string
-  savedFingerprint: string
-  state: CanvasSessionState
-  saveOperation: Promise<void> | null
-}
+  readonly editorDocument: EditorDocumentPort
+  readonly document: DocumentSession
 
-const ALLOWED_TRANSITIONS: Readonly<Record<CanvasSessionState, readonly CanvasSessionState[]>> = {
-  clean: ['dirty', 'saving', 'closing'],
-  dirty: ['clean', 'saving', 'closing'],
-  saving: ['clean', 'dirty', 'failed'],
-  failed: ['clean', 'dirty', 'saving', 'closing'],
-  closing: ['closed'],
-  closed: [],
+  stopObservingDocument: () => void
+  saveOperation: Promise<void> | null
 }
 
 export function createCanvasDocumentService({
@@ -114,7 +128,9 @@ export function createCanvasDocumentService({
   extensions,
 }: CreateCanvasDocumentServiceDependencies): CanvasDocumentService {
   const sessions = new Map<CanvasSessionId, OwnedCanvasSession>()
+
   const listeners = new Set<() => void>()
+
   let version = 0
 
   function emit(): void {
@@ -128,13 +144,16 @@ export function createCanvasDocumentService({
   function create(title: string): OpenedCanvasSession {
     const canvasId = crypto.randomUUID()
     const sessionId = crypto.randomUUID()
+
     const editor = editorSessions.create({
       documentId: canvasId,
       sessionId,
       extensions,
     })
 
-    sessions.set(sessionId, createOwnedSession(editor, null, 'clean'))
+    const owned = createOwnedSession(editor, null)
+
+    sessions.set(sessionId, owned)
 
     return {
       canvasId,
@@ -151,9 +170,12 @@ export function createCanvasDocumentService({
     }
 
     const content = await persistence.read(filePath)
+
     const initialSnapshot = parseEditorSnapshot(content)
+
     const canvasId = crypto.randomUUID()
     const sessionId = crypto.randomUUID()
+
     const editor = editorSessions.create({
       documentId: canvasId,
       sessionId,
@@ -161,7 +183,9 @@ export function createCanvasDocumentService({
       extensions,
     })
 
-    sessions.set(sessionId, createOwnedSession(editor, filePath, 'clean'))
+    const owned = createOwnedSession(editor, filePath)
+
+    sessions.set(sessionId, owned)
 
     return {
       canvasId,
@@ -170,117 +194,186 @@ export function createCanvasDocumentService({
     }
   }
 
-  function save(sessionId: CanvasSessionId): Promise<void> {
-    const session = requireSession(sessionId)
+  function createOwnedSession(editor: EditorSession, filePath: string | null): OwnedCanvasSession {
+    /*
+     * EditorSession structurally implements EditorDocumentPort without
+     * editor/core depending on editor/document.
+     */
+    const editorDocument: EditorDocumentPort = editor
 
-    if (session.saveOperation) {
-      return session.saveOperation
+    const document = createDocumentSession(filePath)
+
+    const owned: OwnedCanvasSession = {
+      editor,
+      editorDocument,
+      document,
+      stopObservingDocument: () => {},
+      saveOperation: null,
     }
 
-    const operation = performSave(session).finally(() => {
-      session.saveOperation = null
+    owned.stopObservingDocument = editorDocument.subscribeDocumentEvents((event) => {
+      handleEditorDocumentEvent(owned, event)
     })
 
-    session.saveOperation = operation
+    return owned
+  }
+
+  function handleEditorDocumentEvent(owned: OwnedCanvasSession, event: EditorDocumentEvent): void {
+    if (event.kind === 'ready') {
+      /*
+       * React StrictMode or tab remounting may attach the same session more
+       * than once. Only the first explicit ready event establishes the saved
+       * baseline.
+       */
+      if (!owned.document.isInitialized()) {
+        owned.document.initialize(owned.editorDocument.captureDocument())
+
+        emit()
+      }
+
+      return
+    }
+
+    if (!owned.document.isInitialized()) {
+      throw new Error('DOCUMENT_CHANGE_BEFORE_EDITOR_READY')
+    }
+
+    owned.document.recordDocumentChange(owned.editorDocument.captureDocument())
+
+    emit()
+  }
+
+  function save(sessionId: CanvasSessionId): Promise<void> {
+    const owned = requireSession(sessionId)
+
+    if (owned.saveOperation) {
+      return owned.saveOperation
+    }
+
+    const operation = performSave(owned).finally(() => {
+      owned.saveOperation = null
+    })
+
+    owned.saveOperation = operation
+
     return operation
   }
 
-  async function performSave(session: OwnedCanvasSession): Promise<void> {
-    const filePath = session.filePath ?? (await fileSelection.selectSavePath('未命名画布.draw'))
+  async function performSave(owned: OwnedCanvasSession): Promise<void> {
+    if (!owned.document.isInitialized()) {
+      throw new Error('DOCUMENT_SESSION_NOT_READY')
+    }
+
+    const existingPath = owned.document.getFilePath()
+
+    const filePath = existingPath ?? (await fileSelection.selectSavePath('未命名画布.draw'))
 
     if (!filePath) {
       return
     }
 
     /*
-     * Snapshot and fingerprint are captured together so a savepoint always
-     * identifies the exact document version written to disk.
+     * Snapshot and save checkpoint are created from the same synchronous
+     * capture. Concurrent edits after this point update currentCheckpoint but
+     * cannot incorrectly become part of the completed savepoint.
      */
-    const captured = session.editor.capturePersistenceSnapshot()
+    const snapshot = owned.editorDocument.captureDocument()
 
-    transition(session, 'saving')
-    emit()
+    let ticket: DocumentSaveTicket | null = null
 
     try {
-      const content = serializeDrawDocument(captured.snapshot)
+      ticket = owned.document.beginSave(snapshot)
+
+      emit()
+
+      const content = serializeDrawDocument(snapshot)
 
       await persistence.write(filePath, content)
 
-      session.filePath = filePath
-      session.savedFingerprint = captured.fingerprint
-      session.currentFingerprint = session.editor.getDocumentFingerprint()
+      owned.document.completeSave(ticket, filePath)
 
-      transition(
-        session,
-        session.currentFingerprint === session.savedFingerprint ? 'clean' : 'dirty',
-      )
       emit()
     } catch (error) {
-      transition(session, 'failed')
-      emit()
+      if (ticket) {
+        owned.document.failSave(ticket)
+        emit()
+      }
+
       throw error
     }
   }
 
   function requestClose(sessionId: CanvasSessionId): CanvasCloseDecision {
-    const session = sessions.get(sessionId)
+    const owned = sessions.get(sessionId)
 
-    if (!session) {
-      return { kind: 'not-found' }
+    if (!owned) {
+      return {
+        kind: 'not-found',
+      }
     }
 
-    if (session.saveOperation) {
+    if (owned.saveOperation) {
       return {
         kind: 'wait-for-save',
-        operation: session.saveOperation,
+        operation: owned.saveOperation,
       }
     }
 
-    if (session.state === 'dirty' || session.state === 'failed') {
+    const persistenceState = owned.document.getSnapshot().persistence
+
+    if (persistenceState === 'dirty' || persistenceState === 'failed') {
       return {
         kind: 'confirm-discard',
-        persistence: session.state,
+        persistence: persistenceState,
       }
     }
 
-    closeNow(sessionId, session)
-    return { kind: 'close-now' }
+    closeNow(sessionId, owned)
+
+    return {
+      kind: 'close-now',
+    }
   }
 
   function discardAndClose(sessionId: CanvasSessionId): void {
-    const session = requireSession(sessionId)
+    const owned = requireSession(sessionId)
 
-    if (session.saveOperation) {
+    if (owned.saveOperation) {
       throw new Error('CANVAS_SESSION_SAVE_IN_PROGRESS')
     }
 
-    closeNow(sessionId, session)
+    closeNow(sessionId, owned)
   }
 
-  function closeNow(sessionId: CanvasSessionId, session: OwnedCanvasSession): void {
-    transition(session, 'closing')
-    transition(session, 'closed')
-    release(sessionId)
+  function closeNow(sessionId: CanvasSessionId, owned: OwnedCanvasSession): void {
+    owned.document.beginClosing()
+    owned.document.completeClosing()
+
+    release(sessionId, owned)
     emit()
   }
 
-  function release(sessionId: CanvasSessionId): void {
-    const session = sessions.get(sessionId)
-
-    session?.stopObserving()
+  function release(sessionId: CanvasSessionId, owned: OwnedCanvasSession): void {
+    owned.stopObservingDocument()
     sessions.delete(sessionId)
     editorSessions.close(sessionId)
   }
 
   function planApplicationClose(): ApplicationClosePlan {
     const operations: Promise<void>[] = []
-    const sessionIds: CanvasSessionId[] = []
+    const dirtySessionIds: CanvasSessionId[] = []
 
-    for (const [sessionId, session] of sessions) {
-      if (session.saveOperation) {
-        operations.push(session.saveOperation)
-      } else if (session.state === 'dirty' || session.state === 'failed') {
-        sessionIds.push(sessionId)
+    for (const [sessionId, owned] of sessions) {
+      if (owned.saveOperation) {
+        operations.push(owned.saveOperation)
+
+        continue
+      }
+
+      const persistenceState = owned.document.getSnapshot().persistence
+
+      if (persistenceState === 'dirty' || persistenceState === 'failed') {
+        dirtySessionIds.push(sessionId)
       }
     }
 
@@ -291,78 +384,26 @@ export function createCanvasDocumentService({
       }
     }
 
-    if (sessionIds.length > 0) {
+    if (dirtySessionIds.length > 0) {
       return {
         kind: 'confirm-discard',
-        sessionIds,
+        sessionIds: dirtySessionIds,
       }
     }
 
-    return { kind: 'close-now' }
-  }
-
-  function createOwnedSession(
-    editor: EditorSession,
-    filePath: string | null,
-    initialState: 'clean' | 'dirty',
-  ): OwnedCanvasSession {
-    const initialFingerprint = editor.getDocumentFingerprint()
-
-    const session: OwnedCanvasSession = {
-      editor,
-      filePath,
-      currentFingerprint: initialFingerprint,
-      savedFingerprint: initialState === 'clean' ? initialFingerprint : '__NO_SAVEPOINT__',
-      state: initialState,
-      saveOperation: null,
-      stopObserving: () => {},
+    return {
+      kind: 'close-now',
     }
-
-    session.stopObserving = editor.onDocumentChange((change) => {
-      if (session.state === 'closing' || session.state === 'closed') {
-        return
-      }
-
-      session.currentFingerprint = change.fingerprint
-
-      /*
-       * A brand-new TLStore receives its default document/page records during
-       * first mount. Those records define the empty document's clean baseline.
-       */
-      if (change.kind === 'baseline-established' && session.state === 'clean') {
-        session.savedFingerprint = change.fingerprint
-        return
-      }
-
-      /*
-       * While a write is running, keep the public saving state. performSave()
-       * compares the latest fingerprint with the captured savepoint after the
-       * atomic write finishes.
-       */
-      if (session.state === 'saving') {
-        return
-      }
-
-      const nextState: 'clean' | 'dirty' =
-        session.currentFingerprint === session.savedFingerprint ? 'clean' : 'dirty'
-
-      if (session.state !== nextState) {
-        transition(session, nextState)
-        emit()
-      }
-    })
-
-    return session
   }
 
   function requireSession(sessionId: CanvasSessionId): OwnedCanvasSession {
-    const session = sessions.get(sessionId)
+    const owned = sessions.get(sessionId)
 
-    if (!session) {
+    if (!owned) {
       throw new Error('CANVAS_SESSION_NOT_FOUND')
     }
 
-    return session
+    return owned
   }
 
   return {
@@ -378,59 +419,40 @@ export function createCanvasDocumentService({
     },
 
     getSessionSnapshot(sessionId) {
-      const session = sessions.get(sessionId)
+      const owned = sessions.get(sessionId)
 
-      if (!session) {
+      if (!owned) {
         return null
       }
 
       return {
         sessionId,
-        persistence: toPersistenceState(session.state),
+        persistence: owned.document.getSnapshot().persistence,
       }
     },
 
-    getVersion: () => version,
+    getVersion() {
+      return version
+    },
 
     subscribe(listener) {
       listeners.add(listener)
-      return () => listeners.delete(listener)
+
+      return () => {
+        listeners.delete(listener)
+      }
     },
 
     dispose() {
-      for (const session of sessions.values()) {
-        session.stopObserving()
+      for (const [sessionId, owned] of sessions) {
+        owned.stopObservingDocument()
+        editorSessions.close(sessionId)
       }
 
       sessions.clear()
+      listeners.clear()
       editorSessions.dispose()
     },
-  }
-}
-
-function transition(session: OwnedCanvasSession, nextState: CanvasSessionState): void {
-  if (session.state === nextState) {
-    return
-  }
-
-  if (!ALLOWED_TRANSITIONS[session.state].includes(nextState)) {
-    throw new Error(`CANVAS_SESSION_INVALID_TRANSITION:${session.state}->${nextState}`)
-  }
-
-  session.state = nextState
-}
-
-function toPersistenceState(state: CanvasSessionState): CanvasPersistenceState {
-  switch (state) {
-    case 'clean':
-    case 'dirty':
-    case 'saving':
-    case 'failed':
-      return state
-
-    case 'closing':
-    case 'closed':
-      return 'clean'
   }
 }
 
@@ -445,7 +467,7 @@ function parseEditorSnapshot(json: string): TLEditorSnapshot {
         return parsed
       }
     } catch {
-      // Keep the validated container error as the public failure.
+      // Preserve the validated container error as the public failure.
     }
 
     throw containerError
@@ -458,6 +480,7 @@ function isEditorSnapshot(value: unknown): value is TLEditorSnapshot {
 
 function getFileTitle(filePath: string): string {
   const normalized = filePath.replaceAll('\\', '/')
+
   const fileName = normalized.slice(normalized.lastIndexOf('/') + 1)
 
   return fileName.toLowerCase().endsWith('.draw') ? fileName.slice(0, -5) : fileName
