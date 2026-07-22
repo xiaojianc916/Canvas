@@ -4,5 +4,5 @@ export class ScientificChartTool extends BaseBoxShapeTool {
   static override id = 'scientific-chart'
   static override initial = 'idle'
 
-  override shapeType = 'scientific-chart'
+  override shapeType = 'scientific-chart' as const
 }

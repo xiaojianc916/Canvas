@@ -8,6 +8,10 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    hmr: {
+      // 使用 Hybrid Canvas 自己的错误界面，禁止显示 Vite 默认 Overlay。
+      overlay: false,
+    },
   },
   // Do not expose the complete TAURI_* environment namespace to WebView code.
   // Build-time Tauri variables remain available here through process.env.

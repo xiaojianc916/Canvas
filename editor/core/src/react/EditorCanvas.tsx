@@ -25,10 +25,6 @@ export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasP
       onMount: setEditor,
       options: {
         maxPages: 100,
-        cameraOptions: {
-          wheelBehavior: 'zoom',
-          zoomSpeed: 1,
-        },
       },
       shapeUtils: registration.shapeUtils,
       bindingUtils: registration.bindingUtils,
@@ -44,6 +40,12 @@ export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasP
       return
     }
     if (isActive) {
+      editor.setCameraOptions({
+        ...editor.getCameraOptions(),
+        wheelBehavior: 'zoom' as const,
+        zoomSpeed: 1,
+      })
+
       editor.updateInstanceState({
         isGridMode: false,
         isToolLocked: true,

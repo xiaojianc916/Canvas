@@ -3,6 +3,7 @@ import {
   defaultBindingUtils,
   defaultShapeUtils,
   type Editor,
+  type TLAnyShapeUtilConstructor,
   type TLEditorSnapshot,
   type TLStore,
 } from 'tldraw'
@@ -56,7 +57,7 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     shapeUtils: [
       ...defaultShapeUtils,
       ...registration.shapeUtils,
-    ],
+    ] as unknown as readonly TLAnyShapeUtilConstructor[],
     bindingUtils: [
       ...defaultBindingUtils,
       ...registration.bindingUtils,

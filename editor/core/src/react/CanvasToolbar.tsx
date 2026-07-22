@@ -13,7 +13,7 @@ import {
   ArrowRightToLine,
   ArrowUpToLine,
   BringToFront,
-  ChartNoAxes,
+  LineChart,
   Eraser,
   FlipHorizontal2,
   FlipVertical2,
@@ -87,7 +87,7 @@ const CORE_CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     id: 'scientific-chart',
     label: '图表',
     shortcut: 'C',
-    icon: ChartNoAxes,
+    icon: LineChart,
   },
   {
     id: 'text',

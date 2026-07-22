@@ -1,16 +1,20 @@
 import { StyleProp } from 'tldraw'
 
+export const SCIENTIFIC_CHART_TYPES = [
+  'line',
+  'bar',
+  'area',
+  'scatter',
+] as const
+
 export type ScientificChartType =
-  | 'line'
-  | 'bar'
-  | 'area'
-  | 'scatter'
+  (typeof SCIENTIFIC_CHART_TYPES)[number]
 
 export const ScientificChartTypeStyle =
-  StyleProp.defineEnum<ScientificChartType>(
+  StyleProp.defineEnum(
     'hybrid-canvas:scientific-chart-type',
     {
       defaultValue: 'line',
-      values: ['line', 'bar', 'area', 'scatter'],
+      values: SCIENTIFIC_CHART_TYPES,
     },
   )

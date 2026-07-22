@@ -1,1020 +1,676 @@
-#!/usr/bin/env node
-
 /**
- * 针对当前已推送 Canvas 代码的修复脚本。
+ * scripts/apply-custom-error-ui.mjs
  *
- * 解决：
- * 1. 修复 WorkspaceContainer.tsx 被破坏的 import。
- * 2. 修复 @hybrid-canvas/scientific-plot workspace 解析。
- * 3. 点击形状、连接、图表、文本、画笔、高亮、便签、画框时，
- *    自动打开右侧栏并显示对应工具配置。
- * 4. 选中已有对象时显示对象编辑配置。
- * 5. 滚轮上滑放大、下滑缩小。
- * 6. 创建工具保持激活，不自动返回选择。
- * 7. 选中图表后可以切换折线、柱状、面积和散点图。
+ * 作用：
+ * 1. 永久关闭 Vite 默认错误 Overlay。
+ * 2. 添加不依赖 React 应用入口的启动错误兜底。
+ * 3. 增强 ApplicationErrorBoundary，显示完整错误信息。
+ * 4. 捕获 window.error 和 unhandledrejection。
+ * 5. 支持复制完整诊断信息。
  *
- * 使用：
- *   node tooling/script/repair-tool-panels.mjs --apply
+ * 在仓库根目录执行：
+ *   node scripts/apply-custom-error-ui.mjs
  */
 
-import { spawnSync } from 'node:child_process'
-import { readFile, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 
-const root = process.cwd()
-const shouldApply = process.argv.includes('--apply')
+const scriptDirectory = path.dirname(fileURLToPath(import.meta.url))
+const repositoryRoot =
+  path.basename(scriptDirectory) === 'scripts'
+    ? path.dirname(scriptDirectory)
+    : process.cwd()
 
 const paths = {
-  workspaceContainer: resolve(
-    root,
-    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+  viteConfig: path.join(repositoryRoot, 'apps/desktop/vite.config.ts'),
+  indexHtml: path.join(repositoryRoot, 'apps/desktop/index.html'),
+  errorBoundary: path.join(
+    repositoryRoot,
+    'apps/desktop/src/bootstrap/ApplicationErrorBoundary.tsx',
   ),
-  workspaceShell: resolve(
-    root,
-    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
-  ),
-  editorCanvas: resolve(
-    root,
-    'editor/core/src/react/EditorCanvas.tsx',
-  ),
-  desktopPackage: resolve(
-    root,
-    'apps/desktop/package.json',
-  ),
-  scientificPackage: resolve(
-    root,
-    'features/scientific-plot/package.json',
-  ),
-  scientificPublicApi: resolve(
-    root,
-    'features/scientific-plot/src/public-api.ts',
+  bootstrapFallback: path.join(
+    repositoryRoot,
+    'apps/desktop/src/bootstrap/bootstrap-fallback.ts',
   ),
 }
 
-async function readText(path) {
-  return readFile(path, 'utf8')
-}
-
-async function writeText(path, content) {
-  if (!shouldApply) {
-    console.log(`[dry-run] 将修改：${path}`)
-    return
+async function assertFileExists(filePath) {
+  try {
+    await access(filePath)
+  } catch {
+    throw new Error(`找不到文件：${path.relative(repositoryRoot, filePath)}`)
   }
-
-  await writeFile(path, content, 'utf8')
 }
 
-function replaceRequired(
-  source,
-  search,
-  replacement,
-  description,
-) {
-  const index = source.indexOf(search)
-
-  if (index === -1) {
-    throw new Error(`没有找到修改位置：${description}`)
-  }
-
-  return (
-    source.slice(0, index) +
-    replacement +
-    source.slice(index + search.length)
-  )
+async function readUtf8(filePath) {
+  return (await readFile(filePath, 'utf8')).replace(/^\uFEFF/, '')
 }
 
-function replaceOptional(
-  source,
-  search,
-  replacement = '',
-) {
-  const index = source.indexOf(search)
+async function atomicWrite(filePath, content) {
+  await mkdir(path.dirname(filePath), { recursive: true })
 
-  if (index === -1) {
+  const temporaryPath = `${filePath}.${process.pid}.tmp`
+  const normalizedContent = `${content.replace(/\r\n/g, '\n').trimEnd()}\n`
+
+  await writeFile(temporaryPath, normalizedContent, 'utf8')
+  await rename(temporaryPath, filePath)
+
+  console.log(`已修改：${path.relative(repositoryRoot, filePath)}`)
+}
+
+function updateViteConfig(source) {
+  if (/hmr\s*:\s*\{[\s\S]*?overlay\s*:\s*false/.test(source)) {
     return source
   }
 
-  return (
-    source.slice(0, index) +
-    replacement +
-    source.slice(index + search.length)
-  )
-}
+  const strictPortPattern = /(\s+strictPort:\s*true,\s*\n)/
 
-function insertBeforeRequired(
-  source,
-  marker,
-  content,
-  description,
-) {
-  const index = source.indexOf(marker)
-
-  if (index === -1) {
-    throw new Error(`没有找到插入位置：${description}`)
-  }
-
-  return (
-    source.slice(0, index) +
-    content +
-    '\n\n' +
-    source.slice(index)
-  )
-}
-
-async function updateJson(path, mutate) {
-  const original = await readText(path)
-  const hasBom = original.charCodeAt(0) === 0xfeff
-  const jsonText = hasBom ? original.slice(1) : original
-  const value = JSON.parse(jsonText)
-
-  mutate(value)
-
-  const output = `${JSON.stringify(value, null, 2)}\n`
-
-  await writeText(
-    path,
-    hasBom ? `\ufeff${output}` : output,
-  )
-}
-
-const workspaceImports = String.raw`import type { EditorSession } from '@hybrid-canvas/canvas/application'
-import {
-  EditorSessionHost,
-  useEditor,
-} from '@hybrid-canvas/canvas/react'
-import { ConfirmationDialog } from '@hybrid-canvas/design-system'
-import {
-  ScientificChartTypeStyle,
-  type ScientificChartType,
-} from '@hybrid-canvas/scientific-plot'
-import type {
-  CanvasSessionId,
-  WorkbenchSessionStore,
-  WorkbenchTabId,
-  WorkspaceShellActions,
-} from '@hybrid-canvas/workspace/contracts'
-import {
-  NoCanvasSurface,
-  WorkbenchTabs,
-  WorkspaceShell,
-  WorkspaceSurface,
-} from '@hybrid-canvas/workspace/react'
-import {
-  useCallback,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from 'react'
-import {
-  DefaultArrowheadEndStyle,
-  DefaultArrowheadStartStyle,
-  DefaultColorStyle,
-  DefaultDashStyle,
-  DefaultFillStyle,
-  DefaultFontStyle,
-  DefaultSizeStyle,
-  DefaultTextAlignStyle,
-  GeoShapeGeoStyle,
-  type Editor,
-  type TLShape,
-  useValue,
-} from 'tldraw'
-
-import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
-import { DesktopTitleBar } from '../chrome/DesktopTitleBar'
-import { reportUiError as reportError } from '../ui/ui-feedback'
-`
-
-async function repairWorkspaceImports() {
-  const source = await readText(paths.workspaceContainer)
-  const marker = 'const EMPTY_EDITOR_SESSION_SNAPSHOT'
-  const markerIndex = source.indexOf(marker)
-
-  if (markerIndex === -1) {
+  if (!strictPortPattern.test(source)) {
     throw new Error(
-      'WorkspaceContainer.tsx 中没有找到 EMPTY_EDITOR_SESSION_SNAPSHOT',
+      '无法定位 vite.config.ts 中的 strictPort: true，请检查文件是否已经改变。',
     )
   }
 
-  /*
-   * 直接重建完整 import 区，不再使用脆弱的正则合并 import。
-   */
-  const next =
-    workspaceImports +
-    '\n' +
-    source.slice(markerIndex)
-
-  await writeText(paths.workspaceContainer, next)
-}
-
-async function repairWorkspaceDependencies() {
-  await updateJson(paths.desktopPackage, (pkg) => {
-    pkg.dependencies ??= {}
-
-    pkg.dependencies['@hybrid-canvas/scientific-plot'] =
-      'workspace:*'
-  })
-
-  await updateJson(paths.scientificPackage, (pkg) => {
-    pkg.dependencies ??= {}
-    pkg.devDependencies ??= {}
-
-    pkg.dependencies['@hybrid-canvas/canvas'] =
-      'workspace:*'
-    pkg.dependencies['@tldraw/tlschema'] = 'catalog:'
-    pkg.dependencies['@tldraw/validate'] = 'catalog:'
-    pkg.dependencies.tldraw = 'catalog:'
-    pkg.dependencies.react = 'catalog:'
-    pkg.dependencies['react-dom'] = 'catalog:'
-
-    pkg.devDependencies['@types/react'] = 'catalog:'
-    pkg.devDependencies['@types/react-dom'] = 'catalog:'
-  })
-}
-
-async function verifyScientificPublicApi() {
-  let source = await readText(paths.scientificPublicApi)
-
-  if (
-    !source.includes(
-      "export { scientificPlotExtension } from './extension'",
-    )
-  ) {
-    source += `
-export { scientificPlotExtension } from './extension'
-`
-  }
-
-  if (
-    !source.includes(
-      "ScientificChartTypeStyle",
-    )
-  ) {
-    source += `
-export {
-  ScientificChartTypeStyle,
-  type ScientificChartType,
-} from './styles/chart-styles'
-`
-  }
-
-  await writeText(paths.scientificPublicApi, source)
-}
-
-async function configureEditorBehavior() {
-  let source = await readText(paths.editorCanvas)
-
-  if (!source.includes("wheelBehavior: 'zoom'")) {
-    source = replaceRequired(
-      source,
-      'options: { maxPages: 100 },',
-      `options: {
-        maxPages: 100,
-        cameraOptions: {
-          wheelBehavior: 'zoom',
-          zoomSpeed: 1,
-        },
-      },`,
-      'tldraw cameraOptions',
-    )
-  }
-
-  if (!source.includes('isToolLocked: true')) {
-    source = replaceOptional(
-      source,
-      'editor.updateInstanceState({ isGridMode: false })',
-      `editor.updateInstanceState({
-        isGridMode: false,
-        isToolLocked: true,
-      })`,
-    )
-
-    source = replaceOptional(
-      source,
-      'editor.updateInstanceState({ isGridMode: true })',
-      `editor.updateInstanceState({
-        isGridMode: false,
-        isToolLocked: true,
-      })`,
-    )
-  }
-
-  await writeText(paths.editorCanvas, source)
-}
-
-const activeToolPanelSource = String.raw`function CanvasActiveToolPanel({
-  editor,
-  toolId,
-}: {
-  readonly editor: Editor
-  readonly toolId: string
-}) {
-  const applyNextStyle = (
-    style: Parameters<Editor['setStyleForNextShapes']>[0],
-    value: string,
-  ) => {
-    editor.setStyleForNextShapes(
-      style,
-      value as never,
-    )
-  }
-
-  const colors = (
-    <ShapeInspectorSection title="颜色">
-      <div className="grid grid-cols-6 gap-1.5">
-        {SHAPE_COLORS.map((color) => (
-          <button
-            aria-label={'设置默认颜色为' + color.label}
-            className="size-7 rounded-md border transition-transform hover:scale-105"
-            key={color.value}
-            onClick={() =>
-              applyNextStyle(
-                DefaultColorStyle,
-                color.value,
-              )
-            }
-            style={{
-              backgroundColor: color.css,
-            }}
-            title={color.label}
-            type="button"
-          />
-        ))}
-      </div>
-    </ShapeInspectorSection>
-  )
-
-  const size = (
-    <ShapeInspectorSection title="粗细">
-      <ShapeInspectorSegmentedControl
-        onChange={(value) =>
-          applyNextStyle(DefaultSizeStyle, value)
-        }
-        options={[
-          { value: 's', label: '细' },
-          { value: 'm', label: '中' },
-          { value: 'l', label: '粗' },
-          { value: 'xl', label: '特粗' },
-        ]}
-        value={null}
-      />
-    </ShapeInspectorSection>
-  )
-
-  const dash = (
-    <ShapeInspectorSection title="线型">
-      <ShapeInspectorSegmentedControl
-        onChange={(value) =>
-          applyNextStyle(DefaultDashStyle, value)
-        }
-        options={[
-          { value: 'draw', label: '手绘' },
-          { value: 'solid', label: '实线' },
-          { value: 'dashed', label: '虚线' },
-          { value: 'dotted', label: '点线' },
-        ]}
-        value={null}
-      />
-    </ShapeInspectorSection>
-  )
-
-  if (toolId === 'geo') {
-    return (
-      <CanvasToolPanelHeader
-        description="在画布中连续创建形状"
-        title="形状"
-      >
-        <ShapeInspectorSection title="形状类型">
-          <select
-            className="h-8 w-full rounded-md border border-divider bg-background px-2 text-[11px] outline-none focus:border-primary"
-            defaultValue="rectangle"
-            onChange={(event) =>
-              applyNextStyle(
-                GeoShapeGeoStyle,
-                event.target.value,
-              )
-            }
-          >
-            <option value="rectangle">矩形</option>
-            <option value="ellipse">椭圆</option>
-            <option value="triangle">三角形</option>
-            <option value="diamond">菱形</option>
-            <option value="pentagon">五边形</option>
-            <option value="hexagon">六边形</option>
-            <option value="octagon">八边形</option>
-            <option value="star">星形</option>
-            <option value="cloud">云形</option>
-            <option value="rhombus">平行四边形</option>
-            <option value="trapezoid">梯形</option>
-            <option value="arrow-right">右箭头</option>
-            <option value="arrow-left">左箭头</option>
-            <option value="arrow-up">上箭头</option>
-            <option value="arrow-down">下箭头</option>
-          </select>
-        </ShapeInspectorSection>
-
-        {colors}
-
-        <ShapeInspectorSection title="填充">
-          <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyNextStyle(
-                DefaultFillStyle,
-                value,
-              )
-            }
-            options={[
-              { value: 'none', label: '无' },
-              { value: 'semi', label: '半透明' },
-              { value: 'solid', label: '实心' },
-              { value: 'pattern', label: '图案' },
-            ]}
-            value={null}
-          />
-        </ShapeInspectorSection>
-
-        {dash}
-        {size}
-      </CanvasToolPanelHeader>
-    )
-  }
-
-  if (toolId === 'arrow') {
-    return (
-      <CanvasToolPanelHeader
-        description="在画布中连续创建连接线"
-        title="连接"
-      >
-        {colors}
-        {dash}
-        {size}
-
-        <ShapeInspectorSection title="起点">
-          <ShapeInspectorArrowheadSelect
-            onChange={(value) =>
-              applyNextStyle(
-                DefaultArrowheadStartStyle,
-                value,
-              )
-            }
-            value="none"
-          />
-        </ShapeInspectorSection>
-
-        <ShapeInspectorSection title="终点">
-          <ShapeInspectorArrowheadSelect
-            onChange={(value) =>
-              applyNextStyle(
-                DefaultArrowheadEndStyle,
-                value,
-              )
-            }
-            value="arrow"
-          />
-        </ShapeInspectorSection>
-      </CanvasToolPanelHeader>
-    )
-  }
-
-  if (toolId === 'scientific-chart') {
-    return (
-      <CanvasToolPanelHeader
-        description="拖拽创建图表"
-        title="图表"
-      >
-        <ShapeInspectorSection title="图表类型">
-          <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyNextStyle(
-                ScientificChartTypeStyle,
-                value,
-              )
-            }
-            options={[
-              { value: 'line', label: '折线' },
-              { value: 'bar', label: '柱状' },
-              { value: 'area', label: '面积' },
-              { value: 'scatter', label: '散点' },
-            ]}
-            value={null}
-          />
-        </ShapeInspectorSection>
-
-        {colors}
-        {size}
-
-        <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
-          在画布中按住鼠标并拖拽创建图表。图表工具会保持激活，可连续创建多个图表。
-        </div>
-      </CanvasToolPanelHeader>
-    )
-  }
-
-  if (toolId === 'text') {
-    return (
-      <CanvasToolPanelHeader
-        description="在画布中连续创建文本"
-        title="文本"
-      >
-        {colors}
-
-        <ShapeInspectorSection title="字体">
-          <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyNextStyle(
-                DefaultFontStyle,
-                value,
-              )
-            }
-            options={[
-              { value: 'draw', label: '手写' },
-              { value: 'sans', label: '无衬线' },
-              { value: 'serif', label: '衬线' },
-              { value: 'mono', label: '等宽' },
-            ]}
-            value={null}
-          />
-        </ShapeInspectorSection>
-
-        {size}
-
-        <ShapeInspectorSection title="对齐">
-          <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyNextStyle(
-                DefaultTextAlignStyle,
-                value,
-              )
-            }
-            options={[
-              { value: 'start', label: '左' },
-              { value: 'middle', label: '中' },
-              { value: 'end', label: '右' },
-            ]}
-            value={null}
-          />
-        </ShapeInspectorSection>
-      </CanvasToolPanelHeader>
-    )
-  }
-
-  if (
-    toolId === 'draw' ||
-    toolId === 'highlight'
-  ) {
-    return (
-      <CanvasToolPanelHeader
-        description={
-          toolId === 'highlight'
-            ? '连续绘制高亮标记'
-            : '连续自由绘制'
-        }
-        title={
-          toolId === 'highlight'
-            ? '高亮'
-            : '自由绘制'
-        }
-      >
-        {colors}
-        {dash}
-        {size}
-      </CanvasToolPanelHeader>
-    )
-  }
-
-  if (toolId === 'note') {
-    return (
-      <CanvasToolPanelHeader
-        description="在画布中连续创建便签"
-        title="便签"
-      >
-        {colors}
-
-        <ShapeInspectorSection title="填充">
-          <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyNextStyle(
-                DefaultFillStyle,
-                value,
-              )
-            }
-            options={[
-              { value: 'semi', label: '半透明' },
-              { value: 'solid', label: '实心' },
-              { value: 'pattern', label: '图案' },
-            ]}
-            value={null}
-          />
-        </ShapeInspectorSection>
-
-        <ShapeInspectorSection title="字体">
-          <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyNextStyle(
-                DefaultFontStyle,
-                value,
-              )
-            }
-            options={[
-              { value: 'draw', label: '手写' },
-              { value: 'sans', label: '无衬线' },
-              { value: 'serif', label: '衬线' },
-              { value: 'mono', label: '等宽' },
-            ]}
-            value={null}
-          />
-        </ShapeInspectorSection>
-
-        {size}
-      </CanvasToolPanelHeader>
-    )
-  }
-
-  if (toolId === 'frame') {
-    return (
-      <CanvasToolPanelHeader
-        description="在画布中连续创建画框"
-        title="画框"
-      >
-        {colors}
-        {dash}
-        {size}
-      </CanvasToolPanelHeader>
-    )
-  }
-
-  if (toolId === 'eraser') {
-    return (
-      <CanvasToolPanelHeader
-        description="拖过对象进行删除"
-        title="橡皮擦"
-      >
-        <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
-          橡皮擦将保持激活。手动点击“选择”或切换其他工具后退出。
-        </div>
-      </CanvasToolPanelHeader>
-    )
-  }
-
-  return (
-    <div className="rounded-lg border border-dashed border-divider px-4 py-8 text-center">
-      <p className="text-xs font-medium">
-        {toolId === 'hand'
-          ? '移动画布'
-          : '选择工具'}
-      </p>
-
-      <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-        {toolId === 'hand'
-          ? '拖动画布进行平移，滚轮用于缩放。'
-          : '选择画布中的对象以编辑对应属性。'}
-      </p>
-    </div>
-  )
-}
-
-function CanvasToolPanelHeader({
-  title,
-  description,
-  children,
-}: {
-  readonly title: string
-  readonly description: string
-  readonly children: import('react').ReactNode
-}) {
-  return (
-    <div className="space-y-4">
-      <header className="border-b border-divider pb-3">
-        <h2 className="text-sm font-semibold">
-          {title}
-        </h2>
-
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {description}
-        </p>
-      </header>
-
-      {children}
-    </div>
-  )
-}
-`
-
-async function connectInspectorToActiveTool() {
-  let source = await readText(paths.workspaceContainer)
-
-  /*
-   * 让右侧属性面板同时订阅当前工具。
-   */
-  if (
-    !source.includes(
-      "'canvas inspector active tool'",
-    )
-  ) {
-    const marker = `  const selectedShapes = useValue(
-    'canvas inspector selected shapes',
-    () => editor?.getSelectedShapes() ?? [],
-    [editor],
-  )
-`
-
-    source = replaceRequired(
-      source,
-      marker,
-      `${marker}
-  const activeToolId = useValue(
-    'canvas inspector active tool',
-    () => editor?.getCurrentToolId() ?? 'select',
-    [editor],
-  )
+  return source.replace(
+    strictPortPattern,
+    `$1    hmr: {
+      // 使用 Hybrid Canvas 自己的错误界面，禁止显示 Vite 默认 Overlay。
+      overlay: false,
+    },
 `,
-      'CanvasInspector activeToolId',
+  )
+}
+
+function updateIndexHtml(source) {
+  let next = source
+
+  if (!next.includes('id="bootstrap-fallback-styles"')) {
+    const styleMarker = '    <style id="window-backing-surface">'
+
+    if (!next.includes(styleMarker)) {
+      throw new Error(
+        '无法定位 index.html 中的 window-backing-surface 样式。',
+      )
+    }
+
+    const fallbackStyles = `    <style id="bootstrap-fallback-styles">
+      #bootstrap-fallback {
+        box-sizing: border-box;
+        display: grid;
+        width: 100%;
+        height: 100%;
+        place-items: center;
+        padding: 32px;
+        color: #18181b;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      #bootstrap-fallback-card {
+        box-sizing: border-box;
+        width: min(100%, 680px);
+        padding: 24px;
+        overflow: hidden;
+        background: #ffffff;
+        border: 1px solid #dedede;
+        border-radius: 16px;
+        box-shadow:
+          0 16px 48px rgb(0 0 0 / 10%),
+          0 2px 8px rgb(0 0 0 / 6%);
+      }
+
+      #bootstrap-fallback-icon {
+        display: grid;
+        width: 40px;
+        height: 40px;
+        place-items: center;
+        color: #b42318;
+        font-size: 20px;
+        font-weight: 700;
+        background: #fee4e2;
+        border-radius: 12px;
+      }
+
+      #bootstrap-fallback-title {
+        margin: 18px 0 0;
+        font-size: 18px;
+        line-height: 28px;
+      }
+
+      #bootstrap-fallback-description {
+        margin: 8px 0 0;
+        color: #667085;
+        font-size: 14px;
+        line-height: 22px;
+      }
+
+      #bootstrap-fallback-details {
+        display: none;
+        margin-top: 16px;
+        padding: 12px;
+        overflow: hidden;
+        background: #f4f4f5;
+        border-radius: 10px;
+      }
+
+      #bootstrap-fallback-details[data-visible="true"] {
+        display: block;
+      }
+
+      #bootstrap-fallback-diagnostic {
+        max-height: 320px;
+        margin: 0;
+        overflow: auto;
+        color: #3f3f46;
+        font-family:
+          "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono",
+          monospace;
+        font-size: 11px;
+        line-height: 18px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        user-select: text;
+      }
+
+      #bootstrap-fallback-actions {
+        display: none;
+        gap: 8px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+      }
+
+      #bootstrap-fallback-actions[data-visible="true"] {
+        display: flex;
+      }
+
+      .bootstrap-fallback-button {
+        min-height: 36px;
+        padding: 0 14px;
+        color: #18181b;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        background: #ffffff;
+        border: 1px solid #d4d4d8;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+
+      .bootstrap-fallback-button:hover {
+        background: #f4f4f5;
+      }
+
+      .bootstrap-fallback-button[data-primary="true"] {
+        color: #ffffff;
+        background: #18181b;
+        border-color: #18181b;
+      }
+    </style>
+
+`
+
+    next = next.replace(styleMarker, `${fallbackStyles}${styleMarker}`)
+  }
+
+  if (!next.includes('id="bootstrap-fallback"')) {
+    const rootPattern = /<div id="root"><\/div>/
+
+    if (!rootPattern.test(next)) {
+      throw new Error('无法定位 index.html 中的空 #root 元素。')
+    }
+
+    next = next.replace(
+      rootPattern,
+      `<div id="root">
+      <main id="bootstrap-fallback" role="status">
+        <section
+          aria-labelledby="bootstrap-fallback-title"
+          id="bootstrap-fallback-card"
+        >
+          <div aria-hidden="true" id="bootstrap-fallback-icon">!</div>
+          <h1 id="bootstrap-fallback-title">Hybrid Canvas 正在启动</h1>
+          <p id="bootstrap-fallback-description">
+            正在加载应用组件，请稍候。
+          </p>
+
+          <section
+            aria-label="技术详情"
+            id="bootstrap-fallback-details"
+          >
+            <pre id="bootstrap-fallback-diagnostic"></pre>
+          </section>
+
+          <div id="bootstrap-fallback-actions">
+            <button
+              class="bootstrap-fallback-button"
+              data-primary="true"
+              id="bootstrap-fallback-reload"
+              type="button"
+            >
+              重新加载
+            </button>
+            <button
+              class="bootstrap-fallback-button"
+              id="bootstrap-fallback-copy"
+              type="button"
+            >
+              复制诊断信息
+            </button>
+          </div>
+        </section>
+      </main>
+    </div>`,
     )
   }
 
-  /*
-   * 选区优先；没有选区时显示当前工具设置。
-   */
-  const emptyBlockStart =
-    '  if (selectedShapes.length === 0) {'
-  const emptyBlockEnd =
-    '  const selectedIds = selectedShapes.map((shape) => shape.id)'
+  if (!next.includes('/src/bootstrap/bootstrap-fallback.ts')) {
+    const mainScript =
+      '    <script src="/src/main.tsx" type="module"></script>'
 
-  const startIndex = source.indexOf(emptyBlockStart)
-  const endIndex = source.indexOf(
-    emptyBlockEnd,
-    startIndex,
+    if (!next.includes(mainScript)) {
+      throw new Error('无法定位 index.html 中的 main.tsx 入口。')
+    }
+
+    next = next.replace(
+      mainScript,
+      `    <!-- 必须先于 React 入口加载，确保应用模块失败时仍有错误 UI。 -->
+    <script
+      src="/src/bootstrap/bootstrap-fallback.ts"
+      type="module"
+    ></script>
+${mainScript}`,
+    )
+  }
+
+  return next
+}
+
+const bootstrapFallbackSource = `
+interface BootstrapDiagnosticElements {
+  readonly root: HTMLElement
+  readonly title: HTMLElement
+  readonly description: HTMLElement
+  readonly details: HTMLElement
+  readonly diagnostic: HTMLElement
+  readonly actions: HTMLElement
+  readonly reloadButton: HTMLButtonElement
+  readonly copyButton: HTMLButtonElement
+}
+
+interface NormalizedError {
+  readonly name: string
+  readonly message: string
+  readonly stack?: string
+}
+
+const startedAt = new Date().toISOString()
+
+function getElements(): BootstrapDiagnosticElements | null {
+  const root = document.getElementById('bootstrap-fallback')
+  const title = document.getElementById('bootstrap-fallback-title')
+  const description = document.getElementById(
+    'bootstrap-fallback-description',
   )
+  const details = document.getElementById('bootstrap-fallback-details')
+  const diagnostic = document.getElementById(
+    'bootstrap-fallback-diagnostic',
+  )
+  const actions = document.getElementById('bootstrap-fallback-actions')
+  const reloadButton = document.getElementById(
+    'bootstrap-fallback-reload',
+  )
+  const copyButton = document.getElementById('bootstrap-fallback-copy')
 
   if (
-    startIndex === -1 ||
-    endIndex === -1
+    !root ||
+    !title ||
+    !description ||
+    !details ||
+    !diagnostic ||
+    !actions ||
+    !(reloadButton instanceof HTMLButtonElement) ||
+    !(copyButton instanceof HTMLButtonElement)
   ) {
-    throw new Error(
-      '没有找到 CanvasInspectorContent 的空选区区域',
-    )
+    return null
   }
 
-  const replacement = `  if (selectedShapes.length === 0) {
+  return {
+    root,
+    title,
+    description,
+    details,
+    diagnostic,
+    actions,
+    reloadButton,
+    copyButton,
+  }
+}
+
+function normalizeError(value: unknown): NormalizedError {
+  if (value instanceof Error) {
+    return {
+      name: value.name || 'Error',
+      message: value.message || '未知错误',
+      stack: value.stack,
+    }
+  }
+
+  if (typeof value === 'string') {
+    return {
+      name: 'Error',
+      message: value,
+    }
+  }
+
+  try {
+    return {
+      name: 'UnknownError',
+      message: JSON.stringify(value, null, 2),
+    }
+  } catch {
+    return {
+      name: 'UnknownError',
+      message: String(value),
+    }
+  }
+}
+
+function createDiagnostic(
+  error: NormalizedError,
+  source?: string,
+  line?: number,
+  column?: number,
+): string {
+  return [
+    \`时间: \${new Date().toISOString()}\`,
+    \`启动时间: \${startedAt}\`,
+    \`错误类型: \${error.name}\`,
+    \`错误信息: \${error.message}\`,
+    source ? \`来源: \${source}\` : undefined,
+    typeof line === 'number' ? \`行: \${line}\` : undefined,
+    typeof column === 'number' ? \`列: \${column}\` : undefined,
+    \`页面: \${window.location.href}\`,
+    \`User Agent: \${navigator.userAgent}\`,
+    error.stack ? \`\\nStack:\\n\${error.stack}\` : undefined,
+  ]
+    .filter((item): item is string => Boolean(item))
+    .join('\\n')
+}
+
+function showFatalError(diagnosticText: string): void {
+  const elements = getElements()
+
+  if (!elements) {
+    console.error(diagnosticText)
+    return
+  }
+
+  elements.root.setAttribute('role', 'alert')
+  elements.title.textContent = '应用无法完成启动'
+  elements.description.textContent =
+    '应用启动期间发生了未处理错误。完整诊断信息如下。'
+  elements.diagnostic.textContent = diagnosticText
+  elements.details.dataset.visible = 'true'
+  elements.actions.dataset.visible = 'true'
+
+  elements.reloadButton.onclick = () => {
+    window.location.reload()
+  }
+
+  elements.copyButton.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(diagnosticText)
+      elements.copyButton.textContent = '已复制'
+    } catch {
+      elements.copyButton.textContent = '复制失败，请手动选择'
+    }
+  }
+}
+
+window.addEventListener(
+  'error',
+  (event) => {
+    const error = normalizeError(event.error ?? event.message)
+
+    showFatalError(
+      createDiagnostic(
+        error,
+        event.filename || undefined,
+        event.lineno || undefined,
+        event.colno || undefined,
+      ),
+    )
+  },
+  true,
+)
+
+window.addEventListener('unhandledrejection', (event) => {
+  const error = normalizeError(event.reason)
+  showFatalError(createDiagnostic(error))
+})
+
+export {}
+`
+
+const applicationErrorBoundarySource = `
+import { Button } from '@hybrid-canvas/design-system'
+import { error as reportError } from '@hybrid-canvas/foundations-observability'
+import {
+  AlertTriangle,
+  ClipboardCopy,
+  RotateCcw,
+} from 'lucide-react'
+import {
+  Component,
+  type ErrorInfo,
+  type ReactNode,
+} from 'react'
+
+interface ApplicationErrorBoundaryProps {
+  readonly children: ReactNode
+}
+
+interface ApplicationErrorBoundaryState {
+  readonly error: Error | null
+  readonly componentStack: string | null
+  readonly occurredAt: string | null
+  readonly copied: boolean
+}
+
+function createDiagnosticText(
+  error: Error,
+  componentStack: string | null,
+  occurredAt: string | null,
+): string {
+  return [
+    \`时间: \${occurredAt ?? new Date().toISOString()}\`,
+    \`错误类型: \${error.name || 'Error'}\`,
+    \`错误信息: \${error.message || '未知错误'}\`,
+    \`页面: \${window.location.href}\`,
+    \`User Agent: \${navigator.userAgent}\`,
+    error.stack ? \`\\nJavaScript Stack:\\n\${error.stack}\` : undefined,
+    componentStack
+      ? \`\\nReact Component Stack:\\n\${componentStack}\`
+      : undefined,
+  ]
+    .filter((item): item is string => Boolean(item))
+    .join('\\n')
+}
+
+export class ApplicationErrorBoundary extends Component<
+  ApplicationErrorBoundaryProps,
+  ApplicationErrorBoundaryState
+> {
+  override state: ApplicationErrorBoundaryState = {
+    error: null,
+    componentStack: null,
+    occurredAt: null,
+    copied: false,
+  }
+
+  static getDerivedStateFromError(
+    error: Error,
+  ): Partial<ApplicationErrorBoundaryState> {
+    return {
+      error,
+      occurredAt: new Date().toISOString(),
+      copied: false,
+    }
+  }
+
+  override componentDidCatch(
+    error: Error,
+    errorInfo: ErrorInfo,
+  ): void {
+    const componentStack = errorInfo.componentStack ?? null
+
+    this.setState({ componentStack })
+
+    reportError('Application rendering failed', {
+      scope: 'application-error-boundary',
+      errorName: error.name,
+      errorMessage: error.message,
+      errorStack: error.stack,
+      componentStack,
+    })
+  }
+
+  private readonly copyDiagnostic = async (): Promise<void> => {
+    const { error, componentStack, occurredAt } = this.state
+
+    if (!error) {
+      return
+    }
+
+    const diagnostic = createDiagnosticText(
+      error,
+      componentStack,
+      occurredAt,
+    )
+
+    try {
+      await navigator.clipboard.writeText(diagnostic)
+      this.setState({ copied: true })
+    } catch (cause: unknown) {
+      reportError('Copying application diagnostic failed', {
+        scope: 'application-error-boundary',
+        cause,
+      })
+    }
+  }
+
+  override render(): ReactNode {
+    const {
+      error,
+      componentStack,
+      occurredAt,
+      copied,
+    } = this.state
+
+    if (!error) {
+      return this.props.children
+    }
+
+    const diagnostic = createDiagnosticText(
+      error,
+      componentStack,
+      occurredAt,
+    )
+
     return (
-      <CanvasActiveToolPanel
-        editor={editor}
-        toolId={activeToolId}
-      />
+      <main
+        className="grid h-dvh place-items-center overflow-auto bg-background p-8 text-foreground"
+        role="alert"
+      >
+        <section className="w-full max-w-3xl rounded-2xl border bg-surface p-6 shadow-xl">
+          <div className="grid size-10 place-items-center rounded-xl bg-destructive/10 text-destructive">
+            <AlertTriangle className="size-5" />
+          </div>
+
+          <h1 className="mt-5 text-lg font-semibold">
+            应用遇到严重错误
+          </h1>
+
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Hybrid Canvas 无法继续显示当前界面。你可以复制完整诊断信息，
+            然后重新加载应用。
+          </p>
+
+          <details
+            className="mt-4 rounded-lg bg-muted p-3 text-xs text-muted-foreground"
+            open
+          >
+            <summary className="cursor-pointer font-medium">
+              完整技术详情
+            </summary>
+
+            <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5">
+              {diagnostic}
+            </pre>
+          </details>
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Button
+              onClick={() => window.location.reload()}
+              type="button"
+            >
+              <RotateCcw className="size-4" />
+              重新加载
+            </Button>
+
+            <Button
+              onClick={() => {
+                void this.copyDiagnostic()
+              }}
+              type="button"
+              variant="outline"
+            >
+              <ClipboardCopy className="size-4" />
+              {copied ? '已复制' : '复制诊断信息'}
+            </Button>
+          </div>
+        </section>
+      </main>
     )
   }
-
+}
 `
-
-  source =
-    source.slice(0, startIndex) +
-    replacement +
-    source.slice(endIndex)
-
-  /*
-   * 点击顶部创建工具时也打开右侧栏。
-   */
-  const keyStart =
-    "  const inspectorSelectionKey = useValue("
-  const keyEnd =
-    '\n\n  const workbench = useSyncExternalStore('
-
-  const keyStartIndex = source.indexOf(keyStart)
-  const keyEndIndex = source.indexOf(
-    keyEnd,
-    keyStartIndex,
-  )
-
-  if (
-    keyStartIndex === -1 ||
-    keyEndIndex === -1
-  ) {
-    throw new Error(
-      '没有找到 inspectorSelectionKey 区域',
-    )
-  }
-
-  const nextKeyCode = `  const inspectorSelectionKey = useValue(
-    'workspace inspector selection key',
-    () => {
-      if (!editor) {
-        return ''
-      }
-
-      const selectedIds = editor
-        .getSelectedShapeIds()
-        .map(String)
-        .sort()
-
-      if (selectedIds.length > 0) {
-        return 'selection:' + selectedIds.join('|')
-      }
-
-      const toolId = editor.getCurrentToolId()
-
-      if (
-        toolId === 'select' ||
-        toolId === 'hand'
-      ) {
-        return ''
-      }
-
-      return 'tool:' + toolId
-    },
-    [editor],
-  )`
-
-  source =
-    source.slice(0, keyStartIndex) +
-    nextKeyCode +
-    source.slice(keyEndIndex)
-
-  if (
-    !source.includes(
-      'function CanvasActiveToolPanel(',
-    )
-  ) {
-    source = insertBeforeRequired(
-      source,
-      'const SHAPE_COLORS',
-      activeToolPanelSource,
-      'CanvasActiveToolPanel',
-    )
-  }
-
-  await writeText(paths.workspaceContainer, source)
-}
-
-async function addSelectedChartEditor() {
-  let source = await readText(paths.workspaceContainer)
-
-  if (
-    source.includes(
-      "commonType === 'scientific-chart'",
-    )
-  ) {
-    return
-  }
-
-  const marker =
-    "      {commonType === 'geo' ? ("
-
-  const chartEditor = `      {commonType === 'scientific-chart' ? (
-        <ShapeInspectorSection title="图表类型">
-          <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              editor.setStyleForSelectedShapes(
-                ScientificChartTypeStyle,
-                value as ScientificChartType,
-              )
-            }
-            options={[
-              { value: 'line', label: '折线' },
-              { value: 'bar', label: '柱状' },
-              { value: 'area', label: '面积' },
-              { value: 'scatter', label: '散点' },
-            ]}
-            value={getCommonShapeProp(
-              selectedShapes,
-              'chartType',
-            )}
-          />
-        </ShapeInspectorSection>
-      ) : null}
-
-`
-
-  source = replaceRequired(
-    source,
-    marker,
-    chartEditor + marker,
-    '选中图表属性编辑器',
-  )
-
-  source = replaceOptional(
-    source,
-    "    frame: '画框',",
-    `    frame: '画框',
-    'scientific-chart': '图表',`,
-  )
-
-  source = replaceOptional(
-    source,
-    "    frame: '编辑画框样式',",
-    `    frame: '编辑画框样式',
-    'scientific-chart': '编辑图表类型、颜色和展示样式',`,
-  )
-
-  /*
-   * 科学图表也支持颜色和粗细。
-   */
-  source = replaceOptional(
-    source,
-    `    'frame',
-    'mixed',`,
-    `    'frame',
-    'scientific-chart',
-    'mixed',`,
-  )
-
-  await writeText(paths.workspaceContainer, source)
-}
-
-async function cleanWorkspaceShellEffect() {
-  let source = await readText(paths.workspaceShell)
-
-  source = replaceOptional(
-    source,
-    `  }, [
-    inspectorSelectionKey,
-    mode,
-    'workspace inspector selection changed',
-  ])`,
-    `  }, [inspectorSelectionKey, mode])`,
-  )
-
-  await writeText(paths.workspaceShell, source)
-}
-
-function runPnpmInstall() {
-  if (!shouldApply) {
-    console.log('[dry-run] 将执行 pnpm install')
-    return
-  }
-
-  console.log('')
-  console.log('正在刷新 pnpm workspace 链接……')
-
-  const command =
-    process.platform === 'win32'
-      ? 'pnpm.cmd'
-      : 'pnpm'
-
-  const result = spawnSync(
-    command,
-    ['install'],
-    {
-      cwd: root,
-      stdio: 'inherit',
-    },
-  )
-
-  if (result.error) {
-    throw result.error
-  }
-
-  if (result.status !== 0) {
-    throw new Error(
-      `pnpm install 失败，退出码：${String(result.status)}`,
-    )
-  }
-}
 
 async function main() {
-  console.log(
-    shouldApply
-      ? '正在修复当前已推送代码……'
-      : '正在预览修复内容……',
-  )
+  await Promise.all([
+    assertFileExists(paths.viteConfig),
+    assertFileExists(paths.indexHtml),
+    assertFileExists(paths.errorBoundary),
+  ])
 
-  await repairWorkspaceImports()
-  await repairWorkspaceDependencies()
-  await verifyScientificPublicApi()
-  await configureEditorBehavior()
-  await connectInspectorToActiveTool()
-  await addSelectedChartEditor()
-  await cleanWorkspaceShellEffect()
+  const [viteConfig, indexHtml] = await Promise.all([
+    readUtf8(paths.viteConfig),
+    readUtf8(paths.indexHtml),
+  ])
 
-  runPnpmInstall()
+  const nextViteConfig = updateViteConfig(viteConfig)
+  const nextIndexHtml = updateIndexHtml(indexHtml)
+
+  await Promise.all([
+    atomicWrite(paths.viteConfig, nextViteConfig),
+    atomicWrite(paths.indexHtml, nextIndexHtml),
+    atomicWrite(paths.bootstrapFallback, bootstrapFallbackSource),
+    atomicWrite(paths.errorBoundary, applicationErrorBoundarySource),
+  ])
 
   console.log('')
-  console.log('修复完成：')
-  console.log('  ✓ 恢复 WorkspaceContainer 完整导入')
-  console.log('  ✓ 修复 scientific-plot workspace 依赖')
-  console.log('  ✓ 点击工具时自动打开右侧功能面板')
-  console.log('  ✓ 选中对象时显示对象编辑功能')
-  console.log('  ✓ 图表工具显示专用配置')
-  console.log('  ✓ 滚轮上滑放大、下滑缩小')
-  console.log('  ✓ 创建工具保持激活')
-  console.log('')
-  console.log('现在执行：')
-  console.log(
-    '  pnpm --filter @hybrid-canvas/scientific-plot typecheck',
-  )
-  console.log(
-    '  pnpm --filter @hybrid-canvas/desktop typecheck',
-  )
-  console.log('  pnpm dev')
+  console.log('修改完成。建议执行：')
+  console.log('  pnpm install')
+  console.log('  pnpm --filter @hybrid-canvas/desktop typecheck')
+  console.log('  pnpm --filter @hybrid-canvas/desktop dev')
 }
 
 main().catch((error) => {
   console.error('')
-  console.error('修复失败：')
-  console.error(
-    error instanceof Error
-      ? error.stack ?? error.message
-      : error,
-  )
+  console.error('修改失败：')
+  console.error(error instanceof Error ? error.stack : error)
   process.exitCode = 1
 })

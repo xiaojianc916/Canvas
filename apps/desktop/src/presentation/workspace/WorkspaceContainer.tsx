@@ -27,8 +27,8 @@ import {
   useSyncExternalStore,
 } from 'react'
 import {
-  DefaultArrowheadEndStyle,
-  DefaultArrowheadStartStyle,
+  ArrowShapeArrowheadEndStyle,
+  ArrowShapeArrowheadStartStyle,
   DefaultColorStyle,
   DefaultDashStyle,
   DefaultFillStyle,
@@ -503,8 +503,8 @@ function CanvasInspectorContent({
       | typeof DefaultSizeStyle
       | typeof DefaultFontStyle
       | typeof DefaultTextAlignStyle
-      | typeof DefaultArrowheadStartStyle
-      | typeof DefaultArrowheadEndStyle,
+      | typeof ArrowShapeArrowheadStartStyle
+      | typeof ArrowShapeArrowheadEndStyle,
     value: string,
   ) => {
     editor.setStyleForSelectedShapes(style as never, value as never)
@@ -723,7 +723,7 @@ function CanvasInspectorContent({
           <ShapeInspectorSection title="起点">
             <ShapeInspectorArrowheadSelect
               onChange={(value) =>
-                applyStyle(DefaultArrowheadStartStyle, value)
+                applyStyle(ArrowShapeArrowheadStartStyle, value)
               }
               value={commonArrowheadStart}
             />
@@ -732,7 +732,7 @@ function CanvasInspectorContent({
           <ShapeInspectorSection title="终点">
             <ShapeInspectorArrowheadSelect
               onChange={(value) =>
-                applyStyle(DefaultArrowheadEndStyle, value)
+                applyStyle(ArrowShapeArrowheadEndStyle, value)
               }
               value={commonArrowheadEnd}
             />
@@ -943,7 +943,7 @@ function CanvasActiveToolPanel({
           <ShapeInspectorArrowheadSelect
             onChange={(value) =>
               applyNextStyle(
-                DefaultArrowheadStartStyle,
+                ArrowShapeArrowheadStartStyle,
                 value,
               )
             }
@@ -955,7 +955,7 @@ function CanvasActiveToolPanel({
           <ShapeInspectorArrowheadSelect
             onChange={(value) =>
               applyNextStyle(
-                DefaultArrowheadEndStyle,
+                ArrowShapeArrowheadEndStyle,
                 value,
               )
             }

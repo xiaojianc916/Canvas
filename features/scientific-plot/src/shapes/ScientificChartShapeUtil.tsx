@@ -6,8 +6,8 @@ import {
   Rectangle2d,
   ShapeUtil,
   type TLBaseShape,
-  type TLDefaultColor,
-  type TLDefaultSize,
+  type TLDefaultColorStyle,
+  type TLDefaultSizeStyle,
   type TLIndicatorPath,
 } from 'tldraw'
 
@@ -26,8 +26,8 @@ export interface ScientificChartShapeProps {
   readonly w: number
   readonly h: number
   readonly chartType: ScientificChartType
-  readonly color: TLDefaultColor
-  readonly size: TLDefaultSize
+  readonly color: TLDefaultColorStyle
+  readonly size: TLDefaultSizeStyle
   readonly showAxes: boolean
   readonly showGrid: boolean
   readonly showLegend: boolean
@@ -38,7 +38,7 @@ export type ScientificChartShape = TLBaseShape<
   ScientificChartShapeProps
 >
 
-const COLOR_VALUES: Record<TLDefaultColor, string> = {
+const COLOR_VALUES: Record<string, string> = {
   black: '#1d1d1d',
   grey: '#6b7280',
   'light-violet': '#a78bfa',
@@ -54,7 +54,7 @@ const COLOR_VALUES: Record<TLDefaultColor, string> = {
   white: '#ffffff',
 }
 
-const STROKE_WIDTHS: Record<TLDefaultSize, number> = {
+const STROKE_WIDTHS: Record<string, number> = {
   s: 2,
   m: 3,
   l: 4,
@@ -139,8 +139,9 @@ function ScientificChartView({
     showLegend,
   } = shape.props
 
-  const stroke = COLOR_VALUES[color]
-  const strokeWidth = STROKE_WIDTHS[size]
+  const stroke =
+    COLOR_VALUES[color] ?? '#2563eb'
+  const strokeWidth = STROKE_WIDTHS[size] ?? 3
 
   const padding = 34
   const chartWidth = Math.max(1, w - padding * 2)

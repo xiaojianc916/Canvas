@@ -8,6 +8,121 @@
       Native window, WebView and document bootstrap surface must remain aligned.
       See docs/adr/ADR-003-opaque-window-surface.md.
     -->
+    <style id="bootstrap-fallback-styles">
+      #bootstrap-fallback {
+        box-sizing: border-box;
+        display: grid;
+        width: 100%;
+        height: 100%;
+        place-items: center;
+        padding: 32px;
+        color: #18181b;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      #bootstrap-fallback-card {
+        box-sizing: border-box;
+        width: min(100%, 680px);
+        padding: 24px;
+        overflow: hidden;
+        background: #ffffff;
+        border: 1px solid #dedede;
+        border-radius: 16px;
+        box-shadow:
+          0 16px 48px rgb(0 0 0 / 10%),
+          0 2px 8px rgb(0 0 0 / 6%);
+      }
+
+      #bootstrap-fallback-icon {
+        display: grid;
+        width: 40px;
+        height: 40px;
+        place-items: center;
+        color: #b42318;
+        font-size: 20px;
+        font-weight: 700;
+        background: #fee4e2;
+        border-radius: 12px;
+      }
+
+      #bootstrap-fallback-title {
+        margin: 18px 0 0;
+        font-size: 18px;
+        line-height: 28px;
+      }
+
+      #bootstrap-fallback-description {
+        margin: 8px 0 0;
+        color: #667085;
+        font-size: 14px;
+        line-height: 22px;
+      }
+
+      #bootstrap-fallback-details {
+        display: none;
+        margin-top: 16px;
+        padding: 12px;
+        overflow: hidden;
+        background: #f4f4f5;
+        border-radius: 10px;
+      }
+
+      #bootstrap-fallback-details[data-visible="true"] {
+        display: block;
+      }
+
+      #bootstrap-fallback-diagnostic {
+        max-height: 320px;
+        margin: 0;
+        overflow: auto;
+        color: #3f3f46;
+        font-family:
+          "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono",
+          monospace;
+        font-size: 11px;
+        line-height: 18px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        user-select: text;
+      }
+
+      #bootstrap-fallback-actions {
+        display: none;
+        gap: 8px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+      }
+
+      #bootstrap-fallback-actions[data-visible="true"] {
+        display: flex;
+      }
+
+      .bootstrap-fallback-button {
+        min-height: 36px;
+        padding: 0 14px;
+        color: #18181b;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        background: #ffffff;
+        border: 1px solid #d4d4d8;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+
+      .bootstrap-fallback-button:hover {
+        background: #f4f4f5;
+      }
+
+      .bootstrap-fallback-button[data-primary="true"] {
+        color: #ffffff;
+        background: #18181b;
+        border-color: #18181b;
+      }
+    </style>
+
     <style id="window-backing-surface">
       :root {
         --window-backing-surface: #f3f3f3;
@@ -25,7 +140,50 @@
     <title>Hybrid Canvas</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main id="bootstrap-fallback" role="status">
+        <section
+          aria-labelledby="bootstrap-fallback-title"
+          id="bootstrap-fallback-card"
+        >
+          <div aria-hidden="true" id="bootstrap-fallback-icon">!</div>
+          <h1 id="bootstrap-fallback-title">Hybrid Canvas 正在启动</h1>
+          <p id="bootstrap-fallback-description">
+            正在加载应用组件，请稍候。
+          </p>
+
+          <section
+            aria-label="技术详情"
+            id="bootstrap-fallback-details"
+          >
+            <pre id="bootstrap-fallback-diagnostic"></pre>
+          </section>
+
+          <div id="bootstrap-fallback-actions">
+            <button
+              class="bootstrap-fallback-button"
+              data-primary="true"
+              id="bootstrap-fallback-reload"
+              type="button"
+            >
+              重新加载
+            </button>
+            <button
+              class="bootstrap-fallback-button"
+              id="bootstrap-fallback-copy"
+              type="button"
+            >
+              复制诊断信息
+            </button>
+          </div>
+        </section>
+      </main>
+    </div>
+    <!-- 必须先于 React 入口加载，确保应用模块失败时仍有错误 UI。 -->
+    <script
+      src="/src/bootstrap/bootstrap-fallback.ts"
+      type="module"
+    ></script>
     <script src="/src/main.tsx" type="module"></script>
   </body>
 </html>
