@@ -4,7 +4,6 @@ import {
   Combobox,
   ComboboxContent,
   type ComboboxDataItem,
-  ComboboxEmpty,
   ComboboxGroup,
   ComboboxItem,
   ComboboxList,
@@ -589,8 +588,6 @@ function SettingsCombobox({
       <ComboboxTrigger aria-describedby={ariaDescribedBy} id={id} />
 
       <ComboboxContent>
-        <ComboboxEmpty />
-
         <ComboboxList>
           <ComboboxGroup>
             {data.map((item) => (

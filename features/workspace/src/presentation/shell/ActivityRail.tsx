@@ -140,7 +140,12 @@ interface RailButtonProps {
 
 function RailButton({ label, icon: Icon, active = false, onClick }: RailButtonProps) {
   const className = active
-    ? ['relative size-9', 'bg-sidebar-accent', 'text-primary', 'hover:bg-sidebar-accent'].join(' ')
+    ? [
+        'relative size-9',
+        'bg-sidebar-accent',
+        'text-muted-foreground',
+        'hover:bg-sidebar-accent',
+      ].join(' ')
     : ['size-9', 'text-muted-foreground', 'hover:bg-sidebar-accent', 'hover:text-foreground'].join(
         ' ',
       )
