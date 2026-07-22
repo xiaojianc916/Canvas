@@ -19,7 +19,7 @@ import {
 import { dirname, join, relative, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-const SCRIPT_NAME =
+const STEP =
   '009-enforce-package-crate-dependency-permissions'
 
 const MANIFEST_PATH =
@@ -42,14 +42,17 @@ const dependencyPermissions = {
     allowedPackages: [],
     allowedCrates: [],
   },
+
   'editor/extensions/native': {
     allowedPackages: [],
     allowedCrates: [],
   },
+
   'platforms/desktop-runtime/native': {
     allowedPackages: [],
     allowedCrates: [],
   },
+
   'features/freehand': {
     allowedPackages: [
       '@hybrid-canvas/canvas',
@@ -58,6 +61,7 @@ const dependencyPermissions = {
     ],
     allowedCrates: [],
   },
+
   'features/scientific-plot': {
     allowedPackages: [
       '@hybrid-canvas/asset',
@@ -67,6 +71,7 @@ const dependencyPermissions = {
     ],
     allowedCrates: [],
   },
+
   'features/import-export': {
     allowedPackages: [
       '@hybrid-canvas/flowchart',
@@ -84,6 +89,7 @@ function main() {
   validateArguments()
 
   const root = findRepositoryRoot()
+
   validateRepository(root)
 
   const manifestPath =
@@ -95,59 +101,55 @@ function main() {
   const dependencyCheckPath =
     join(root, DEPENDENCY_CHECK_PATH)
 
-  const originalManifest =
-    readRequiredText(manifestPath)
-
-  const originalArchitectureCheck =
-    readRequiredText(architectureCheckPath)
-
   const dependencyCheckExisted =
     existsSync(dependencyCheckPath)
 
-  const originalDependencyCheck =
+  const manifestOriginal =
+    readRequiredText(manifestPath)
+
+  const architectureCheckOriginal =
+    readRequiredText(architectureCheckPath)
+
+  const dependencyCheckOriginal =
     dependencyCheckExisted
-      ? readRequiredText(dependencyCheckPath)
+      ? readRequiredText(
+          dependencyCheckPath,
+        )
       : ''
-
-  const modifiedManifest =
-    transformManifest(originalManifest)
-
-  const modifiedArchitectureCheck =
-    transformArchitectureCheck(
-      originalArchitectureCheck,
-    )
-
-  const modifiedDependencyCheck =
-    createDependencyChecker()
 
   const changes = [
     {
       relativePath: MANIFEST_PATH,
       absolutePath: manifestPath,
-      original: originalManifest,
-      modified: modifiedManifest,
+      original: manifestOriginal,
+      modified:
+        transformManifest(manifestOriginal),
       existedBefore: true,
     },
+
     {
       relativePath:
         ARCHITECTURE_CHECK_PATH,
       absolutePath:
         architectureCheckPath,
       original:
-        originalArchitectureCheck,
+        architectureCheckOriginal,
       modified:
-        modifiedArchitectureCheck,
+        transformArchitectureCheck(
+          architectureCheckOriginal,
+        ),
       existedBefore: true,
     },
+
     {
       relativePath:
         DEPENDENCY_CHECK_PATH,
       absolutePath:
         dependencyCheckPath,
       original:
-        originalDependencyCheck,
+        dependencyCheckOriginal,
       modified:
-        modifiedDependencyCheck,
+        createDependencyChecker(),
       existedBefore:
         dependencyCheckExisted,
     },
@@ -189,27 +191,35 @@ function main() {
     '- 使用 allowedCrates 精确许可 Rust crate',
   )
   console.log(
-    '- 使用 TypeScript AST 分析源码依赖',
+    '- 使用 TypeScript Compiler API 分析源码依赖',
   )
   console.log(
-    '- 校验 package.json 运行时内部依赖',
+    '- 避免依赖 TypeScript 7 的运行时枚举',
+  )
+  console.log(
+    '- 校验 package.json 内部运行时依赖',
   )
   console.log(
     '- 校验 Cargo path dependency',
   )
   console.log(
-    '- 同层跨包依赖不再隐式允许',
+    '- 兼容当前 tests/architecture/check.mjs 的真实结构',
   )
 
   if (!writeMode) {
-    console.log('\n当前为 dry-run，没有写入文件。')
+    console.log(
+      '\n当前为 dry-run，没有写入文件。',
+    )
     console.log(
       '执行：node tooling/script/refactor.mjs --write',
     )
     return
   }
 
-  ensureTargetsAreClean(root, changes)
+  ensureExistingTargetsAreClean(
+    root,
+    changes,
+  )
 
   const backupRoot =
     createBackup(root, changes)
@@ -219,22 +229,7 @@ function main() {
   )
 
   try {
-    for (const change of changes) {
-      mkdirSync(
-        dirname(change.absolutePath),
-        {
-          recursive: true,
-        },
-      )
-
-      writeFileSync(
-        change.absolutePath,
-        ensureFinalNewline(
-          change.modified,
-        ),
-        'utf8',
-      )
-    }
+    writeChanges(changes)
 
     run(
       'pnpm',
@@ -274,7 +269,8 @@ function main() {
       [DEPENDENCY_CHECK_PATH],
       {
         cwd: root,
-        label: 'package/crate 依赖许可检查',
+        label:
+          'package/crate 依赖许可检查',
       },
     )
 
@@ -309,7 +305,7 @@ function main() {
     )
   } catch (error) {
     console.error(
-      '\n修改或验证失败，正在恢复原文件……',
+      '\n修改或验证失败，正在自动恢复……',
     )
 
     restoreBackup(
@@ -329,7 +325,9 @@ function main() {
 function validateArguments() {
   for (const argument of argv) {
     if (argument !== '--write') {
-      throw new Error(`未知参数：${argument}`)
+      throw new Error(
+        `未知参数：${argument}`,
+      )
     }
   }
 }
@@ -345,7 +343,10 @@ function findRepositoryRoot() {
     },
   )
 
-  if (result.error || result.status !== 0) {
+  if (
+    result.error ||
+    result.status !== 0
+  ) {
     throw new Error(
       [
         '当前目录不在 Git 仓库中。',
@@ -362,13 +363,17 @@ function findRepositoryRoot() {
 }
 
 function validateRepository(root) {
-  const packageJson = JSON.parse(
+  const packageJson = parseJson(
     readRequiredText(
       join(root, 'package.json'),
     ),
+    'package.json',
   )
 
-  if (packageJson.name !== 'hybrid-canvas') {
+  if (
+    packageJson.name !==
+    'hybrid-canvas'
+  ) {
     throw new Error(
       `仓库识别失败：${String(packageJson.name)}`,
     )
@@ -379,7 +384,9 @@ function validateRepository(root) {
     ARCHITECTURE_CHECK_PATH,
   ]) {
     if (
-      !existsSync(join(root, relativePath))
+      !existsSync(
+        join(root, relativePath),
+      )
     ) {
       throw new Error(
         `必要文件不存在：${relativePath}`,
@@ -394,13 +401,17 @@ function validateRepository(root) {
     MANIFEST_PATH,
   )
 
-  if (!Array.isArray(manifest.scaffolds)) {
+  if (
+    !Array.isArray(
+      manifest.scaffolds,
+    )
+  ) {
     throw new Error(
       `${MANIFEST_PATH} 缺少 scaffolds 数组`,
     )
   }
 
-  const actualPaths = new Set(
+  const manifestPaths = new Set(
     manifest.scaffolds.map(
       (scaffold) => scaffold.path,
     ),
@@ -411,14 +422,14 @@ function validateRepository(root) {
       dependencyPermissions,
     )
   ) {
-    if (!actualPaths.has(path)) {
+    if (!manifestPaths.has(path)) {
       throw new Error(
-        `manifest 中找不到预期 scaffold：${path}`,
+        `manifest 中找不到 scaffold：${path}`,
       )
     }
   }
 
-  for (const path of actualPaths) {
+  for (const path of manifestPaths) {
     if (
       !Object.hasOwn(
         dependencyPermissions,
@@ -426,7 +437,7 @@ function validateRepository(root) {
       )
     ) {
       throw new Error(
-        `存在未配置精确依赖许可的 scaffold：${String(path)}`,
+        `scaffold 尚未配置精确依赖许可：${String(path)}`,
       )
     }
   }
@@ -438,40 +449,41 @@ function transformManifest(source) {
     MANIFEST_PATH,
   )
 
-  const scaffolds = manifest.scaffolds.map(
-    (scaffold) => {
-      const permission =
-        dependencyPermissions[
-          scaffold.path
-        ]
+  const scaffolds =
+    manifest.scaffolds.map(
+      (scaffold) => {
+        const permission =
+          dependencyPermissions[
+            scaffold.path
+          ]
 
-      if (!permission) {
-        throw new Error(
-          `缺少 scaffold 许可配置：${String(scaffold.path)}`,
-        )
-      }
+        if (!permission) {
+          throw new Error(
+            `缺少 scaffold 许可：${String(scaffold.path)}`,
+          )
+        }
 
-      const {
-        allowedDependencies:
-          _allowedDependencies,
-        forbiddenDependencies:
-          _forbiddenDependencies,
-        allowedPackages:
-          _allowedPackages,
-        allowedCrates:
-          _allowedCrates,
-        ...remaining
-      } = scaffold
+        const {
+          allowedDependencies:
+            _allowedDependencies,
+          forbiddenDependencies:
+            _forbiddenDependencies,
+          allowedPackages:
+            _allowedPackages,
+          allowedCrates:
+            _allowedCrates,
+          ...remaining
+        } = scaffold
 
-      return {
-        ...remaining,
-        allowedPackages:
-          permission.allowedPackages,
-        allowedCrates:
-          permission.allowedCrates,
-      }
-    },
-  )
+        return {
+          ...remaining,
+          allowedPackages:
+            permission.allowedPackages,
+          allowedCrates:
+            permission.allowedCrates,
+        }
+      },
+    )
 
   return `${JSON.stringify(
     {
@@ -486,15 +498,130 @@ function transformManifest(source) {
   )}\n`
 }
 
-function transformArchitectureCheck(source) {
-  if (source.includes(CHECK_IMPORT_LINE)) {
+function transformArchitectureCheck(
+  source,
+) {
+  let next = source
+
+  next = upgradeManifestVersionValidation(
+    next,
+  )
+  next = upgradeScaffoldValidation(
+    next,
+  )
+  next = appendDependencyCheckImport(
+    next,
+  )
+
+  return next
+}
+
+function upgradeManifestVersionValidation(
+  source,
+) {
+  if (
+    source.includes(
+      '![1, 2, 3].includes(manifest.version)',
+    )
+  ) {
     return source
   }
 
-  return `${source.replace(/\s*$/u, '')}
+  const oldSnippet =
+    'if (!manifest || ![1, 2].includes(manifest.version) || !Array.isArray(manifest.scaffolds)) {'
 
-${CHECK_IMPORT_LINE}
-`
+  const newSnippet =
+    'if (!manifest || ![1, 2, 3].includes(manifest.version) || !Array.isArray(manifest.scaffolds)) {'
+
+  if (!source.includes(oldSnippet)) {
+    throw new Error(
+      '无法找到架构 manifest 版本校验',
+    )
+  }
+
+  return replaceExactlyOnce(
+    source,
+    oldSnippet,
+    newSnippet,
+    'manifest version validation',
+  )
+}
+
+function upgradeScaffoldValidation(
+  source,
+) {
+  if (
+    source.includes(
+      'scaffold requires allowedPackages and allowedCrates',
+    )
+  ) {
+    return source
+  }
+
+  const oldSnippet = `  if (manifestVersion >= 2) {
+    if (!scaffold.owner || !scaffold.removalCondition) {
+      addViolation(\`\${scaffold.path}: scaffold requires owner and removalCondition\`)
+    }
+
+    if (!Array.isArray(scaffold.allowedDependencies)) {
+      addViolation(\`\${scaffold.path}: scaffold requires allowedDependencies\`)
+    }
+  }`
+
+  const newSnippet = `  if (manifestVersion >= 2) {
+    if (!scaffold.owner || !scaffold.removalCondition) {
+      addViolation(\`\${scaffold.path}: scaffold requires owner and removalCondition\`)
+    }
+  }
+
+  if (manifestVersion === 2 && !Array.isArray(scaffold.allowedDependencies)) {
+    addViolation(\`\${scaffold.path}: scaffold requires allowedDependencies\`)
+  }
+
+  if (
+    manifestVersion >= 3 &&
+    (!Array.isArray(scaffold.allowedPackages) || !Array.isArray(scaffold.allowedCrates))
+  ) {
+    addViolation(\`\${scaffold.path}: scaffold requires allowedPackages and allowedCrates\`)
+  }`
+
+  if (!source.includes(oldSnippet)) {
+    throw new Error(
+      '无法找到 scaffold 结构校验块',
+    )
+  }
+
+  return replaceExactlyOnce(
+    source,
+    oldSnippet,
+    newSnippet,
+    'scaffold schema validation',
+  )
+}
+
+function appendDependencyCheckImport(
+  source,
+) {
+  if (
+    source.includes(CHECK_IMPORT_LINE)
+  ) {
+    return source
+  }
+
+  const mainCall = '\nmain()\n'
+
+  if (!source.includes(mainCall)) {
+    throw new Error(
+      '无法找到 check.mjs 的 main() 调用位置',
+    )
+  }
+
+  return replaceExactlyOnce(
+    source,
+    mainCall,
+    `\n${CHECK_IMPORT_LINE}\n\nmain()\n`,
+    'dependency checker import insertion',
+  )
 }
 
 function createDependencyChecker() {
@@ -505,27 +632,30 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
 
+// TypeScript 7 does not expose ScriptTarget as a runtime enum.
+// The Compiler API has used 99 for ScriptTarget.Latest across supported versions.
+const SCRIPT_TARGET_LATEST = 99
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const manifestPath = join(root, 'architecture.scaffolds.json')
-const manifest = readJson(manifestPath)
+const manifest = readJson(join(root, 'architecture.scaffolds.json'))
 const violations = []
 
-const packageRoots = discoverPackageRoots()
+const workspacePackages = discoverWorkspacePackages()
 const packagesByName = new Map(
-  packageRoots.map((entry) => [entry.name, entry]),
+  workspacePackages.map((entry) => [entry.name, entry]),
 )
-const sortedPackageNames = [...packagesByName.keys()].sort(
+const packageNames = [...packagesByName.keys()].sort(
   (left, right) => right.length - left.length,
 )
 
-const crateRoots = discoverCrateRoots()
+const workspaceCrates = discoverWorkspaceCrates()
 const cratesByName = new Map(
-  crateRoots.map((entry) => [entry.name, entry]),
+  workspaceCrates.map((entry) => [entry.name, entry]),
 )
 
 validateManifest()
 
-for (const scaffold of manifest.scaffolds) {
+for (const scaffold of manifest.scaffolds ?? []) {
   validateScaffold(scaffold)
 }
 
@@ -539,7 +669,7 @@ if (violations.length > 0) {
   process.exitCode = 1
 } else {
   console.log(
-    §Scaffold dependency permissions OK: ¤{manifest.scaffolds.length} scaffolds, ¤{packageRoots.length} packages, ¤{crateRoots.length} crates§,
+    §Scaffold dependency permissions OK: ¤{manifest.scaffolds.length} scaffolds, ¤{workspacePackages.length} packages, ¤{workspaceCrates.length} crates§,
   )
 }
 
@@ -584,14 +714,24 @@ function validateScaffold(scaffold) {
     'allowedPackages',
     packagesByName,
   )
+
   const allowedCrates = validatePermissionList(
     scaffold,
     'allowedCrates',
     cratesByName,
   )
 
-  validateTypeScriptDependencies(scaffold, scaffoldRoot, allowedPackages)
-  validateRustDependencies(scaffold, scaffoldRoot, allowedCrates)
+  validateTypeScriptDependencies(
+    scaffold,
+    scaffoldRoot,
+    allowedPackages,
+  )
+
+  validateRustDependencies(
+    scaffold,
+    scaffoldRoot,
+    allowedCrates,
+  )
 }
 
 function validatePermissionList(scaffold, property, knownEntries) {
@@ -626,11 +766,16 @@ function validatePermissionList(scaffold, property, knownEntries) {
   return result
 }
 
-function validateTypeScriptDependencies(scaffold, scaffoldRoot, allowedPackages) {
+function validateTypeScriptDependencies(
+  scaffold,
+  scaffoldRoot,
+  allowedPackages,
+) {
   const ownerPackage = findOwningPackage(scaffoldRoot)
+  const sourceRoot = join(scaffoldRoot, 'src')
 
   if (!ownerPackage) {
-    if (containsTypeScriptSource(scaffoldRoot)) {
+    if (existsSync(sourceRoot) && collectTypeScriptFiles(sourceRoot).length > 0) {
       addViolation(§¤{scaffold.path}: TypeScript source has no owning package.json§)
     }
 
@@ -643,16 +788,28 @@ function validateTypeScriptDependencies(scaffold, scaffoldRoot, allowedPackages)
     )
   }
 
-  validateDeclaredPackageDependencies(scaffold, ownerPackage, allowedPackages)
-
-  const sourceRoot = join(scaffoldRoot, 'src')
+  validateDeclaredPackageDependencies(
+    scaffold,
+    ownerPackage,
+    allowedPackages,
+  )
 
   if (!existsSync(sourceRoot)) {
     return
   }
 
+  const declaredDependencies = collectDeclaredRuntimeDependencies(
+    ownerPackage.manifestPath,
+  )
+
   for (const file of collectTypeScriptFiles(sourceRoot)) {
-    validateTypeScriptFile(scaffold, file, ownerPackage, allowedPackages)
+    validateTypeScriptFile({
+      scaffold,
+      file,
+      ownerPackage,
+      allowedPackages,
+      declaredDependencies,
+    })
   }
 }
 
@@ -661,13 +818,11 @@ function validateDeclaredPackageDependencies(
   ownerPackage,
   allowedPackages,
 ) {
-  const packageJson = readJson(ownerPackage.manifestPath)
-  const runtimeDependencies = {
-    ...packageJson.dependencies,
-    ...packageJson.optionalDependencies,
-  }
+  const dependencies = collectDeclaredRuntimeDependencies(
+    ownerPackage.manifestPath,
+  )
 
-  for (const dependencyName of Object.keys(runtimeDependencies)) {
+  for (const dependencyName of dependencies) {
     if (!packagesByName.has(dependencyName)) {
       continue
     }
@@ -687,7 +842,23 @@ function validateDeclaredPackageDependencies(
   }
 }
 
-function validateTypeScriptFile(scaffold, file, ownerPackage, allowedPackages) {
+function collectDeclaredRuntimeDependencies(manifestPath) {
+  const packageJson = readJson(manifestPath)
+
+  return new Set([
+    ...Object.keys(packageJson.dependencies ?? {}),
+    ...Object.keys(packageJson.optionalDependencies ?? {}),
+    ...Object.keys(packageJson.peerDependencies ?? {}),
+  ])
+}
+
+function validateTypeScriptFile({
+  scaffold,
+  file,
+  ownerPackage,
+  allowedPackages,
+  declaredDependencies,
+}) {
   for (const specifier of collectModuleSpecifiers(file)) {
     const dependencyName = resolveWorkspacePackageName(specifier)
 
@@ -701,14 +872,7 @@ function validateTypeScriptFile(scaffold, file, ownerPackage, allowedPackages) {
       )
     }
 
-    const packageJson = readJson(ownerPackage.manifestPath)
-    const declaredDependencies = {
-      ...packageJson.dependencies,
-      ...packageJson.optionalDependencies,
-      ...packageJson.peerDependencies,
-    }
-
-    if (!Object.hasOwn(declaredDependencies, dependencyName)) {
+    if (!declaredDependencies.has(dependencyName)) {
       addViolation(
         §¤{relativePath(file)}: ¤{dependencyName} is imported but not declared as a runtime dependency§,
       )
@@ -719,11 +883,11 @@ function validateTypeScriptFile(scaffold, file, ownerPackage, allowedPackages) {
 function collectModuleSpecifiers(file) {
   const source = readFileSync(file, 'utf8')
   const sourceFile = ts.createSourceFile(
-  file,
-  source,
-  ts.ScriptTarget.Latest,
-  true,
-)
+    file,
+    source,
+    SCRIPT_TARGET_LATEST,
+    true,
+  )
   const specifiers = new Set()
 
   function visit(node) {
@@ -746,7 +910,7 @@ function collectModuleSpecifiers(file) {
 
     if (
       ts.isCallExpression(node) &&
-      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.expression.getText(sourceFile) === 'import' &&
       node.arguments.length === 1 &&
       ts.isStringLiteralLike(node.arguments[0])
     ) {
@@ -762,8 +926,11 @@ function collectModuleSpecifiers(file) {
 }
 
 function resolveWorkspacePackageName(specifier) {
-  for (const packageName of sortedPackageNames) {
-    if (specifier === packageName || specifier.startsWith(§¤{packageName}/§)) {
+  for (const packageName of packageNames) {
+    if (
+      specifier === packageName ||
+      specifier.startsWith(§¤{packageName}/§)
+    ) {
       return packageName
     }
   }
@@ -775,18 +942,27 @@ function resolveWorkspacePackageName(specifier) {
   return null
 }
 
-function validateRustDependencies(scaffold, scaffoldRoot, allowedCrates) {
+function validateRustDependencies(
+  scaffold,
+  scaffoldRoot,
+  allowedCrates,
+) {
   const cargoPath = join(scaffoldRoot, 'Cargo.toml')
 
   if (!existsSync(cargoPath)) {
-    if (containsRustSource(scaffoldRoot)) {
+    const rustSourceRoot = join(scaffoldRoot, 'src')
+
+    if (
+      existsSync(rustSourceRoot) &&
+      collectRustFiles(rustSourceRoot).length > 0
+    ) {
       addViolation(§¤{scaffold.path}: Rust source has no Cargo.toml§)
     }
 
     return
   }
 
-  const ownerCrate = crateRoots.find(
+  const ownerCrate = workspaceCrates.find(
     (entry) => entry.manifestPath === cargoPath,
   )
 
@@ -802,8 +978,12 @@ function validateRustDependencies(scaffold, scaffoldRoot, allowedCrates) {
   }
 
   for (const dependency of collectCargoPathDependencies(cargoPath)) {
-    const dependencyRoot = resolve(ownerCrate.root, dependency.path)
-    const dependencyCrate = crateRoots.find(
+    const dependencyRoot = resolve(
+      ownerCrate.root,
+      dependency.path,
+    )
+
+    const dependencyCrate = workspaceCrates.find(
       (entry) => entry.root === dependencyRoot,
     )
 
@@ -839,7 +1019,11 @@ function collectCargoPathDependencies(cargoPath) {
       currentSection === 'dependencies' ||
       currentSection.endsWith('.dependencies')
 
-    if (!isRuntimeDependencySection || !line || line.startsWith('#')) {
+    if (
+      !isRuntimeDependencySection ||
+      !line ||
+      line.startsWith('#')
+    ) {
       continue
     }
 
@@ -847,19 +1031,21 @@ function collectCargoPathDependencies(cargoPath) {
       /^([A-Za-z0-9_-]+)\s*=\s*\{[^}]*\bpath\s*=\s*"([^"]+)"[^}]*\}\s*$/u,
     )
 
-    if (match) {
-      dependencies.push({
-        name: match[1],
-        path: match[2],
-      })
+    if (!match) {
+      continue
     }
+
+    dependencies.push({
+      name: match[1],
+      path: match[2],
+    })
   }
 
   return dependencies
 }
 
-function discoverPackageRoots() {
-  const roots = [
+function discoverWorkspacePackages() {
+  const workspaceRoots = [
     'apps',
     'editor',
     'features',
@@ -870,7 +1056,7 @@ function discoverPackageRoots() {
   ]
   const result = []
 
-  for (const rootName of roots) {
+  for (const rootName of workspaceRoots) {
     const workspaceRoot = join(root, rootName)
 
     if (!existsSync(workspaceRoot)) {
@@ -903,10 +1089,12 @@ function discoverPackageRoots() {
   return result
 }
 
-function discoverCrateRoots() {
+function discoverWorkspaceCrates() {
   const workspaceCargoPath = join(root, 'Cargo.toml')
   const source = readFileSync(workspaceCargoPath, 'utf8')
-  const membersMatch = source.match(/\bmembers\s*=\s*\[([\s\S]*?)\]/u)
+  const membersMatch = source.match(
+    /\bmembers\s*=\s*\[([\s\S]*?)\]/u,
+  )
 
   if (!membersMatch) {
     addViolation('Cargo.toml: workspace members array is missing')
@@ -914,9 +1102,8 @@ function discoverCrateRoots() {
   }
 
   const result = []
-  const memberPattern = /"([^"]+)"/gu
 
-  for (const match of membersMatch[1].matchAll(memberPattern)) {
+  for (const match of membersMatch[1].matchAll(/"([^"]+)"/gu)) {
     const crateRoot = resolve(root, match[1])
     const manifestPath = join(crateRoot, 'Cargo.toml')
 
@@ -975,50 +1162,38 @@ function findOwningPackage(path) {
 }
 
 function collectTypeScriptFiles(directory) {
-  const files = []
-
-  for (const entry of readdirSync(directory)) {
-    const path = join(directory, entry)
-
-    if (isDirectory(path)) {
-      files.push(...collectTypeScriptFiles(path))
-      continue
-    }
-
-    if (/\.(?:cts|mts|ts|tsx)$/u.test(path) && !path.endsWith('.d.ts')) {
-      files.push(path)
-    }
-  }
-
-  return files
-}
-
-function containsTypeScriptSource(directory) {
-  return (
-    existsSync(join(directory, 'src')) &&
-    collectTypeScriptFiles(join(directory, 'src')).length > 0
+  return collectFiles(
+    directory,
+    /\.(?:cts|mts|ts|tsx)$/u,
+    /\.d\.ts$/u,
   )
 }
 
-function containsRustSource(directory) {
-  const sourceRoot = join(directory, 'src')
-
-  if (!existsSync(sourceRoot)) {
-    return false
-  }
-
-  return collectFilesWithExtension(sourceRoot, '.rs').length > 0
+function collectRustFiles(directory) {
+  return collectFiles(directory, /\.rs$/u)
 }
 
-function collectFilesWithExtension(directory, extension) {
+function collectFiles(directory, includePattern, excludePattern = null) {
   const files = []
 
   for (const entry of readdirSync(directory)) {
     const path = join(directory, entry)
 
     if (isDirectory(path)) {
-      files.push(...collectFilesWithExtension(path, extension))
-    } else if (path.endsWith(extension)) {
+      files.push(
+        ...collectFiles(
+          path,
+          includePattern,
+          excludePattern,
+        ),
+      )
+      continue
+    }
+
+    if (
+      includePattern.test(path) &&
+      (!excludePattern || !excludePattern.test(path))
+    ) {
       files.push(path)
     }
   }
@@ -1035,7 +1210,10 @@ function isDirectory(path) {
 }
 
 function isInsideRoot(path) {
-  const normalizedRoot = root.endsWith(sep) ? root : §¤{root}¤{sep}§
+  const normalizedRoot = root.endsWith(sep)
+    ? root
+    : §¤{root}¤{sep}§
+
   return path === root || path.startsWith(normalizedRoot)
 }
 
@@ -1045,7 +1223,9 @@ function relativePath(path) {
 
 function readJson(path) {
   try {
-    return JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/u, ''))
+    return JSON.parse(
+      readFileSync(path, 'utf8').replace(/^\uFEFF/u, ''),
+    )
   } catch (cause) {
     throw new Error(§Cannot parse ¤{relativePath(path)}§, {
       cause,
@@ -1084,7 +1264,9 @@ function assertPostconditions(root) {
     )
   }
 
-  for (const scaffold of manifest.scaffolds) {
+  for (
+    const scaffold of manifest.scaffolds
+  ) {
     if (
       !Array.isArray(
         scaffold.allowedPackages,
@@ -1129,14 +1311,22 @@ function assertPostconditions(root) {
       ),
     )
 
-  if (
-    !architectureCheck.includes(
-      CHECK_IMPORT_LINE,
-    )
+  const architectureFragments = [
+    '![1, 2, 3].includes(manifest.version)',
+    'scaffold requires allowedPackages and allowedCrates',
+    CHECK_IMPORT_LINE,
+  ]
+
+  for (
+    const fragment of architectureFragments
   ) {
-    throw new Error(
-      '主架构测试未加载 scaffold 依赖检查器',
-    )
+    if (
+      !architectureCheck.includes(fragment)
+    ) {
+      throw new Error(
+        `主架构检查器缺少：${fragment}`,
+      )
+    }
   }
 
   const dependencyCheck =
@@ -1147,26 +1337,49 @@ function assertPostconditions(root) {
       ),
     )
 
-  const requiredFragments = [
+  const dependencyFragments = [
     "import * as ts from 'typescript'",
+    'SCRIPT_TARGET_LATEST',
     'collectModuleSpecifiers',
+    "node.expression.getText(sourceFile) === 'import'",
     'allowedPackages',
     'allowedCrates',
     'collectCargoPathDependencies',
-    'package.json dependency',
     'is imported but not declared as a runtime dependency',
   ]
 
-  for (const fragment of requiredFragments) {
-    if (!dependencyCheck.includes(fragment)) {
+  for (
+    const fragment of dependencyFragments
+  ) {
+    if (
+      !dependencyCheck.includes(fragment)
+    ) {
       throw new Error(
         `依赖检查器缺少：${fragment}`,
       )
     }
   }
+
+  const forbiddenFragments = [
+    'ts.ScriptKind',
+    'ts.ScriptTarget.Latest',
+    'ts.SyntaxKind.ImportKeyword',
+  ]
+
+  for (
+    const fragment of forbiddenFragments
+  ) {
+    if (
+      dependencyCheck.includes(fragment)
+    ) {
+      throw new Error(
+        `依赖检查器仍依赖 TypeScript 运行时枚举：${fragment}`,
+      )
+    }
+  }
 }
 
-function ensureTargetsAreClean(
+function ensureExistingTargetsAreClean(
   root,
   changes,
 ) {
@@ -1177,6 +1390,10 @@ function ensureTargetsAreClean(
     .map(
       (change) => change.relativePath,
     )
+
+  if (existingPaths.length === 0) {
+    return
+  }
 
   const result = spawnSync(
     'git',
@@ -1193,7 +1410,10 @@ function ensureTargetsAreClean(
     },
   )
 
-  if (result.error || result.status !== 0) {
+  if (
+    result.error ||
+    result.status !== 0
+  ) {
     throw new Error(
       '无法检查目标文件状态',
     )
@@ -1218,9 +1438,13 @@ function createBackup(root, changes) {
   const backupRoot = join(
     root,
     '.refactor-backup',
-    SCRIPT_NAME,
+    STEP,
     timestamp,
   )
+
+  mkdirSync(backupRoot, {
+    recursive: true,
+  })
 
   for (const change of changes) {
     if (!change.existedBefore) {
@@ -1245,6 +1469,25 @@ function createBackup(root, changes) {
   return backupRoot
 }
 
+function writeChanges(changes) {
+  for (const change of changes) {
+    mkdirSync(
+      dirname(change.absolutePath),
+      {
+        recursive: true,
+      },
+    )
+
+    writeFileSync(
+      change.absolutePath,
+      ensureFinalNewline(
+        change.modified,
+      ),
+      'utf8',
+    )
+  }
+}
+
 function restoreBackup(
   root,
   backupRoot,
@@ -1257,14 +1500,47 @@ function restoreBackup(
           backupRoot,
           change.relativePath,
         ),
-        change.absolutePath,
+        join(root, change.relativePath),
       )
     } else {
-      rmSync(change.absolutePath, {
-        force: true,
-      })
+      rmSync(
+        join(root, change.relativePath),
+        {
+          force: true,
+        },
+      )
     }
   }
+}
+
+function replaceExactlyOnce(
+  source,
+  oldText,
+  newText,
+  description,
+) {
+  const firstIndex =
+    source.indexOf(oldText)
+
+  const lastIndex =
+    source.lastIndexOf(oldText)
+
+  if (firstIndex < 0) {
+    throw new Error(
+      `找不到预期代码：${description}`,
+    )
+  }
+
+  if (firstIndex !== lastIndex) {
+    throw new Error(
+      `预期代码出现多次：${description}`,
+    )
+  }
+
+  return source.replace(
+    oldText,
+    newText,
+  )
 }
 
 function parseJson(source, label) {
@@ -1294,7 +1570,9 @@ function ensureFinalNewline(value) {
 
 function readRequiredText(path) {
   if (!existsSync(path)) {
-    throw new Error(`文件不存在：${path}`)
+    throw new Error(
+      `文件不存在：${path}`,
+    )
   }
 
   return readFileSync(path, 'utf8')
