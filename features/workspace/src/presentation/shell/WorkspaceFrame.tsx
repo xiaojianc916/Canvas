@@ -34,10 +34,9 @@ export function WorkspaceFrame({
     disableLayoutAnimation || shouldReduceMotion
       ? { duration: 0 }
       : {
-          type: 'spring' as const,
-          stiffness: 420,
-          damping: 38,
-          mass: 0.8,
+          type: 'tween' as const,
+          duration: 0.42,
+          ease: [0.4, 0, 0.2, 1] as const,
         }
 
   return (

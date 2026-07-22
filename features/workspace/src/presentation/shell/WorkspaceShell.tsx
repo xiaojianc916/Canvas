@@ -43,9 +43,7 @@ export function WorkspaceShell({
   const mode = useWorkspaceLayoutMode()
   const rootRef = useRef<HTMLDivElement | null>(null)
   const previousModeRef = useRef(mode)
-  const previousInspectorSelectionKeyRef = useRef(
-    inspectorSelectionKey ?? '',
-  )
+  const previousInspectorSelectionKeyRef = useRef(inspectorSelectionKey ?? '')
 
   const [isSidebarOpen, setSidebarOpen] = useState(true)
   const [isInspectorOpen, setInspectorOpen] = useState(false)
@@ -215,10 +213,7 @@ export function WorkspaceShell({
         }}
       >
         {mode !== 'narrow' ? (
-          <div
-            className="h-full min-h-0 overflow-hidden"
-            style={{ width: sidebarWidth }}
-          >
+          <div className="h-full min-h-0 overflow-hidden" style={{ width: sidebarWidth }}>
             {sidebarContent}
           </div>
         ) : null}
@@ -271,7 +266,7 @@ export function WorkspaceShell({
   const canvas = (
     <section
       aria-label="内容区"
-      className="relative z-10 row-2 min-h-0 min-w-0 overflow-hidden border-l border-divider bg-background shadow-[-12px_0_28px_-22px_rgba(0,0,0,0.45)]"
+      className="relative z-10 row-2 min-h-0 min-w-0 overflow-hidden border-l border-divider bg-background"
       style={{ gridColumn: 3 }}
     >
       <main
