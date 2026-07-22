@@ -14,252 +14,617 @@ const root = resolve(process.cwd())
 const apply = process.argv.includes('--apply')
 const skipChecks = process.argv.includes('--skip-checks')
 
-const rustFile =
-  'apps/desktop/src-tauri/src/commands/file.rs'
+const tabsPath =
+  'features/workspace/src/presentation/shell/WorkbenchTabs.tsx'
 
-const oldImplementation = `async fn write_draw_file(
-    path: PathBuf,
-    content: String,
-) -> Result<String> {
-    tokio::task::spawn_blocking(move || {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        atomic_write(&path, content.as_bytes())?;
-        Ok(content)
-    })
-    .await
-    .map_err(|error| {
-        Error::Internal(format!(
-            "draw file write task failed: {error}"
-        ))
-    })?
-}`
-
-const newImplementation = `async fn write_draw_file(
-    path: PathBuf,
-    content: String,
-) -> Result<String> {
-    tokio::task::spawn_blocking(move || {
-        write_draw_file_blocking(path, content)
-    })
-    .await
-    .map_err(|error| {
-        Error::Internal(format!(
-            "draw file write task failed: {error}"
-        ))
-    })?
-}
-
-fn write_draw_file_blocking(
-    path: PathBuf,
-    content: String,
-) -> Result<String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    atomic_write(&path, content.as_bytes())?;
-    Ok(content)
-}`
+const stylesPath =
+  'features/workspace/src/presentation/shell/chrome-workbench-tabs.css'
 
 assertRepository()
 
 if (!apply) {
-  console.log('将执行以下修复：')
-  console.log('PATCH  ' + rustFile)
+  console.log('将只重构标签页 UI：')
+  console.log('PATCH  ' + tabsPath)
+  console.log('WRITE  ' + stylesPath)
   console.log('')
-  console.log(
-    '把阻塞文件系统操作提取到同步函数中，',
-  )
-  console.log(
-    '异步函数只保留 spawn_blocking 调度边界。',
-  )
+  console.log('不会修改 DesktopTitleBar。')
+  console.log('不会删除侧边栏宽度占位。')
   console.log('')
   console.log('使用 --apply 确认执行。')
   process.exit(0)
 }
 
-patchRustAsyncBoundary()
+patchTabsComponent()
+writeTabsStyles()
 
 if (!skipChecks) {
   runChecks()
 }
 
 console.log('')
-console.log(
-  'Rust 文件写入异步边界修复及验证完成。',
-)
+console.log('Chrome 标签 UI 重构完成。')
 
-function patchRustAsyncBoundary() {
+function patchTabsComponent() {
   const absolutePath = join(
     root,
-    rustFile,
+    tabsPath,
   )
 
-  const source = readFileSync(
+  const original = readFileSync(
     absolutePath,
     'utf8',
   )
 
-  if (
-    source.includes(
-      'fn write_draw_file_blocking(',
-    ) &&
-    source.includes(
-      'write_draw_file_blocking(path, content)',
+  let updated = original
+
+  /*
+   * Delete the ResizeObserver density controller.
+   *
+   * It assigned `smaller` below 78px and CSS consequently hid the
+   * title. The strip should preserve a readable minimum width and
+   * scroll instead of turning active tabs into anonymous shapes.
+   */
+  const densityEffect =
+    /\n  useEffect\(\(\) => \{\n    const scroller = scrollerRef\.current[\s\S]*?\n  \}, \[tabs\]\)\n/
+
+  if (densityEffect.test(updated)) {
+    updated = updated.replace(
+      densityEffect,
+      '\n',
     )
-  ) {
+  }
+
+  updated = updated.replace(
+    /\n\s*data-size="normal"/g,
+    '',
+  )
+
+  updated = updated.replace(
+    /\n\s*<ChromeTabBackground \/>\n/g,
+    '\n',
+  )
+
+  updated = updated.replace(
+    /\nfunction ChromeTabBackground\(\) \{[\s\S]*?\n\}\n\nfunction TabEndAction/,
+    '\nfunction TabEndAction',
+  )
+
+  assertTabsComponent(updated)
+
+  if (updated === original) {
     console.log(
       'SKIP   ' +
-        rustFile +
-        '（异步边界已经拆分）',
+        tabsPath +
+        '（旧 SVG 和尺寸检测已经删除）',
     )
     return
   }
-
-  const occurrenceCount =
-    source.split(oldImplementation).length - 1
-
-  if (occurrenceCount !== 1) {
-    throw new Error(
-      rustFile +
-        ': 预期匹配一次 write_draw_file，实际匹配 ' +
-        String(occurrenceCount) +
-        ' 次。拒绝生成不完整修改。',
-    )
-  }
-
-  const updated = source.replace(
-    oldImplementation,
-    newImplementation,
-  )
-
-  assertUpdatedSource(updated)
 
   atomicWrite(
     absolutePath,
     updated,
   )
 
-  console.log('PATCH  ' + rustFile)
+  console.log('PATCH  ' + tabsPath)
 }
 
-function assertUpdatedSource(source) {
-  const asyncStart = source.indexOf(
-    'async fn write_draw_file(',
+function assertTabsComponent(source) {
+  const forbiddenTokens = [
+    'ChromeTabBackground',
+    'ResizeObserver',
+    "width < 58 ? 'mini'",
+    'data-size="normal"',
+    'chrome-workbench-tab__background-left',
+    'chrome-workbench-tab__background-right',
+  ]
+
+  for (const token of forbiddenTokens) {
+    if (source.includes(token)) {
+      throw new Error(
+        tabsPath +
+          ': 旧标签实现仍包含 ' +
+          token,
+      )
+    }
+  }
+
+  const requiredTokens = [
+    'chrome-workbench-tab__content',
+    'chrome-workbench-tab__title',
+    '{tab.title}',
+    'role="tab"',
+    'role="tablist"',
+  ]
+
+  for (const token of requiredTokens) {
+    if (!source.includes(token)) {
+      throw new Error(
+        tabsPath +
+          ': 重构后缺少 ' +
+          token,
+      )
+    }
+  }
+}
+
+function writeTabsStyles() {
+  const css = String.raw`
+/*
+ * Chrome-style workbench tabs.
+ *
+ * This stylesheet intentionally does not control titlebar layout.
+ * The sidebar-aligned blank region remains owned by DesktopTitleBar.
+ *
+ * Active tab geometry:
+ *
+ *       ╭────────────────────╮
+ *   ────╯                    ╰────
+ *      concave shoulders
+ *
+ * The center body is inset by --chrome-tab-shoulder. The active
+ * pseudo-elements occupy both side areas and use rounded corners
+ * plus box-shadows to produce Chrome's outward base and concave
+ * transition into the content surface.
+ */
+
+.chrome-workbench-tabs,
+.chrome-workbench-tabs * {
+  box-sizing: border-box;
+}
+
+.chrome-workbench-tabs {
+  --chrome-tab-height: 36px;
+  --chrome-tab-shoulder: 12px;
+  --chrome-tab-min-width: 144px;
+  --chrome-tab-preferred-width: 220px;
+  --chrome-tab-max-width: 240px;
+  --chrome-tab-strip: var(--color-chrome);
+  --chrome-tab-surface: var(--color-background);
+  --chrome-tab-hover: color-mix(
+    in srgb,
+    var(--color-background) 56%,
+    transparent
+  );
+  --chrome-tab-divider: color-mix(
+    in srgb,
+    var(--color-foreground) 20%,
+    transparent
+  );
+
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  color: var(--color-foreground);
+  background: var(--chrome-tab-strip);
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-size: 12px;
+}
+
+.chrome-workbench-tabs__scroller {
+  position: relative;
+  display: flex;
+  align-items: end;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 5px 4px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.chrome-workbench-tabs__scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.chrome-workbench-tabs__drag-region {
+  height: 100%;
+  min-width: 28px;
+  flex: 1 0 28px;
+}
+
+/*
+ * Keep titles readable.
+ *
+ * When the intentionally reserved titlebar space leaves insufficient
+ * room, the strip scrolls horizontally. It does not hide the title
+ * based on measured width.
+ */
+.chrome-workbench-tab {
+  position: relative;
+  z-index: 1;
+  height: var(--chrome-tab-height);
+  min-width: var(--chrome-tab-min-width);
+  max-width: var(--chrome-tab-max-width);
+  flex: 0 1 var(--chrome-tab-preferred-width);
+  margin-left: -1px;
+  overflow: visible;
+  isolation: isolate;
+  user-select: none;
+}
+
+.chrome-workbench-tab:first-child {
+  margin-left: 0;
+}
+
+.chrome-workbench-tab[data-active="true"] {
+  z-index: 5;
+}
+
+.chrome-workbench-tab:hover:not(
+    [data-active="true"]
+  ) {
+  z-index: 3;
+}
+
+/*
+ * Active Chrome shoulders.
+ *
+ * The box-shadow projects the active surface toward the center body.
+ * The rounded inner edge removes the upper outside portion, producing
+ * the characteristic concave transition instead of a diagonal wing.
+ */
+.chrome-workbench-tab[data-active="true"]::before,
+.chrome-workbench-tab[data-active="true"]::after {
+  position: absolute;
+  z-index: 0;
+  bottom: 0;
+  width: var(--chrome-tab-shoulder);
+  height: var(--chrome-tab-shoulder);
+  content: "";
+  pointer-events: none;
+}
+
+.chrome-workbench-tab[data-active="true"]::before {
+  left: 0;
+  border-bottom-right-radius: var(
+    --chrome-tab-shoulder
+  );
+  box-shadow:
+    6px 6px 0 6px var(--chrome-tab-surface);
+}
+
+.chrome-workbench-tab[data-active="true"]::after {
+  right: 0;
+  border-bottom-left-radius: var(
+    --chrome-tab-shoulder
+  );
+  box-shadow:
+    -6px 6px 0 6px var(--chrome-tab-surface);
+}
+
+/*
+ * The center body connects directly to the content area at its
+ * baseline. Only the upper corners are convex.
+ */
+.chrome-workbench-tab__content {
+  position: absolute;
+  z-index: 1;
+  inset:
+    0
+    var(--chrome-tab-shoulder)
+    0;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 10px;
+  overflow: hidden;
+  border-radius: 10px 10px 0 0;
+  background: transparent;
+  transition:
+    background-color 110ms ease-out,
+    color 110ms ease-out;
+}
+
+.chrome-workbench-tab[data-active="true"]
+  .chrome-workbench-tab__content {
+  background: var(--chrome-tab-surface);
+}
+
+.chrome-workbench-tab:hover:not(
+    [data-active="true"]
+  )
+  .chrome-workbench-tab__content {
+  border-radius: 10px;
+  background: var(--chrome-tab-hover);
+}
+
+.chrome-workbench-tab__activation {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  gap: 8px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  outline: 0;
+  color: var(--color-muted-foreground);
+  background: transparent;
+  text-align: left;
+  cursor: default;
+}
+
+.chrome-workbench-tab[data-active="true"]
+  .chrome-workbench-tab__activation {
+  color: var(--color-foreground);
+}
+
+.chrome-workbench-tab__activation:focus-visible {
+  border-radius: 7px;
+  outline: 2px solid var(--color-primary);
+  outline-offset: -3px;
+}
+
+.chrome-workbench-tab__icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  stroke-width: 1.7;
+}
+
+.chrome-workbench-tab__title {
+  display: block;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chrome-workbench-tab[data-active="true"]
+  .chrome-workbench-tab__title {
+  font-weight: 500;
+}
+
+.chrome-workbench-tab__end {
+  position: relative;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  margin-left: 4px;
+  place-items: center;
+}
+
+.chrome-workbench-tab__close {
+  position: absolute;
+  inset: 2px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: currentColor;
+  background: transparent;
+  opacity: 0.78;
+}
+
+.chrome-workbench-tab__close:hover {
+  background: color-mix(
+    in srgb,
+    var(--color-foreground) 12%,
+    transparent
+  );
+  opacity: 1;
+}
+
+.chrome-workbench-tab__close:active {
+  background: color-mix(
+    in srgb,
+    var(--color-foreground) 20%,
+    transparent
+  );
+}
+
+.chrome-workbench-tab__close:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.chrome-workbench-tab__status {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.chrome-workbench-tab__status--dirty {
+  background: #d5803b;
+}
+
+.chrome-workbench-tab__status--saving {
+  background: #2783de;
+  animation:
+    chrome-workbench-saving
+    900ms
+    ease-in-out
+    infinite
+    alternate;
+}
+
+.chrome-workbench-tab__status--failed {
+  background: #e56458;
+}
+
+.chrome-workbench-tab__status
+  + .chrome-workbench-tab__close {
+  opacity: 0;
+}
+
+.chrome-workbench-tab:hover
+  .chrome-workbench-tab__status {
+  opacity: 0;
+}
+
+.chrome-workbench-tab:hover
+  .chrome-workbench-tab__status
+  + .chrome-workbench-tab__close {
+  opacity: 1;
+}
+
+/*
+ * Inactive-tab separators. Separators adjacent to active or hovered
+ * tabs disappear, matching Chrome's tab-strip grouping.
+ */
+.chrome-workbench-tab__divider {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  bottom: 9px;
+  width: 1px;
+  background: var(--chrome-tab-divider);
+  transition: opacity 100ms ease-out;
+}
+
+.chrome-workbench-tab__divider--leading {
+  left: var(--chrome-tab-shoulder);
+}
+
+.chrome-workbench-tab__divider--trailing {
+  right: var(--chrome-tab-shoulder);
+}
+
+.chrome-workbench-tab:first-child
+  .chrome-workbench-tab__divider--leading,
+.chrome-workbench-tab:last-of-type
+  .chrome-workbench-tab__divider--trailing,
+.chrome-workbench-tab[data-active="true"]
+  .chrome-workbench-tab__divider,
+.chrome-workbench-tab:hover
+  .chrome-workbench-tab__divider,
+.chrome-workbench-tab:has(
+    + .chrome-workbench-tab[data-active="true"]
+  )
+  .chrome-workbench-tab__divider--trailing,
+.chrome-workbench-tab:has(
+    + .chrome-workbench-tab:hover
+  )
+  .chrome-workbench-tab__divider--trailing {
+  opacity: 0;
+}
+
+.chrome-workbench-tabs__new-tab {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  margin-left: 2px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--color-muted-foreground);
+  background: transparent;
+}
+
+.chrome-workbench-tabs__new-tab:hover {
+  color: var(--color-foreground);
+  background: color-mix(
+    in srgb,
+    var(--color-foreground) 9%,
+    transparent
+  );
+}
+
+.chrome-workbench-tabs__new-tab:active {
+  background: color-mix(
+    in srgb,
+    var(--color-foreground) 15%,
+    transparent
+  );
+}
+
+.chrome-workbench-tabs__new-tab:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -3px;
+}
+
+/*
+ * The tab and the content surface use the same background at the
+ * baseline, removing any seam beneath the active body and shoulders.
+ */
+.chrome-workbench-tabs__bottom-bar {
+  position: absolute;
+  z-index: 10;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1px;
+  background: var(--chrome-tab-surface);
+  pointer-events: none;
+}
+
+@keyframes chrome-workbench-saving {
+  from {
+    opacity: 0.4;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome-workbench-tab__content,
+  .chrome-workbench-tab__divider,
+  .chrome-workbench-tab__status {
+    transition: none;
+    animation: none;
+  }
+}
+`
+
+  atomicWrite(
+    join(root, stylesPath),
+    css,
   )
 
-  const blockingStart = source.indexOf(
-    'fn write_draw_file_blocking(',
-  )
-
-  if (
-    asyncStart < 0 ||
-    blockingStart < 0 ||
-    blockingStart <= asyncStart
-  ) {
-    throw new Error(
-      'write_draw_file 阻塞边界拆分失败。',
-    )
-  }
-
-  const asyncBody = source.slice(
-    asyncStart,
-    blockingStart,
-  )
-
-  if (
-    asyncBody.includes('std::fs::')
-  ) {
-    throw new Error(
-      '异步函数体内仍然存在 std::fs。',
-    )
-  }
-
-  if (
-    !asyncBody.includes(
-      'tokio::task::spawn_blocking',
-    )
-  ) {
-    throw new Error(
-      '异步函数缺少 spawn_blocking 调度边界。',
-    )
-  }
-
-  if (
-    !asyncBody.includes(
-      'write_draw_file_blocking(path, content)',
-    )
-  ) {
-    throw new Error(
-      '异步函数没有调用同步写入函数。',
-    )
-  }
-
-  const blockingBody = source.slice(
-    blockingStart,
-  )
-
-  if (
-    !blockingBody.includes(
-      'std::fs::create_dir_all(parent)?;',
-    )
-  ) {
-    throw new Error(
-      '同步函数缺少目录创建逻辑。',
-    )
-  }
-
-  if (
-    !blockingBody.includes(
-      'atomic_write(&path, content.as_bytes())?;',
-    )
-  ) {
-    throw new Error(
-      '同步函数缺少原子写入逻辑。',
-    )
-  }
+  console.log('WRITE  ' + stylesPath)
 }
 
 function runChecks() {
-  run('cargo', [
-    'fmt',
-    '--manifest-path',
-    'apps/desktop/src-tauri/Cargo.toml',
-  ])
-
-  // 先运行原始失败项。
-  run('node', [
-    'tests/architecture/check-rust-async-boundaries.mjs',
-  ])
-
-  // 验证 Rust 代码确实可以编译。
-  run('cargo', [
-    'check',
-    '--manifest-path',
-    'apps/desktop/src-tauri/Cargo.toml',
-  ])
-
-  // 从头执行全部架构约束。
   run('pnpm', [
-    'test:architecture',
+    'exec',
+    'biome',
+    'format',
+    '--write',
+    tabsPath,
+    stylesPath,
   ])
 
-  // 继续之前未运行的验证。
+  run('pnpm', [
+    '--filter',
+    '@hybrid-canvas/workspace',
+    'typecheck',
+  ])
+
+  run('pnpm', [
+    '--filter',
+    '@hybrid-canvas/workspace',
+    'test',
+  ])
+
   run('pnpm', [
     '--filter',
     '@hybrid-canvas/desktop',
     'typecheck',
   ])
 
-  run('pnpm', [
-    'lint',
-  ])
-
-  run('pnpm', [
-    'test',
+  run('node', [
+    'tests/architecture/check-ui-architecture.mjs',
   ])
 }
 
@@ -267,11 +632,6 @@ function assertRepository() {
   const packagePath = join(
     root,
     'package.json',
-  )
-
-  const rustPath = join(
-    root,
-    rustFile,
   )
 
   if (!existsSync(packagePath)) {
@@ -290,27 +650,15 @@ function assertRepository() {
     )
   }
 
-  if (!existsSync(rustPath)) {
-    throw new Error(
-      '缺少 Rust 文件：' +
-        rustFile,
-    )
-  }
-
-  const rustSource = readFileSync(
-    rustPath,
-    'utf8',
-  )
-
-  if (
-    !rustSource.includes(
-      'async fn write_draw_file(',
-    )
-  ) {
-    throw new Error(
-      rustFile +
-        ': 找不到 write_draw_file。',
-    )
+  for (const path of [
+    tabsPath,
+    stylesPath,
+  ]) {
+    if (!existsSync(join(root, path))) {
+      throw new Error(
+        '缺少目标文件：' + path,
+      )
+    }
   }
 }
 

@@ -1,10 +1,19 @@
 /*
  * Chrome-style workbench tabs.
  *
- * Geometry adapted from adamschwartz/chrome-tabs (MIT):
- * https://github.com/adamschwartz/chrome-tabs
+ * This stylesheet intentionally does not control titlebar layout.
+ * The sidebar-aligned blank region remains owned by DesktopTitleBar.
  *
- * Interaction/state remains owned by WorkbenchSessionStore.
+ * Active tab geometry:
+ *
+ *       ╭────────────────────╮
+ *   ────╯                    ╰────
+ *      concave shoulders
+ *
+ * The center body is inset by --chrome-tab-shoulder. The active
+ * pseudo-elements occupy both side areas and use rounded corners
+ * plus box-shadows to produce Chrome's outward base and concave
+ * transition into the content surface.
  */
 
 .chrome-workbench-tabs,
@@ -14,18 +23,21 @@
 
 .chrome-workbench-tabs {
   --chrome-tab-height: 36px;
-  --chrome-tab-margin: 9px;
+  --chrome-tab-shoulder: 12px;
+  --chrome-tab-min-width: 144px;
+  --chrome-tab-preferred-width: 220px;
   --chrome-tab-max-width: 240px;
-  --chrome-tab-min-width: 48px;
   --chrome-tab-strip: var(--color-chrome);
-  --chrome-tab-active: var(--color-background);
-  --chrome-tab-hover: color-mix(in srgb, var(--color-background) 54%, transparent);
-  --chrome-tab-divider: color-mix(in srgb, var(--color-foreground) 22%, transparent);
+  --chrome-tab-surface: var(--color-background);
+  --chrome-tab-hover: color-mix(in srgb, var(--color-background) 56%, transparent);
+  --chrome-tab-divider: color-mix(in srgb, var(--color-foreground) 20%, transparent);
 
   position: relative;
+  width: 100%;
   min-width: 0;
   height: 100%;
   overflow: hidden;
+  color: var(--color-foreground);
   background: var(--chrome-tab-strip);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 12px;
@@ -38,10 +50,11 @@
   width: 100%;
   height: 100%;
   min-width: 0;
-  padding: 5px 3px 0;
+  padding: 5px 4px 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
+  overscroll-behavior-x: contain;
 }
 
 .chrome-workbench-tabs__scroller::-webkit-scrollbar {
@@ -49,21 +62,29 @@
 }
 
 .chrome-workbench-tabs__drag-region {
-  min-width: 24px;
   height: 100%;
-  flex: 1 1 auto;
+  min-width: 28px;
+  flex: 1 0 28px;
 }
 
+/*
+ * Keep titles readable.
+ *
+ * When the intentionally reserved titlebar space leaves insufficient
+ * room, the strip scrolls horizontally. It does not hide the title
+ * based on measured width.
+ */
 .chrome-workbench-tab {
   position: relative;
   z-index: 1;
   height: var(--chrome-tab-height);
   min-width: var(--chrome-tab-min-width);
   max-width: var(--chrome-tab-max-width);
-  flex: 1 1 var(--chrome-tab-max-width);
+  flex: 0 1 var(--chrome-tab-preferred-width);
   margin-left: -1px;
-  user-select: none;
+  overflow: visible;
   isolation: isolate;
+  user-select: none;
 }
 
 .chrome-workbench-tab:first-child {
@@ -75,55 +96,66 @@
 }
 
 .chrome-workbench-tab:hover:not([data-active="true"]) {
-  z-index: 2;
+  z-index: 3;
 }
 
-.chrome-workbench-tab__background {
+/*
+ * Active Chrome shoulders.
+ *
+ * The box-shadow projects the active surface toward the center body.
+ * The rounded inner edge removes the upper outside portion, producing
+ * the characteristic concave transition instead of a diagonal wing.
+ */
+.chrome-workbench-tab[data-active="true"]::before,
+.chrome-workbench-tab[data-active="true"]::after {
   position: absolute;
-  inset: 0;
-  overflow: hidden;
+  z-index: 0;
+  bottom: 0;
+  width: var(--chrome-tab-shoulder);
+  height: var(--chrome-tab-shoulder);
+  content: "";
   pointer-events: none;
-  opacity: 0;
-  transition: opacity 120ms ease-out;
 }
 
-.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__background,
-.chrome-workbench-tab:hover .chrome-workbench-tab__background {
-  opacity: 1;
-}
-
-.chrome-workbench-tab__background-left,
-.chrome-workbench-tab__background-right {
-  position: absolute;
-  top: 0;
-  width: 52%;
-  height: 100%;
-  fill: var(--chrome-tab-hover);
-}
-
-.chrome-workbench-tab__background-left {
+.chrome-workbench-tab[data-active="true"]::before {
   left: 0;
+  border-bottom-right-radius: var(--chrome-tab-shoulder);
+  box-shadow: 6px 6px 0 6px var(--chrome-tab-surface);
 }
 
-.chrome-workbench-tab__background-right {
+.chrome-workbench-tab[data-active="true"]::after {
   right: 0;
-  transform: scaleX(-1);
+  border-bottom-left-radius: var(--chrome-tab-shoulder);
+  box-shadow: -6px 6px 0 6px var(--chrome-tab-surface);
 }
 
-.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__background-left,
-.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__background-right {
-  fill: var(--chrome-tab-active);
-}
-
+/*
+ * The center body connects directly to the content area at its
+ * baseline. Only the upper corners are convex.
+ */
 .chrome-workbench-tab__content {
   position: absolute;
-  inset: 0 var(--chrome-tab-margin);
+  z-index: 1;
+  inset: 0 var(--chrome-tab-shoulder) 0;
   display: flex;
   align-items: center;
   min-width: 0;
-  padding: 0 8px;
+  padding: 0 10px;
   overflow: hidden;
-  border-radius: 8px 8px 0 0;
+  border-radius: 10px 10px 0 0;
+  background: transparent;
+  transition:
+    background-color 110ms ease-out,
+    color 110ms ease-out;
+}
+
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__content {
+  background: var(--chrome-tab-surface);
+}
+
+.chrome-workbench-tab:hover:not([data-active="true"]) .chrome-workbench-tab__content {
+  border-radius: 10px;
+  background: var(--chrome-tab-hover);
 }
 
 .chrome-workbench-tab__activation {
@@ -134,6 +166,7 @@
   flex: 1 1 auto;
   gap: 8px;
   padding: 0;
+  overflow: hidden;
   border: 0;
   outline: 0;
   color: var(--color-muted-foreground);
@@ -160,13 +193,20 @@
 }
 
 .chrome-workbench-tab__title {
+  display: block;
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
   white-space: nowrap;
   text-overflow: ellipsis;
-  line-height: 16px;
-  mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 16px), transparent);
+}
+
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__title {
+  font-weight: 500;
 }
 
 .chrome-workbench-tab__end {
@@ -175,6 +215,7 @@
   width: 20px;
   height: 20px;
   flex: 0 0 20px;
+  margin-left: 4px;
   place-items: center;
 }
 
@@ -188,7 +229,7 @@
   border-radius: 50%;
   color: currentColor;
   background: transparent;
-  opacity: 0.8;
+  opacity: 0.78;
 }
 
 .chrome-workbench-tab__close:hover {
@@ -229,34 +270,34 @@
   opacity: 0;
 }
 
-.chrome-workbench-tab:hover .chrome-workbench-tab__status,
-.chrome-workbench-tab[data-active="true"]:hover .chrome-workbench-tab__status {
+.chrome-workbench-tab:hover .chrome-workbench-tab__status {
   opacity: 0;
 }
 
-.chrome-workbench-tab:hover .chrome-workbench-tab__status + .chrome-workbench-tab__close,
-.chrome-workbench-tab[data-active="true"]:hover
-  .chrome-workbench-tab__status
-  + .chrome-workbench-tab__close {
+.chrome-workbench-tab:hover .chrome-workbench-tab__status + .chrome-workbench-tab__close {
   opacity: 1;
 }
 
+/*
+ * Inactive-tab separators. Separators adjacent to active or hovered
+ * tabs disappear, matching Chrome's tab-strip grouping.
+ */
 .chrome-workbench-tab__divider {
   position: absolute;
-  z-index: -1;
-  top: 9px;
+  z-index: 2;
+  top: 10px;
   bottom: 9px;
   width: 1px;
   background: var(--chrome-tab-divider);
-  transition: opacity 120ms ease-out;
+  transition: opacity 100ms ease-out;
 }
 
 .chrome-workbench-tab__divider--leading {
-  left: var(--chrome-tab-margin);
+  left: var(--chrome-tab-shoulder);
 }
 
 .chrome-workbench-tab__divider--trailing {
-  right: var(--chrome-tab-margin);
+  right: var(--chrome-tab-shoulder);
 }
 
 .chrome-workbench-tab:first-child .chrome-workbench-tab__divider--leading,
@@ -269,43 +310,14 @@
   opacity: 0;
 }
 
-.chrome-workbench-tab[data-size="small"] .chrome-workbench-tab__content {
-  padding-inline: 5px;
-}
-
-.chrome-workbench-tab[data-size="small"] .chrome-workbench-tab__activation {
-  gap: 5px;
-}
-
-.chrome-workbench-tab[data-size="smaller"] .chrome-workbench-tab__title,
-.chrome-workbench-tab[data-size="mini"] .chrome-workbench-tab__title {
-  display: none;
-}
-
-.chrome-workbench-tab[data-size="smaller"] .chrome-workbench-tab__activation {
-  justify-content: center;
-}
-
-.chrome-workbench-tab[data-size="mini"] .chrome-workbench-tab__icon {
-  display: none;
-}
-
-.chrome-workbench-tab[data-size="mini"] .chrome-workbench-tab__end {
-  margin: auto;
-}
-
-.chrome-workbench-tab[data-size="mini"]:not([data-active="true"]) .chrome-workbench-tab__close {
-  display: none;
-}
-
 .chrome-workbench-tabs__new-tab {
   display: grid;
   width: 36px;
   height: 36px;
   flex: 0 0 36px;
-  place-items: center;
-  margin-left: 3px;
+  margin-left: 2px;
   padding: 0;
+  place-items: center;
   border: 0;
   border-radius: 50%;
   color: var(--color-muted-foreground);
@@ -326,6 +338,10 @@
   outline-offset: -3px;
 }
 
+/*
+ * The tab and the content surface use the same background at the
+ * baseline, removing any seam beneath the active body and shoulders.
+ */
 .chrome-workbench-tabs__bottom-bar {
   position: absolute;
   z-index: 10;
@@ -333,7 +349,7 @@
   bottom: 0;
   left: 0;
   height: 1px;
-  background: var(--chrome-tab-active);
+  background: var(--chrome-tab-surface);
   pointer-events: none;
 }
 
@@ -348,7 +364,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chrome-workbench-tab__background,
+  .chrome-workbench-tab__content,
   .chrome-workbench-tab__divider,
   .chrome-workbench-tab__status {
     transition: none;

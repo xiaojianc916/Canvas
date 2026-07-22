@@ -41,43 +41,6 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
   const activeTabId = tabs.find((tab) => tab.isActive)?.id
 
   useEffect(() => {
-    const scroller = scrollerRef.current
-
-    if (!scroller) {
-      return
-    }
-
-    const updateDensity = () => {
-      for (const tab of tabs) {
-        const element = tabRefs.current.get(tab.id)
-
-        if (!element) {
-          continue
-        }
-
-        const root = element.closest<HTMLElement>('.chrome-workbench-tab')
-
-        if (!root) {
-          continue
-        }
-
-        const width = root.getBoundingClientRect().width
-
-        root.dataset['size'] =
-          width < 58 ? 'mini' : width < 78 ? 'smaller' : width < 104 ? 'small' : 'normal'
-      }
-    }
-
-    updateDensity()
-
-    const observer = new ResizeObserver(updateDensity)
-
-    observer.observe(scroller)
-
-    return () => observer.disconnect()
-  }, [tabs])
-
-  useEffect(() => {
     if (!activeTabId) {
       return
     }
@@ -193,7 +156,6 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
             <article
               className="chrome-workbench-tab"
               data-active={tab.isActive ? 'true' : 'false'}
-              data-size="normal"
               draggable={tab.canClose}
               key={tab.id}
               onDragEnd={() => {
@@ -214,8 +176,6 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
                 }
               }}
             >
-              <ChromeTabBackground />
-
               <span
                 aria-hidden="true"
                 className="chrome-workbench-tab__divider chrome-workbench-tab__divider--leading"
@@ -274,28 +234,6 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
       </div>
 
       <div aria-hidden="true" className="chrome-workbench-tabs__bottom-bar" />
-    </div>
-  )
-}
-
-function ChromeTabBackground() {
-  return (
-    <div aria-hidden="true" className="chrome-workbench-tab__background">
-      <svg
-        className="chrome-workbench-tab__background-left"
-        preserveAspectRatio="none"
-        viewBox="0 0 214 36"
-      >
-        <path d="M17 0h197v36H0v-2c4.5 0 9-3.5 9-8V8c0-4.5 3.5-8 8-8z" />
-      </svg>
-
-      <svg
-        className="chrome-workbench-tab__background-right"
-        preserveAspectRatio="none"
-        viewBox="0 0 214 36"
-      >
-        <path d="M17 0h197v36H0v-2c4.5 0 9-3.5 9-8V8c0-4.5 3.5-8 8-8z" />
-      </svg>
     </div>
   )
 }
