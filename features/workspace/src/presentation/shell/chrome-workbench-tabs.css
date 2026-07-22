@@ -488,3 +488,99 @@
 }
 
 /* END CANONICAL FIXED TAB CONTENT GEOMETRY */
+
+/* BEGIN FIXED WORKBENCH TAB VIEWPORT */
+
+/*
+ * Layout ownership:
+ *
+ * - __viewport owns all scrollable tabs.
+ * - __actions owns persistent controls such as the new-tab button.
+ * - Tabs are never allowed to paint underneath persistent controls.
+ */
+.chrome-workbench-tabs {
+  --chrome-tab-min-width: 88px;
+  --chrome-tab-preferred-width: 168px;
+  --chrome-tab-max-width: 220px;
+
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+/*
+ * This is the hard clipping boundary for tabs.
+ * Active-tab caps and partially scrolled tabs cannot leak into
+ * the new-tab button or window-control regions.
+ */
+.chrome-workbench-tabs__viewport {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.chrome-workbench-tabs__scroller {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  scroll-padding-inline: 4px;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-inline: contain;
+}
+
+.chrome-workbench-tab {
+  min-width: var(--chrome-tab-min-width);
+  max-width: var(--chrome-tab-max-width);
+  flex: 0 1 var(--chrome-tab-preferred-width);
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
+}
+
+/*
+ * Keep inactive narrow tabs readable.
+ * The close action remains available on hover, while the active
+ * tab continues to expose its normal end action.
+ */
+.chrome-workbench-tab:not([data-active="true"]):not(:hover) .chrome-workbench-tab__close {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chrome-workbench-tab:not([data-active="true"]):hover .chrome-workbench-tab__close {
+  pointer-events: auto;
+}
+
+/*
+ * Persistent right-side actions are not part of the tab scroller.
+ * The plus button therefore remains visible regardless of tab count.
+ */
+.chrome-workbench-tabs__actions {
+  position: relative;
+  z-index: 8;
+  display: flex;
+  width: 34px;
+  height: 100%;
+  flex: 0 0 34px;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--chrome-tab-boundary);
+  background: var(--chrome-tab-strip);
+}
+
+.chrome-workbench-tabs__new-tab {
+  align-self: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  margin: 0 0 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome-workbench-tabs__scroller {
+    scroll-behavior: auto;
+  }
+}
+
+/* END FIXED WORKBENCH TAB VIEWPORT */

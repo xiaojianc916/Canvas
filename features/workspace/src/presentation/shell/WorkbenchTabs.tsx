@@ -76,10 +76,39 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
       return
     }
 
-    tabRefs.current.get(activeTabId)?.scrollIntoView({
-      block: 'nearest',
-      inline: 'nearest',
-    })
+    const scroller = scrollerRef.current
+    const activation = tabRefs.current.get(activeTabId)
+    const tab = activation?.closest<HTMLElement>('.chrome-workbench-tab')
+
+    if (!scroller || !tab) {
+      return
+    }
+
+    /*
+     * 只移动标签视口自身，不使用 scrollIntoView。
+     * scrollIntoView 可能同时滚动祖先容器，导致标签看起来
+     * 延伸到顶部栏两侧的固定 UI 下方。
+     */
+    const viewportPadding = 4
+    const viewportStart = scroller.scrollLeft
+    const viewportEnd = viewportStart + scroller.clientWidth
+    const tabStart = tab.offsetLeft
+    const tabEnd = tabStart + tab.offsetWidth
+
+    let nextScrollLeft = viewportStart
+
+    if (tabStart < viewportStart + viewportPadding) {
+      nextScrollLeft = Math.max(0, tabStart - viewportPadding)
+    } else if (tabEnd > viewportEnd - viewportPadding) {
+      nextScrollLeft = tabEnd - scroller.clientWidth + viewportPadding
+    }
+
+    if (nextScrollLeft !== viewportStart) {
+      scroller.scrollTo({
+        left: nextScrollLeft,
+        behavior: 'auto',
+      })
+    }
   }, [activeTabId])
 
   function handleKeyboard(event: KeyboardEvent<HTMLButtonElement>, tabId: WorkbenchTabId): void {
@@ -165,86 +194,90 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
 
   return (
     <div className="chrome-workbench-tabs">
-      <div
-        aria-label="工作台标签页"
-        className="chrome-workbench-tabs__scroller"
-        onWheel={(event) => {
-          const scroller = scrollerRef.current
+      <div className="chrome-workbench-tabs__viewport">
+        <div
+          aria-label="工作台标签页"
+          className="chrome-workbench-tabs__scroller"
+          onWheel={(event) => {
+            const scroller = scrollerRef.current
 
-          if (!scroller || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
-            return
-          }
+            if (!scroller || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+              return
+            }
 
-          scroller.scrollLeft += event.deltaY
-        }}
-        ref={scrollerRef}
-        role="tablist"
-      >
-        {tabs.map((tab, index) => {
-          const Icon = resolveTabIcon(tab)
+            scroller.scrollLeft += event.deltaY
+          }}
+          ref={scrollerRef}
+          role="tablist"
+        >
+          {tabs.map((tab, index) => {
+            const Icon = resolveTabIcon(tab)
 
-          return (
-            <article
-              className="chrome-workbench-tab"
-              data-active={tab.isActive ? 'true' : 'false'}
-              draggable={tab.canClose}
-              key={tab.id}
-              onDragEnd={() => {
-                draggedTabIdRef.current = null
-              }}
-              onDragOver={(event) => {
-                if (draggedTabIdRef.current) {
-                  event.preventDefault()
-                  event.dataTransfer.dropEffect = 'move'
-                }
-              }}
-              onDragStart={(event) => handleDragStart(event, tab)}
-              onDrop={(event) => handleDrop(event, index)}
-              onPointerLeave={(event) => {
-                event.currentTarget.removeAttribute('data-suppress-hover')
-              }}
-              onMouseDown={(event) => {
-                if (event.button === 1 && tab.canClose) {
-                  event.preventDefault()
-                  onClose(tab.id)
-                }
-              }}
-            >
-              <ChromeActiveTabShape />
+            return (
+              <article
+                className="chrome-workbench-tab"
+                data-active={tab.isActive ? 'true' : 'false'}
+                draggable={tab.canClose}
+                key={tab.id}
+                onDragEnd={() => {
+                  draggedTabIdRef.current = null
+                }}
+                onDragOver={(event) => {
+                  if (draggedTabIdRef.current) {
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                  }
+                }}
+                onDragStart={(event) => handleDragStart(event, tab)}
+                onDrop={(event) => handleDrop(event, index)}
+                onPointerLeave={(event) => {
+                  event.currentTarget.removeAttribute('data-suppress-hover')
+                }}
+                onMouseDown={(event) => {
+                  if (event.button === 1 && tab.canClose) {
+                    event.preventDefault()
+                    onClose(tab.id)
+                  }
+                }}
+              >
+                <ChromeActiveTabShape />
 
-              <span aria-hidden="true" className="chrome-workbench-tab__separator" />
+                <span aria-hidden="true" className="chrome-workbench-tab__separator" />
 
-              <div className="chrome-workbench-tab__content">
-                <button
-                  aria-controls={'workbench-panel-' + encodeDomId(tab.id)}
-                  aria-selected={tab.isActive}
-                  className="chrome-workbench-tab__activation"
-                  id={'workbench-tab-' + encodeDomId(tab.id)}
-                  onClick={() => onActivate(tab.id)}
-                  onKeyDown={(event) => handleKeyboard(event, tab.id)}
-                  ref={(node) => {
-                    if (node) {
-                      tabRefs.current.set(tab.id, node)
-                    } else {
-                      tabRefs.current.delete(tab.id)
-                    }
-                  }}
-                  role="tab"
-                  tabIndex={tab.isActive ? 0 : -1}
-                  title={tab.title}
-                  type="button"
-                >
-                  <Icon aria-hidden="true" className="chrome-workbench-tab__icon" />
+                <div className="chrome-workbench-tab__content">
+                  <button
+                    aria-controls={'workbench-panel-' + encodeDomId(tab.id)}
+                    aria-selected={tab.isActive}
+                    className="chrome-workbench-tab__activation"
+                    id={'workbench-tab-' + encodeDomId(tab.id)}
+                    onClick={() => onActivate(tab.id)}
+                    onKeyDown={(event) => handleKeyboard(event, tab.id)}
+                    ref={(node) => {
+                      if (node) {
+                        tabRefs.current.set(tab.id, node)
+                      } else {
+                        tabRefs.current.delete(tab.id)
+                      }
+                    }}
+                    role="tab"
+                    tabIndex={tab.isActive ? 0 : -1}
+                    title={tab.title}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" className="chrome-workbench-tab__icon" />
 
-                  <span className="chrome-workbench-tab__title">{tab.title}</span>
-                </button>
+                    <span className="chrome-workbench-tab__title">{tab.title}</span>
+                  </button>
 
-                <TabEndAction model={tab} onClose={onClose} />
-              </div>
-            </article>
-          )
-        })}
+                  <TabEndAction model={tab} onClose={onClose} />
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      </div>
 
+      <div className="chrome-workbench-tabs__actions" data-window-drag-exclude>
         <button
           aria-label="新建画布"
           className="chrome-workbench-tabs__new-tab"
@@ -253,12 +286,6 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
         >
           <Plus aria-hidden="true" className="size-3.5" />
         </button>
-
-        <div
-          aria-hidden="true"
-          className="chrome-workbench-tabs__drag-region"
-          data-tauri-drag-region
-        />
       </div>
     </div>
   )
