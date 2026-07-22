@@ -1,7 +1,6 @@
 import type { EditorSession, EditorSessionRegistry } from '@hybrid-canvas/canvas/application'
 import type { HybridCanvasExtension } from '@hybrid-canvas/canvas/extensions'
 import { parseDrawDocument, serializeDrawDocument } from '@hybrid-canvas/file'
-import type { TLEditorSnapshot } from 'tldraw'
 
 import {
   createDocumentSession,
@@ -171,7 +170,7 @@ export function createCanvasDocumentService({
 
     const content = await persistence.read(filePath)
 
-    const initialSnapshot = parseEditorSnapshot(content)
+    const initialSnapshot = parseDrawDocument(content).content
 
     const canvasId = crypto.randomUUID()
     const sessionId = crypto.randomUUID()
@@ -454,28 +453,6 @@ export function createCanvasDocumentService({
       editorSessions.dispose()
     },
   }
-}
-
-function parseEditorSnapshot(json: string): TLEditorSnapshot {
-  try {
-    return parseDrawDocument(json).content
-  } catch (containerError) {
-    try {
-      const parsed: unknown = JSON.parse(json)
-
-      if (isEditorSnapshot(parsed)) {
-        return parsed
-      }
-    } catch {
-      // Preserve the validated container error as the public failure.
-    }
-
-    throw containerError
-  }
-}
-
-function isEditorSnapshot(value: unknown): value is TLEditorSnapshot {
-  return typeof value === 'object' && value !== null && 'document' in value && 'session' in value
 }
 
 function getFileTitle(filePath: string): string {

@@ -209,11 +209,8 @@ function HelpMenu() {
         side="right"
         sideOffset={8}
       >
-        <DropdownMenuLabel>
-          帮助与支持
-        </DropdownMenuLabel>
-
         <DropdownMenuGroup>
+
           <HelpMenuItem
             external
             icon={BookOpen}

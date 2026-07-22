@@ -177,4 +177,35 @@ describe('CanvasDocumentService lifecycle contract', () => {
 
     expect(harness.service.getSessionSnapshot(opened.sessionId)?.persistence).toBe('clean')
   })
+
+  it('rejects unversioned raw tldraw snapshots instead of enabling a hidden legacy format', async () => {
+    const createEditorSession = vi.fn()
+
+    const service = createCanvasDocumentService({
+      editorSessions: {
+        create: createEditorSession,
+        close: vi.fn(),
+        dispose: vi.fn(),
+      },
+      persistence: {
+        read: vi.fn().mockResolvedValue(
+          JSON.stringify(
+            snapshot({
+              shapes: [],
+            }),
+          ),
+        ),
+        write: vi.fn(),
+      },
+      fileSelection: {
+        selectOpenPath: vi.fn().mockResolvedValue('/tmp/legacy.draw'),
+        selectSavePath: vi.fn(),
+      },
+      extensions: [],
+    })
+
+    await expect(service.open()).rejects.toBeDefined()
+
+    expect(createEditorSession).not.toHaveBeenCalled()
+  })
 })
