@@ -35,6 +35,23 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
 
+      - name: Verify JavaScript toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected_node="$(tr -d '[:space:]' < .node-version)"
+          actual_node="$(node --version | sed 's/^v//')"
+          actual_pnpm="$(pnpm --version)"
+
+          test "$actual_node" = "$expected_node"
+          test "$actual_pnpm" = "11.15.0"
+
+          if grep -R "set this to true or false" pnpm-workspace.yaml; then
+            echo "::error::pnpm allowBuilds contains unresolved placeholders"
+            exit 1
+          fi
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -75,6 +92,16 @@ jobs:
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
+
+      - name: Verify Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected="1.88.0"
+          actual="$(rustc --version | awk '{print $2}')"
+
+          test "$actual" = "$expected"
 
       - name: Format
         run: cargo fmt --check

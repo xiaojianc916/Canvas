@@ -1,22 +1,27 @@
 #!/usr/bin/env node
 
 /**
- * Canvas 工程审查第二阶段修复脚本
+ * Canvas 工程审查第三阶段修复脚本
  *
  * 用法：
- *   node tooling/script/apply-engineering-review-phase2.mjs
- *   node tooling/script/apply-engineering-review-phase2.mjs --check
+ *   node tooling/script/apply-engineering-review-phase3.mjs
+ *   node tooling/script/apply-engineering-review-phase3.mjs --check
+ *
+ * 前置条件：
+ *   已执行 phase1 和 phase2。
  *
  * 修改内容：
- *   1. 使用项目已有的 thiserror 收敛 Rust 错误样板代码
- *   2. 保持现有 IPC 序列化结构和错误分类行为
- *   3. 保留 native persistence error 的自定义转换语义
- *   4. 增加错误消息和 IPC 映射回归测试
- *   5. 为 CI 增加 cargo-deny 检查
+ *   1. 为 Tauri crate 启用工作区 Tokio
+ *   2. 将 DRAW 文件读取迁移到 tokio::fs
+ *   3. 将原子写入和目录创建放入 spawn_blocking
+ *   4. 避免在异步 command 中直接执行同步磁盘 I/O
+ *   5. 在 CI 中校验 Node、pnpm、Rust 实际版本
+ *   6. 在 CI 中禁止未处理的 pnpm allowBuilds 占位值
  *
- * 注意：
- *   - 请先执行第一阶段脚本。
- *   - 本脚本先在内存中完成全部验证，再写入文件。
+ * 不自动修改：
+ *   tauri-plugin-dialog 的 blocking_pick_*。
+ *   该部分涉及 Tauri 对话框线程模型，应单独进行桌面端交互测试，
+ *   不在没有运行验证的情况下机械改写。
  */
 
 import { readFile, writeFile } from 'node:fs/promises'
@@ -96,354 +101,470 @@ async function assertRepository() {
     )
   }
 
-  const cargo = await read('Cargo.toml')
+  const toolchain = await read('rust-toolchain.toml')
 
-  if (!cargo.includes('thiserror = "2.0.12"')) {
+  if (!toolchain.includes('channel = "1.88.0"')) {
     throw new Error(
-      '根 Cargo.toml 未找到 thiserror = "2.0.12"，请先检查依赖版本。',
+      'rust-toolchain.toml 未固定到 1.88.0，请先检查工具链基线。',
     )
   }
 }
 
-async function refactorRustErrorWithThiserror() {
-  const relativePath = 'apps/desktop/src-tauri/src/error.rs'
+async function addTokioToDesktopCrate() {
+  const relativePath = 'apps/desktop/src-tauri/Cargo.toml'
   let content = await read(relativePath)
 
-  content = replaceExact(
-    content,
-    `use serde::Serialize;
-use specta::Type;
-use std::fmt;
-
-#[derive(Debug)]
-pub enum Error {
-    Io(std::io::Error),
-    Persistence(String),
-    SerdeJson(serde_json::Error),
-    Tauri(tauri::Error),
-    Store(tauri_plugin_store::Error),
-    Dialog(tauri_plugin_dialog::Error),
-    Fs(tauri_plugin_fs::Error),
-    Opener(tauri_plugin_opener::Error),
-    Updater(tauri_plugin_updater::Error),
-    Clipboard(tauri_plugin_clipboard_manager::Error),
-    Shell(tauri_plugin_shell::Error),
-    Notification(tauri_plugin_notification::Error),
-    WindowState(tauri_plugin_window_state::Error),
-    GlobalShortcut(tauri_plugin_global_shortcut::Error),
-    Log(tauri_plugin_log::Error),
-    Validation(String),
-    NotFound(String),
-    PermissionDenied(String),
-    Internal(String),
-    Plugin(String),
-    Collaboration(String),
-    Export(String),
-    Import(String),
-    Asset(String),
-    File(String),
-}`,
-    `use serde::Serialize;
-use specta::Type;
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("Persistence error: {0}")]
-    Persistence(String),
-
-    #[error("JSON error: {0}")]
-    SerdeJson(#[from] serde_json::Error),
-
-    #[error("Tauri error: {0}")]
-    Tauri(#[from] tauri::Error),
-
-    #[error("Store error: {0}")]
-    Store(#[from] tauri_plugin_store::Error),
-
-    #[error("Dialog error: {0}")]
-    Dialog(#[from] tauri_plugin_dialog::Error),
-
-    #[error("FS error: {0}")]
-    Fs(#[from] tauri_plugin_fs::Error),
-
-    #[error("Opener error: {0}")]
-    Opener(#[from] tauri_plugin_opener::Error),
-
-    #[error("Updater error: {0}")]
-    Updater(#[from] tauri_plugin_updater::Error),
-
-    #[error("Clipboard error: {0}")]
-    Clipboard(#[from] tauri_plugin_clipboard_manager::Error),
-
-    #[error("Shell error: {0}")]
-    Shell(#[from] tauri_plugin_shell::Error),
-
-    #[error("Notification error: {0}")]
-    Notification(#[from] tauri_plugin_notification::Error),
-
-    #[error("Window state error: {0}")]
-    WindowState(#[from] tauri_plugin_window_state::Error),
-
-    #[error("Global shortcut error: {0}")]
-    GlobalShortcut(#[from] tauri_plugin_global_shortcut::Error),
-
-    #[error("Log error: {0}")]
-    Log(#[from] tauri_plugin_log::Error),
-
-    #[error("Validation error: {0}")]
-    Validation(String),
-
-    #[error("Not found: {0}")]
-    NotFound(String),
-
-    #[error("Permission denied: {0}")]
-    PermissionDenied(String),
-
-    #[error("Internal error: {0}")]
-    Internal(String),
-
-    #[error("Plugin error: {0}")]
-    Plugin(String),
-
-    #[error("Collaboration error: {0}")]
-    Collaboration(String),
-
-    #[error("Export error: {0}")]
-    Export(String),
-
-    #[error("Import error: {0}")]
-    Import(String),
-
-    #[error("Asset error: {0}")]
-    Asset(String),
-
-    #[error("File error: {0}")]
-    File(String),
-}`,
-    { label: '将 Error enum 转换为 thiserror derive' },
-  )
-
-  const handwrittenStart = content.indexOf(
-    'impl fmt::Display for Error {',
-  )
-  const resultAliasStart = content.indexOf(
-    'pub type Result<T> = std::result::Result<T, Error>;',
-  )
-
-  if (handwrittenStart === -1) {
+  if (content.includes('tokio.workspace = true')) {
     throw new Error(
-      `${relativePath} 中没有找到手写的 Display 实现，可能已执行过本脚本。`,
+      `${relativePath} 已包含 tokio.workspace = true，可能已执行过本脚本。`,
     )
   }
 
-  if (resultAliasStart === -1 || resultAliasStart <= handwrittenStart) {
-    throw new Error(
-      `${relativePath} 中没有找到预期的 Result 类型别名。`,
-    )
-  }
-
-  const customNativeConversion = `impl From<hybrid_canvas_file_native::Error> for Error {
-    fn from(error: hybrid_canvas_file_native::Error) -> Self {
-        Self::Persistence(error.to_string())
-    }
-}
-
-`
-
-  content =
-    content.slice(0, handwrittenStart) +
-    customNativeConversion +
-    content.slice(resultAliasStart)
-
-  const tests = `
-
-#[cfg(test)]
-mod tests {
-    use super::{Error, IpcErrorCode, IpcOperation};
-
-    #[test]
-    fn import_error_uses_import_message() {
-        let error = Error::Import("invalid document".to_owned());
-
-        assert_eq!(
-            error.to_string(),
-            "Import error: invalid document"
-        );
-    }
-
-    #[test]
-    fn export_error_uses_export_message() {
-        let error = Error::Export("unsupported target".to_owned());
-
-        assert_eq!(
-            error.to_string(),
-            "Export error: unsupported target"
-        );
-    }
-
-    #[test]
-    fn validation_error_has_validation_ipc_mapping() {
-        let error = Error::Validation("invalid input".to_owned());
-
-        assert!(matches!(error.code(), IpcErrorCode::Validation));
-        assert!(matches!(error.operation(), IpcOperation::Platform));
-        assert!(!error.recoverable());
-    }
-
-    #[test]
-    fn import_error_has_import_export_operation() {
-        let error = Error::Import("invalid document".to_owned());
-
-        assert!(matches!(
-            error.code(),
-            IpcErrorCode::ImportExport
-        ));
-        assert!(matches!(
-            error.operation(),
-            IpcOperation::ImportExport
-        ));
-        assert!(!error.recoverable());
-    }
-
-    #[test]
-    fn io_error_is_recoverable_persistence_error() {
-        let error = Error::Io(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            "denied",
-        ));
-
-        assert!(matches!(
-            error.code(),
-            IpcErrorCode::Persistence
-        ));
-        assert!(matches!(
-            error.operation(),
-            IpcOperation::File
-        ));
-        assert!(error.recoverable());
-    }
-
-    #[test]
-    fn serialized_error_preserves_ipc_contract() {
-        let value = serde_json::to_value(
-            Error::Validation("invalid settings".to_owned()),
-        )
-        .expect("error should serialize");
-
-        assert_eq!(value["code"], "validation");
-        assert_eq!(value["operation"], "platform");
-        assert_eq!(
-            value["message"],
-            "Validation error: invalid settings"
-        );
-        assert_eq!(value["recoverable"], false);
-    }
-}
-`
-
-  const resultAlias =
-    'pub type Result<T> = std::result::Result<T, Error>;'
-
   content = replaceExact(
     content,
-    resultAlias,
-    `${resultAlias}${tests}`,
-    { label: '为 Error 增加回归测试' },
+    `specta.workspace = true
+specta-typescript.workspace = true
+tauri-specta.workspace = true
+tempfile.workspace = true`,
+    `specta.workspace = true
+specta-typescript.workspace = true
+tauri-specta.workspace = true
+tempfile.workspace = true
+tokio.workspace = true`,
+    { label: '为 Tauri crate 添加 Tokio 依赖' },
   )
-
-  if (content.includes('impl fmt::Display for Error')) {
-    throw new Error('手写 Display 实现没有被完整删除。')
-  }
-
-  if (content.includes('impl std::error::Error for Error')) {
-    throw new Error('手写 std::error::Error 实现没有被完整删除。')
-  }
-
-  if (content.includes('use std::fmt;')) {
-    throw new Error('不再需要的 std::fmt import 没有被删除。')
-  }
 
   stage(
     relativePath,
     content,
-    '使用 thiserror 收敛错误样板并增加 IPC 回归测试',
+    '为异步文件操作启用工作区 Tokio',
   )
 }
 
-async function addCargoDenyToCi() {
+async function migrateDrawFileIoToTokio() {
+  const relativePath = 'apps/desktop/src-tauri/src/commands/file.rs'
+  let content = await read(relativePath)
+
+  if (content.includes('async fn write_draw_file(')) {
+    throw new Error(
+      `${relativePath} 已存在 write_draw_file，可能已执行过本脚本。`,
+    )
+  }
+
+  content = replaceExact(
+    content,
+    'use std::path::Path;',
+    'use std::path::{Path, PathBuf};',
+    { label: '导入 PathBuf' },
+  )
+
+  content = replaceExact(
+    content,
+    `    let path = registry.require(Path::new(&request.path))?;
+    ensure_draw_path(&path)?;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    atomic_write(&path, request.content.as_bytes())?;
+    Ok(())`,
+    `    let path = registry.require(Path::new(&request.path))?;
+    ensure_draw_path(&path)?;
+
+    write_draw_file(path, request.content).await?;
+    Ok(())`,
+    { label: 'file_save_draw 异步隔离同步写入' },
+  )
+
+  content = replaceExact(
+    content,
+    `    let path = registry.require(Path::new(&path))?;
+    ensure_draw_path(&path)?;
+    let metadata = std::fs::metadata(&path)?;
+
+    ensure_draw_size(metadata.len())?;
+
+    let content = std::fs::read_to_string(&path)?;
+    Ok(DrawReadResult { content })`,
+    `    let path = registry.require(Path::new(&path))?;
+    ensure_draw_path(&path)?;
+
+    let metadata = tokio::fs::metadata(&path).await?;
+    ensure_draw_size(metadata.len())?;
+
+    let content = tokio::fs::read_to_string(&path).await?;
+    Ok(DrawReadResult { content })`,
+    { label: 'file_read_draw 使用 tokio::fs' },
+  )
+
+  content = replaceExact(
+    content,
+    `    let file_path = registry.require(Path::new(&path))?;
+    ensure_draw_path(&file_path)?;
+
+    if let Some(parent) = file_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    atomic_write(&file_path, content.as_bytes())?;
+
+    Ok(DrawReadResult { content })`,
+    `    let file_path = registry.require(Path::new(&path))?;
+    ensure_draw_path(&file_path)?;
+
+    let content = write_draw_file(file_path, content).await?;
+    Ok(DrawReadResult { content })`,
+    { label: 'file_create_draw 异步隔离同步写入' },
+  )
+
+  content = replaceExact(
+    content,
+    `fn ensure_draw_size(size: u64) -> Result<()> {`,
+    `async fn write_draw_file(
+    path: PathBuf,
+    content: String,
+) -> Result<String> {
+    tokio::task::spawn_blocking(move || {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        atomic_write(&path, content.as_bytes())?;
+        Ok(content)
+    })
+    .await
+    .map_err(|error| {
+        Error::Internal(format!(
+            "draw file write task failed: {error}"
+        ))
+    })?
+}
+
+fn ensure_draw_size(size: u64) -> Result<()> {`,
+    { label: '增加 spawn_blocking 写入辅助函数' },
+  )
+
+  stage(
+    relativePath,
+    content,
+    '将 DRAW 文件读写迁移到 Tokio 兼容的异步边界',
+  )
+}
+
+async function addRuntimeVersionChecksToCi() {
   const relativePath = '.github/workflows/quality.yml'
   let content = await read(relativePath)
 
-  if (content.includes('EmbarkStudios/cargo-deny-action')) {
+  if (content.includes('name: Verify JavaScript toolchain')) {
     throw new Error(
-      `${relativePath} 已包含 cargo-deny action，可能已执行过本脚本。`,
+      `${relativePath} 已包含 JavaScript 工具链检查。`,
     )
   }
 
-  const insertionPoint = `      - name: Tests
-        run: cargo test --workspace --all-features
-`
+  content = replaceExact(
+    content,
+    `      - name: Install dependencies
+        run: pnpm install --frozen-lockfile`,
+    `      - name: Verify JavaScript toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
 
-  const replacement = `      - name: Tests
-        run: cargo test --workspace --all-features
+          expected_node="$(tr -d '[:space:]' < .node-version)"
+          actual_node="$(node --version | sed 's/^v//')"
+          actual_pnpm="$(pnpm --version)"
 
-      - name: Dependency policy
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
-          arguments: --all-features
-`
+          test "$actual_node" = "$expected_node"
+          test "$actual_pnpm" = "11.15.0"
+
+          if grep -R "set this to true or false" pnpm-workspace.yaml; then
+            echo "::error::pnpm allowBuilds contains unresolved placeholders"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile`,
+    { label: '增加 Node 和 pnpm 版本检查' },
+  )
+
+  if (content.includes('name: Verify Rust toolchain')) {
+    throw new Error(`${relativePath} 已包含 Rust 工具链检查。`)
+  }
 
   content = replaceExact(
     content,
-    insertionPoint,
-    replacement,
-    { label: '在 Rust CI 末尾加入 cargo-deny' },
+    `      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format`,
+    `      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Verify Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected="1.88.0"
+          actual="$(rustc --version | awk '{print $2}')"
+
+          test "$actual" = "$expected"
+
+      - name: Format`,
+    { label: '增加 Rust 版本检查' },
   )
 
   stage(
     relativePath,
     content,
-    '在 CI 中执行 Rust 依赖、许可证和来源策略检查',
+    '在 CI 中验证 Node、pnpm、Rust 和 allowBuilds 基线',
+  )
+}
+
+async function addArchitectureGuardForBlockingFs() {
+  const relativePath =
+    'tests/architecture/check-rust-async-boundaries.mjs'
+
+  let existing = null
+
+  try {
+    existing = await readFile(absolutePath(relativePath), 'utf8')
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !('code' in error) ||
+      error.code !== 'ENOENT'
+    ) {
+      throw error
+    }
+  }
+
+  if (existing !== null) {
+    throw new Error(`${relativePath} 已存在，拒绝覆盖。`)
+  }
+
+  const content = `#!/usr/bin/env node
+
+import { readFile, readdir } from 'node:fs/promises'
+import { extname, join, relative, resolve } from 'node:path'
+import process from 'node:process'
+
+const root = process.cwd()
+const rustRoot = resolve(root, 'apps/desktop/src-tauri/src')
+
+const allowedBlockingFiles = new Set([
+  // tauri-plugin-dialog 当前提供 blocking_pick_* 调用。
+  // 对话框线程模型将在独立桌面 E2E 中治理。
+  'apps/desktop/src-tauri/src/commands/file.rs',
+])
+
+async function collectRustFiles(directory) {
+  const entries = await readdir(directory, {
+    withFileTypes: true,
+  })
+
+  const files = []
+
+  for (const entry of entries) {
+    const path = join(directory, entry.name)
+
+    if (entry.isDirectory()) {
+      files.push(...(await collectRustFiles(path)))
+      continue
+    }
+
+    if (entry.isFile() && extname(entry.name) === '.rs') {
+      files.push(path)
+    }
+  }
+
+  return files
+}
+
+function findAsyncFunctions(source) {
+  const functions = []
+  const pattern =
+    /(?:pub\\s+)?async\\s+fn\\s+([A-Za-z0-9_]+)[^{]*\\{/g
+
+  for (const match of source.matchAll(pattern)) {
+    const bodyStart = match.index + match[0].length
+    let depth = 1
+    let cursor = bodyStart
+
+    while (cursor < source.length && depth > 0) {
+      const character = source[cursor]
+
+      if (character === '{') {
+        depth += 1
+      } else if (character === '}') {
+        depth -= 1
+      }
+
+      cursor += 1
+    }
+
+    if (depth === 0) {
+      functions.push({
+        name: match[1],
+        body: source.slice(bodyStart, cursor - 1),
+      })
+    }
+  }
+
+  return functions
+}
+
+const forbiddenPatterns = [
+  {
+    name: 'std::fs',
+    pattern: /\\bstd::fs::/,
+  },
+  {
+    name: 'std::thread::sleep',
+    pattern: /\\bstd::thread::sleep\\s*\\(/,
+  },
+]
+
+const violations = []
+
+for (const path of await collectRustFiles(rustRoot)) {
+  const repositoryPath = relative(root, path).replaceAll('\\\\', '/')
+  const source = await readFile(path, 'utf8')
+
+  for (const fn of findAsyncFunctions(source)) {
+    for (const forbidden of forbiddenPatterns) {
+      if (forbidden.pattern.test(fn.body)) {
+        violations.push(
+          \`\${repositoryPath}: async fn \${fn.name} directly uses \${forbidden.name}\`,
+        )
+      }
+    }
+
+    if (
+      /\\bblocking_[A-Za-z0-9_]+\\s*\\(/.test(fn.body) &&
+      !allowedBlockingFiles.has(repositoryPath)
+    ) {
+      violations.push(
+        \`\${repositoryPath}: async fn \${fn.name} directly invokes a blocking_* API\`,
+      )
+    }
+  }
+}
+
+if (violations.length > 0) {
+  console.error(
+    'Rust async boundary check failed:\\n' +
+      violations.map((item) => \`- \${item}\`).join('\\n'),
+  )
+  process.exitCode = 1
+} else {
+  console.log('Rust async boundary check passed.')
+}
+`
+
+  stagedFiles.set(relativePath, content)
+  changes.push({
+    relativePath,
+    description: '新增 Rust async 阻塞操作架构门禁',
+  })
+}
+
+async function registerArchitectureGuard() {
+  const relativePath = 'package.json'
+  let content = await read(relativePath)
+
+  const packageJson = JSON.parse(content)
+  const command =
+    'node tests/architecture/check-rust-async-boundaries.mjs'
+
+  if (
+    typeof packageJson.scripts?.['test:architecture'] !== 'string'
+  ) {
+    throw new Error(
+      'package.json 缺少 scripts.test:architecture。',
+    )
+  }
+
+  if (
+    packageJson.scripts['test:architecture'].includes(command)
+  ) {
+    throw new Error(
+      'test:architecture 已注册 Rust async boundary 检查。',
+    )
+  }
+
+  packageJson.scripts['test:architecture'] += ` && ${command}`
+
+  content = `${JSON.stringify(packageJson, null, 2)}\n`
+
+  stage(
+    relativePath,
+    content,
+    '将 Rust async 边界检查注册到架构测试',
   )
 }
 
 async function validateResult() {
-  const errorFile = stagedFiles.get(
-    'apps/desktop/src-tauri/src/error.rs',
+  const cargo = stagedFiles.get(
+    'apps/desktop/src-tauri/Cargo.toml',
   )
+  const fileCommands = stagedFiles.get(
+    'apps/desktop/src-tauri/src/commands/file.rs',
+  )
+  const workflow = stagedFiles.get(
+    '.github/workflows/quality.yml',
+  )
+  const packageJson = JSON.parse(stagedFiles.get('package.json'))
 
-  const requiredFragments = [
-    '#[derive(Debug, Error)]',
-    'Io(#[from] std::io::Error)',
-    'SerdeJson(#[from] serde_json::Error)',
-    'impl From<hybrid_canvas_file_native::Error> for Error',
-    'fn serialized_error_preserves_ipc_contract()',
+  const assertions = [
+    [
+      cargo.includes('tokio.workspace = true'),
+      'Tauri crate 缺少 Tokio workspace 依赖',
+    ],
+    [
+      fileCommands.includes(
+        'let metadata = tokio::fs::metadata(&path).await?;',
+      ),
+      'file_read_draw 未使用 tokio::fs::metadata',
+    ],
+    [
+      fileCommands.includes(
+        'let content = tokio::fs::read_to_string(&path).await?;',
+      ),
+      'file_read_draw 未使用 tokio::fs::read_to_string',
+    ],
+    [
+      fileCommands.includes('tokio::task::spawn_blocking'),
+      '同步原子写入未放入 spawn_blocking',
+    ],
+    [
+      !fileCommands.includes(
+        'std::fs::read_to_string(&path)',
+      ),
+      '仍存在同步 DRAW 文件读取',
+    ],
+    [
+      workflow.includes(
+        'name: Verify JavaScript toolchain',
+      ),
+      'CI 缺少 JavaScript 工具链验证',
+    ],
+    [
+      workflow.includes('name: Verify Rust toolchain'),
+      'CI 缺少 Rust 工具链验证',
+    ],
+    [
+      packageJson.scripts['test:architecture'].includes(
+        'check-rust-async-boundaries.mjs',
+      ),
+      '架构测试未注册 Rust async 边界门禁',
+    ],
   ]
 
-  for (const fragment of requiredFragments) {
-    if (!errorFile.includes(fragment)) {
-      throw new Error(
-        `最终验证失败：error.rs 缺少 ${fragment}`,
-      )
-    }
-  }
-
-  const forbiddenFragments = [
-    'impl fmt::Display for Error',
-    'impl std::error::Error for Error',
-    'Error::Import(e) => write!(f, "Export error:',
-  ]
-
-  for (const fragment of forbiddenFragments) {
-    if (errorFile.includes(fragment)) {
-      throw new Error(
-        `最终验证失败：error.rs 仍包含 ${fragment}`,
-      )
+  for (const [condition, message] of assertions) {
+    if (!condition) {
+      throw new Error(`最终验证失败：${message}`)
     }
   }
 }
@@ -455,7 +576,7 @@ async function writeStagedFiles() {
 
   if (checkOnly) {
     console.log(
-      `检查完成：第二阶段需要修改 ${changedPaths.length} 个文件。`,
+      `检查完成：第三阶段需要修改 ${changedPaths.length} 个文件。`,
     )
 
     for (const change of changes) {
@@ -477,7 +598,7 @@ async function writeStagedFiles() {
   }
 
   console.log(
-    `第二阶段修改完成：共更新 ${changedPaths.length} 个文件。`,
+    `第三阶段修改完成：共更新 ${changedPaths.length} 个文件。`,
   )
 
   for (const change of changes) {
@@ -487,21 +608,27 @@ async function writeStagedFiles() {
   }
 
   console.log('')
-  console.log('请执行以下验证命令：')
+  console.log('请执行：')
+  console.log('  pnpm format')
   console.log('  cargo fmt --all')
-  console.log('  cargo check --workspace --all-targets --all-features')
+  console.log('  pnpm test:architecture')
+  console.log(
+    '  cargo check --workspace --all-targets --all-features',
+  )
   console.log(
     '  cargo clippy --workspace --all-targets --all-features -- -D warnings',
   )
   console.log('  cargo test --workspace --all-features')
-  console.log('  cargo deny check')
   console.log('  pnpm verify:release')
 }
 
 async function main() {
   await assertRepository()
-  await refactorRustErrorWithThiserror()
-  await addCargoDenyToCi()
+  await addTokioToDesktopCrate()
+  await migrateDrawFileIoToTokio()
+  await addRuntimeVersionChecksToCi()
+  await addArchitectureGuardForBlockingFs()
+  await registerArchitectureGuard()
   await validateResult()
   await writeStagedFiles()
 }
@@ -509,7 +636,7 @@ async function main() {
 main().catch((error) => {
   console.error('')
   console.error(
-    '第二阶段修复失败；脚本尚未写入任何文件。',
+    '第三阶段修复失败；脚本尚未写入任何文件。',
   )
   console.error(
     error instanceof Error ? error.stack : String(error),

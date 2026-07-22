@@ -3,7 +3,7 @@ use crate::security::ApprovedPathRegistry;
 use hybrid_canvas_file_native::atomic_write;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, State, command};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_fs::FilePath;
@@ -223,11 +223,7 @@ pub async fn file_save_draw(
     let path = registry.require(Path::new(&request.path))?;
     ensure_draw_path(&path)?;
 
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    atomic_write(&path, request.content.as_bytes())?;
+    write_draw_file(path, request.content).await?;
     Ok(())
 }
 
@@ -238,11 +234,11 @@ pub async fn file_read_draw(
 ) -> Result<DrawReadResult> {
     let path = registry.require(Path::new(&path))?;
     ensure_draw_path(&path)?;
-    let metadata = std::fs::metadata(&path)?;
 
+    let metadata = tokio::fs::metadata(&path).await?;
     ensure_draw_size(metadata.len())?;
 
-    let content = std::fs::read_to_string(&path)?;
+    let content = tokio::fs::read_to_string(&path).await?;
     Ok(DrawReadResult { content })
 }
 
@@ -257,15 +253,30 @@ pub async fn file_create_draw(
     let file_path = registry.require(Path::new(&path))?;
     ensure_draw_path(&file_path)?;
 
-    if let Some(parent) = file_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    atomic_write(&file_path, content.as_bytes())?;
-
+    let content = write_draw_file(file_path, content).await?;
     Ok(DrawReadResult { content })
 }
 
+
+async fn write_draw_file(
+    path: PathBuf,
+    content: String,
+) -> Result<String> {
+    tokio::task::spawn_blocking(move || {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        atomic_write(&path, content.as_bytes())?;
+        Ok(content)
+    })
+    .await
+    .map_err(|error| {
+        Error::Internal(format!(
+            "draw file write task failed: {error}"
+        ))
+    })?
+}
 
 fn ensure_draw_size(size: u64) -> Result<()> {
     if size <= MAX_DRAW_FILE_BYTES {
