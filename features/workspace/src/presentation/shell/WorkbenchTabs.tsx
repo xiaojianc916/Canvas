@@ -178,6 +178,8 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
             >
               <span aria-hidden="true" className="chrome-workbench-tab__separator" />
 
+              <ChromeActiveTabShape />
+
               <div className="chrome-workbench-tab__content">
                 <button
                   aria-controls={'workbench-panel-' + encodeDomId(tab.id)}
@@ -224,6 +226,44 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
           data-tauri-drag-region
         />
       </div>
+    </div>
+  )
+}
+
+function ChromeActiveTabShape() {
+  return (
+    <div aria-hidden="true" className="chrome-workbench-tab__active-shape">
+      <svg
+        className="chrome-workbench-tab__active-cap chrome-workbench-tab__active-cap--left"
+        preserveAspectRatio="xMinYMin meet"
+        viewBox="0 0 20 32"
+      >
+        <path
+          className="chrome-workbench-tab__active-cap-fill"
+          d="M0 32H20V2H18C13.6 2 10 5.6 10 10V23C10 28 6 32 0 32Z"
+        />
+        <path
+          className="chrome-workbench-tab__active-cap-outline"
+          d="M0 31.5C6 31.5 10 27.7 10 23V10C10 5.6 13.6 2.5 18 2.5H20"
+        />
+      </svg>
+
+      <span className="chrome-workbench-tab__active-center" />
+
+      <svg
+        className="chrome-workbench-tab__active-cap chrome-workbench-tab__active-cap--right"
+        preserveAspectRatio="xMinYMin meet"
+        viewBox="0 0 20 32"
+      >
+        <path
+          className="chrome-workbench-tab__active-cap-fill"
+          d="M0 32H20V2H18C13.6 2 10 5.6 10 10V23C10 28 6 32 0 32Z"
+        />
+        <path
+          className="chrome-workbench-tab__active-cap-outline"
+          d="M0 31.5C6 31.5 10 27.7 10 23V10C10 5.6 13.6 2.5 18 2.5H20"
+        />
+      </svg>
     </div>
   )
 }

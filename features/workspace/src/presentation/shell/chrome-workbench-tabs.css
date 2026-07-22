@@ -414,3 +414,98 @@
     animation: none;
   }
 }
+
+/* BEGIN FIXED CHROME ACTIVE TAB SHAPE */
+
+/*
+ * Disable the previous box-shadow pseudo-element implementation.
+ * Those shadows were clipped into square feet at the strip baseline.
+ */
+.chrome-workbench-tab[data-active="true"]::before,
+.chrome-workbench-tab[data-active="true"]::after {
+  display: none;
+  content: none;
+  box-shadow: none;
+}
+
+/*
+ * Fixed-cap active tab geometry.
+ *
+ * The side caps always remain 20×32. Only the center stretches, so
+ * shoulder curves and corner radii cannot distort with tab width.
+ */
+.chrome-workbench-tab__active-shape {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: none;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__active-shape {
+  display: block;
+}
+
+.chrome-workbench-tab__active-cap {
+  position: absolute;
+  top: 0;
+  display: block;
+  width: 20px;
+  height: 32px;
+  overflow: visible;
+}
+
+.chrome-workbench-tab__active-cap--left {
+  left: 0;
+}
+
+.chrome-workbench-tab__active-cap--right {
+  right: 0;
+  transform: scaleX(-1);
+  transform-origin: center;
+}
+
+.chrome-workbench-tab__active-cap-fill {
+  fill: var(--chrome-tab-surface);
+}
+
+.chrome-workbench-tab__active-cap-outline {
+  fill: none;
+  stroke: var(--chrome-tab-outline);
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/*
+ * Flexible center body.
+ *
+ * It paints only the top outline. There is no bottom border, allowing
+ * the active surface to merge directly into the workspace below.
+ */
+.chrome-workbench-tab__active-center {
+  position: absolute;
+  top: 2px;
+  right: 20px;
+  bottom: 0;
+  left: 20px;
+  border-top: 1px solid var(--chrome-tab-outline);
+  background: var(--chrome-tab-surface);
+}
+
+/*
+ * Shape owns all active fill and outline. Content is layout only.
+ * These declarations intentionally override the old rounded body.
+ */
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__content {
+  inset: 2px 12px 0;
+  z-index: 4;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* END FIXED CHROME ACTIVE TAB SHAPE */
