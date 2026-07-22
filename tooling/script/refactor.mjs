@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 
 /**
- * 修正侧边栏动画：
- * 1. 删除主内容区阴影
- * 2. 将 Spring 改为渐进式 Tween + Ease In Out
+ * 修复左侧侧边栏覆盖动画：
+ *
+ * 1. 删除主界面与左侧侧边栏之间擅自添加的阴影
+ * 2. 不再直接动画包含 fr/minmax() 的 gridTemplateColumns
+ * 3. 改为动画纯 px CSS 变量，确保真正逐渐覆盖
+ * 4. 使用 0.5 秒 ease-in-out，不使用弹簧动画
  *
  * 运行：
  * node tooling/script/refactor.mjs --apply
@@ -21,17 +24,17 @@ function findRepositoryRoot(startDirectory) {
   let currentDirectory = startDirectory
 
   while (true) {
-    const packagePath = path.join(currentDirectory, 'package.json')
-    const workspacePath = path.join(currentDirectory, 'pnpm-workspace.yaml')
-
-    if (fs.existsSync(packagePath) && fs.existsSync(workspacePath)) {
+    if (
+      fs.existsSync(path.join(currentDirectory, 'package.json')) &&
+      fs.existsSync(path.join(currentDirectory, 'pnpm-workspace.yaml'))
+    ) {
       return currentDirectory
     }
 
     const parentDirectory = path.dirname(currentDirectory)
 
     if (parentDirectory === currentDirectory) {
-      throw new Error('找不到仓库根目录。')
+      throw new Error('找不到 Canvas 仓库根目录。')
     }
 
     currentDirectory = parentDirectory
@@ -64,57 +67,173 @@ function writeFile(filePath, content) {
 }
 
 function updateWorkspaceFrame() {
-  const originalContent = readFile(WORKSPACE_FRAME_PATH)
+  const content = `import { motion, useReducedMotion } from 'motion/react'
+import type { ReactNode, Ref } from 'react'
 
-  if (!originalContent.includes("from 'motion/react'")) {
-    throw new Error(
-      'WorkspaceFrame.tsx 尚未接入 Motion，请先运行之前的侧边栏动画脚本。',
-    )
-  }
+export interface WorkspaceFrameProps {
+  readonly rootRef?: Ref<HTMLDivElement>
+  readonly chrome: ReactNode
+  readonly rail: ReactNode
+  readonly sidebar: ReactNode
+  readonly canvas: ReactNode
+  readonly inspector: ReactNode
+  readonly statusBar: ReactNode
+  readonly overlays?: ReactNode
+  readonly gridTemplateColumns: string
+  readonly gridTemplateRows: string
+  readonly sidebarColumnWidth: number
+  readonly disableLayoutAnimation?: boolean
+}
 
-  const transitionPattern =
-    /  const transition =\s*\n[\s\S]*?\n\s*return \(\s*\n/
+export function WorkspaceFrame({
+  rootRef,
+  chrome,
+  rail,
+  sidebar,
+  canvas,
+  inspector,
+  statusBar,
+  overlays,
+  gridTemplateColumns,
+  gridTemplateRows,
+  sidebarColumnWidth,
+  disableLayoutAnimation = false,
+}: WorkspaceFrameProps) {
+  const shouldReduceMotion = useReducedMotion()
 
-  if (!transitionPattern.test(originalContent)) {
-    throw new Error('无法找到 WorkspaceFrame.tsx 中的 transition 配置。')
-  }
-
-  const transitionCode = `  const transition =
+  const transition =
     disableLayoutAnimation || shouldReduceMotion
       ? { duration: 0 }
       : {
           type: 'tween' as const,
-          duration: 0.42,
-          ease: [0.4, 0, 0.2, 1] as const,
+          duration: 0.5,
+          ease: [0.65, 0, 0.35, 1] as const,
         }
 
   return (
+    <motion.div
+      animate={{
+        '--workspace-sidebar-column-width': sidebarColumnWidth + 'px',
+      }}
+      className="workspace-shell relative grid h-dvh w-full min-h-0 overflow-hidden bg-background text-foreground"
+      initial={false}
+      ref={rootRef}
+      style={{
+        gridTemplateColumns,
+        gridTemplateRows,
+        willChange: disableLayoutAnimation ? 'auto' : 'grid-template-columns',
+      }}
+      transition={transition}
+    >
+      {/* Layout ownership lives here so borders stay single-source and predictable. */}
+      {chrome}
+      {rail}
+      {sidebar}
+      {canvas}
+      {inspector}
+      {statusBar}
+      {overlays}
+    </motion.div>
+  )
+}
 `
 
-  const nextContent = originalContent.replace(
-    transitionPattern,
-    transitionCode,
-  )
-
-  writeFile(WORKSPACE_FRAME_PATH, nextContent)
+  writeFile(WORKSPACE_FRAME_PATH, content)
 }
 
 function updateWorkspaceShell() {
-  const originalContent = readFile(WORKSPACE_SHELL_PATH)
+  let content = readFile(WORKSPACE_SHELL_PATH)
 
-  const shadowClass =
-    ' shadow-[-12px_0_28px_-22px_rgba(0,0,0,0.45)]'
+  /*
+   * 精确删除之前擅自加在主内容区左边界上的阴影。
+   */
+  content = content.replace(
+    /\s+shadow-\[-12px_0_28px_-22px_rgba\(0,0,0,0\.45\)\]/g,
+    '',
+  )
 
-  const nextContent = originalContent.replaceAll(shadowClass, '')
+  /*
+   * 防止之前的阴影参数发生格式化差异。
+   * 只处理包含“内容区”的 section，不影响其他组件原有样式。
+   */
+  content = content.replace(
+    /(<section[\s\S]*?aria-label="内容区"[\s\S]*?className=")([^"]*)("[\s\S]*?>)/,
+    (_, prefix, className, suffix) => {
+      const cleanedClassName = className
+        .split(/\s+/)
+        .filter(Boolean)
+        .filter(
+          (classToken) =>
+            !classToken.startsWith(
+              'shadow-[-12px_0_28px_-22px_rgba(0,0,0,0.45)]',
+            ),
+        )
+        .join(' ')
 
-  if (nextContent === originalContent) {
-    console.log(
-      `未发现阴影：${path.relative(ROOT, WORKSPACE_SHELL_PATH)}，无需删除。`,
+      return prefix + cleanedClassName + suffix
+    },
+  )
+
+  /*
+   * 原实现直接动画整个 gridTemplateColumns：
+   *
+   * 48px 280px minmax(0, 1fr) 0px
+   *
+   * 这种复合字符串不能保证连续插值。
+   * 现在只动画 --workspace-sidebar-column-width 这个纯 px 变量。
+   */
+  const columnsPattern =
+    /  const columns = useMemo\([\s\S]*?\n\n  const rows =/
+
+  if (!columnsPattern.test(content)) {
+    throw new Error(
+      '无法找到 WorkspaceShell.tsx 中的 columns 布局计算代码。',
     )
-    return
   }
 
-  writeFile(WORKSPACE_SHELL_PATH, nextContent)
+  content = content.replace(
+    columnsPattern,
+    `  const sidebarColumnWidth = dockSidebar ? sidebarWidth : 0
+
+  const columns = useMemo(
+    () =>
+      [
+        'var(--activity-rail-width)',
+        'var(--workspace-sidebar-column-width, 0px)',
+        'minmax(0, 1fr)',
+        dockInspector ? 'var(--inspector-width)' : '0px',
+      ].join(' '),
+    [dockInspector],
+  )
+
+  const rows =`,
+  )
+
+  if (!content.includes('sidebarColumnWidth={sidebarColumnWidth}')) {
+    const target = '        gridTemplateRows={rows}'
+
+    if (!content.includes(target)) {
+      throw new Error(
+        '无法找到 WorkspaceFrame 的 gridTemplateRows 属性。',
+      )
+    }
+
+    content = content.replace(
+      target,
+      `${target}
+        sidebarColumnWidth={sidebarColumnWidth}`,
+    )
+  }
+
+  if (
+    content.includes(
+      'shadow-[-12px_0_28px_-22px_rgba(0,0,0,0.45)]',
+    )
+  ) {
+    throw new Error('主内容区阴影删除失败。')
+  }
+
+  writeFile(WORKSPACE_SHELL_PATH, content)
 }
 
 function run(command, args) {
@@ -134,15 +253,14 @@ function run(command, args) {
 
   if (result.status !== 0) {
     throw new Error(
-      `命令执行失败（退出码 ${String(result.status)}）：${command} ${args.join(' ')}`,
+      `命令执行失败（退出码 ${String(result.status)}）：` +
+        `${command} ${args.join(' ')}`,
     )
   }
 }
 
 function main() {
-  const shouldApply = process.argv.includes('--apply')
-
-  if (!shouldApply) {
+  if (!process.argv.includes('--apply')) {
     throw new Error('请添加 --apply 参数执行修改。')
   }
 
@@ -167,8 +285,10 @@ function main() {
   ])
 
   console.log('\n修改完成：')
-  console.log('- 已删除主内容区阴影')
-  console.log('- 已改为 0.42 秒渐进式 Ease In Out 覆盖动画')
+  console.log('- 已删除侧边栏与主界面之间添加的阴影')
+  console.log('- 已改为真正连续插值的 px 动画')
+  console.log('- 动画时长为 0.5 秒')
+  console.log('- 使用对称 Ease In Out 缓动')
 }
 
 try {

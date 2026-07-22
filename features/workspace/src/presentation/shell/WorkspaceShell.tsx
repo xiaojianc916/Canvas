@@ -140,15 +140,17 @@ export function WorkspaceShell({
     setSidebarOpen(true)
   }
 
+  const sidebarColumnWidth = dockSidebar ? sidebarWidth : 0
+
   const columns = useMemo(
     () =>
       [
         'var(--activity-rail-width)',
-        dockSidebar ? String(sidebarWidth) + 'px' : '0px',
+        'var(--workspace-sidebar-column-width, 0px)',
         'minmax(0, 1fr)',
         dockInspector ? 'var(--inspector-width)' : '0px',
       ].join(' '),
-    [dockInspector, dockSidebar, sidebarWidth],
+    [dockInspector],
   )
 
   const rows = hasCanvas
@@ -368,6 +370,7 @@ export function WorkspaceShell({
         disableLayoutAnimation={isResizing}
         gridTemplateColumns={columns}
         gridTemplateRows={rows}
+        sidebarColumnWidth={sidebarColumnWidth}
         inspector={inspectorRegion}
         overlays={
           <>

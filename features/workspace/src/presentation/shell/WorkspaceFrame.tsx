@@ -12,6 +12,7 @@ export interface WorkspaceFrameProps {
   readonly overlays?: ReactNode
   readonly gridTemplateColumns: string
   readonly gridTemplateRows: string
+  readonly sidebarColumnWidth: number
   readonly disableLayoutAnimation?: boolean
 }
 
@@ -26,6 +27,7 @@ export function WorkspaceFrame({
   overlays,
   gridTemplateColumns,
   gridTemplateRows,
+  sidebarColumnWidth,
   disableLayoutAnimation = false,
 }: WorkspaceFrameProps) {
   const shouldReduceMotion = useReducedMotion()
@@ -35,17 +37,20 @@ export function WorkspaceFrame({
       ? { duration: 0 }
       : {
           type: 'tween' as const,
-          duration: 0.42,
-          ease: [0.4, 0, 0.2, 1] as const,
+          duration: 0.5,
+          ease: [0.65, 0, 0.35, 1] as const,
         }
 
   return (
     <motion.div
-      animate={{ gridTemplateColumns }}
+      animate={{
+        '--workspace-sidebar-column-width': sidebarColumnWidth + 'px',
+      }}
       className="workspace-shell relative grid h-dvh w-full min-h-0 overflow-hidden bg-background text-foreground"
       initial={false}
       ref={rootRef}
       style={{
+        gridTemplateColumns,
         gridTemplateRows,
         willChange: disableLayoutAnimation ? 'auto' : 'grid-template-columns',
       }}
