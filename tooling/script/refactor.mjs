@@ -19,41 +19,40 @@ const paths = {
     'features/workspace/src/presentation/shell/WorkbenchTabs.tsx',
   styles:
     'features/workspace/src/presentation/shell/chrome-workbench-tabs.css',
+  shell:
+    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
 }
-
-const suppressionStart =
-  '/* BEGIN DEACTIVATED TAB HOVER SUPPRESSION */'
-
-const suppressionEnd =
-  '/* END DEACTIVATED TAB HOVER SUPPRESSION */'
 
 assertRepository()
 
 if (!apply) {
-  console.log('将直接修改标签 Hover 实现：')
+  console.log('将从当前回滚状态重建标签视觉：')
   console.log('PATCH  ' + paths.tabs)
-  console.log('PATCH  ' + paths.styles)
+  console.log('WRITE  ' + paths.styles)
+  console.log('PATCH  ' + paths.shell)
   console.log('')
-  console.log('- 使用更浅的不透明纯色 Hover')
-  console.log('- Hover 不显示边框')
-  console.log('- 抑制标签失活后的 Hover 闪烁')
-  console.log('- 鼠标离开后恢复正常 Hover')
+  console.log('- 不要求旧 ChromeActiveTabShape 存在')
+  console.log('- 清理旧 SVG/渐变/阴影实现')
+  console.log('- 重建固定 SVG 肩部')
+  console.log('- 轮廓与工作区分割线使用同一颜色')
+  console.log('- 不使用颜色渐变')
   console.log('')
   console.log('使用 --apply 确认执行。')
   process.exit(0)
 }
 
-patchTabsComponent()
-patchTabsStyles()
+rebuildTabsComponent()
+writeCanonicalStyles()
+normalizeWorkspaceBoundary()
 
 if (!skipChecks) {
   runChecks()
 }
 
 console.log('')
-console.log('标签 Hover 颜色和切换闪烁已修复。')
+console.log('Chrome 标签视觉已从回滚状态重建。')
 
-function patchTabsComponent() {
+function rebuildTabsComponent() {
   const absolutePath = join(
     root,
     paths.tabs,
@@ -66,28 +65,102 @@ function patchTabsComponent() {
 
   let updated = original
 
-  updated = ensurePreviousActiveRef(
+  /*
+   * Remove all previous shape invocations before reconstructing the
+   * canonical markup.
+   */
+  updated = updated.replaceAll(
+    '<ChromeActiveTabShape />',
+    '',
+  )
+
+  updated = updated.replaceAll(
+    '<ChromeTabBackground />',
+    '',
+  )
+
+  /*
+   * Remove legacy leading/trailing dividers and any existing canonical
+   * separator. The markup is then rebuilt in exactly one location.
+   */
+  updated = updated.replace(
+    /<span\b(?=[^>]*className="chrome-workbench-tab__(?:separator|divider)[^"]*")[^>]*\/>/g,
+    '',
+  )
+
+  updated = removeNamedFunctionIfPresent(
+    updated,
+    'ChromeActiveTabShape',
+  )
+
+  updated = removeNamedFunctionIfPresent(
+    updated,
+    'ChromeTabBackground',
+  )
+
+  const contentAnchor =
+    '<div className="chrome-workbench-tab__content">'
+
+  const contentCount =
+    updated.split(contentAnchor).length - 1
+
+  if (contentCount !== 1) {
+    throw new Error(
+      paths.tabs +
+        ': 标签 content 容器应出现一次，实际出现 ' +
+        String(contentCount) +
+        ' 次。',
+    )
+  }
+
+  const canonicalMarkup = [
+    '<ChromeActiveTabShape />',
+    '',
+    '              <span',
+    '                aria-hidden="true"',
+    '                className="chrome-workbench-tab__separator"',
+    '              />',
+    '',
+    '              ' + contentAnchor,
+  ].join('\n')
+
+  updated = updated.replace(
+    contentAnchor,
+    canonicalMarkup,
+  )
+
+  const functionAnchor =
+    'function TabEndAction'
+
+  const functionAnchorCount =
+    updated.split(functionAnchor).length - 1
+
+  if (functionAnchorCount !== 1) {
+    throw new Error(
+      paths.tabs +
+        ': TabEndAction 应出现一次，实际出现 ' +
+        String(functionAnchorCount) +
+        ' 次。',
+    )
+  }
+
+  updated = updated.replace(
+    functionAnchor,
+    createActiveShapeSource() +
+      '\n\n' +
+      functionAnchor,
+  )
+
+  updated = removeUnusedUseId(
     updated,
   )
 
-  updated = ensureHoverSuppressionEffect(
-    updated,
-  )
-
-  updated = ensurePointerLeaveHandler(
-    updated,
+  updated = updated.replace(
+    /<Plus aria-hidden="true" className="size-[^"]+" \/>/g,
+    '<Plus aria-hidden="true" className="size-3.5" />',
   )
 
   validateTabsComponent(updated)
-
-  if (updated === original) {
-    console.log(
-      'SKIP   ' +
-        paths.tabs +
-        '（Hover 生命周期已经正确）',
-    )
-    return
-  }
 
   atomicWrite(
     absolutePath,
@@ -97,230 +170,758 @@ function patchTabsComponent() {
   console.log('PATCH  ' + paths.tabs)
 }
 
-function ensurePreviousActiveRef(source) {
-  if (
-    source.includes(
-      'previousActiveTabIdRef',
-    )
-  ) {
-    return source
-  }
-
-  const anchor =
-    'const activeTabId = tabs.find((tab) => tab.isActive)?.id'
-
-  const count =
-    source.split(anchor).length - 1
-
-  if (count !== 1) {
-    throw new Error(
-      paths.tabs +
-        ': activeTabId 应出现一次，实际出现 ' +
-        String(count) +
-        ' 次。',
-    )
-  }
-
-  return source.replace(
-    anchor,
-    `${anchor}
-
-  const previousActiveTabIdRef =
-    useRef<WorkbenchTabId | undefined>(
-      activeTabId,
-    )`,
-  )
-}
-
-function ensureHoverSuppressionEffect(
+function removeNamedFunctionIfPresent(
   source,
+  functionName,
 ) {
-  if (
-    source.includes(
-      "setAttribute('data-suppress-hover', 'true')",
-    ) &&
-    source.includes(
-      "removeAttribute('data-suppress-hover')",
-    )
-  ) {
+  const signature =
+    'function ' + functionName + '('
+
+  const functionStart =
+    source.indexOf(signature)
+
+  if (functionStart < 0) {
     return source
   }
 
-  const scrollCall =
-    'tabRefs.current.get(activeTabId)?.scrollIntoView'
-
-  const scrollCallIndex =
-    source.indexOf(scrollCall)
-
-  if (scrollCallIndex < 0) {
+  if (
+    source.indexOf(
+      signature,
+      functionStart + signature.length,
+    ) >= 0
+  ) {
     throw new Error(
       paths.tabs +
-        ': 找不到活动标签 scrollIntoView。',
+        ': ' +
+        functionName +
+        ' 出现多次。',
     )
   }
 
-  const effectStart =
-    source.lastIndexOf(
-      '  useEffect(() => {',
-      scrollCallIndex,
-    )
+  const bodyStart =
+    source.indexOf('{', functionStart)
 
-  if (effectStart < 0) {
+  if (bodyStart < 0) {
     throw new Error(
       paths.tabs +
-        ': 找不到 scrollIntoView 所属 Effect。',
+        ': ' +
+        functionName +
+        ' 缺少函数体。',
     )
   }
 
-  const effect = String.raw`  useEffect(() => {
-    const previousActiveTabId =
-      previousActiveTabIdRef.current
+  let depth = 0
+  let cursor = bodyStart
+  let quote = null
+  let escaped = false
+
+  while (cursor < source.length) {
+    const character = source[cursor]
+
+    if (quote) {
+      if (escaped) {
+        escaped = false
+      } else if (character === '\\') {
+        escaped = true
+      } else if (character === quote) {
+        quote = null
+      }
+
+      cursor += 1
+      continue
+    }
 
     if (
-      previousActiveTabId &&
-      previousActiveTabId !== activeTabId
+      character === '"' ||
+      character === "'" ||
+      character === '`'
     ) {
-      const previousActivation =
-        tabRefs.current.get(
-          previousActiveTabId,
-        )
+      quote = character
+      cursor += 1
+      continue
+    }
 
-      const previousTab =
-        previousActivation?.closest<HTMLElement>(
-          '.chrome-workbench-tab',
-        )
+    if (character === '{') {
+      depth += 1
+    } else if (character === '}') {
+      depth -= 1
 
-      /*
-       * A browser may retain :hover on the element that just lost its
-       * active appearance for one paint frame. Suppress that hover
-       * until the pointer genuinely leaves the old tab.
-       */
-      if (previousTab?.matches(':hover')) {
-        previousTab.setAttribute(
-          'data-suppress-hover',
-          'true',
-        )
+      if (depth === 0) {
+        cursor += 1
+        break
       }
     }
 
-    if (activeTabId) {
-      const activeActivation =
-        tabRefs.current.get(activeTabId)
+    cursor += 1
+  }
 
-      const activeTab =
-        activeActivation?.closest<HTMLElement>(
-          '.chrome-workbench-tab',
-        )
+  if (depth !== 0) {
+    throw new Error(
+      paths.tabs +
+        ': 无法确定 ' +
+        functionName +
+        ' 的结束位置。',
+    )
+  }
 
-      activeTab?.removeAttribute(
-        'data-suppress-hover',
-      )
-    }
-
-    previousActiveTabIdRef.current =
-      activeTabId
-  }, [activeTabId])
-
-`
+  while (
+    cursor < source.length &&
+    /\s/.test(source[cursor])
+  ) {
+    cursor += 1
+  }
 
   return (
-    source.slice(0, effectStart) +
-    effect +
-    source.slice(effectStart)
+    source.slice(0, functionStart) +
+    source.slice(cursor)
   )
 }
 
-function ensurePointerLeaveHandler(
-  source,
-) {
+function createActiveShapeSource() {
+  return String.raw`function ChromeActiveTabShape() {
+  return (
+    <div
+      aria-hidden="true"
+      className="chrome-workbench-tab__active-shape"
+    >
+      <svg
+        className="chrome-workbench-tab__active-cap chrome-workbench-tab__active-cap--left"
+        preserveAspectRatio="xMinYMin meet"
+        viewBox="0 0 20 32"
+      >
+        <path
+          className="chrome-workbench-tab__active-cap-fill"
+          d="M0 32C5.5 32 9.5 28 9.5 23V10C9.5 5.6 13.1 2 17.5 2H20V32Z"
+        />
+
+        <path
+          className="chrome-workbench-tab__active-cap-outline"
+          d="M0 31.5C5.5 31.5 9.5 27.7 9.5 23V10C9.5 5.9 13.1 2.5 17.5 2.5H20"
+        />
+      </svg>
+
+      <span className="chrome-workbench-tab__active-center" />
+
+      <svg
+        className="chrome-workbench-tab__active-cap chrome-workbench-tab__active-cap--right"
+        preserveAspectRatio="xMinYMin meet"
+        viewBox="0 0 20 32"
+      >
+        <path
+          className="chrome-workbench-tab__active-cap-fill"
+          d="M0 32C5.5 32 9.5 28 9.5 23V10C9.5 5.6 13.1 2 17.5 2H20V32Z"
+        />
+
+        <path
+          className="chrome-workbench-tab__active-cap-outline"
+          d="M0 31.5C5.5 31.5 9.5 27.7 9.5 23V10C9.5 5.9 13.1 2.5 17.5 2.5H20"
+        />
+      </svg>
+    </div>
+  )
+}`
+}
+
+function removeUnusedUseId(source) {
   if (
-    source.includes(
-      "event.currentTarget.removeAttribute('data-suppress-hover')",
-    )
+    /\buseId\s*\(/.test(source)
   ) {
     return source
   }
 
-  const anchor =
-    '              onMouseDown={(event) => {'
+  const reactImportPattern =
+    /import\s*\{([\s\S]*?)\}\s*from\s*(['"])react\2/
 
-  const count =
-    source.split(anchor).length - 1
+  const match =
+    reactImportPattern.exec(source)
 
-  if (count !== 1) {
+  if (!match || !match[1]) {
     throw new Error(
       paths.tabs +
-        ': 标签 onMouseDown 应出现一次，实际出现 ' +
-        String(count) +
-        ' 次。',
+        ': 找不到 React named import。',
     )
   }
 
-  return source.replace(
-    anchor,
-    `              onPointerLeave={(event) => {
-                event.currentTarget.removeAttribute(
-                  'data-suppress-hover',
-                )
-              }}
-${anchor}`,
+  if (
+    !/\buseId\b/.test(match[1])
+  ) {
+    return source
+  }
+
+  let importBody = match[1]
+
+  importBody = importBody.replace(
+    /\buseId\s*,\s*/g,
+    '',
+  )
+
+  importBody = importBody.replace(
+    /,\s*\buseId\b/g,
+    '',
+  )
+
+  const updatedImport =
+    match[0].replace(
+      match[1],
+      importBody,
+    )
+
+  return (
+    source.slice(0, match.index) +
+    updatedImport +
+    source.slice(
+      match.index + match[0].length,
+    )
   )
 }
 
 function validateTabsComponent(source) {
-  const required = [
-    'previousActiveTabIdRef',
-    "previousTab?.matches(':hover')",
-    "previousTab.setAttribute(",
-    "'data-suppress-hover'",
-    "activeTab?.removeAttribute(",
-    "event.currentTarget.removeAttribute(",
-    'onPointerLeave={(event) => {',
+  const expectedCounts = [
+    {
+      token:
+        '<ChromeActiveTabShape />',
+      count: 1,
+    },
+    {
+      token:
+        'function ChromeActiveTabShape()',
+      count: 1,
+    },
+    {
+      token:
+        'className="chrome-workbench-tab__separator"',
+      count: 1,
+    },
   ]
 
-  for (const token of required) {
-    if (!source.includes(token)) {
+  for (const expected of expectedCounts) {
+    const count =
+      source.split(expected.token).length - 1
+
+    if (count !== expected.count) {
       throw new Error(
         paths.tabs +
-          ': Hover 生命周期缺少必要结构：' +
-          token,
+          ': ' +
+          expected.token +
+          ' 应出现 ' +
+          String(expected.count) +
+          ' 次，实际为 ' +
+          String(count) +
+          ' 次。',
       )
     }
   }
 
-  const effectCount =
-    source.match(
-      /previousActiveTabIdRef\.current\s*=\s*activeTabId/g,
-    )?.length ?? 0
+  const forbidden = [
+    'ChromeTabBackground',
+    '<linearGradient',
+    '<stop',
+    'gradientScope',
+    'leftGradientId',
+    'rightGradientId',
+    'chrome-workbench-tab__divider--leading',
+    'chrome-workbench-tab__divider--trailing',
+  ]
 
-  if (effectCount !== 1) {
-    throw new Error(
-      paths.tabs +
-        ': 失活标签 Effect 应出现一次，实际出现 ' +
-        String(effectCount) +
-        ' 次。',
-    )
-  }
-
-  const leaveCount =
-    source.match(
-      /onPointerLeave=\{\(event\)\s*=>/g,
-    )?.length ?? 0
-
-  if (leaveCount !== 1) {
-    throw new Error(
-      paths.tabs +
-        ': pointerleave 处理器应出现一次，实际出现 ' +
-        String(leaveCount) +
-        ' 次。',
-    )
+  for (const token of forbidden) {
+    if (source.includes(token)) {
+      throw new Error(
+        paths.tabs +
+          ': 旧结构仍包含 ' +
+          token,
+      )
+    }
   }
 }
 
-function patchTabsStyles() {
+function writeCanonicalStyles() {
+  const css = String.raw`
+/*
+ * Canonical Chrome-style workbench tabs.
+ *
+ * A single boundary color is shared by the active-tab outline and the
+ * workspace separator. Continuity is geometric; there are no outline
+ * gradients, shadows or opacity-erased edges.
+ */
+
+.chrome-workbench-tabs,
+.chrome-workbench-tabs * {
+  box-sizing: border-box;
+}
+
+.chrome-workbench-tabs {
+  --chrome-tab-height: 32px;
+  --chrome-tab-min-width: 120px;
+  --chrome-tab-preferred-width: 196px;
+  --chrome-tab-max-width: 228px;
+
+  --chrome-tab-strip: var(--color-chrome);
+  --chrome-tab-surface: var(--color-background);
+
+  --chrome-tab-boundary: color-mix(
+    in srgb,
+    var(--color-foreground) 15%,
+    var(--chrome-tab-surface) 85%
+  );
+
+  --chrome-tab-divider: color-mix(
+    in srgb,
+    var(--color-foreground) 18%,
+    var(--chrome-tab-strip) 82%
+  );
+
+  --chrome-tab-hover: color-mix(
+    in srgb,
+    var(--color-foreground) 4%,
+    var(--chrome-tab-strip) 96%
+  );
+
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  color: var(--color-foreground);
+  background: var(--chrome-tab-strip);
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-size: 12px;
+}
+
+.chrome-workbench-tabs::after {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1px;
+  background: var(--chrome-tab-boundary);
+  content: "";
+  pointer-events: none;
+}
+
+.chrome-workbench-tabs__scroller {
+  position: relative;
+  display: flex;
+  align-items: end;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 4px 4px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.chrome-workbench-tabs__scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.chrome-workbench-tabs__drag-region {
+  height: 100%;
+  min-width: 24px;
+  flex: 1 0 24px;
+}
+
+.chrome-workbench-tab {
+  position: relative;
+  z-index: 1;
+  height: var(--chrome-tab-height);
+  min-width: var(--chrome-tab-min-width);
+  max-width: var(--chrome-tab-max-width);
+  flex: 0 1 var(--chrome-tab-preferred-width);
+  margin-left: -4px;
+  overflow: visible;
+  isolation: isolate;
+  user-select: none;
+}
+
+.chrome-workbench-tab:first-child {
+  margin-left: 0;
+}
+
+.chrome-workbench-tab[data-active="true"] {
+  z-index: 5;
+}
+
+.chrome-workbench-tab:hover:not(
+    [data-active="true"]
+  ) {
+  z-index: 3;
+}
+
+.chrome-workbench-tab[data-active="true"]::before,
+.chrome-workbench-tab[data-active="true"]::after {
+  display: none;
+  content: none;
+  box-shadow: none;
+}
+
+.chrome-workbench-tab__active-shape {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: none;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.chrome-workbench-tab[data-active="true"]
+  .chrome-workbench-tab__active-shape {
+  display: block;
+}
+
+.chrome-workbench-tab__active-cap {
+  position: absolute;
+  top: 0;
+  display: block;
+  width: 20px;
+  height: 32px;
+  overflow: visible;
+}
+
+.chrome-workbench-tab__active-cap--left {
+  left: 0;
+}
+
+.chrome-workbench-tab__active-cap--right {
+  right: 0;
+  transform: scaleX(-1);
+  transform-origin: center;
+}
+
+.chrome-workbench-tab__active-cap-fill {
+  fill: var(--chrome-tab-surface);
+}
+
+.chrome-workbench-tab__active-cap-outline {
+  fill: none;
+  stroke: var(--chrome-tab-boundary);
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  shape-rendering: geometricPrecision;
+  vector-effect: non-scaling-stroke;
+}
+
+.chrome-workbench-tab__active-center {
+  position: absolute;
+  top: 2px;
+  right: 20px;
+  bottom: 0;
+  left: 20px;
+  border-top: 1px solid
+    var(--chrome-tab-boundary);
+  background: var(--chrome-tab-surface);
+}
+
+.chrome-workbench-tab__content {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  background: transparent;
+  transition: color 80ms ease-out;
+}
+
+.chrome-workbench-tab[data-active="true"]
+  .chrome-workbench-tab__content {
+  inset: 2px 12px 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.chrome-workbench-tab:not(
+    [data-active="true"]
+  )
+  .chrome-workbench-tab__content {
+  inset: 2px 3px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  outline: 0;
+  box-shadow: none;
+}
+
+.chrome-workbench-tab:hover:not(
+    [data-active="true"]
+  ):not(
+    [data-suppress-hover="true"]
+  )
+  .chrome-workbench-tab__content {
+  border: 0;
+  background: var(--chrome-tab-hover);
+  box-shadow: none;
+}
+
+.chrome-workbench-tab[
+    data-suppress-hover="true"
+  ]:not(
+    [data-active="true"]
+  )
+  .chrome-workbench-tab__content {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: none;
+}
+
+.chrome-workbench-tab[
+    data-suppress-hover="true"
+  ]
+  .chrome-workbench-tab__separator {
+  opacity: 0;
+  transition: none;
+}
+
+.chrome-workbench-tab__activation {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  gap: 7px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  outline: 0;
+  color: var(--color-muted-foreground);
+  background: transparent;
+  text-align: left;
+  cursor: default;
+}
+
+.chrome-workbench-tab[data-active="true"]
+  .chrome-workbench-tab__activation,
+.chrome-workbench-tab:hover:not(
+    [data-active="true"]
+  )
+  .chrome-workbench-tab__activation {
+  color: var(--color-foreground);
+}
+
+.chrome-workbench-tab__activation:focus-visible {
+  border-radius: 6px;
+  outline: 2px solid var(--color-primary);
+  outline-offset: -3px;
+}
+
+.chrome-workbench-tab__icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  stroke-width: 1.8;
+}
+
+.chrome-workbench-tab__title {
+  display: block;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chrome-workbench-tab[data-active="true"]
+  .chrome-workbench-tab__title {
+  font-weight: 500;
+}
+
+.chrome-workbench-tab__end {
+  position: relative;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  margin-left: 3px;
+  place-items: center;
+}
+
+.chrome-workbench-tab__close {
+  position: absolute;
+  inset: 2px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: currentColor;
+  background: transparent;
+  opacity: 0.78;
+}
+
+.chrome-workbench-tab__close:hover {
+  background: color-mix(
+    in srgb,
+    var(--color-foreground) 10%,
+    transparent
+  );
+  opacity: 1;
+}
+
+.chrome-workbench-tab__close:active {
+  background: color-mix(
+    in srgb,
+    var(--color-foreground) 16%,
+    transparent
+  );
+}
+
+.chrome-workbench-tab__close:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.chrome-workbench-tab__status {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.chrome-workbench-tab__status--dirty {
+  background: #d5803b;
+}
+
+.chrome-workbench-tab__status--saving {
+  background: #2783de;
+  animation:
+    chrome-workbench-saving
+    900ms
+    ease-in-out
+    infinite
+    alternate;
+}
+
+.chrome-workbench-tab__status--failed {
+  background: #e56458;
+}
+
+.chrome-workbench-tab__status
+  + .chrome-workbench-tab__close {
+  opacity: 0;
+}
+
+.chrome-workbench-tab:hover
+  .chrome-workbench-tab__status {
+  opacity: 0;
+}
+
+.chrome-workbench-tab:hover
+  .chrome-workbench-tab__status
+  + .chrome-workbench-tab__close {
+  opacity: 1;
+}
+
+.chrome-workbench-tab__separator {
+  position: absolute;
+  z-index: 2;
+  top: 9px;
+  right: 3px;
+  bottom: 9px;
+  width: 1px;
+  background: var(--chrome-tab-divider);
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 100ms ease-out;
+}
+
+.chrome-workbench-tab[data-active="true"]
+  .chrome-workbench-tab__separator,
+.chrome-workbench-tab:hover
+  .chrome-workbench-tab__separator,
+.chrome-workbench-tab:has(
+    + .chrome-workbench-tab[data-active="true"]
+  )
+  .chrome-workbench-tab__separator,
+.chrome-workbench-tab:has(
+    + .chrome-workbench-tab:hover
+  )
+  .chrome-workbench-tab__separator {
+  opacity: 0;
+}
+
+.chrome-workbench-tabs__new-tab {
+  align-self: center;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  margin: 0 3px 1px 2px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--color-muted-foreground);
+  background: transparent;
+}
+
+.chrome-workbench-tabs__new-tab:hover {
+  color: var(--color-foreground);
+  background: color-mix(
+    in srgb,
+    var(--color-foreground) 8%,
+    transparent
+  );
+}
+
+.chrome-workbench-tabs__new-tab:active {
+  background: color-mix(
+    in srgb,
+    var(--color-foreground) 14%,
+    transparent
+  );
+}
+
+.chrome-workbench-tabs__new-tab:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+@keyframes chrome-workbench-saving {
+  from {
+    opacity: 0.4;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome-workbench-tab__content,
+  .chrome-workbench-tab__separator,
+  .chrome-workbench-tab__status {
+    transition: none;
+    animation: none;
+  }
+}
+`
+
+  atomicWrite(
+    join(root, paths.styles),
+    css,
+  )
+
+  console.log('WRITE  ' + paths.styles)
+}
+
+function normalizeWorkspaceBoundary() {
   const absolutePath = join(
     root,
-    paths.styles,
+    paths.shell,
   )
 
   const original = readFileSync(
@@ -328,317 +929,48 @@ function patchTabsStyles() {
     'utf8',
   )
 
-  let updated = original
+  const withHeaderBorder =
+    'col-span-full row-1 min-h-0 min-w-0 border-b border-divider bg-chrome'
 
-  /*
-   * Opaque light hover color:
-   * both inputs are opaque, so the result is a solid color rather
-   * than a transparent overlay.
-   */
-  updated = upsertCustomProperty(
-    updated,
-    '--chrome-tab-hover',
-    `color-mix(
-    in srgb,
-    var(--color-foreground) 4%,
-    var(--chrome-tab-strip) 96%
-  )`,
-    '--chrome-tab-strip',
-  )
+  const controlledBoundary =
+    'col-span-full row-1 min-h-0 min-w-0 bg-chrome'
 
-  /*
-   * Keep existing geometry stable but make the hover border entirely
-   * invisible. No border color is shown during hover.
-   */
-  updated = upsertCustomProperty(
-    updated,
-    '--chrome-tab-hover-border',
-    'transparent',
-    '--chrome-tab-hover',
-  )
-
-  updated = upsertSuppressionBlock(
-    updated,
-  )
-
-  validateStyles(updated)
-
-  if (updated === original) {
-    console.log(
-      'SKIP   ' +
-        paths.styles +
-        '（Hover 样式已经正确）',
+  if (
+    original.includes(withHeaderBorder)
+  ) {
+    atomicWrite(
+      absolutePath,
+      original.replace(
+        withHeaderBorder,
+        controlledBoundary,
+      ),
     )
+
+    console.log(
+      'PATCH  ' +
+        paths.shell +
+        '（由标签层绘制工作区分割线）',
+    )
+
     return
   }
 
-  atomicWrite(
-    absolutePath,
-    updated,
-  )
-
-  console.log('PATCH  ' + paths.styles)
-}
-
-function upsertCustomProperty(
-  source,
-  propertyName,
-  propertyValue,
-  insertAfterProperty,
-) {
-  const propertyStart =
-    source.indexOf(propertyName + ':')
-
-  if (propertyStart >= 0) {
-    const propertyEnd =
-      findCustomPropertyEnd(
-        source,
-        propertyStart,
-      )
-
-    const indentation =
-      getLineIndentation(
-        source,
-        propertyStart,
-      )
-
-    const replacement =
-      propertyName +
-      ': ' +
-      indentMultilineValue(
-        propertyValue,
-        indentation,
-      ) +
-      ';'
-
-    return (
-      source.slice(0, propertyStart) +
-      replacement +
-      source.slice(propertyEnd + 1)
-    )
-  }
-
-  const insertStart =
-    source.indexOf(
-      insertAfterProperty + ':',
-    )
-
-  if (insertStart < 0) {
-    throw new Error(
-      paths.styles +
-        ': 找不到属性插入位置 ' +
-        insertAfterProperty,
-    )
-  }
-
-  const insertEnd =
-    findCustomPropertyEnd(
-      source,
-      insertStart,
-    )
-
-  const indentation =
-    getLineIndentation(
-      source,
-      insertStart,
-    )
-
-  const declaration =
-    '\n' +
-    indentation +
-    propertyName +
-    ': ' +
-    indentMultilineValue(
-      propertyValue,
-      indentation,
-    ) +
-    ';'
-
-  return (
-    source.slice(0, insertEnd + 1) +
-    declaration +
-    source.slice(insertEnd + 1)
-  )
-}
-
-function findCustomPropertyEnd(
-  source,
-  start,
-) {
-  let parenthesisDepth = 0
-
-  for (
-    let index = start;
-    index < source.length;
-    index += 1
+  if (
+    original.includes(controlledBoundary)
   ) {
-    const character = source[index]
+    console.log(
+      'SKIP   ' +
+        paths.shell +
+        '（标签层已控制工作区分割线）',
+    )
 
-    if (character === '(') {
-      parenthesisDepth += 1
-      continue
-    }
-
-    if (character === ')') {
-      parenthesisDepth -= 1
-      continue
-    }
-
-    if (
-      character === ';' &&
-      parenthesisDepth === 0
-    ) {
-      return index
-    }
+    return
   }
 
   throw new Error(
-    paths.styles +
-      ': CSS 自定义属性缺少结束分号。',
+    paths.shell +
+      ': 找不到标题行 className。',
   )
-}
-
-function getLineIndentation(
-  source,
-  index,
-) {
-  const lineStart =
-    source.lastIndexOf('\n', index) + 1
-
-  return source
-    .slice(lineStart, index)
-    .match(/^\s*/)?.[0] ?? ''
-}
-
-function indentMultilineValue(
-  value,
-  indentation,
-) {
-  return value.replaceAll(
-    '\n',
-    '\n' + indentation,
-  )
-}
-
-function upsertSuppressionBlock(source) {
-  const block = String.raw`${suppressionStart}
-
-/*
- * The old active tab may retain browser :hover for one paint frame
- * after activation moves to another tab. During that transient state,
- * show no hover fill and perform no background transition.
- */
-.chrome-workbench-tab[
-    data-suppress-hover="true"
-  ]:not(
-    [data-active="true"]
-  )
-  .chrome-workbench-tab__content,
-.chrome-workbench-tab:hover[
-    data-suppress-hover="true"
-  ]:not(
-    [data-active="true"]
-  )
-  .chrome-workbench-tab__content {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-  transition: none;
-}
-
-/*
- * The normal inactive hover is fill-only:
- * no visible border, shadow or gradient.
- */
-.chrome-workbench-tab:hover:not(
-    [data-active="true"]
-  ):not(
-    [data-suppress-hover="true"]
-  )
-  .chrome-workbench-tab__content {
-  border-color: transparent;
-  background: var(--chrome-tab-hover);
-  box-shadow: none;
-}
-
-${suppressionEnd}`
-
-  const start =
-    source.indexOf(suppressionStart)
-
-  const end =
-    source.indexOf(suppressionEnd)
-
-  if (start < 0 && end < 0) {
-    return (
-      source.trimEnd() +
-      '\n\n' +
-      block +
-      '\n'
-    )
-  }
-
-  if (
-    start < 0 ||
-    end < 0 ||
-    end < start
-  ) {
-    throw new Error(
-      paths.styles +
-        ': Hover 抑制样式标记不完整。',
-    )
-  }
-
-  return (
-    source.slice(0, start) +
-    block +
-    source.slice(
-      end + suppressionEnd.length,
-    )
-  )
-}
-
-function validateStyles(source) {
-  const required = [
-    '--chrome-tab-hover:',
-    'var(--color-foreground) 4%',
-    'var(--chrome-tab-strip) 96%',
-    '--chrome-tab-hover-border: transparent;',
-    suppressionStart,
-    suppressionEnd,
-    'data-suppress-hover="true"',
-    'background: transparent;',
-    'background: var(--chrome-tab-hover);',
-    'border-color: transparent;',
-    'box-shadow: none;',
-  ]
-
-  for (const token of required) {
-    if (!source.includes(token)) {
-      throw new Error(
-        paths.styles +
-          ': Hover 样式缺少必要结构：' +
-          token,
-      )
-    }
-  }
-
-  const startCount =
-    source.split(suppressionStart).length -
-    1
-
-  const endCount =
-    source.split(suppressionEnd).length - 1
-
-  if (
-    startCount !== 1 ||
-    endCount !== 1
-  ) {
-    throw new Error(
-      paths.styles +
-        ': Hover 抑制样式块数量异常。',
-    )
-  }
 }
 
 function runChecks() {
@@ -649,6 +981,7 @@ function runChecks() {
     '--write',
     paths.tabs,
     paths.styles,
+    paths.shell,
   ])
 
   run('pnpm', [

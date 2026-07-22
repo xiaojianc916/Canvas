@@ -210,9 +210,9 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
                 }
               }}
             >
-              <span aria-hidden="true" className="chrome-workbench-tab__separator" />
-
               <ChromeActiveTabShape />
+
+              <span aria-hidden="true" className="chrome-workbench-tab__separator" />
 
               <div className="chrome-workbench-tab__content">
                 <button
@@ -274,11 +274,12 @@ function ChromeActiveTabShape() {
       >
         <path
           className="chrome-workbench-tab__active-cap-fill"
-          d="M0 32H20V2H18C13.6 2 10 5.6 10 10V23C10 28 6 32 0 32Z"
+          d="M0 32C5.5 32 9.5 28 9.5 23V10C9.5 5.6 13.1 2 17.5 2H20V32Z"
         />
+
         <path
           className="chrome-workbench-tab__active-cap-outline"
-          d="M0 31.5C6 31.5 10 27.7 10 23V10C10 5.6 13.6 2.5 18 2.5H20"
+          d="M0 31.5C5.5 31.5 9.5 27.7 9.5 23V10C9.5 5.9 13.1 2.5 17.5 2.5H20"
         />
       </svg>
 
@@ -291,11 +292,12 @@ function ChromeActiveTabShape() {
       >
         <path
           className="chrome-workbench-tab__active-cap-fill"
-          d="M0 32H20V2H18C13.6 2 10 5.6 10 10V23C10 28 6 32 0 32Z"
+          d="M0 32C5.5 32 9.5 28 9.5 23V10C9.5 5.6 13.1 2 17.5 2H20V32Z"
         />
+
         <path
           className="chrome-workbench-tab__active-cap-outline"
-          d="M0 31.5C6 31.5 10 27.7 10 23V10C10 5.6 13.6 2.5 18 2.5H20"
+          d="M0 31.5C5.5 31.5 9.5 27.7 9.5 23V10C9.5 5.9 13.1 2.5 17.5 2.5H20"
         />
       </svg>
     </div>

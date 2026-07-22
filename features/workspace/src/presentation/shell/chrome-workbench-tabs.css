@@ -1,11 +1,9 @@
 /*
- * Chrome-style workbench tabs.
+ * Canonical Chrome-style workbench tabs.
  *
- * The strip owns one continuous baseline between browser chrome and
- * workspace content. Active tab geometry is painted above that line,
- * covering only the segment directly beneath the active tab. This
- * preserves the workspace separator while making the active tab look
- * physically open into the workspace.
+ * A single boundary color is shared by the active-tab outline and the
+ * workspace separator. Continuity is geometric; there are no outline
+ * gradients, shadows or opacity-erased edges.
  */
 
 .chrome-workbench-tabs,
@@ -15,7 +13,6 @@
 
 .chrome-workbench-tabs {
   --chrome-tab-height: 32px;
-  --chrome-tab-shoulder: 8px;
   --chrome-tab-min-width: 120px;
   --chrome-tab-preferred-width: 196px;
   --chrome-tab-max-width: 228px;
@@ -23,18 +20,19 @@
   --chrome-tab-strip: var(--color-chrome);
   --chrome-tab-surface: var(--color-background);
 
-  --chrome-tab-hover: color-mix(in srgb, var(--color-foreground) 4%, var(--chrome-tab-strip) 96%);
-
-  --chrome-tab-hover-border: transparent;
-
-  --chrome-tab-outline: color-mix(in srgb, var(--color-foreground) 18%, transparent);
-
-  --chrome-tab-divider: color-mix(in srgb, var(--color-foreground) 21%, transparent);
-
-  --chrome-workspace-divider: var(
-    --color-divider,
-    color-mix(in srgb, var(--color-foreground) 16%, transparent)
+  --chrome-tab-boundary: color-mix(
+    in srgb,
+    var(--color-foreground) 15%,
+    var(--chrome-tab-surface) 85%
   );
+
+  --chrome-tab-divider: color-mix(
+    in srgb,
+    var(--color-foreground) 18%,
+    var(--chrome-tab-strip) 82%
+  );
+
+  --chrome-tab-hover: color-mix(in srgb, var(--color-foreground) 4%, var(--chrome-tab-strip) 96%);
 
   position: relative;
   width: 100%;
@@ -47,13 +45,6 @@
   font-size: 12px;
 }
 
-/*
- * Real workspace separator.
- *
- * It exists across the strip but is painted below active tabs. The
- * active body and its shoulders have a higher stacking order and mask
- * only their own portion of the separator.
- */
 .chrome-workbench-tabs::after {
   position: absolute;
   z-index: 2;
@@ -61,7 +52,7 @@
   bottom: 0;
   left: 0;
   height: 1px;
-  background: var(--chrome-workspace-divider);
+  background: var(--chrome-tab-boundary);
   content: "";
   pointer-events: none;
 }
@@ -90,10 +81,6 @@
   flex: 1 0 24px;
 }
 
-/*
- * Tabs overlap slightly so neighboring tabs do not look detached.
- * The overlap is visual only and does not change state ownership.
- */
 .chrome-workbench-tab {
   position: relative;
   z-index: 1;
@@ -119,44 +106,69 @@
   z-index: 3;
 }
 
-/*
- * Active shoulders.
- *
- * The first shadow paints the surface. The second, slightly larger
- * shadow paints the subtle outline around the concave transition.
- */
 .chrome-workbench-tab[data-active="true"]::before,
 .chrome-workbench-tab[data-active="true"]::after {
+  display: none;
+  content: none;
+  box-shadow: none;
+}
+
+.chrome-workbench-tab__active-shape {
   position: absolute;
   z-index: 3;
-  bottom: 0;
-  width: var(--chrome-tab-shoulder);
-  height: var(--chrome-tab-shoulder);
-  content: "";
+  inset: 0;
+  display: none;
+  overflow: visible;
   pointer-events: none;
 }
 
-.chrome-workbench-tab[data-active="true"]::before {
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__active-shape {
+  display: block;
+}
+
+.chrome-workbench-tab__active-cap {
+  position: absolute;
+  top: 0;
+  display: block;
+  width: 20px;
+  height: 32px;
+  overflow: visible;
+}
+
+.chrome-workbench-tab__active-cap--left {
   left: 0;
-  border-bottom-right-radius: var(--chrome-tab-shoulder);
-  box-shadow:
-    4px 4px 0 4px var(--chrome-tab-surface),
-    4px 3px 0 5px var(--chrome-tab-outline);
 }
 
-.chrome-workbench-tab[data-active="true"]::after {
+.chrome-workbench-tab__active-cap--right {
   right: 0;
-  border-bottom-left-radius: var(--chrome-tab-shoulder);
-  box-shadow:
-    -4px 4px 0 4px var(--chrome-tab-surface),
-    -4px 3px 0 5px var(--chrome-tab-outline);
+  transform: scaleX(-1);
+  transform-origin: center;
 }
 
-/*
- * Default content occupies the tab without creating its own visible
- * background. Inactive hover and active states provide their own
- * geometry below.
- */
+.chrome-workbench-tab__active-cap-fill {
+  fill: var(--chrome-tab-surface);
+}
+
+.chrome-workbench-tab__active-cap-outline {
+  fill: none;
+  stroke: var(--chrome-tab-boundary);
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  shape-rendering: geometricPrecision;
+  vector-effect: non-scaling-stroke;
+}
+
+.chrome-workbench-tab__active-center {
+  position: absolute;
+  top: 2px;
+  right: 20px;
+  bottom: 0;
+  left: 20px;
+  border-top: 1px solid var(--chrome-tab-boundary);
+  background: var(--chrome-tab-surface);
+}
+
 .chrome-workbench-tab__content {
   position: absolute;
   z-index: 4;
@@ -165,46 +177,44 @@
   min-width: 0;
   overflow: hidden;
   background: transparent;
-  transition:
-    background-color 120ms ease-out,
-    border-color 120ms ease-out,
-    color 120ms ease-out;
+  transition: color 80ms ease-out;
 }
 
-/*
- * Active body:
- * - 2px internal top gap in addition to the strip's 4px top padding.
- * - No bottom border, so the body opens into the workspace.
- * - Top and side outline remains visible.
- */
 .chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__content {
-  inset: 2px var(--chrome-tab-shoulder) 0;
-  padding: 0 9px;
-  border: 1px solid var(--chrome-tab-outline);
-  border-bottom: 0;
-  border-radius: 9px 9px 0 0;
-  background: var(--chrome-tab-surface);
+  inset: 2px 12px 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
-/*
- * Inactive body:
- * horizontal inset reduces the apparent gap between tabs.
- */
 .chrome-workbench-tab:not([data-active="true"]) .chrome-workbench-tab__content {
   inset: 2px 3px;
   padding: 0 10px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 8px;
+  outline: 0;
+  box-shadow: none;
 }
 
-/*
- * Hover fill intentionally leaves 2px above and below. It is stronger
- * than the previous translucent surface while remaining subordinate
- * to the active tab.
- */
-.chrome-workbench-tab:hover:not([data-active="true"]) .chrome-workbench-tab__content {
-  border-color: var(--chrome-tab-hover-border);
+.chrome-workbench-tab:hover:not([data-active="true"]):not([data-suppress-hover="true"])
+  .chrome-workbench-tab__content {
+  border: 0;
   background: var(--chrome-tab-hover);
+  box-shadow: none;
+}
+
+.chrome-workbench-tab[data-suppress-hover="true"]:not([data-active="true"])
+  .chrome-workbench-tab__content {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: none;
+}
+
+.chrome-workbench-tab[data-suppress-hover="true"] .chrome-workbench-tab__separator {
+  opacity: 0;
+  transition: none;
 }
 
 .chrome-workbench-tab__activation {
@@ -224,10 +234,7 @@
   cursor: default;
 }
 
-.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__activation {
-  color: var(--color-foreground);
-}
-
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__activation,
 .chrome-workbench-tab:hover:not([data-active="true"]) .chrome-workbench-tab__activation {
   color: var(--color-foreground);
 }
@@ -286,12 +293,12 @@
 }
 
 .chrome-workbench-tab__close:hover {
-  background: color-mix(in srgb, var(--color-foreground) 11%, transparent);
+  background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
   opacity: 1;
 }
 
 .chrome-workbench-tab__close:active {
-  background: color-mix(in srgb, var(--color-foreground) 17%, transparent);
+  background: color-mix(in srgb, var(--color-foreground) 16%, transparent);
 }
 
 .chrome-workbench-tab__close:focus-visible {
@@ -331,9 +338,6 @@
   opacity: 1;
 }
 
-/*
- * A single separator represents the boundary after this tab.
- */
 .chrome-workbench-tab__separator {
   position: absolute;
   z-index: 2;
@@ -344,15 +348,9 @@
   background: var(--chrome-tab-divider);
   opacity: 1;
   pointer-events: none;
-  transition: opacity 120ms ease-out;
+  transition: opacity 100ms ease-out;
 }
 
-/*
- * Active and hover shapes replace separators on both sides.
- *
- * The current tab owns its right separator. The previous tab owns the
- * current tab's left separator.
- */
 .chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__separator,
 .chrome-workbench-tab:hover .chrome-workbench-tab__separator,
 .chrome-workbench-tab:has(+ .chrome-workbench-tab[data-active="true"])
@@ -361,12 +359,6 @@
   opacity: 0;
 }
 
-/*
- * Compact new-tab button.
- *
- * Icon size is 14px, matching the X icon. The hover target is reduced
- * from 36px to 26px and uses the same rounded-square language.
- */
 .chrome-workbench-tabs__new-tab {
   align-self: center;
   display: grid;
@@ -384,11 +376,11 @@
 
 .chrome-workbench-tabs__new-tab:hover {
   color: var(--color-foreground);
-  background: color-mix(in srgb, var(--color-foreground) 9%, transparent);
+  background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
 }
 
 .chrome-workbench-tabs__new-tab:active {
-  background: color-mix(in srgb, var(--color-foreground) 16%, transparent);
+  background: color-mix(in srgb, var(--color-foreground) 14%, transparent);
 }
 
 .chrome-workbench-tabs__new-tab:focus-visible {
@@ -414,128 +406,3 @@
     animation: none;
   }
 }
-
-/* BEGIN FIXED CHROME ACTIVE TAB SHAPE */
-
-/*
- * Disable the previous box-shadow pseudo-element implementation.
- * Those shadows were clipped into square feet at the strip baseline.
- */
-.chrome-workbench-tab[data-active="true"]::before,
-.chrome-workbench-tab[data-active="true"]::after {
-  display: none;
-  content: none;
-  box-shadow: none;
-}
-
-/*
- * Fixed-cap active tab geometry.
- *
- * The side caps always remain 20×32. Only the center stretches, so
- * shoulder curves and corner radii cannot distort with tab width.
- */
-.chrome-workbench-tab__active-shape {
-  position: absolute;
-  z-index: 3;
-  inset: 0;
-  display: none;
-  overflow: visible;
-  pointer-events: none;
-}
-
-.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__active-shape {
-  display: block;
-}
-
-.chrome-workbench-tab__active-cap {
-  position: absolute;
-  top: 0;
-  display: block;
-  width: 20px;
-  height: 32px;
-  overflow: visible;
-}
-
-.chrome-workbench-tab__active-cap--left {
-  left: 0;
-}
-
-.chrome-workbench-tab__active-cap--right {
-  right: 0;
-  transform: scaleX(-1);
-  transform-origin: center;
-}
-
-.chrome-workbench-tab__active-cap-fill {
-  fill: var(--chrome-tab-surface);
-}
-
-.chrome-workbench-tab__active-cap-outline {
-  fill: none;
-  stroke: var(--chrome-tab-outline);
-  stroke-width: 1;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-}
-
-/*
- * Flexible center body.
- *
- * It paints only the top outline. There is no bottom border, allowing
- * the active surface to merge directly into the workspace below.
- */
-.chrome-workbench-tab__active-center {
-  position: absolute;
-  top: 2px;
-  right: 20px;
-  bottom: 0;
-  left: 20px;
-  border-top: 1px solid var(--chrome-tab-outline);
-  background: var(--chrome-tab-surface);
-}
-
-/*
- * Shape owns all active fill and outline. Content is layout only.
- * These declarations intentionally override the old rounded body.
- */
-.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__content {
-  inset: 2px 12px 0;
-  z-index: 4;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-/* END FIXED CHROME ACTIVE TAB SHAPE */
-
-/* BEGIN DEACTIVATED TAB HOVER SUPPRESSION */
-
-/*
- * The old active tab may retain browser :hover for one paint frame
- * after activation moves to another tab. During that transient state,
- * show no hover fill and perform no background transition.
- */
-.chrome-workbench-tab[data-suppress-hover="true"]:not([data-active="true"])
-.chrome-workbench-tab__content,
-.chrome-workbench-tab:hover[data-suppress-hover="true"]:not([data-active="true"])
-  .chrome-workbench-tab__content {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-  transition: none;
-}
-
-/*
- * The normal inactive hover is fill-only:
- * no visible border, shadow or gradient.
- */
-.chrome-workbench-tab:hover:not([data-active="true"]):not([data-suppress-hover="true"])
-.chrome-workbench-tab__content {
-  border-color: transparent;
-  background: var(--chrome-tab-hover);
-  box-shadow: none;
-}
-
-/* END DEACTIVATED TAB HOVER SUPPRESSION */
