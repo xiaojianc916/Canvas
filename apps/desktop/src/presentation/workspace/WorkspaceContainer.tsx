@@ -1,6 +1,15 @@
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
 import { EditorSessionHost, useEditor } from '@hybrid-canvas/canvas/react'
-import { ConfirmationDialog } from '@hybrid-canvas/design-system'
+import {
+  ConfirmationDialog,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectList,
+  type SelectOption,
+  SelectTrigger,
+} from '@hybrid-canvas/design-system'
 import { type ScientificChartType, ScientificChartTypeStyle } from '@hybrid-canvas/scientific-plot'
 import type {
   CanvasSessionId,
@@ -611,27 +620,12 @@ function CanvasInspectorContent({ hasActiveCanvas }: { readonly hasActiveCanvas:
 
       {commonType === 'geo' ? (
         <ShapeInspectorSection title="形状">
-          <select
-            className="h-8 w-full rounded-md border border-divider bg-background px-2 text-[11px] outline-none focus:border-primary"
-            onChange={(event) => updateGeo(event.target.value)}
+          <ShapeInspectorSelect
+            onChange={updateGeo}
+            options={GEO_SHAPE_OPTIONS}
+            type="形状"
             value={commonGeo ?? 'rectangle'}
-          >
-            <option value="rectangle">矩形</option>
-            <option value="ellipse">椭圆</option>
-            <option value="triangle">三角形</option>
-            <option value="diamond">菱形</option>
-            <option value="pentagon">五边形</option>
-            <option value="hexagon">六边形</option>
-            <option value="octagon">八边形</option>
-            <option value="star">星形</option>
-            <option value="cloud">云形</option>
-            <option value="rhombus">平行四边形</option>
-            <option value="trapezoid">梯形</option>
-            <option value="arrow-right">右箭头</option>
-            <option value="arrow-left">左箭头</option>
-            <option value="arrow-up">上箭头</option>
-            <option value="arrow-down">下箭头</option>
-          </select>
+          />
         </ShapeInspectorSection>
       ) : null}
 
@@ -789,27 +783,12 @@ function CanvasActiveToolPanel({
     return (
       <CanvasToolPanelHeader description="在画布中连续创建形状" title="形状">
         <ShapeInspectorSection title="形状类型">
-          <select
-            className="h-8 w-full rounded-md border border-divider bg-background px-2 text-[11px] outline-none focus:border-primary"
-            defaultValue="rectangle"
-            onChange={(event) => applyNextStyle(GeoShapeGeoStyle, event.target.value)}
-          >
-            <option value="rectangle">矩形</option>
-            <option value="ellipse">椭圆</option>
-            <option value="triangle">三角形</option>
-            <option value="diamond">菱形</option>
-            <option value="pentagon">五边形</option>
-            <option value="hexagon">六边形</option>
-            <option value="octagon">八边形</option>
-            <option value="star">星形</option>
-            <option value="cloud">云形</option>
-            <option value="rhombus">平行四边形</option>
-            <option value="trapezoid">梯形</option>
-            <option value="arrow-right">右箭头</option>
-            <option value="arrow-left">左箭头</option>
-            <option value="arrow-up">上箭头</option>
-            <option value="arrow-down">下箭头</option>
-          </select>
+          <ShapeInspectorSelect
+            onChange={(value) => applyNextStyle(GeoShapeGeoStyle, value)}
+            options={GEO_SHAPE_OPTIONS}
+            type="形状"
+            value="rectangle"
+          />
         </ShapeInspectorSection>
 
         {colors}
@@ -1021,6 +1000,35 @@ function CanvasToolPanelHeader({
   )
 }
 
+const GEO_SHAPE_OPTIONS = [
+  { value: 'rectangle', label: '矩形' },
+  { value: 'ellipse', label: '椭圆' },
+  { value: 'triangle', label: '三角形' },
+  { value: 'diamond', label: '菱形' },
+  { value: 'pentagon', label: '五边形' },
+  { value: 'hexagon', label: '六边形' },
+  { value: 'octagon', label: '八边形' },
+  { value: 'star', label: '星形' },
+  { value: 'cloud', label: '云形' },
+  { value: 'rhombus', label: '平行四边形' },
+  { value: 'trapezoid', label: '梯形' },
+  { value: 'arrow-right', label: '右箭头' },
+  { value: 'arrow-left', label: '左箭头' },
+  { value: 'arrow-up', label: '上箭头' },
+  { value: 'arrow-down', label: '下箭头' },
+] satisfies readonly SelectOption[]
+
+const ARROWHEAD_OPTIONS = [
+  { value: 'none', label: '无' },
+  { value: 'arrow', label: '箭头' },
+  { value: 'triangle', label: '实心三角' },
+  { value: 'square', label: '方形' },
+  { value: 'dot', label: '圆点' },
+  { value: 'diamond', label: '菱形' },
+  { value: 'inverted', label: '反向三角' },
+  { value: 'bar', label: '横线' },
+] satisfies readonly SelectOption[]
+
 const SHAPE_COLORS = [
   { value: 'black', label: '黑色', css: '#1d1d1d' },
   { value: 'grey', label: '灰色', css: '#9ca3af' },
@@ -1115,6 +1123,53 @@ function ShapeInspectorSegmentedControl({
   )
 }
 
+interface ShapeInspectorSelectProps {
+  readonly type: string
+  readonly options: readonly SelectOption[]
+  readonly value: string
+  readonly disabled?: boolean
+  readonly onChange: (value: string) => void
+}
+
+function ShapeInspectorSelect({
+  type,
+  options,
+  value,
+  disabled = false,
+  onChange,
+}: ShapeInspectorSelectProps) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Select
+      data={options}
+      disabled={disabled}
+      onOpenChange={setOpen}
+      onValueChange={onChange}
+      open={open}
+      type={type}
+      value={value}
+    >
+      <SelectTrigger />
+
+      <SelectContent>
+        <SelectList>
+          <SelectGroup>
+            {options.map((option) => (
+              <SelectItem
+                key={option.value}
+                value={option.value}
+              >
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectList>
+      </SelectContent>
+    </Select>
+  )
+}
+
 function ShapeInspectorArrowheadSelect({
   value,
   onChange,
@@ -1123,20 +1178,12 @@ function ShapeInspectorArrowheadSelect({
   readonly onChange: (value: string) => void
 }) {
   return (
-    <select
-      className="h-8 w-full rounded-md border border-divider bg-background px-2 text-[11px] outline-none focus:border-primary"
-      onChange={(event) => onChange(event.target.value)}
+    <ShapeInspectorSelect
+      onChange={onChange}
+      options={ARROWHEAD_OPTIONS}
+      type="箭头端点"
       value={value ?? 'none'}
-    >
-      <option value="none">无</option>
-      <option value="arrow">箭头</option>
-      <option value="triangle">实心三角</option>
-      <option value="square">方形</option>
-      <option value="dot">圆点</option>
-      <option value="diamond">菱形</option>
-      <option value="inverted">反向三角</option>
-      <option value="bar">横线</option>
-    </select>
+    />
   )
 }
 
