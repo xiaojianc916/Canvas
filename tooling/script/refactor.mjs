@@ -1,41 +1,113 @@
-// fix-settings-typecheck.mjs
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-const repositoryRoot = process.argv[2]
-  ? resolve(process.argv[2])
-  : process.cwd()
+const args = process.argv.slice(2)
+const apply = args.includes('--apply')
+
+const allowedArguments = new Set(['--apply', '--allow-dirty'])
+
+for (const argument of args) {
+  if (!allowedArguments.has(argument)) {
+    throw new Error(`未知参数：${argument}`)
+  }
+}
 
 const filePath = resolve(
-  repositoryRoot,
-  'features/settings/src/presentation/SettingsDialog.tsx',
+  process.cwd(),
+  'apps/desktop/src/application/termination/application-termination-coordinator.test.ts',
 )
 
-const source = await readFile(filePath, 'utf8')
+const currentSource = await readFile(filePath, 'utf8')
 
-const oldCode = "readonly operation?: 'save' | 'reset'"
-const newCode = "readonly operation: 'save' | 'reset' | undefined"
+const updatedSource = `import { describe, expect, it, vi } from 'vitest'
 
-const matches = source.split(oldCode).length - 1
+import { createApplicationTerminationCoordinator } from './application-termination-coordinator'
 
-if (matches === 0) {
-  throw new Error(
-    `没有找到待修改的代码：${oldCode}\n文件可能已经修改：${filePath}`,
-  )
+describe('ApplicationTerminationCoordinator', () => {
+  it('dispatches the requested native termination intent', () => {
+    const terminate = vi.fn()
+
+    const coordinator = createApplicationTerminationCoordinator(
+      {
+        planApplicationClose: () => ({ kind: 'close-now' }),
+        discardAllAndClose: vi.fn(),
+      },
+      { terminate },
+    )
+
+    coordinator.request('update-restart')
+
+    expect(terminate).toHaveBeenCalledTimes(1)
+    expect(terminate).toHaveBeenCalledWith('update-restart')
+    expect(coordinator.getSnapshot()).toEqual({
+      state: 'terminating',
+      intent: 'update-restart',
+    })
+  })
+
+  it('ignores additional requests after native termination begins', () => {
+    const terminate = vi.fn()
+
+    const coordinator = createApplicationTerminationCoordinator(
+      {
+        planApplicationClose: () => ({ kind: 'close-now' }),
+        discardAllAndClose: vi.fn(),
+      },
+      { terminate },
+    )
+
+    coordinator.request('window-close')
+    coordinator.request('application-exit')
+
+    expect(terminate).toHaveBeenCalledTimes(1)
+    expect(terminate).toHaveBeenCalledWith('window-close')
+    expect(coordinator.getSnapshot()).toEqual({
+      state: 'terminating',
+      intent: 'window-close',
+    })
+  })
+
+  it('does not cancel after native termination begins', () => {
+    const terminate = vi.fn()
+
+    const coordinator = createApplicationTerminationCoordinator(
+      {
+        planApplicationClose: () => ({ kind: 'close-now' }),
+        discardAllAndClose: vi.fn(),
+      },
+      { terminate },
+    )
+
+    coordinator.request('window-close')
+    coordinator.cancel()
+
+    expect(terminate).toHaveBeenCalledTimes(1)
+    expect(coordinator.getSnapshot()).toEqual({
+      state: 'terminating',
+      intent: 'window-close',
+    })
+  })
+})
+`
+
+if (currentSource === updatedSource) {
+  console.log('无需修改：终止协调器测试已经是最新版本。')
+  process.exit(0)
 }
 
-if (matches > 1) {
-  throw new Error(
-    `找到 ${matches} 处匹配，为避免误改已停止执行：${filePath}`,
-  )
-}
+console.log(`目标文件：${filePath}`)
+console.log('将移除过时的失败重试测试，并匹配当前单向终止行为。')
 
-const updatedSource = source.replace(oldCode, newCode)
+if (!apply) {
+  console.log('\n当前是预览模式，未写入文件。')
+  console.log('添加 --apply 后执行实际修改。')
+  process.exit(0)
+}
 
 await writeFile(filePath, updatedSource, 'utf8')
 
-console.log('修改成功：')
-console.log(filePath)
-console.log(`- ${oldCode}`)
-console.log(`+ ${newCode}`)
-console.log('\n请运行：pnpm typecheck')
+console.log('\n修改完成。')
+console.log('请运行：')
+console.log('pnpm --filter @hybrid-canvas/desktop typecheck')
+console.log('pnpm --filter @hybrid-canvas/desktop test')
+console.log('pnpm typecheck')
