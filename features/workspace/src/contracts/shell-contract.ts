@@ -23,6 +23,7 @@ export interface WorkspaceShellActions {
   readonly activatePage: (pageId: string) => void
   readonly createPage: () => void
   readonly openCommandPalette: () => void
+  readonly openDeveloperTools: () => void
   readonly openSettingsWindow: () => void
 }
 

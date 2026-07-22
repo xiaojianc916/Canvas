@@ -17,6 +17,7 @@ import {
   Boxes,
   ChartNoAxesCombined,
   CircleHelp,
+  Code2,
   ExternalLink,
   Files,
   Grid2X2,
@@ -56,6 +57,8 @@ export interface ActivityRailProps {
   readonly items?: readonly CanvasNavigationItem[]
 
   readonly onItemActivate?: (itemId: CanvasNavigationItemId) => void
+
+  readonly onDeveloperToolsOpen: () => void
 
   readonly onSettingsOpen: () => void
 }
@@ -102,6 +105,7 @@ export function ActivityRail({
   activeItemId = 'pages',
   items = DEFAULT_NAVIGATION,
   onItemActivate,
+  onDeveloperToolsOpen,
   onSettingsOpen,
 }: ActivityRailProps) {
   return (
@@ -128,7 +132,9 @@ export function ActivityRail({
       <div className="flex flex-col gap-1">
         <RailButton icon={Settings} label="设置" onClick={onSettingsOpen} />
 
-        <HelpMenu />
+        <HelpMenu
+          onDeveloperToolsOpen={onDeveloperToolsOpen}
+        />
       </div>
     </nav>
   )
@@ -181,7 +187,11 @@ function RailButton({ label, icon: Icon, active = false, onClick }: RailButtonPr
   )
 }
 
-function HelpMenu() {
+function HelpMenu({
+  onDeveloperToolsOpen,
+}: {
+  readonly onDeveloperToolsOpen: () => void
+}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -234,8 +244,9 @@ function HelpMenu() {
           />
 
           <HelpMenuItem
-            icon={MessageCircle}
-            label="反馈"
+            icon={Code2}
+            label="开发者工具"
+            onClick={onDeveloperToolsOpen}
           />
         </DropdownMenuGroup>
       </DropdownMenuContent>

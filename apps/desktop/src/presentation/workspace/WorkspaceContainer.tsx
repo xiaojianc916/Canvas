@@ -72,6 +72,7 @@ export interface WorkspaceContainerProps {
   readonly port: WorkspaceUIPort
   readonly isWindowMaximized: boolean
   readonly onCommandPaletteOpen: () => void
+  readonly onDeveloperToolsOpen: () => void
   readonly onSettingsOpen: () => void
   readonly onWindowMinimize: () => void
   readonly onWindowMaximize: () => void
@@ -83,6 +84,7 @@ export function WorkspaceContainer({
   port,
   isWindowMaximized,
   onCommandPaletteOpen,
+  onDeveloperToolsOpen,
   onSettingsOpen,
   onWindowMinimize,
   onWindowMaximize,
@@ -233,12 +235,14 @@ export function WorkspaceContainer({
       },
 
       openCommandPalette: onCommandPaletteOpen,
+      openDeveloperTools: onDeveloperToolsOpen,
       openSettingsWindow: onSettingsOpen,
     }),
     [
       activeEditorSession,
       handleCloseTab,
       onCommandPaletteOpen,
+      onDeveloperToolsOpen,
       onSettingsOpen,
       pages.length,
       port.canvases,

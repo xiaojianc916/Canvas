@@ -111,6 +111,18 @@ export function AppShell({ runtime }: AppShellProps) {
     })
   }, [runtime.mainWindow])
 
+  const openDeveloperTools = useCallback(() => {
+    void runtime.mainWindow
+      .openDeveloperTools()
+      .catch((cause: unknown) => {
+        reportError('open developer tools failed', {
+          scope: 'app-shell',
+          operation: 'open-developer-tools',
+          cause,
+        })
+      })
+  }, [runtime.mainWindow])
+
   const startWindowDragging = useCallback(() => {
     void runtime.mainWindow.startDragging().catch((cause: unknown) => {
       reportError('main window drag failed', {
@@ -173,6 +185,7 @@ export function AppShell({ runtime }: AppShellProps) {
         <WorkspaceContainer
           isWindowMaximized={isWindowMaximized}
           onCommandPaletteOpen={openCommandPalette}
+          onDeveloperToolsOpen={openDeveloperTools}
           onSettingsOpen={openSettings}
           onWindowClose={requestApplicationClose}
           onWindowMaximize={maximizeWindow}

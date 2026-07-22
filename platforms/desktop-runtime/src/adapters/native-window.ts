@@ -5,6 +5,7 @@ export interface MainWindowController {
   toggleMaximize(): Promise<void>
   isMaximized(): Promise<boolean>
   onResized(handler: () => void): Promise<() => void>
+  openDeveloperTools(): Promise<void>
   close(): Promise<void>
   forceClose(): void
   onCloseRequested(handler: () => void): Promise<() => void>
@@ -47,6 +48,10 @@ export function createMainWindowController(): MainWindowController {
         handler()
       })
     },
+    openDeveloperTools: () =>
+      invoke('window_open_devtools', {
+        label: MAIN_WINDOW_LABEL,
+      }),
     close: () => invoke('window_close', { label: MAIN_WINDOW_LABEL }),
     forceClose() {
       // Application termination is intentionally fire-and-forget.

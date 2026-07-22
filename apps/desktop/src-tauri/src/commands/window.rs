@@ -123,6 +123,15 @@ pub async fn window_destroy(app: AppHandle, label: String) -> Result<()> {
 }
 
 #[command]
+pub async fn window_open_devtools(app: AppHandle, label: String) -> Result<()> {
+    if let Some(window) = app.get_webview_window(&label) {
+        window.open_devtools();
+    }
+
+    Ok(())
+}
+
+#[command]
 pub async fn window_set_title(app: AppHandle, label: String, title: String) -> Result<()> {
     if let Some(window) = app.get_webview_window(&label) {
         window.set_title(&title)?;

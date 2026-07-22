@@ -165,6 +165,7 @@ export function WorkspaceShell({
           actions.openWorkspaceSurface(surfaceId, SURFACE_TITLES[surfaceId])
           openSidebar()
         }}
+        onDeveloperToolsOpen={actions.openDeveloperTools}
         onSettingsOpen={actions.openSettingsWindow}
       />
     </div>
