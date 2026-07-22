@@ -70,7 +70,7 @@ export function DesktopTitleBar({
         onMouseDownCapture={handleDragMouseDown}
         role="toolbar"
       >
-        <div className="flex w-(--activity-rail-width) shrink-0 items-center justify-center border-r border-divider">
+        <div className="flex w-(--activity-rail-width) shrink-0 items-center justify-center">
           <button
             aria-label={isSidebarOpen ? '收起侧边栏' : '展开侧边栏'}
             className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
