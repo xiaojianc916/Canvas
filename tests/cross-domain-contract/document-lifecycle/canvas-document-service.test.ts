@@ -28,7 +28,11 @@ function createHarness() {
     getSnapshot() {
       return currentSnapshot
     },
-    subscribeDocumentEvents(listener) {
+    subscribeDocumentEvents(
+      listener: (
+        event: EditorDocumentEvent,
+      ) => void,
+    ) {
       documentListeners.add(listener)
 
       return () => {
