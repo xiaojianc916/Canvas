@@ -179,20 +179,14 @@ mod tests {
     fn import_error_uses_import_message() {
         let error = Error::Import("invalid document".to_owned());
 
-        assert_eq!(
-            error.to_string(),
-            "Import error: invalid document"
-        );
+        assert_eq!(error.to_string(), "Import error: invalid document");
     }
 
     #[test]
     fn export_error_uses_export_message() {
         let error = Error::Export("unsupported target".to_owned());
 
-        assert_eq!(
-            error.to_string(),
-            "Export error: unsupported target"
-        );
+        assert_eq!(error.to_string(), "Export error: unsupported target");
     }
 
     #[test]
@@ -208,14 +202,8 @@ mod tests {
     fn import_error_has_import_export_operation() {
         let error = Error::Import("invalid document".to_owned());
 
-        assert!(matches!(
-            error.code(),
-            IpcErrorCode::ImportExport
-        ));
-        assert!(matches!(
-            error.operation(),
-            IpcOperation::ImportExport
-        ));
+        assert!(matches!(error.code(), IpcErrorCode::ImportExport));
+        assert!(matches!(error.operation(), IpcOperation::ImportExport));
         assert!(!error.recoverable());
     }
 
@@ -226,31 +214,19 @@ mod tests {
             "denied",
         ));
 
-        assert!(matches!(
-            error.code(),
-            IpcErrorCode::Persistence
-        ));
-        assert!(matches!(
-            error.operation(),
-            IpcOperation::File
-        ));
+        assert!(matches!(error.code(), IpcErrorCode::Persistence));
+        assert!(matches!(error.operation(), IpcOperation::File));
         assert!(error.recoverable());
     }
 
     #[test]
     fn serialized_error_preserves_ipc_contract() {
-        let value = serde_json::to_value(
-            Error::Validation("invalid settings".to_owned()),
-        )
-        .expect("error should serialize");
+        let value = serde_json::to_value(Error::Validation("invalid settings".to_owned()))
+            .expect("error should serialize");
 
         assert_eq!(value["code"], "validation");
         assert_eq!(value["operation"], "platform");
-        assert_eq!(
-            value["message"],
-            "Validation error: invalid settings"
-        );
+        assert_eq!(value["message"], "Validation error: invalid settings");
         assert_eq!(value["recoverable"], false);
     }
 }
-

@@ -26,7 +26,9 @@ pub async fn opener_show_in_folder(
             .args(["-R", &options.path])
             .spawn()?;
         #[cfg(target_os = "linux")]
-        std::process::Command::new("xdg-open").arg(_parent).spawn()?;
+        std::process::Command::new("xdg-open")
+            .arg(_parent)
+            .spawn()?;
     }
     Ok(())
 }

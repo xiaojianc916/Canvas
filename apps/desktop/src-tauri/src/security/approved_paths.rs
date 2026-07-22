@@ -16,11 +16,10 @@ pub struct ApprovedPathRegistry {
 impl ApprovedPathRegistry {
     pub fn approve(&self, path: &Path) -> Result<PathBuf> {
         let normalized = normalize_path(path)?;
-        let mut paths = self.paths.write().map_err(|_| {
-            Error::Internal(
-                "approved path registry write lock poisoned".into(),
-            )
-        })?;
+        let mut paths = self
+            .paths
+            .write()
+            .map_err(|_| Error::Internal("approved path registry write lock poisoned".into()))?;
 
         paths.insert(normalized.clone());
         Ok(normalized)
@@ -28,11 +27,10 @@ impl ApprovedPathRegistry {
 
     pub fn require(&self, path: &Path) -> Result<PathBuf> {
         let normalized = normalize_path(path)?;
-        let paths = self.paths.read().map_err(|_| {
-            Error::Internal(
-                "approved path registry read lock poisoned".into(),
-            )
-        })?;
+        let paths = self
+            .paths
+            .read()
+            .map_err(|_| Error::Internal("approved path registry read lock poisoned".into()))?;
 
         if paths.contains(&normalized) {
             return Ok(normalized);
@@ -47,9 +45,7 @@ impl ApprovedPathRegistry {
 
 fn normalize_path(path: &Path) -> Result<PathBuf> {
     if path.as_os_str().is_empty() {
-        return Err(Error::Validation(
-            "file path cannot be empty".into(),
-        ));
+        return Err(Error::Validation("file path cannot be empty".into()));
     }
 
     let absolute = if path.is_absolute() {
@@ -75,9 +71,7 @@ fn normalize_path(path: &Path) -> Result<PathBuf> {
             Component::CurDir => {}
             Component::ParentDir => {
                 if !normalized.pop() {
-                    return Err(Error::Validation(
-                        "file path escapes its root".into(),
-                    ));
+                    return Err(Error::Validation("file path escapes its root".into()));
                 }
             }
             Component::Normal(value) => {
@@ -112,10 +106,7 @@ mod tests {
 
         registry.approve(&path).unwrap();
 
-        assert_eq!(
-            registry.require(&path).unwrap(),
-            path
-        );
+        assert_eq!(registry.require(&path).unwrap(), path);
     }
 
     #[test]

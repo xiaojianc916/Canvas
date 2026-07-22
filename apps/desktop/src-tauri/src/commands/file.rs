@@ -257,25 +257,19 @@ pub async fn file_create_draw(
     Ok(DrawReadResult { content })
 }
 
+async fn write_draw_file(path: PathBuf, content: String) -> Result<String> {
+    tokio::task::spawn_blocking(move || write_draw_file_blocking(path, content))
+        .await
+        .map_err(|error| Error::Internal(format!("draw file write task failed: {error}")))?
+}
 
-async fn write_draw_file(
-    path: PathBuf,
-    content: String,
-) -> Result<String> {
-    tokio::task::spawn_blocking(move || {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+fn write_draw_file_blocking(path: PathBuf, content: String) -> Result<String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
 
-        atomic_write(&path, content.as_bytes())?;
-        Ok(content)
-    })
-    .await
-    .map_err(|error| {
-        Error::Internal(format!(
-            "draw file write task failed: {error}"
-        ))
-    })?
+    atomic_write(&path, content.as_bytes())?;
+    Ok(content)
 }
 
 fn ensure_draw_size(size: u64) -> Result<()> {

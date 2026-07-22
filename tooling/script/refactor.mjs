@@ -1,12 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * Resume validation after installing @typescript/typescript6.
- *
- * Avoids `node --eval` because multiline eval arguments are corrupted
- * when passed through cmd.exe with shell:true on Windows.
- */
-
 import { execFileSync } from 'node:child_process'
 import {
   existsSync,
@@ -21,29 +14,74 @@ const root = resolve(process.cwd())
 const apply = process.argv.includes('--apply')
 const skipChecks = process.argv.includes('--skip-checks')
 
-const checkerPath =
-  'tests/architecture/check-ui-architecture.mjs'
+const rustFile =
+  'apps/desktop/src-tauri/src/commands/file.rs'
+
+const oldImplementation = `async fn write_draw_file(
+    path: PathBuf,
+    content: String,
+) -> Result<String> {
+    tokio::task::spawn_blocking(move || {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        atomic_write(&path, content.as_bytes())?;
+        Ok(content)
+    })
+    .await
+    .map_err(|error| {
+        Error::Internal(format!(
+            "draw file write task failed: {error}"
+        ))
+    })?
+}`
+
+const newImplementation = `async fn write_draw_file(
+    path: PathBuf,
+    content: String,
+) -> Result<String> {
+    tokio::task::spawn_blocking(move || {
+        write_draw_file_blocking(path, content)
+    })
+    .await
+    .map_err(|error| {
+        Error::Internal(format!(
+            "draw file write task failed: {error}"
+        ))
+    })?
+}
+
+fn write_draw_file_blocking(
+    path: PathBuf,
+    content: String,
+) -> Result<String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    atomic_write(&path, content.as_bytes())?;
+    Ok(content)
+}`
 
 assertRepository()
 
 if (!apply) {
-  console.log('将执行以下操作：')
+  console.log('将执行以下修复：')
+  console.log('PATCH  ' + rustFile)
+  console.log('')
   console.log(
-    'VERIFY @typescript/typescript6 Compiler API',
+    '把阻塞文件系统操作提取到同步函数中，',
   )
-  console.log('PATCH  ' + checkerPath)
-  console.log('RUN    UI architecture check')
-  console.log('RUN    full architecture checks')
-  console.log('RUN    desktop typecheck')
-  console.log('RUN    lint')
-  console.log('RUN    tests')
+  console.log(
+    '异步函数只保留 spawn_blocking 调度边界。',
+  )
   console.log('')
   console.log('使用 --apply 确认执行。')
   process.exit(0)
 }
 
-patchArchitectureChecker()
-await verifyCompilerApiDirectly()
+patchRustAsyncBoundary()
 
 if (!skipChecks) {
   runChecks()
@@ -51,190 +89,165 @@ if (!skipChecks) {
 
 console.log('')
 console.log(
-  'TypeScript 7 Compiler API 兼容验证及剩余检查完成。',
+  'Rust 文件写入异步边界修复及验证完成。',
 )
 
-function patchArchitectureChecker() {
+function patchRustAsyncBoundary() {
   const absolutePath = join(
     root,
-    checkerPath,
+    rustFile,
   )
 
-  const original = readFileSync(
+  const source = readFileSync(
     absolutePath,
     'utf8',
   )
 
-  const expectedImport =
-    "import * as tsModule from '@typescript/typescript6'"
-
-  const expectedBinding =
-    'const ts = tsModule.default ?? tsModule'
-
   if (
-    original.includes(expectedImport) &&
-    original.includes(expectedBinding)
+    source.includes(
+      'fn write_draw_file_blocking(',
+    ) &&
+    source.includes(
+      'write_draw_file_blocking(path, content)',
+    )
   ) {
     console.log(
       'SKIP   ' +
-        checkerPath +
-        '（已经使用 TypeScript 6 兼容 API）',
+        rustFile +
+        '（异步边界已经拆分）',
     )
     return
   }
 
-  let updated = original
+  const occurrenceCount =
+    source.split(oldImplementation).length - 1
 
-  updated = updated.replace(
-    /import\s+ts\s+from\s+(['"])typescript\1/,
-    [
-      expectedImport,
-      '',
-      expectedBinding,
-    ].join('\n'),
-  )
-
-  updated = updated.replace(
-    /import\s+\*\s+as\s+ts\s+from\s+(['"])typescript\1/,
-    [
-      expectedImport,
-      '',
-      expectedBinding,
-    ].join('\n'),
-  )
-
-  if (
-    !updated.includes(expectedImport) ||
-    !updated.includes(expectedBinding)
-  ) {
+  if (occurrenceCount !== 1) {
     throw new Error(
-      checkerPath +
-        ': 无法生成 TypeScript 6 Compiler API 导入。',
+      rustFile +
+        ': 预期匹配一次 write_draw_file，实际匹配 ' +
+        String(occurrenceCount) +
+        ' 次。拒绝生成不完整修改。',
     )
   }
+
+  const updated = source.replace(
+    oldImplementation,
+    newImplementation,
+  )
+
+  assertUpdatedSource(updated)
 
   atomicWrite(
     absolutePath,
     updated,
   )
 
-  console.log('PATCH  ' + checkerPath)
+  console.log('PATCH  ' + rustFile)
 }
 
-async function verifyCompilerApiDirectly() {
-  console.log('')
-  console.log(
-    'VERIFY @typescript/typescript6 Compiler API',
+function assertUpdatedSource(source) {
+  const asyncStart = source.indexOf(
+    'async fn write_draw_file(',
   )
 
-  /*
-   * Import in the current Node process.
-   *
-   * Do not use `node --eval`: cmd.exe breaks multiline arguments
-   * when execFileSync is configured with shell:true.
-   */
-  const tsModule = await import(
-    '@typescript/typescript6'
+  const blockingStart = source.indexOf(
+    'fn write_draw_file_blocking(',
   )
 
-  const ts = tsModule.default ?? tsModule
-
-  const failures = []
-
   if (
-    typeof ts.createSourceFile !== 'function'
+    asyncStart < 0 ||
+    blockingStart < 0 ||
+    blockingStart <= asyncStart
   ) {
-    failures.push('createSourceFile')
-  }
-
-  if (
-    typeof ts.forEachChild !== 'function'
-  ) {
-    failures.push('forEachChild')
-  }
-
-  if (
-    typeof ts.flattenDiagnosticMessageText !==
-    'function'
-  ) {
-    failures.push(
-      'flattenDiagnosticMessageText',
-    )
-  }
-
-  if (
-    typeof ts.ScriptTarget?.Latest !==
-    'number'
-  ) {
-    failures.push('ScriptTarget.Latest')
-  }
-
-  if (
-    typeof ts.ScriptKind?.TSX !== 'number'
-  ) {
-    failures.push('ScriptKind.TSX')
-  }
-
-  if (failures.length > 0) {
     throw new Error(
-      'TYPESCRIPT6_COMPILER_API_UNAVAILABLE: ' +
-        failures.join(', '),
+      'write_draw_file 阻塞边界拆分失败。',
     )
   }
 
-  const probeSource = ts.createSourceFile(
-    'probe.tsx',
-    'export const Probe = () => <div />',
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
+  const asyncBody = source.slice(
+    asyncStart,
+    blockingStart,
   )
 
   if (
-    probeSource.parseDiagnostics.length > 0
+    asyncBody.includes('std::fs::')
   ) {
-    const diagnostics =
-      probeSource.parseDiagnostics.map(
-        (diagnostic) =>
-          ts.flattenDiagnosticMessageText(
-            diagnostic.messageText,
-            ' ',
-          ),
-      )
-
     throw new Error(
-      'TYPESCRIPT6_TSX_PROBE_FAILED: ' +
-        diagnostics.join('; '),
+      '异步函数体内仍然存在 std::fs。',
     )
   }
 
-  console.log(
-    'TypeScript 6 Compiler API probe passed.',
+  if (
+    !asyncBody.includes(
+      'tokio::task::spawn_blocking',
+    )
+  ) {
+    throw new Error(
+      '异步函数缺少 spawn_blocking 调度边界。',
+    )
+  }
+
+  if (
+    !asyncBody.includes(
+      'write_draw_file_blocking(path, content)',
+    )
+  ) {
+    throw new Error(
+      '异步函数没有调用同步写入函数。',
+    )
+  }
+
+  const blockingBody = source.slice(
+    blockingStart,
   )
+
+  if (
+    !blockingBody.includes(
+      'std::fs::create_dir_all(parent)?;',
+    )
+  ) {
+    throw new Error(
+      '同步函数缺少目录创建逻辑。',
+    )
+  }
+
+  if (
+    !blockingBody.includes(
+      'atomic_write(&path, content.as_bytes())?;',
+    )
+  ) {
+    throw new Error(
+      '同步函数缺少原子写入逻辑。',
+    )
+  }
 }
 
 function runChecks() {
-  run('pnpm', [
-    'exec',
-    'biome',
-    'format',
-    '--write',
-    checkerPath,
-    'package.json',
+  run('cargo', [
+    'fmt',
+    '--manifest-path',
+    'apps/desktop/src-tauri/Cargo.toml',
   ])
 
-  /*
-   * Run the original failure first so a new architecture violation
-   * is reported immediately without hiding it in the full chain.
-   */
+  // 先运行原始失败项。
   run('node', [
-    checkerPath,
+    'tests/architecture/check-rust-async-boundaries.mjs',
   ])
 
+  // 验证 Rust 代码确实可以编译。
+  run('cargo', [
+    'check',
+    '--manifest-path',
+    'apps/desktop/src-tauri/Cargo.toml',
+  ])
+
+  // 从头执行全部架构约束。
   run('pnpm', [
     'test:architecture',
   ])
 
+  // 继续之前未运行的验证。
   run('pnpm', [
     '--filter',
     '@hybrid-canvas/desktop',
@@ -256,6 +269,11 @@ function assertRepository() {
     'package.json',
   )
 
+  const rustPath = join(
+    root,
+    rustFile,
+  )
+
   if (!existsSync(packagePath)) {
     throw new Error(
       '请在 hybrid-canvas 仓库根目录执行脚本。',
@@ -272,22 +290,26 @@ function assertRepository() {
     )
   }
 
-  if (
-    !manifest.devDependencies?.[
-      '@typescript/typescript6'
-    ]
-  ) {
+  if (!existsSync(rustPath)) {
     throw new Error(
-      '根 package.json 尚未安装 @typescript/typescript6。',
+      '缺少 Rust 文件：' +
+        rustFile,
     )
   }
 
+  const rustSource = readFileSync(
+    rustPath,
+    'utf8',
+  )
+
   if (
-    !existsSync(join(root, checkerPath))
+    !rustSource.includes(
+      'async fn write_draw_file(',
+    )
   ) {
     throw new Error(
-      '缺少架构检查器：' +
-        checkerPath,
+      rustFile +
+        ': 找不到 write_draw_file。',
     )
   }
 }
@@ -332,11 +354,6 @@ function run(command, args) {
       args.join(' '),
   )
 
-  /*
-   * On Windows, pnpm is exposed through pnpm.cmd and needs a shell.
-   * Node must not use a shell because arguments may contain JavaScript,
-   * spaces, quotes or line breaks.
-   */
   const needsWindowsShell =
     process.platform === 'win32' &&
     command === 'pnpm'
