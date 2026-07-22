@@ -181,25 +181,27 @@ export function WorkspaceShell({
           pointerEvents: dockSidebar ? 'auto' : 'none',
         }}
       >
-        {dockSidebar ? (
-          <>
+        {mode !== 'narrow' ? (
+          <div className="h-full min-h-0 w-full overflow-hidden">
             <div
-              className="h-full min-h-0 overflow-hidden"
+              className="h-full min-h-0"
               style={{ width: sidebarWidth }}
             >
               {sidebarContent}
             </div>
+          </div>
+        ) : null}
 
-            <SidebarSplitter
-              max={SIDEBAR_MAX}
-              min={SIDEBAR_MIN}
-              onCollapse={() => setSidebarOpen(false)}
-              onResize={setSidebarWidth}
-              onResizeEnd={() => setResizing(false)}
-              onResizeStart={() => setResizing(true)}
-              width={sidebarWidth}
-            />
-          </>
+        {dockSidebar ? (
+          <SidebarSplitter
+            max={SIDEBAR_MAX}
+            min={SIDEBAR_MIN}
+            onCollapse={() => setSidebarOpen(false)}
+            onResize={setSidebarWidth}
+            onResizeEnd={() => setResizing(false)}
+            onResizeStart={() => setResizing(true)}
+            width={sidebarWidth}
+          />
         ) : null}
       </div>
 

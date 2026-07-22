@@ -108,6 +108,16 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     }
   }
 
+  function requireAttachedEditor(): Editor {
+    assertActive()
+
+    if (state !== 'attached' || !attachedEditor) {
+      throw new Error('EDITOR_SESSION_NOT_ATTACHED')
+    }
+
+    return attachedEditor
+  }
+
   function captureDocument(): TLEditorSnapshot {
     assertActive()
 
@@ -245,21 +255,28 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     },
 
     createPage(title) {
-      assertActive()
+      const normalizedTitle = title.trim()
 
-      attachedEditor?.createPage({
-        name: title,
+      if (!normalizedTitle) {
+        throw new Error('EDITOR_PAGE_TITLE_REQUIRED')
+      }
+
+      const editor = requireAttachedEditor()
+
+      editor.createPage({
+        name: normalizedTitle,
       })
     },
 
     activatePage(pageId) {
-      assertActive()
+      const editor = requireAttachedEditor()
+      const page = editor.getPages().find((candidate) => candidate.id === pageId)
 
-      const page = attachedEditor?.getPages().find((candidate) => candidate.id === pageId)
-
-      if (attachedEditor && page) {
-        attachedEditor.setCurrentPage(page)
+      if (!page) {
+        throw new Error('EDITOR_PAGE_NOT_FOUND')
       }
+
+      editor.setCurrentPage(page)
     },
 
     dispose() {
