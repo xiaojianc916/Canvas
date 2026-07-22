@@ -492,11 +492,10 @@
 /* BEGIN FIXED WORKBENCH TAB VIEWPORT */
 
 /*
- * Layout ownership:
+ * Tab density:
  *
- * - __viewport owns all scrollable tabs.
- * - __actions owns persistent controls such as the new-tab button.
- * - Tabs are never allowed to paint underneath persistent controls.
+ * Tabs shrink before overflow, but retain enough room for an icon
+ * and a recognizable title.
  */
 .chrome-workbench-tabs {
   --chrome-tab-min-width: 88px;
@@ -509,9 +508,8 @@
 }
 
 /*
- * This is the hard clipping boundary for tabs.
- * Active-tab caps and partially scrolled tabs cannot leak into
- * the new-tab button or window-control regions.
+ * The viewport clips tabs at a real layout boundary.
+ * Tabs cannot paint below the sidebar toggle or window controls.
  */
 .chrome-workbench-tabs__viewport {
   position: relative;
@@ -522,10 +520,11 @@
 }
 
 .chrome-workbench-tabs__scroller {
+  position: relative;
   width: 100%;
   min-width: 0;
   height: 100%;
-  scroll-padding-inline: 4px;
+  scroll-padding-inline: 4px 34px;
   scroll-snap-type: x proximity;
   overscroll-behavior-inline: contain;
 }
@@ -539,9 +538,8 @@
 }
 
 /*
- * Keep inactive narrow tabs readable.
- * The close action remains available on hover, while the active
- * tab continues to expose its normal end action.
+ * Narrow inactive tabs reserve their available width for the title.
+ * Their close button becomes available when hovered.
  */
 .chrome-workbench-tab:not([data-active="true"]):not(:hover) .chrome-workbench-tab__close {
   opacity: 0;
@@ -553,28 +551,42 @@
 }
 
 /*
- * Persistent right-side actions are not part of the tab scroller.
- * The plus button therefore remains visible regardless of tab count.
+ * Inline-until-overflow:
+ *
+ * In normal layout, the button sits immediately after the final tab.
+ * When tabs exceed the viewport, position: sticky keeps the button
+ * visible at the right edge of the tab viewport.
  */
-.chrome-workbench-tabs__actions {
-  position: relative;
+.chrome-workbench-tabs__new-tab--sticky {
+  position: sticky;
   z-index: 8;
-  display: flex;
-  width: 34px;
-  height: 100%;
-  flex: 0 0 34px;
-  align-items: center;
-  justify-content: center;
-  border-bottom: 1px solid var(--chrome-tab-boundary);
-  background: var(--chrome-tab-strip);
-}
-
-.chrome-workbench-tabs__new-tab {
+  right: 4px;
   align-self: center;
   width: 26px;
   height: 26px;
   flex: 0 0 26px;
-  margin: 0 0 1px;
+  margin: 0 3px 1px 2px;
+  background: var(--chrome-tab-strip);
+  isolation: isolate;
+}
+
+.chrome-workbench-tabs__new-tab--sticky:hover {
+  color: var(--color-foreground);
+  background: color-mix(in srgb, var(--color-foreground) 8%, var(--chrome-tab-strip));
+}
+
+.chrome-workbench-tabs__new-tab--sticky:active {
+  background: color-mix(in srgb, var(--color-foreground) 14%, var(--chrome-tab-strip));
+}
+
+/*
+ * Empty space after the inline plus button remains draggable.
+ * It grows only when the tab strip has unused space.
+ */
+.chrome-workbench-tabs__drag-region {
+  height: 100%;
+  min-width: 24px;
+  flex: 1 0 24px;
 }
 
 @media (prefers-reduced-motion: reduce) {

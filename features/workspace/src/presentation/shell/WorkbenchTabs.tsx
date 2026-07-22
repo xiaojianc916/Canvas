@@ -274,18 +274,18 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
               </article>
             )
           })}
-        </div>
-      </div>
+          <button
+            aria-label="新建画布"
+            className="chrome-workbench-tabs__new-tab chrome-workbench-tabs__new-tab--sticky"
+            data-window-drag-exclude
+            onClick={onCreate}
+            type="button"
+          >
+            <Plus aria-hidden="true" className="size-3.5" />
+          </button>
 
-      <div className="chrome-workbench-tabs__actions" data-window-drag-exclude>
-        <button
-          aria-label="新建画布"
-          className="chrome-workbench-tabs__new-tab"
-          onClick={onCreate}
-          type="button"
-        >
-          <Plus aria-hidden="true" className="size-3.5" />
-        </button>
+          <div aria-hidden="true" className="chrome-workbench-tabs__drag-region" />
+        </div>
       </div>
     </div>
   )
