@@ -1,3 +1,24 @@
+export {
+  Combobox,
+  ComboboxContent,
+  type ComboboxContentProps,
+  type ComboboxDataItem,
+  ComboboxEmpty,
+  type ComboboxEmptyProps,
+  ComboboxGroup,
+  type ComboboxGroupProps,
+  ComboboxInput,
+  type ComboboxInputProps,
+  ComboboxItem,
+  type ComboboxItemProps,
+  ComboboxList,
+  type ComboboxListProps,
+  type ComboboxProps,
+  ComboboxSeparator,
+  type ComboboxSeparatorProps,
+  ComboboxTrigger,
+  type ComboboxTriggerProps,
+} from './components/ui/combobox'
 export { Button, type ButtonProps, buttonVariants } from './components/ui/button'
 export {
   ConfirmationDialog,

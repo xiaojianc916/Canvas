@@ -1,11 +1,19 @@
 import {
   applyThemePreference,
   Button,
+  Combobox,
+  ComboboxContent,
+  type ComboboxDataItem,
+  ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
   Dialog,
   ErrorState,
   Field,
   LoadingState,
-  Select,
   Switch,
 } from '@hybrid-canvas/design-system'
 import type { AppSettings, SettingsStore, ThemeMode } from '@hybrid-canvas/settings'
@@ -55,6 +63,47 @@ const SECTIONS: readonly SettingsSectionItem[] = [
   {
     id: 'about',
     label: '关于',
+  },
+]
+
+const THEME_OPTIONS: readonly ComboboxDataItem[] = [
+  {
+    value: 'light',
+    label: '浅色',
+  },
+  {
+    value: 'dark',
+    label: '深色',
+  },
+  {
+    value: 'system',
+    label: '跟随系统',
+  },
+]
+
+const LANGUAGE_OPTIONS: readonly ComboboxDataItem[] = [
+  {
+    value: 'zh-CN',
+    label: '简体中文',
+  },
+  {
+    value: 'en',
+    label: 'English',
+  },
+]
+
+const ZOOM_OPTIONS: readonly ComboboxDataItem[] = [
+  {
+    value: '1',
+    label: '100%',
+  },
+  {
+    value: '0.75',
+    label: '75%',
+  },
+  {
+    value: '0.5',
+    label: '50%',
   },
 ]
 
@@ -394,43 +443,37 @@ function GeneralSettingsPanel({ settings, onChange }: SettingsPanelProps) {
 
       <Field description="选择应用界面的颜色模式。" label="外观">
         {({ inputId, describedBy }) => (
-          <Select
-            aria-describedby={describedBy}
+          <SettingsCombobox
+            ariaDescribedBy={describedBy}
+            data={THEME_OPTIONS}
             id={inputId}
-            onChange={(event) => {
+            onValueChange={(value) => {
               onChange({
                 ...settings,
-                theme: event.target.value as ThemeMode,
+                theme: value as ThemeMode,
               })
             }}
+            type="外观"
             value={settings.theme}
-          >
-            <option value="light">浅色</option>
-
-            <option value="dark">深色</option>
-
-            <option value="system">跟随系统</option>
-          </Select>
+          />
         )}
       </Field>
 
       <Field description="控制应用界面使用的语言。" label="语言">
         {({ inputId, describedBy }) => (
-          <Select
-            aria-describedby={describedBy}
+          <SettingsCombobox
+            ariaDescribedBy={describedBy}
+            data={LANGUAGE_OPTIONS}
             id={inputId}
-            onChange={(event) => {
+            onValueChange={(value) => {
               onChange({
                 ...settings,
-                language: event.target.value as AppSettings['language'],
+                language: value as AppSettings['language'],
               })
             }}
+            type="语言"
             value={settings.language}
-          >
-            <option value="zh-CN">简体中文</option>
-
-            <option value="en">English</option>
-          </Select>
+          />
         )}
       </Field>
 
@@ -494,29 +537,74 @@ function CanvasSettingsPanel({ settings, onChange }: SettingsPanelProps) {
 
       <Field description="新建画布时使用的默认缩放比例。" label="默认缩放">
         {({ inputId, describedBy }) => (
-          <Select
-            aria-describedby={describedBy}
+          <SettingsCombobox
+            ariaDescribedBy={describedBy}
+            data={ZOOM_OPTIONS}
             id={inputId}
-            onChange={(event) => {
+            onValueChange={(value) => {
               onChange({
                 ...settings,
                 canvas: {
                   ...settings.canvas,
-                  defaultZoom: Number(event.target.value),
+                  defaultZoom: Number(value),
                 },
               })
             }}
-            value={settings.canvas.defaultZoom}
-          >
-            <option value="1">100%</option>
-
-            <option value="0.75">75%</option>
-
-            <option value="0.5">50%</option>
-          </Select>
+            type="缩放比例"
+            value={String(settings.canvas.defaultZoom)}
+          />
         )}
       </Field>
     </section>
+  )
+}
+
+interface SettingsComboboxProps {
+  readonly id: string
+  readonly ariaDescribedBy: string | undefined
+  readonly data: readonly ComboboxDataItem[]
+  readonly type: string
+  readonly value: string
+  readonly onValueChange: (value: string) => void
+}
+
+function SettingsCombobox({
+  id,
+  ariaDescribedBy,
+  data,
+  type,
+  value,
+  onValueChange,
+}: SettingsComboboxProps) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Combobox
+      data={data}
+      onOpenChange={setOpen}
+      onValueChange={onValueChange}
+      open={open}
+      type={type}
+      value={value}
+    >
+      <ComboboxTrigger aria-describedby={ariaDescribedBy} id={id} />
+
+      <ComboboxContent>
+        <ComboboxInput />
+
+        <ComboboxEmpty />
+
+        <ComboboxList>
+          <ComboboxGroup>
+            {data.map((item) => (
+              <ComboboxItem key={item.value} value={item.value}>
+                {item.label}
+              </ComboboxItem>
+            ))}
+          </ComboboxGroup>
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
   )
 }
 

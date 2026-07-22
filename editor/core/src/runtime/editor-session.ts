@@ -351,9 +351,9 @@ function hasInitialDocumentAndPage(store: TLStore): boolean {
   let hasPage = false
 
   for (const record of store.allRecords()) {
-    if (record.typeName === 'document') {
+    if (record['typeName'] === 'document') {
       hasDocument = true
-    } else if (record.typeName === 'page') {
+    } else if (record['typeName'] === 'page') {
       hasPage = true
     }
 
