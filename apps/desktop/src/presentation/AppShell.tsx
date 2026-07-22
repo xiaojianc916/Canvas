@@ -237,13 +237,13 @@ function useApplicationCommands(runtime: AppShellRuntime, toggleCommandPalette: 
         category: '文件',
         shortcut: 'Ctrl+N',
         execute() {
-          runtime.canvases.create('未命名画板')
+          runtime.canvases.create('未命名画布')
         },
       }),
 
       runtime.commands.register({
         id: 'workspace.open-canvas',
-        label: '打开画板',
+        label: '打开画布',
         category: '文件',
         shortcut: 'Ctrl+O',
         execute: runtime.canvases.open,

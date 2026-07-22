@@ -67,14 +67,18 @@ export function useBindEditorSession(
   registration: ExtensionRegistration | null,
 ): void {
   const ctx = useContext(EditorCtx)
+  const bindSession = ctx?.bindSession
+  const unbindSession = ctx?.unbindSession
   const owner = useRef(Symbol('editor-session-owner'))
 
   useEffect(() => {
-    if (!ctx) {
+    if (!bindSession || !unbindSession || !editor || !registration) {
       return
     }
+
     const currentOwner = owner.current
-    ctx.bindSession(currentOwner, editor, registration)
-    return () => ctx.unbindSession(currentOwner)
-  }, [editor, registration, ctx])
+    bindSession(currentOwner, editor, registration)
+
+    return () => unbindSession(currentOwner)
+  }, [editor, registration, bindSession, unbindSession])
 }

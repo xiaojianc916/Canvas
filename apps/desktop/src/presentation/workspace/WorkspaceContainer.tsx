@@ -190,7 +190,7 @@ export function WorkspaceContainer({
       },
 
       createPage() {
-        activeEditorSession?.createPage('画板 ' + String(pages.length + 1))
+        activeEditorSession?.createPage('画布 ' + String(pages.length + 1))
       },
 
       openCommandPalette: onCommandPaletteOpen,
@@ -387,7 +387,7 @@ function CanvasStatusRightContent({ pageCount }: { readonly pageCount: number })
 }
 
 function createUntitledCanvasTitle(existingTitles: readonly string[]): string {
-  const baseTitle = '未命名画板'
+  const baseTitle = '未命名画布'
 
   if (!existingTitles.includes(baseTitle)) {
     return baseTitle

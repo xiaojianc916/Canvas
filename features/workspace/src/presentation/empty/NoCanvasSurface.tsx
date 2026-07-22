@@ -24,7 +24,7 @@ export function NoCanvasSurface({ onCreateDocument, onOpenDocument }: NoCanvasSu
         <div className="mt-5 flex justify-center gap-2">
           <Button onClick={onCreateDocument} size="sm" type="button">
             <FilePlus2 className="size-3.5" />
-            新建画板
+            新建画布
           </Button>
           <Button onClick={onOpenDocument} size="sm" type="button" variant="outline">
             <FolderOpen className="size-3.5" />

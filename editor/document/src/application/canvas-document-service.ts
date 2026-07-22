@@ -186,7 +186,7 @@ export function createCanvasDocumentService({
   }
 
   async function performSave(session: OwnedCanvasSession): Promise<void> {
-    const filePath = session.filePath ?? (await fileSelection.selectSavePath('未命名画板.draw'))
+    const filePath = session.filePath ?? (await fileSelection.selectSavePath('未命名画布.draw'))
 
     if (!filePath) {
       return

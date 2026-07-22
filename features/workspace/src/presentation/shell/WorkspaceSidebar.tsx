@@ -116,7 +116,7 @@ const PANEL_DETAILS: Record<
   },
   assets: { title: '素材', description: '集中管理图片、附件和可复用素材。', icon: Image },
   extensions: { title: '插件', description: '探索能够增强画布工作流的扩展能力。', icon: Boxes },
-  documents: { title: '恢复', description: '在这里恢复最近打开的画板与本地文件。', icon: Files },
+  documents: { title: '恢复', description: '在这里恢复最近打开的画布与本地文件。', icon: Files },
 }
 
 function WorkspacePanel({ kind }: { readonly kind: Exclude<CanvasNavigationItemId, 'pages'> }) {

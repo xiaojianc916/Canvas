@@ -1,373 +1,181 @@
-#!/usr/bin/env node
+// add-motion.mjs
+// 用法：在仓库任意目录运行 `node add-motion.mjs`
 
-import { execFileSync } from 'node:child_process'
-import {
-  existsSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from 'node:fs'
-import { join, resolve } from 'node:path'
-import process from 'node:process'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
-const root = resolve(process.cwd())
-const apply = process.argv.includes('--apply')
-const skipChecks = process.argv.includes('--skip-checks')
+const MOTION_VERSION = '12.42.2'
 
-const stylesPath =
-  'features/workspace/src/presentation/shell/chrome-workbench-tabs.css'
+function findWorkspaceRoot(startDirectory) {
+  let directory = resolve(startDirectory)
 
-const startMarker =
-  '/* BEGIN CANONICAL FIXED TAB CONTENT GEOMETRY */'
+  while (true) {
+    const packageJsonPath = join(directory, 'package.json')
+    const workspacePath = join(directory, 'pnpm-workspace.yaml')
 
-const endMarker =
-  '/* END CANONICAL FIXED TAB CONTENT GEOMETRY */'
-
-assertRepository()
-
-if (!apply) {
-  console.log('将固定标签内容坐标：')
-  console.log('PATCH  ' + stylesPath)
-  console.log('')
-  console.log('- 不解析现有 CSS selector 数量')
-  console.log('- 活动和未活动使用相同 inset')
-  console.log('- 活动和未活动使用相同 padding')
-  console.log('- 图标、文字、关闭按钮不再位移')
-  console.log('- Hover 背景使用独立绘制层')
-  console.log('- 活动和未活动标题字重一致')
-  console.log('')
-  console.log('使用 --apply 确认执行。')
-  process.exit(0)
-}
-
-writeCanonicalGeometryBlock()
-
-if (!skipChecks) {
-  runChecks()
-}
-
-console.log('')
-console.log('标签内容坐标已固定。')
-
-function writeCanonicalGeometryBlock() {
-  const absolutePath = join(
-    root,
-    stylesPath,
-  )
-
-  const original = readFileSync(
-    absolutePath,
-    'utf8',
-  )
-
-  const block = createGeometryBlock()
-
-  let updated = original
-
-  const startIndex =
-    updated.indexOf(startMarker)
-
-  const endIndex =
-    updated.indexOf(endMarker)
-
-  if (
-    startIndex >= 0 ||
-    endIndex >= 0
-  ) {
-    if (
-      startIndex < 0 ||
-      endIndex < 0 ||
-      endIndex < startIndex
-    ) {
-      throw new Error(
-        stylesPath +
-          ': 固定布局样式标记不完整。',
-      )
+    if (existsSync(packageJsonPath) && existsSync(workspacePath)) {
+      return directory
     }
 
-    updated =
-      updated.slice(0, startIndex) +
-      block +
-      updated.slice(
-        endIndex + endMarker.length,
-      )
-  } else {
-    updated =
-      updated.trimEnd() +
-      '\n\n' +
-      block +
-      '\n'
+    const parent = dirname(directory)
+
+    if (parent === directory) {
+      throw new Error('找不到包含 package.json 和 pnpm-workspace.yaml 的仓库根目录')
+    }
+
+    directory = parent
+  }
+}
+
+function updateWorkspaceCatalog(content) {
+  const newline = content.includes('\r\n') ? '\r\n' : '\n'
+  const lines = content.split(/\r?\n/)
+
+  const catalogIndex = lines.findIndex((line) => line === 'catalog:')
+
+  if (catalogIndex === -1) {
+    throw new Error('pnpm-workspace.yaml 中不存在顶级 catalog 配置')
   }
 
-  validateResult(updated)
+  let catalogEndIndex = lines.length
 
-  atomicWrite(
-    absolutePath,
-    updated,
-  )
+  for (let index = catalogIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index]
 
-  console.log('PATCH  ' + stylesPath)
-}
-
-function createGeometryBlock() {
-  return String.raw`${startMarker}
-
-/*
- * State-invariant content geometry.
- *
- * Activation changes only the background shape. It must never alter
- * the content box occupied by icon, title, status and close button.
- */
-.chrome-workbench-tab
-  .chrome-workbench-tab__content,
-.chrome-workbench-tab[data-active="true"]
-  .chrome-workbench-tab__content,
-.chrome-workbench-tab:not(
-    [data-active="true"]
-  )
-  .chrome-workbench-tab__content {
-  inset: 2px 12px 0;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 0;
-  outline: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-/*
- * Keep text metrics identical across activation changes. Changing
- * font weight changes glyph widths and creates a second visible jump.
- */
-.chrome-workbench-tab
-  .chrome-workbench-tab__title,
-.chrome-workbench-tab[data-active="true"]
-  .chrome-workbench-tab__title {
-  font-weight: 400;
-}
-
-/*
- * Existing content-based hover paint is disabled. Hover is rendered
- * by the independent ::before paint layer below.
- */
-.chrome-workbench-tab:hover:not(
-    [data-active="true"]
-  )
-  .chrome-workbench-tab__content,
-.chrome-workbench-tab:hover:not(
-    [data-active="true"]
-  ):not(
-    [data-suppress-hover="true"]
-  )
-  .chrome-workbench-tab__content {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-/*
- * Paint-only hover surface.
- *
- * This layer can appear and disappear without changing the content
- * element's dimensions or position.
- */
-.chrome-workbench-tab:not(
-    [data-active="true"]
-  )::before {
-  position: absolute;
-  z-index: 3;
-  inset: 2px 3px;
-  display: block;
-  border: 0;
-  border-radius: 8px;
-  outline: 0;
-  background: var(--chrome-tab-hover);
-  box-shadow: none;
-  content: "";
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 80ms ease-out;
-}
-
-.chrome-workbench-tab:hover:not(
-    [data-active="true"]
-  ):not(
-    [data-suppress-hover="true"]
-  )::before {
-  opacity: 1;
-}
-
-.chrome-workbench-tab[
-    data-suppress-hover="true"
-  ]:not(
-    [data-active="true"]
-  )::before {
-  opacity: 0;
-  transition: none;
-}
-
-/*
- * Active-tab geometry remains owned by ChromeActiveTabShape.
- */
-.chrome-workbench-tab[data-active="true"]::before {
-  display: none;
-  content: none;
-}
-
-${endMarker}`
-}
-
-function validateResult(source) {
-  const required = [
-    startMarker,
-    endMarker,
-    'inset: 2px 12px 0;',
-    'padding: 0 8px;',
-    'font-weight: 400;',
-    'background: var(--chrome-tab-hover);',
-    'data-suppress-hover="true"',
-  ]
-
-  for (const token of required) {
-    if (!source.includes(token)) {
-      throw new Error(
-        stylesPath +
-          ': 固定布局结果缺少 ' +
-          token,
-      )
+    if (/^[^\s#][^:]*:/.test(line)) {
+      catalogEndIndex = index
+      break
     }
   }
 
-  const startCount =
-    source.split(startMarker).length - 1
+  const existingMotionIndex = lines.findIndex(
+    (line, index) =>
+      index > catalogIndex &&
+      index < catalogEndIndex &&
+      /^\s{2}motion\s*:/.test(line),
+  )
 
-  const endCount =
-    source.split(endMarker).length - 1
+  const motionEntry = `  motion: "${MOTION_VERSION}"`
 
-  if (
-    startCount !== 1 ||
-    endCount !== 1
-  ) {
-    throw new Error(
-      stylesPath +
-        ': 固定布局规则块必须且只能存在一次。',
-    )
+  if (existingMotionIndex !== -1) {
+    lines[existingMotionIndex] = motionEntry
+    return lines.join(newline)
+  }
+
+  // 放在 react 之前，保持 catalog 相对整齐。
+  const reactIndex = lines.findIndex(
+    (line, index) =>
+      index > catalogIndex &&
+      index < catalogEndIndex &&
+      /^\s{2}react\s*:/.test(line),
+  )
+
+  const insertionIndex =
+    reactIndex !== -1 ? reactIndex : catalogEndIndex
+
+  lines.splice(insertionIndex, 0, motionEntry)
+
+  return lines.join(newline)
+}
+
+function updateDesignSystemPackage(content) {
+  const packageJson = JSON.parse(content)
+
+  packageJson.dependencies ??= {}
+  packageJson.dependencies.motion = 'catalog:'
+
+  packageJson.dependencies = Object.fromEntries(
+    Object.entries(packageJson.dependencies).sort(([left], [right]) =>
+      left.localeCompare(right),
+    ),
+  )
+
+  return `${JSON.stringify(packageJson, null, 2)}\n`
+}
+
+function runPnpmInstall(root) {
+  const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+
+  const result = spawnSync(command, ['install'], {
+    cwd: root,
+    stdio: 'inherit',
+  })
+
+  if (result.error) {
+    throw result.error
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`pnpm install 执行失败，退出码：${result.status}`)
   }
 }
 
-function runChecks() {
-  run('pnpm', [
-    'exec',
-    'biome',
-    'format',
-    '--write',
-    stylesPath,
-  ])
+function main() {
+  const root = findWorkspaceRoot(process.cwd())
 
-  run('pnpm', [
-    '--filter',
-    '@hybrid-canvas/workspace',
-    'typecheck',
-  ])
-
-  run('pnpm', [
-    '--filter',
-    '@hybrid-canvas/workspace',
-    'test',
-  ])
-
-  run('pnpm', [
-    '--filter',
-    '@hybrid-canvas/desktop',
-    'typecheck',
-  ])
-
-  run('node', [
-    'tests/architecture/check-ui-architecture.mjs',
-  ])
-}
-
-function assertRepository() {
-  const packagePath = join(
+  const workspacePath = join(root, 'pnpm-workspace.yaml')
+  const designSystemPackagePath = join(
     root,
+    'foundations',
+    'design-system',
     'package.json',
   )
 
-  if (!existsSync(packagePath)) {
+  if (!existsSync(designSystemPackagePath)) {
     throw new Error(
-      '请在 hybrid-canvas 仓库根目录执行脚本。',
+      `找不到设计系统 package.json：${designSystemPackagePath}`,
     )
   }
 
-  const manifest = JSON.parse(
-    readFileSync(packagePath, 'utf8'),
-  )
-
-  if (manifest.name !== 'hybrid-canvas') {
-    throw new Error(
-      '当前目录不是 hybrid-canvas 仓库。',
-    )
-  }
-
-  if (
-    !existsSync(
-      join(root, stylesPath),
-    )
-  ) {
-    throw new Error(
-      '缺少目标文件：' +
-        stylesPath,
-    )
-  }
-}
-
-function atomicWrite(
-  destination,
-  content,
-) {
-  const temporary =
-    destination +
-    '.tmp-' +
-    process.pid +
-    '-' +
-    Date.now()
-
-  writeFileSync(
-    temporary,
-    normalize(content),
+  const originalWorkspace = readFileSync(workspacePath, 'utf8')
+  const originalPackageJson = readFileSync(
+    designSystemPackagePath,
     'utf8',
   )
 
-  renameSync(
-    temporary,
-    destination,
+  const updatedWorkspace = updateWorkspaceCatalog(originalWorkspace)
+  const updatedPackageJson = updateDesignSystemPackage(
+    originalPackageJson,
   )
+
+  try {
+    writeFileSync(workspacePath, updatedWorkspace, 'utf8')
+    writeFileSync(
+      designSystemPackagePath,
+      updatedPackageJson,
+      'utf8',
+    )
+
+    console.log(`已将 motion ${MOTION_VERSION} 加入 workspace catalog`)
+    console.log(
+      '已将 motion: catalog: 加入 @hybrid-canvas/design-system',
+    )
+    console.log('正在更新 pnpm-lock.yaml 和 node_modules...')
+
+    runPnpmInstall(root)
+
+    console.log('\n完成。可以这样导入：')
+    console.log("import { m, LazyMotion } from 'motion/react'")
+  } catch (error) {
+    // 安装失败时恢复两个配置文件。
+    writeFileSync(workspacePath, originalWorkspace, 'utf8')
+    writeFileSync(
+      designSystemPackagePath,
+      originalPackageJson,
+      'utf8',
+    )
+
+    throw error
+  }
 }
 
-function normalize(content) {
-  return (
-    content
-      .replaceAll('\r\n', '\n')
-      .trimStart() + '\n'
+try {
+  main()
+} catch (error) {
+  console.error(
+    '\n添加 Motion 失败：',
+    error instanceof Error ? error.message : error,
   )
-}
-
-function run(command, args) {
-  console.log('')
-  console.log(
-    'RUN    ' +
-      command +
-      ' ' +
-      args.join(' '),
-  )
-
-  const needsWindowsShell =
-    process.platform === 'win32' &&
-    command === 'pnpm'
-
-  execFileSync(command, args, {
-    cwd: root,
-    stdio: 'inherit',
-    shell: needsWindowsShell,
-  })
+  process.exitCode = 1
 }
