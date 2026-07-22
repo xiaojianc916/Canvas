@@ -4,7 +4,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
-import ts from 'typescript'
+import * as tsModule from '@typescript/typescript6'
+
+const ts = tsModule.default ?? tsModule
 
 const ROOT = process.cwd()
 
