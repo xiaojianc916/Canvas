@@ -83,8 +83,10 @@ export function DesktopTitleBar({
           </button>
         </div>
         <div
-          className="shrink-0 border-b border-r border-divider"
+          className="shrink-0 border-b border-divider"
           style={{
+            borderRightStyle: 'solid',
+            borderRightWidth: isSidebarOpen ? 1 : 0,
             width: 'var(--workspace-sidebar-column-width, 0px)',
           }}
         />

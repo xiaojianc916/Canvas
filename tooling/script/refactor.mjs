@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 /**
- * 修复右侧属性栏关闭按钮被裁剪的问题。
+ * 修复顶部栏侧边栏分割线：
  *
- * 原因：
- * 关闭按钮使用 -left-8 放置在属性栏左边界外，
- * 但父容器被错误设置为 overflow-hidden。
+ * - 左侧侧边栏关闭：隐藏竖向分割线
+ * - 左侧侧边栏打开：显示竖向分割线
+ * - 不影响顶部标签栏与侧边栏的同步动画
  *
  * 运行：
  * node tooling/script/refactor.mjs --apply
@@ -42,49 +42,51 @@ function findRepositoryRoot(startDirectory) {
 
 const ROOT = findRepositoryRoot(SCRIPT_DIRECTORY)
 
-const WORKSPACE_SHELL_PATH = path.join(
+const DESKTOP_TITLE_BAR_PATH = path.join(
   ROOT,
-  'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
+  'apps/desktop/src/presentation/chrome/DesktopTitleBar.tsx',
 )
 
-function updateWorkspaceShell() {
-  if (!fs.existsSync(WORKSPACE_SHELL_PATH)) {
+function updateDesktopTitleBar() {
+  if (!fs.existsSync(DESKTOP_TITLE_BAR_PATH)) {
     throw new Error(
-      `文件不存在：${path.relative(ROOT, WORKSPACE_SHELL_PATH)}`,
+      `文件不存在：${path.relative(ROOT, DESKTOP_TITLE_BAR_PATH)}`,
     )
   }
 
-  let content = fs.readFileSync(WORKSPACE_SHELL_PATH, 'utf8')
+  let content = fs.readFileSync(DESKTOP_TITLE_BAR_PATH, 'utf8')
 
-  const incorrectClass =
-    'className="absolute inset-y-0 right-0 overflow-hidden"'
+  const oldElementPattern =
+    /<div\s+className="shrink-0 border-b border-r border-divider"\s+style=\{\{\s*width:\s*'var\(--workspace-sidebar-column-width, 0px\)',?\s*\}\}\s*\/>/
 
-  const correctedClass =
-    'className="absolute inset-y-0 right-0 overflow-visible"'
+  const newElement = `<div
+          className="shrink-0 border-b border-divider"
+          style={{
+            borderRightStyle: 'solid',
+            borderRightWidth: isSidebarOpen ? 1 : 0,
+            width: 'var(--workspace-sidebar-column-width, 0px)',
+          }}
+        />`
 
-  if (content.includes(incorrectClass)) {
-    content = content.replace(incorrectClass, correctedClass)
-  } else if (!content.includes(correctedClass)) {
+  if (oldElementPattern.test(content)) {
+    content = content.replace(oldElementPattern, newElement)
+  } else if (
+    !content.includes(
+      'borderRightWidth: isSidebarOpen ? 1 : 0',
+    )
+  ) {
     throw new Error(
-      '找不到右侧属性栏动画容器，请检查 WorkspaceShell.tsx 当前代码。',
+      [
+        '找不到顶部栏中的侧边栏宽度占位元素。',
+        '请检查 DesktopTitleBar.tsx 当前代码。',
+      ].join('\n'),
     )
   }
 
-  /*
-   * 确认关闭按钮仍然存在，避免只修复裁剪但按钮已经被删掉。
-   */
-  if (!content.includes('aria-label="收起属性面板"')) {
-    throw new Error('右侧属性栏的关闭按钮已经丢失，无法只通过解除裁剪恢复。')
-  }
-
-  if (!content.includes('className="absolute -left-8 top-3 z-30')) {
-    throw new Error('右侧属性栏关闭按钮的位置代码与预期不一致。')
-  }
-
-  fs.writeFileSync(WORKSPACE_SHELL_PATH, content, 'utf8')
+  fs.writeFileSync(DESKTOP_TITLE_BAR_PATH, content, 'utf8')
 
   console.log(
-    `已修复：${path.relative(ROOT, WORKSPACE_SHELL_PATH)}`,
+    `已修改：${path.relative(ROOT, DESKTOP_TITLE_BAR_PATH)}`,
   )
 }
 
@@ -118,32 +120,32 @@ function main() {
 
   console.log(`仓库目录：${ROOT}\n`)
 
-  updateWorkspaceShell()
+  updateDesktopTitleBar()
 
   run('pnpm', [
     'exec',
     'biome',
     'format',
     '--write',
-    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
+    'apps/desktop/src/presentation/chrome/DesktopTitleBar.tsx',
   ])
 
   run('pnpm', [
     '--filter',
-    '@hybrid-canvas/workspace',
+    '@hybrid-canvas/desktop',
     'typecheck',
   ])
 
-  console.log('\n修复完成：')
-  console.log('- 右侧属性栏关闭按钮不再被裁剪')
-  console.log('- 打开右侧属性栏后可以正常关闭')
-  console.log('- 左右侧栏共用的 220ms 动画保持不变')
+  console.log('\n修改完成：')
+  console.log('- 侧边栏关闭时顶部竖向分割线隐藏')
+  console.log('- 侧边栏打开时顶部竖向分割线显示')
+  console.log('- 顶部标签栏继续复用侧边栏宽度动画')
 }
 
 try {
   main()
 } catch (error) {
-  console.error('\n修复失败：')
+  console.error('\n修改失败：')
   console.error(error instanceof Error ? error.message : error)
   process.exitCode = 1
 }
