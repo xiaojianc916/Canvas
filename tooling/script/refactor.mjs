@@ -14,40 +14,51 @@ const root = resolve(process.cwd())
 const apply = process.argv.includes('--apply')
 const skipChecks = process.argv.includes('--skip-checks')
 
-const tabsPath =
-  'features/workspace/src/presentation/shell/WorkbenchTabs.tsx'
-
-const stylesPath =
-  'features/workspace/src/presentation/shell/chrome-workbench-tabs.css'
+const paths = {
+  tabs:
+    'features/workspace/src/presentation/shell/WorkbenchTabs.tsx',
+  styles:
+    'features/workspace/src/presentation/shell/chrome-workbench-tabs.css',
+  shell:
+    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
+}
 
 assertRepository()
 
 if (!apply) {
-  console.log('将只重构标签页 UI：')
-  console.log('PATCH  ' + tabsPath)
-  console.log('WRITE  ' + stylesPath)
+  console.log('将修复 Chrome 标签分割线和活动标签基线：')
+  console.log('PATCH  ' + paths.tabs)
+  console.log('PATCH  ' + paths.styles)
+  console.log('PATCH  ' + paths.shell)
   console.log('')
-  console.log('不会修改 DesktopTitleBar。')
-  console.log('不会删除侧边栏宽度占位。')
+  console.log('- 每个标签边界只保留一根分割线')
+  console.log('- 活动标签两侧不显示分割线')
+  console.log('- Hover 标签两侧分割线同步渐隐')
+  console.log('- 删除活动标签下方接缝')
+  console.log('- 保留侧边栏标题栏占位')
+  console.log('- 不修改 DesktopTitleBar 布局')
   console.log('')
   console.log('使用 --apply 确认执行。')
   process.exit(0)
 }
 
-patchTabsComponent()
-writeTabsStyles()
+patchTabsMarkup()
+patchSeparatorStyles()
+patchWorkspaceBaseline()
 
 if (!skipChecks) {
   runChecks()
 }
 
 console.log('')
-console.log('Chrome 标签 UI 重构完成。')
+console.log(
+  'Chrome 标签分割线和工作区融合逻辑修复完成。',
+)
 
-function patchTabsComponent() {
+function patchTabsMarkup() {
   const absolutePath = join(
     root,
-    tabsPath,
+    paths.tabs,
   )
 
   const original = readFileSync(
@@ -58,44 +69,61 @@ function patchTabsComponent() {
   let updated = original
 
   /*
-   * Delete the ResizeObserver density controller.
+   * Chromium internally tracks leading and trailing separator
+   * opacities because adjacent native tabs overlap and both separators
+   * are aligned to the same physical coordinate.
    *
-   * It assigned `smaller` below 78px and CSS consequently hid the
-   * title. The strip should preserve a readable minimum width and
-   * scroll instead of turning active tabs into anonymous shapes.
+   * Our DOM tabs do not share that native paint coordinate. Therefore,
+   * each visual boundary has exactly one owner: the tab on its left.
    */
-  const densityEffect =
-    /\n  useEffect\(\(\) => \{\n    const scroller = scrollerRef\.current[\s\S]*?\n  \}, \[tabs\]\)\n/
+  const twoSeparatorsPattern =
+    /\n\s*<span\n\s*aria-hidden="true"\n\s*className="chrome-workbench-tab__divider chrome-workbench-tab__divider--leading"\n\s*\/>\n\s*<span\n\s*aria-hidden="true"\n\s*className="chrome-workbench-tab__divider chrome-workbench-tab__divider--trailing"\n\s*\/>/
 
-  if (densityEffect.test(updated)) {
+  const oneSeparatorMarkup = `
+              <span
+                aria-hidden="true"
+                className="chrome-workbench-tab__separator"
+              />`
+
+  if (
+    twoSeparatorsPattern.test(updated)
+  ) {
     updated = updated.replace(
-      densityEffect,
-      '\n',
+      twoSeparatorsPattern,
+      oneSeparatorMarkup,
+    )
+  } else {
+    /*
+     * Handle a partially modified version where only one legacy
+     * divider remains.
+     */
+    updated = updated.replace(
+      /\n\s*<span\n\s*aria-hidden="true"\n\s*className="chrome-workbench-tab__divider chrome-workbench-tab__divider--leading"\n\s*\/>/g,
+      '',
+    )
+
+    updated = updated.replace(
+      /className="chrome-workbench-tab__divider chrome-workbench-tab__divider--trailing"/g,
+      'className="chrome-workbench-tab__separator"',
     )
   }
 
+  /*
+   * There must not be a strip-wide baseline. The selected tab and
+   * workspace surface already share the same surface token.
+   */
   updated = updated.replace(
-    /\n\s*data-size="normal"/g,
-    '',
-  )
-
-  updated = updated.replace(
-    /\n\s*<ChromeTabBackground \/>\n/g,
+    /\n\s*<div aria-hidden="true" className="chrome-workbench-tabs__bottom-bar" \/>\n?/g,
     '\n',
   )
 
-  updated = updated.replace(
-    /\nfunction ChromeTabBackground\(\) \{[\s\S]*?\n\}\n\nfunction TabEndAction/,
-    '\nfunction TabEndAction',
-  )
-
-  assertTabsComponent(updated)
+  assertTabsMarkup(updated)
 
   if (updated === original) {
     console.log(
       'SKIP   ' +
-        tabsPath +
-        '（旧 SVG 和尺寸检测已经删除）',
+        paths.tabs +
+        '（DOM 已经使用单边界分割线）',
     )
     return
   }
@@ -105,494 +133,277 @@ function patchTabsComponent() {
     updated,
   )
 
-  console.log('PATCH  ' + tabsPath)
+  console.log('PATCH  ' + paths.tabs)
 }
 
-function assertTabsComponent(source) {
+function assertTabsMarkup(source) {
+  const separatorCount =
+    source.match(
+      /className="chrome-workbench-tab__separator"/g,
+    )?.length ?? 0
+
+  if (separatorCount !== 1) {
+    throw new Error(
+      paths.tabs +
+        ': 分割线模板应出现一次，实际出现 ' +
+        String(separatorCount) +
+        ' 次。',
+    )
+  }
+
   const forbiddenTokens = [
-    'ChromeTabBackground',
-    'ResizeObserver',
-    "width < 58 ? 'mini'",
-    'data-size="normal"',
-    'chrome-workbench-tab__background-left',
-    'chrome-workbench-tab__background-right',
+    'chrome-workbench-tab__divider--leading',
+    'chrome-workbench-tab__divider--trailing',
+    'chrome-workbench-tabs__bottom-bar',
   ]
 
   for (const token of forbiddenTokens) {
     if (source.includes(token)) {
       throw new Error(
-        tabsPath +
-          ': 旧标签实现仍包含 ' +
+        paths.tabs +
+          ': 旧结构仍然包含 ' +
           token,
       )
     }
   }
+}
 
+function patchSeparatorStyles() {
+  const absolutePath = join(
+    root,
+    paths.styles,
+  )
+
+  const original = readFileSync(
+    absolutePath,
+    'utf8',
+  )
+
+  const separatorStyles = String.raw`
+/*
+ * One DOM separator represents one physical boundary.
+ *
+ * Chromium computes leading and trailing opacities independently
+ * because native tabs overlap and their separators align onto the
+ * same device coordinate. In this flex layout, rendering both sides
+ * would produce two distinct lines, so the left tab exclusively owns
+ * the boundary after it.
+ */
+.chrome-workbench-tab__separator {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: var(
+    --chrome-tab-shoulder,
+    var(--chrome-tab-margin, 12px)
+  );
+  bottom: 9px;
+  width: 1px;
+  background: var(--chrome-tab-divider);
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+}
+
+/*
+ * Chromium separator state mapped to a single-active-tab workbench:
+ *
+ * 1. Active tabs have a visible shape, so their own trailing
+ *    separator is hidden.
+ * 2. Hovered tabs have a visible hover shape, so their trailing
+ *    separator fades out.
+ * 3. The preceding tab owns the boundary before the active/hovered
+ *    tab, so that preceding separator must also fade out.
+ *
+ * This guarantees that active and hovered tabs have no separator on
+ * either side, while two ordinary background tabs have exactly one.
+ */
+.chrome-workbench-tab[data-active="true"]
+  .chrome-workbench-tab__separator,
+.chrome-workbench-tab:hover
+  .chrome-workbench-tab__separator,
+.chrome-workbench-tab:has(
+    + .chrome-workbench-tab[data-active="true"]
+  )
+  .chrome-workbench-tab__separator,
+.chrome-workbench-tab:has(
+    + .chrome-workbench-tab:hover
+  )
+  .chrome-workbench-tab__separator {
+  opacity: 0;
+}
+`
+
+  let updated = original
+
+  /*
+   * Replace the entire legacy separator section, regardless of
+   * whether it came from the original SVG version or shoulder version.
+   */
+  const separatorSectionPattern =
+    /\.chrome-workbench-tab__divider\s*\{[\s\S]*?(?=\.chrome-workbench-tabs__new-tab\s*\{)/
+
+  if (
+    separatorSectionPattern.test(updated)
+  ) {
+    updated = updated.replace(
+      separatorSectionPattern,
+      separatorStyles + '\n',
+    )
+  } else if (
+    updated.includes(
+      '.chrome-workbench-tab__separator {',
+    )
+  ) {
+    const existingSeparatorPattern =
+      /\/\*\n \* One DOM separator[\s\S]*?(?=\.chrome-workbench-tabs__new-tab\s*\{)/
+
+    if (
+      existingSeparatorPattern.test(updated)
+    ) {
+      updated = updated.replace(
+        existingSeparatorPattern,
+        separatorStyles + '\n',
+      )
+    } else {
+      throw new Error(
+        paths.styles +
+          ': 已存在 separator，但无法确定安全替换范围。',
+      )
+    }
+  } else {
+    throw new Error(
+      paths.styles +
+        ': 找不到旧分割线样式区域。',
+    )
+  }
+
+  /*
+   * Remove the artificial strip-wide baseline.
+   */
+  updated = updated.replace(
+    /\.chrome-workbench-tabs__bottom-bar\s*\{[\s\S]*?\}\n?/g,
+    '',
+  )
+
+  /*
+   * Remove stale reduced-motion references to the old divider.
+   */
+  updated = updated.replaceAll(
+    '.chrome-workbench-tab__divider,',
+    '.chrome-workbench-tab__separator,',
+  )
+
+  assertSeparatorStyles(updated)
+
+  atomicWrite(
+    absolutePath,
+    updated,
+  )
+
+  console.log('PATCH  ' + paths.styles)
+}
+
+function assertSeparatorStyles(source) {
   const requiredTokens = [
-    'chrome-workbench-tab__content',
-    'chrome-workbench-tab__title',
-    '{tab.title}',
-    'role="tab"',
-    'role="tablist"',
+    '.chrome-workbench-tab__separator {',
+    '.chrome-workbench-tab[data-active="true"]',
+    '+ .chrome-workbench-tab[data-active="true"]',
+    '+ .chrome-workbench-tab:hover',
+    'opacity: 0;',
   ]
 
   for (const token of requiredTokens) {
     if (!source.includes(token)) {
       throw new Error(
-        tabsPath +
-          ': 重构后缺少 ' +
+        paths.styles +
+          ': 新分割线逻辑缺少 ' +
+          token,
+      )
+    }
+  }
+
+  const forbiddenTokens = [
+    '.chrome-workbench-tab__divider {',
+    'chrome-workbench-tab__divider--leading',
+    'chrome-workbench-tab__divider--trailing',
+    '.chrome-workbench-tabs__bottom-bar {',
+  ]
+
+  for (const token of forbiddenTokens) {
+    if (source.includes(token)) {
+      throw new Error(
+        paths.styles +
+          ': 旧样式仍然包含 ' +
           token,
       )
     }
   }
 }
 
-function writeTabsStyles() {
-  const css = String.raw`
-/*
- * Chrome-style workbench tabs.
- *
- * This stylesheet intentionally does not control titlebar layout.
- * The sidebar-aligned blank region remains owned by DesktopTitleBar.
- *
- * Active tab geometry:
- *
- *       ╭────────────────────╮
- *   ────╯                    ╰────
- *      concave shoulders
- *
- * The center body is inset by --chrome-tab-shoulder. The active
- * pseudo-elements occupy both side areas and use rounded corners
- * plus box-shadows to produce Chrome's outward base and concave
- * transition into the content surface.
- */
+function patchWorkspaceBaseline() {
+  const absolutePath = join(
+    root,
+    paths.shell,
+  )
 
-.chrome-workbench-tabs,
-.chrome-workbench-tabs * {
-  box-sizing: border-box;
-}
+  const original = readFileSync(
+    absolutePath,
+    'utf8',
+  )
 
-.chrome-workbench-tabs {
-  --chrome-tab-height: 36px;
-  --chrome-tab-shoulder: 12px;
-  --chrome-tab-min-width: 144px;
-  --chrome-tab-preferred-width: 220px;
-  --chrome-tab-max-width: 240px;
-  --chrome-tab-strip: var(--color-chrome);
-  --chrome-tab-surface: var(--color-background);
-  --chrome-tab-hover: color-mix(
-    in srgb,
-    var(--color-background) 56%,
-    transparent
-  );
-  --chrome-tab-divider: color-mix(
-    in srgb,
-    var(--color-foreground) 20%,
-    transparent
-  );
+  /*
+   * This border spans the full chrome row, including directly below
+   * the active tab. It conflicts with the selected tab's surface and
+   * creates the visible seam reported by the user.
+   *
+   * DesktopTitleBar's intentionally reserved sidebar space is not
+   * touched.
+   */
+  const oldClass =
+    'col-span-full row-1 min-h-0 min-w-0 border-b border-divider bg-chrome'
 
-  position: relative;
-  width: 100%;
-  min-width: 0;
-  height: 100%;
-  overflow: hidden;
-  color: var(--color-foreground);
-  background: var(--chrome-tab-strip);
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-  font-size: 12px;
-}
+  const newClass =
+    'col-span-full row-1 min-h-0 min-w-0 bg-chrome'
 
-.chrome-workbench-tabs__scroller {
-  position: relative;
-  display: flex;
-  align-items: end;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  padding: 5px 4px 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  overscroll-behavior-x: contain;
-}
-
-.chrome-workbench-tabs__scroller::-webkit-scrollbar {
-  display: none;
-}
-
-.chrome-workbench-tabs__drag-region {
-  height: 100%;
-  min-width: 28px;
-  flex: 1 0 28px;
-}
-
-/*
- * Keep titles readable.
- *
- * When the intentionally reserved titlebar space leaves insufficient
- * room, the strip scrolls horizontally. It does not hide the title
- * based on measured width.
- */
-.chrome-workbench-tab {
-  position: relative;
-  z-index: 1;
-  height: var(--chrome-tab-height);
-  min-width: var(--chrome-tab-min-width);
-  max-width: var(--chrome-tab-max-width);
-  flex: 0 1 var(--chrome-tab-preferred-width);
-  margin-left: -1px;
-  overflow: visible;
-  isolation: isolate;
-  user-select: none;
-}
-
-.chrome-workbench-tab:first-child {
-  margin-left: 0;
-}
-
-.chrome-workbench-tab[data-active="true"] {
-  z-index: 5;
-}
-
-.chrome-workbench-tab:hover:not(
-    [data-active="true"]
+  if (
+    !original.includes(oldClass)
   ) {
-  z-index: 3;
-}
+    if (original.includes(newClass)) {
+      console.log(
+        'SKIP   ' +
+          paths.shell +
+          '（工作区基线已经删除）',
+      )
+      return
+    }
 
-/*
- * Active Chrome shoulders.
- *
- * The box-shadow projects the active surface toward the center body.
- * The rounded inner edge removes the upper outside portion, producing
- * the characteristic concave transition instead of a diagonal wing.
- */
-.chrome-workbench-tab[data-active="true"]::before,
-.chrome-workbench-tab[data-active="true"]::after {
-  position: absolute;
-  z-index: 0;
-  bottom: 0;
-  width: var(--chrome-tab-shoulder);
-  height: var(--chrome-tab-shoulder);
-  content: "";
-  pointer-events: none;
-}
-
-.chrome-workbench-tab[data-active="true"]::before {
-  left: 0;
-  border-bottom-right-radius: var(
-    --chrome-tab-shoulder
-  );
-  box-shadow:
-    6px 6px 0 6px var(--chrome-tab-surface);
-}
-
-.chrome-workbench-tab[data-active="true"]::after {
-  right: 0;
-  border-bottom-left-radius: var(
-    --chrome-tab-shoulder
-  );
-  box-shadow:
-    -6px 6px 0 6px var(--chrome-tab-surface);
-}
-
-/*
- * The center body connects directly to the content area at its
- * baseline. Only the upper corners are convex.
- */
-.chrome-workbench-tab__content {
-  position: absolute;
-  z-index: 1;
-  inset:
-    0
-    var(--chrome-tab-shoulder)
-    0;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  padding: 0 10px;
-  overflow: hidden;
-  border-radius: 10px 10px 0 0;
-  background: transparent;
-  transition:
-    background-color 110ms ease-out,
-    color 110ms ease-out;
-}
-
-.chrome-workbench-tab[data-active="true"]
-  .chrome-workbench-tab__content {
-  background: var(--chrome-tab-surface);
-}
-
-.chrome-workbench-tab:hover:not(
-    [data-active="true"]
-  )
-  .chrome-workbench-tab__content {
-  border-radius: 10px;
-  background: var(--chrome-tab-hover);
-}
-
-.chrome-workbench-tab__activation {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  height: 100%;
-  flex: 1 1 auto;
-  gap: 8px;
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  outline: 0;
-  color: var(--color-muted-foreground);
-  background: transparent;
-  text-align: left;
-  cursor: default;
-}
-
-.chrome-workbench-tab[data-active="true"]
-  .chrome-workbench-tab__activation {
-  color: var(--color-foreground);
-}
-
-.chrome-workbench-tab__activation:focus-visible {
-  border-radius: 7px;
-  outline: 2px solid var(--color-primary);
-  outline-offset: -3px;
-}
-
-.chrome-workbench-tab__icon {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
-  stroke-width: 1.7;
-}
-
-.chrome-workbench-tab__title {
-  display: block;
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  color: inherit;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 16px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.chrome-workbench-tab[data-active="true"]
-  .chrome-workbench-tab__title {
-  font-weight: 500;
-}
-
-.chrome-workbench-tab__end {
-  position: relative;
-  display: grid;
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
-  margin-left: 4px;
-  place-items: center;
-}
-
-.chrome-workbench-tab__close {
-  position: absolute;
-  inset: 2px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  color: currentColor;
-  background: transparent;
-  opacity: 0.78;
-}
-
-.chrome-workbench-tab__close:hover {
-  background: color-mix(
-    in srgb,
-    var(--color-foreground) 12%,
-    transparent
-  );
-  opacity: 1;
-}
-
-.chrome-workbench-tab__close:active {
-  background: color-mix(
-    in srgb,
-    var(--color-foreground) 20%,
-    transparent
-  );
-}
-
-.chrome-workbench-tab__close:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 1px;
-}
-
-.chrome-workbench-tab__status {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.chrome-workbench-tab__status--dirty {
-  background: #d5803b;
-}
-
-.chrome-workbench-tab__status--saving {
-  background: #2783de;
-  animation:
-    chrome-workbench-saving
-    900ms
-    ease-in-out
-    infinite
-    alternate;
-}
-
-.chrome-workbench-tab__status--failed {
-  background: #e56458;
-}
-
-.chrome-workbench-tab__status
-  + .chrome-workbench-tab__close {
-  opacity: 0;
-}
-
-.chrome-workbench-tab:hover
-  .chrome-workbench-tab__status {
-  opacity: 0;
-}
-
-.chrome-workbench-tab:hover
-  .chrome-workbench-tab__status
-  + .chrome-workbench-tab__close {
-  opacity: 1;
-}
-
-/*
- * Inactive-tab separators. Separators adjacent to active or hovered
- * tabs disappear, matching Chrome's tab-strip grouping.
- */
-.chrome-workbench-tab__divider {
-  position: absolute;
-  z-index: 2;
-  top: 10px;
-  bottom: 9px;
-  width: 1px;
-  background: var(--chrome-tab-divider);
-  transition: opacity 100ms ease-out;
-}
-
-.chrome-workbench-tab__divider--leading {
-  left: var(--chrome-tab-shoulder);
-}
-
-.chrome-workbench-tab__divider--trailing {
-  right: var(--chrome-tab-shoulder);
-}
-
-.chrome-workbench-tab:first-child
-  .chrome-workbench-tab__divider--leading,
-.chrome-workbench-tab:last-of-type
-  .chrome-workbench-tab__divider--trailing,
-.chrome-workbench-tab[data-active="true"]
-  .chrome-workbench-tab__divider,
-.chrome-workbench-tab:hover
-  .chrome-workbench-tab__divider,
-.chrome-workbench-tab:has(
-    + .chrome-workbench-tab[data-active="true"]
-  )
-  .chrome-workbench-tab__divider--trailing,
-.chrome-workbench-tab:has(
-    + .chrome-workbench-tab:hover
-  )
-  .chrome-workbench-tab__divider--trailing {
-  opacity: 0;
-}
-
-.chrome-workbench-tabs__new-tab {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
-  margin-left: 2px;
-  padding: 0;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  color: var(--color-muted-foreground);
-  background: transparent;
-}
-
-.chrome-workbench-tabs__new-tab:hover {
-  color: var(--color-foreground);
-  background: color-mix(
-    in srgb,
-    var(--color-foreground) 9%,
-    transparent
-  );
-}
-
-.chrome-workbench-tabs__new-tab:active {
-  background: color-mix(
-    in srgb,
-    var(--color-foreground) 15%,
-    transparent
-  );
-}
-
-.chrome-workbench-tabs__new-tab:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: -3px;
-}
-
-/*
- * The tab and the content surface use the same background at the
- * baseline, removing any seam beneath the active body and shoulders.
- */
-.chrome-workbench-tabs__bottom-bar {
-  position: absolute;
-  z-index: 10;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 1px;
-  background: var(--chrome-tab-surface);
-  pointer-events: none;
-}
-
-@keyframes chrome-workbench-saving {
-  from {
-    opacity: 0.4;
+    throw new Error(
+      paths.shell +
+        ': 找不到预期的 Chrome 行底部边框。',
+    )
   }
 
-  to {
-    opacity: 1;
-  }
-}
+  const updated = original.replace(
+    oldClass,
+    newClass,
+  )
 
-@media (prefers-reduced-motion: reduce) {
-  .chrome-workbench-tab__content,
-  .chrome-workbench-tab__divider,
-  .chrome-workbench-tab__status {
-    transition: none;
-    animation: none;
+  if (
+    updated.includes(oldClass)
+  ) {
+    throw new Error(
+      paths.shell +
+        ': 工作区基线删除失败。',
+    )
   }
-}
-`
 
   atomicWrite(
-    join(root, stylesPath),
-    css,
+    absolutePath,
+    updated,
   )
 
-  console.log('WRITE  ' + stylesPath)
+  console.log('PATCH  ' + paths.shell)
 }
 
 function runChecks() {
@@ -601,8 +412,9 @@ function runChecks() {
     'biome',
     'format',
     '--write',
-    tabsPath,
-    stylesPath,
+    paths.tabs,
+    paths.styles,
+    paths.shell,
   ])
 
   run('pnpm', [
@@ -650,10 +462,7 @@ function assertRepository() {
     )
   }
 
-  for (const path of [
-    tabsPath,
-    stylesPath,
-  ]) {
+  for (const path of Object.values(paths)) {
     if (!existsSync(join(root, path))) {
       throw new Error(
         '缺少目标文件：' + path,

@@ -176,15 +176,7 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
                 }
               }}
             >
-              <span
-                aria-hidden="true"
-                className="chrome-workbench-tab__divider chrome-workbench-tab__divider--leading"
-              />
-
-              <span
-                aria-hidden="true"
-                className="chrome-workbench-tab__divider chrome-workbench-tab__divider--trailing"
-              />
+              <span aria-hidden="true" className="chrome-workbench-tab__separator" />
 
               <div className="chrome-workbench-tab__content">
                 <button
@@ -232,8 +224,6 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
           data-tauri-drag-region
         />
       </div>
-
-      <div aria-hidden="true" className="chrome-workbench-tabs__bottom-bar" />
     </div>
   )
 }

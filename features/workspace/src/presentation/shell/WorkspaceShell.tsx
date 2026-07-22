@@ -143,7 +143,7 @@ export function WorkspaceShell({
   )
 
   const chrome = (
-    <header className="col-span-full row-1 min-h-0 min-w-0 border-b border-divider bg-chrome">
+    <header className="col-span-full row-1 min-h-0 min-w-0 bg-chrome">
       {renderChrome({
         isSidebarOpen,
         sidebarWidth: dockSidebar ? sidebarWidth : 0,

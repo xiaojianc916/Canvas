@@ -282,31 +282,47 @@
  * Inactive-tab separators. Separators adjacent to active or hovered
  * tabs disappear, matching Chrome's tab-strip grouping.
  */
-.chrome-workbench-tab__divider {
+
+/*
+ * One DOM separator represents one physical boundary.
+ *
+ * Chromium computes leading and trailing opacities independently
+ * because native tabs overlap and their separators align onto the
+ * same device coordinate. In this flex layout, rendering both sides
+ * would produce two distinct lines, so the left tab exclusively owns
+ * the boundary after it.
+ */
+.chrome-workbench-tab__separator {
   position: absolute;
   z-index: 2;
   top: 10px;
+  right: var(--chrome-tab-shoulder, var(--chrome-tab-margin, 12px));
   bottom: 9px;
   width: 1px;
   background: var(--chrome-tab-divider);
-  transition: opacity 100ms ease-out;
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
 }
 
-.chrome-workbench-tab__divider--leading {
-  left: var(--chrome-tab-shoulder);
-}
-
-.chrome-workbench-tab__divider--trailing {
-  right: var(--chrome-tab-shoulder);
-}
-
-.chrome-workbench-tab:first-child .chrome-workbench-tab__divider--leading,
-.chrome-workbench-tab:last-of-type .chrome-workbench-tab__divider--trailing,
-.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__divider,
-.chrome-workbench-tab:hover .chrome-workbench-tab__divider,
+/*
+ * Chromium separator state mapped to a single-active-tab workbench:
+ *
+ * 1. Active tabs have a visible shape, so their own trailing
+ *    separator is hidden.
+ * 2. Hovered tabs have a visible hover shape, so their trailing
+ *    separator fades out.
+ * 3. The preceding tab owns the boundary before the active/hovered
+ *    tab, so that preceding separator must also fade out.
+ *
+ * This guarantees that active and hovered tabs have no separator on
+ * either side, while two ordinary background tabs have exactly one.
+ */
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__separator,
+.chrome-workbench-tab:hover .chrome-workbench-tab__separator,
 .chrome-workbench-tab:has(+ .chrome-workbench-tab[data-active="true"])
-  .chrome-workbench-tab__divider--trailing,
-.chrome-workbench-tab:has(+ .chrome-workbench-tab:hover) .chrome-workbench-tab__divider--trailing {
+  .chrome-workbench-tab__separator,
+.chrome-workbench-tab:has(+ .chrome-workbench-tab:hover) .chrome-workbench-tab__separator {
   opacity: 0;
 }
 
@@ -342,16 +358,6 @@
  * The tab and the content surface use the same background at the
  * baseline, removing any seam beneath the active body and shoulders.
  */
-.chrome-workbench-tabs__bottom-bar {
-  position: absolute;
-  z-index: 10;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 1px;
-  background: var(--chrome-tab-surface);
-  pointer-events: none;
-}
 
 @keyframes chrome-workbench-saving {
   from {
@@ -365,7 +371,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .chrome-workbench-tab__content,
-  .chrome-workbench-tab__divider,
+  .chrome-workbench-tab__separator,
   .chrome-workbench-tab__status {
     transition: none;
     animation: none;
