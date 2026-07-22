@@ -43,7 +43,7 @@
       "outputs": []
     },
     "test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^typecheck"],
       "inputs": ["$TURBO_DEFAULT$", "vitest.config.*", "playwright.config.*"],
       "outputs": ["coverage/**", "test-results/**", "playwright-report/**"]
     },
