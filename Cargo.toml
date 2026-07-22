@@ -73,11 +73,6 @@ subtle = "2.6.1"
 zeroize = { version = "1.8.1", features = ["derive"] }
 
 # Observability
-tracing = "0.1.41"
-tracing-appender = "0.2.3"
-tracing-subscriber = { version = "0.3.19", features = [
-  "env-filter", "fmt", "json", "registry",
-] }
 
 # Tauri composition root
 tauri = { version = "2.5.1", features = [] }

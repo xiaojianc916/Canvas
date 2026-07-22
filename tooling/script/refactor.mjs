@@ -1,31 +1,30 @@
 #!/usr/bin/env node
 
 /**
- * Canvas 工程审查第三阶段修复脚本
+ * Canvas 工程审查第四阶段修复脚本：Rust 日志单轨化
  *
  * 用法：
- *   node tooling/script/apply-engineering-review-phase3.mjs
- *   node tooling/script/apply-engineering-review-phase3.mjs --check
+ *   node tooling/script/apply-engineering-review-phase4.mjs
+ *   node tooling/script/apply-engineering-review-phase4.mjs --check
  *
  * 前置条件：
- *   已执行 phase1 和 phase2。
+ *   已执行 phase1、phase2、phase3。
  *
- * 修改内容：
- *   1. 为 Tauri crate 启用工作区 Tokio
- *   2. 将 DRAW 文件读取迁移到 tokio::fs
- *   3. 将原子写入和目录创建放入 spawn_blocking
- *   4. 避免在异步 command 中直接执行同步磁盘 I/O
- *   5. 在 CI 中校验 Node、pnpm、Rust 实际版本
- *   6. 在 CI 中禁止未处理的 pnpm allowBuilds 占位值
- *
- * 不自动修改：
- *   tauri-plugin-dialog 的 blocking_pick_*。
- *   该部分涉及 Tauri 对话框线程模型，应单独进行桌面端交互测试，
- *   不在没有运行验证的情况下机械改写。
+ * 策略：
+ *   - Tauri 当前通过 tauri-plugin-log 接收 log facade；
+ *   - 如果仓库不存在真实 tracing 调用，删除未使用的 tracing 直接依赖；
+ *   - 如果发现 tracing 调用，停止执行并输出位置，不盲目删除；
+ *   - 建立架构门禁，禁止 Rust 后端再次形成 log/tracing 双轨；
+ *   - 不删除 tauri-plugin-log，因为它负责 stdout、文件和 WebView 输出。
  */
 
-import { readFile, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import {
+  readFile,
+  readdir,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
+import { extname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 
 const root = process.cwd()
@@ -52,6 +51,10 @@ async function read(relativePath) {
 function stage(relativePath, content, description) {
   stagedFiles.set(relativePath, content)
   changes.push({ relativePath, description })
+}
+
+function repositoryPath(path) {
+  return relative(root, path).replaceAll('\\', '/')
 }
 
 function countOccurrences(content, search) {
@@ -90,6 +93,40 @@ function replaceExact(
   return content.replace(search, replacement)
 }
 
+async function collectFiles(directory, predicate) {
+  const result = []
+  const entries = await readdir(directory, {
+    withFileTypes: true,
+  })
+
+  for (const entry of entries) {
+    if (
+      entry.name === '.git' ||
+      entry.name === 'node_modules' ||
+      entry.name === 'target' ||
+      entry.name === 'dist' ||
+      entry.name === 'build' ||
+      entry.name === 'generated' ||
+      entry.name === 'gen'
+    ) {
+      continue
+    }
+
+    const path = join(directory, entry.name)
+
+    if (entry.isDirectory()) {
+      result.push(...(await collectFiles(path, predicate)))
+      continue
+    }
+
+    if (entry.isFile() && predicate(path)) {
+      result.push(path)
+    }
+  }
+
+  return result
+}
+
 async function assertRepository() {
   const packageJson = JSON.parse(await read('package.json'))
 
@@ -101,272 +138,350 @@ async function assertRepository() {
     )
   }
 
-  const toolchain = await read('rust-toolchain.toml')
+  const logging = await read(
+    'apps/desktop/src-tauri/src/bootstrap/logging.rs',
+  )
 
-  if (!toolchain.includes('channel = "1.88.0"')) {
-    throw new Error(
-      'rust-toolchain.toml 未固定到 1.88.0，请先检查工具链基线。',
-    )
+  const requiredFragments = [
+    'use log::LevelFilter;',
+    'tauri_plugin_log::Builder::new()',
+    'TargetKind::LogDir',
+    'TargetKind::Webview',
+  ]
+
+  for (const fragment of requiredFragments) {
+    if (!logging.includes(fragment)) {
+      throw new Error(
+        `当前日志实现与预期不一致，缺少：${fragment}`,
+      )
+    }
   }
 }
 
-async function addTokioToDesktopCrate() {
-  const relativePath = 'apps/desktop/src-tauri/Cargo.toml'
-  let content = await read(relativePath)
-
-  if (content.includes('tokio.workspace = true')) {
-    throw new Error(
-      `${relativePath} 已包含 tokio.workspace = true，可能已执行过本脚本。`,
-    )
-  }
-
-  content = replaceExact(
-    content,
-    `specta.workspace = true
-specta-typescript.workspace = true
-tauri-specta.workspace = true
-tempfile.workspace = true`,
-    `specta.workspace = true
-specta-typescript.workspace = true
-tauri-specta.workspace = true
-tempfile.workspace = true
-tokio.workspace = true`,
-    { label: '为 Tauri crate 添加 Tokio 依赖' },
-  )
-
-  stage(
-    relativePath,
-    content,
-    '为异步文件操作启用工作区 Tokio',
-  )
+function findLineNumber(content, index) {
+  return content.slice(0, index).split('\n').length
 }
 
-async function migrateDrawFileIoToTokio() {
-  const relativePath = 'apps/desktop/src-tauri/src/commands/file.rs'
-  let content = await read(relativePath)
+function findPatternUsages(content, patterns) {
+  const usages = []
 
-  if (content.includes('async fn write_draw_file(')) {
-    throw new Error(
-      `${relativePath} 已存在 write_draw_file，可能已执行过本脚本。`,
-    )
+  for (const { name, pattern } of patterns) {
+    pattern.lastIndex = 0
+
+    for (const match of content.matchAll(pattern)) {
+      usages.push({
+        name,
+        index: match.index,
+        value: match[0],
+      })
+    }
   }
 
-  content = replaceExact(
-    content,
-    'use std::path::Path;',
-    'use std::path::{Path, PathBuf};',
-    { label: '导入 PathBuf' },
+  return usages
+}
+
+async function inspectRustLogging() {
+  const rustFiles = await collectFiles(
+    root,
+    (path) => extname(path) === '.rs',
   )
 
-  content = replaceExact(
-    content,
-    `    let path = registry.require(Path::new(&request.path))?;
-    ensure_draw_path(&path)?;
+  const tracingPatterns = [
+    {
+      name: 'tracing path',
+      pattern: /\btracing::[A-Za-z_][A-Za-z0-9_:]*/g,
+    },
+    {
+      name: 'tracing import',
+      pattern: /\buse\s+tracing(?:\s*::|\s*\{)/g,
+    },
+    {
+      name: 'tracing attribute',
+      pattern: /#\[\s*tracing::instrument\b/g,
+    },
+  ]
 
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+  const logPatterns = [
+    {
+      name: 'log path',
+      pattern: /\blog::[A-Za-z_][A-Za-z0-9_:]*/g,
+    },
+    {
+      name: 'log import',
+      pattern: /\buse\s+log(?:\s*::|\s*\{)/g,
+    },
+  ]
+
+  const tracingUsages = []
+  const logUsages = []
+
+  for (const path of rustFiles) {
+    const content = await readFile(path, 'utf8')
+
+    for (const usage of findPatternUsages(
+      content,
+      tracingPatterns,
+    )) {
+      tracingUsages.push({
+        path: repositoryPath(path),
+        line: findLineNumber(content, usage.index),
+        expression: usage.value,
+      })
     }
 
-    atomic_write(&path, request.content.as_bytes())?;
-    Ok(())`,
-    `    let path = registry.require(Path::new(&request.path))?;
-    ensure_draw_path(&path)?;
-
-    write_draw_file(path, request.content).await?;
-    Ok(())`,
-    { label: 'file_save_draw 异步隔离同步写入' },
-  )
-
-  content = replaceExact(
-    content,
-    `    let path = registry.require(Path::new(&path))?;
-    ensure_draw_path(&path)?;
-    let metadata = std::fs::metadata(&path)?;
-
-    ensure_draw_size(metadata.len())?;
-
-    let content = std::fs::read_to_string(&path)?;
-    Ok(DrawReadResult { content })`,
-    `    let path = registry.require(Path::new(&path))?;
-    ensure_draw_path(&path)?;
-
-    let metadata = tokio::fs::metadata(&path).await?;
-    ensure_draw_size(metadata.len())?;
-
-    let content = tokio::fs::read_to_string(&path).await?;
-    Ok(DrawReadResult { content })`,
-    { label: 'file_read_draw 使用 tokio::fs' },
-  )
-
-  content = replaceExact(
-    content,
-    `    let file_path = registry.require(Path::new(&path))?;
-    ensure_draw_path(&file_path)?;
-
-    if let Some(parent) = file_path.parent() {
-        std::fs::create_dir_all(parent)?;
+    for (const usage of findPatternUsages(
+      content,
+      logPatterns,
+    )) {
+      logUsages.push({
+        path: repositoryPath(path),
+        line: findLineNumber(content, usage.index),
+        expression: usage.value,
+      })
     }
+  }
 
-    atomic_write(&file_path, content.as_bytes())?;
+  if (tracingUsages.length > 0) {
+    const details = tracingUsages
+      .map(
+        ({ path, line, expression }) =>
+          `- ${path}:${line} ${expression}`,
+      )
+      .join('\n')
 
-    Ok(DrawReadResult { content })`,
-    `    let file_path = registry.require(Path::new(&path))?;
-    ensure_draw_path(&file_path)?;
-
-    let content = write_draw_file(file_path, content).await?;
-    Ok(DrawReadResult { content })`,
-    { label: 'file_create_draw 异步隔离同步写入' },
-  )
-
-  content = replaceExact(
-    content,
-    `fn ensure_draw_size(size: u64) -> Result<()> {`,
-    `async fn write_draw_file(
-    path: PathBuf,
-    content: String,
-) -> Result<String> {
-    tokio::task::spawn_blocking(move || {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        atomic_write(&path, content.as_bytes())?;
-        Ok(content)
-    })
-    .await
-    .map_err(|error| {
-        Error::Internal(format!(
-            "draw file write task failed: {error}"
-        ))
-    })?
-}
-
-fn ensure_draw_size(size: u64) -> Result<()> {`,
-    { label: '增加 spawn_blocking 写入辅助函数' },
-  )
-
-  stage(
-    relativePath,
-    content,
-    '将 DRAW 文件读写迁移到 Tokio 兼容的异步边界',
-  )
-}
-
-async function addRuntimeVersionChecksToCi() {
-  const relativePath = '.github/workflows/quality.yml'
-  let content = await read(relativePath)
-
-  if (content.includes('name: Verify JavaScript toolchain')) {
     throw new Error(
-      `${relativePath} 已包含 JavaScript 工具链检查。`,
+      [
+        '检测到真实 tracing 调用，拒绝自动删除 tracing。',
+        '请先决定使用以下哪种方案：',
+        '1. 全量迁移到 tracing，并增加 tracing-log/log bridge；',
+        '2. 将以下调用迁移到 log facade。',
+        '',
+        details,
+      ].join('\n'),
     )
   }
 
-  content = replaceExact(
-    content,
-    `      - name: Install dependencies
-        run: pnpm install --frozen-lockfile`,
-    `      - name: Verify JavaScript toolchain
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          expected_node="$(tr -d '[:space:]' < .node-version)"
-          actual_node="$(node --version | sed 's/^v//')"
-          actual_pnpm="$(pnpm --version)"
-
-          test "$actual_node" = "$expected_node"
-          test "$actual_pnpm" = "11.15.0"
-
-          if grep -R "set this to true or false" pnpm-workspace.yaml; then
-            echo "::error::pnpm allowBuilds contains unresolved placeholders"
-            exit 1
-          fi
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile`,
-    { label: '增加 Node 和 pnpm 版本检查' },
-  )
-
-  if (content.includes('name: Verify Rust toolchain')) {
-    throw new Error(`${relativePath} 已包含 Rust 工具链检查。`)
+  if (logUsages.length === 0) {
+    throw new Error(
+      '没有检测到 log facade 调用，无法确认当前日志主轨。',
+    )
   }
 
-  content = replaceExact(
-    content,
-    `      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
+  return {
+    rustFiles,
+    tracingUsages,
+    logUsages,
+  }
+}
 
-      - name: Format`,
-    `      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-
-      - name: Verify Rust toolchain
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          expected="1.88.0"
-          actual="$(rustc --version | awk '{print $2}')"
-
-          test "$actual" = "$expected"
-
-      - name: Format`,
-    { label: '增加 Rust 版本检查' },
-  )
-
-  stage(
-    relativePath,
-    content,
-    '在 CI 中验证 Node、pnpm、Rust 和 allowBuilds 基线',
+async function collectCargoManifests() {
+  return collectFiles(
+    root,
+    (path) => path.endsWith('Cargo.toml'),
   )
 }
 
-async function addArchitectureGuardForBlockingFs() {
+async function removeUnusedTracingDependencies() {
+  const cargoFiles = await collectCargoManifests()
+
+  const dependencyNames = [
+    'tracing',
+    'tracing-appender',
+    'tracing-subscriber',
+  ]
+
+  const declarationPattern = new RegExp(
+    `^[ \\t]*(?:${dependencyNames.join('|')})(?:\\.workspace)?[ \\t]*=[^\\r\\n]*(?:\\r?\\n|$)`,
+    'gm',
+  )
+
+  const declarationTestPattern = new RegExp(
+    `^[ \\t]*(?:${dependencyNames.join('|')})(?:\\.workspace)?[ \\t]*=`,
+    'm',
+  )
+
+  const rootCargoPath = 'Cargo.toml'
+  let rootCargo = await read(rootCargoPath)
+
+  /*
+   * 根 Cargo.toml 中的 tracing-subscriber 是多行配置，
+   * 必须先整体删除，不能只删除声明首行，否则会留下损坏的 TOML。
+   */
+  const rootTracingBlock = `tracing = "0.1.41"
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.19", features = [
+  "env-filter", "fmt", "json", "registry",
+] }
+`
+
+  if (rootCargo.includes(rootTracingBlock)) {
+    rootCargo = replaceExact(
+      rootCargo,
+      rootTracingBlock,
+      '',
+      {
+        label: '删除根工作区 tracing 依赖定义',
+      },
+    )
+
+    stage(
+      rootCargoPath,
+      rootCargo,
+      '删除工作区未使用的 tracing 依赖定义',
+    )
+  } else if (
+    declarationTestPattern.test(rootCargo)
+  ) {
+    throw new Error(
+      [
+        '根 Cargo.toml 中存在未识别的 tracing 依赖格式。',
+        '为避免破坏多行 TOML，脚本拒绝自动删除。',
+        '请检查 [workspace.dependencies] 中的 tracing 配置。',
+      ].join('\n'),
+    )
+  }
+
+  for (const path of cargoFiles) {
+    const relativePath = repositoryPath(path)
+
+    /*
+     * 根 Cargo.toml 已在上面单独处理。
+     */
+    if (relativePath === rootCargoPath) {
+      continue
+    }
+
+    let content =
+      stagedFiles.get(relativePath) ??
+      (await readFile(path, 'utf8'))
+
+    const original = content
+    const matches = [...content.matchAll(declarationPattern)]
+
+    for (const match of matches) {
+      const declaration = match[0].trim()
+
+      /*
+       * 防止删除未知的多行 inline table 或 features 数组首行。
+       */
+      const opensArray =
+        declaration.includes('[') &&
+        !declaration.includes(']')
+
+      const opensInlineTable =
+        declaration.includes('{') &&
+        !declaration.includes('}')
+
+      if (opensArray || opensInlineTable) {
+        throw new Error(
+          [
+            `${relativePath} 中存在多行 tracing 依赖：`,
+            declaration,
+            '请为该格式增加精确删除规则，脚本拒绝破坏 TOML。',
+          ].join('\n'),
+        )
+      }
+    }
+
+    content = content.replace(declarationPattern, '')
+
+    if (content !== original) {
+      stage(
+        relativePath,
+        content,
+        '删除没有真实调用的 tracing 直接依赖',
+      )
+    }
+  }
+
+  /*
+   * 对内存中的最终结果再次检查。
+   */
+  const remainingDeclarations = []
+
+  for (const path of cargoFiles) {
+    const relativePath = repositoryPath(path)
+    const content =
+      stagedFiles.get(relativePath) ??
+      (await readFile(path, 'utf8'))
+
+    if (declarationTestPattern.test(content)) {
+      remainingDeclarations.push(relativePath)
+    }
+  }
+
+  if (remainingDeclarations.length > 0) {
+    throw new Error(
+      [
+        '以下 Cargo.toml 仍声明 tracing 依赖：',
+        ...remainingDeclarations.map(
+          (relativePath) => `- ${relativePath}`,
+        ),
+      ].join('\n'),
+    )
+  }
+}
+
+async function createLoggingArchitectureGuard() {
   const relativePath =
-    'tests/architecture/check-rust-async-boundaries.mjs'
-
-  let existing = null
+    'tests/architecture/check-rust-logging.mjs'
 
   try {
-    existing = await readFile(absolutePath(relativePath), 'utf8')
+    await stat(absolutePath(relativePath))
+    throw new Error(`${relativePath} 已存在，拒绝覆盖。`)
   } catch (error) {
     if (
-      !(error instanceof Error) ||
-      !('code' in error) ||
-      error.code !== 'ENOENT'
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'ENOENT'
     ) {
+      // 文件不存在，允许创建。
+    } else {
       throw error
     }
   }
 
-  if (existing !== null) {
-    throw new Error(`${relativePath} 已存在，拒绝覆盖。`)
-  }
-
   const content = `#!/usr/bin/env node
+
+/**
+ * Rust 日志架构门禁。
+ *
+ * 当前项目选择：
+ *   log facade -> tauri-plugin-log -> stdout/file/WebView
+ *
+ * 禁止重新直接引入 tracing，避免形成两套日志字段、过滤器和初始化流程。
+ */
 
 import { readFile, readdir } from 'node:fs/promises'
 import { extname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 
 const root = process.cwd()
-const rustRoot = resolve(root, 'apps/desktop/src-tauri/src')
 
-const allowedBlockingFiles = new Set([
-  // tauri-plugin-dialog 当前提供 blocking_pick_* 调用。
-  // 对话框线程模型将在独立桌面 E2E 中治理。
-  'apps/desktop/src-tauri/src/commands/file.rs',
+const ignoredDirectories = new Set([
+  '.git',
+  'node_modules',
+  'target',
+  'dist',
+  'build',
+  'generated',
+  'gen',
 ])
 
 async function collectRustFiles(directory) {
+  const files = []
   const entries = await readdir(directory, {
     withFileTypes: true,
   })
 
-  const files = []
-
   for (const entry of entries) {
+    if (
+      entry.isDirectory() &&
+      ignoredDirectories.has(entry.name)
+    ) {
+      continue
+    }
+
     const path = join(directory, entry.name)
 
     if (entry.isDirectory()) {
@@ -382,101 +497,140 @@ async function collectRustFiles(directory) {
   return files
 }
 
-function findAsyncFunctions(source) {
-  const functions = []
-  const pattern =
-    /(?:pub\\s+)?async\\s+fn\\s+([A-Za-z0-9_]+)[^{]*\\{/g
-
-  for (const match of source.matchAll(pattern)) {
-    const bodyStart = match.index + match[0].length
-    let depth = 1
-    let cursor = bodyStart
-
-    while (cursor < source.length && depth > 0) {
-      const character = source[cursor]
-
-      if (character === '{') {
-        depth += 1
-      } else if (character === '}') {
-        depth -= 1
-      }
-
-      cursor += 1
-    }
-
-    if (depth === 0) {
-      functions.push({
-        name: match[1],
-        body: source.slice(bodyStart, cursor - 1),
-      })
-    }
-  }
-
-  return functions
-}
-
-const forbiddenPatterns = [
+const forbiddenSourcePatterns = [
   {
-    name: 'std::fs',
-    pattern: /\\bstd::fs::/,
+    name: 'tracing path',
+    pattern: /\\btracing::/,
   },
   {
-    name: 'std::thread::sleep',
-    pattern: /\\bstd::thread::sleep\\s*\\(/,
+    name: 'tracing import',
+    pattern: /\\buse\\s+tracing(?:\\s*::|\\s*\\{)/,
+  },
+  {
+    name: 'tracing instrument attribute',
+    pattern: /#\\[\\s*tracing::instrument\\b/,
   },
 ]
 
 const violations = []
 
-for (const path of await collectRustFiles(rustRoot)) {
-  const repositoryPath = relative(root, path).replaceAll('\\\\', '/')
-  const source = await readFile(path, 'utf8')
+for (const path of await collectRustFiles(root)) {
+  const content = await readFile(path, 'utf8')
+  const repositoryPath = relative(root, path).replaceAll(
+    '\\\\',
+    '/',
+  )
 
-  for (const fn of findAsyncFunctions(source)) {
-    for (const forbidden of forbiddenPatterns) {
-      if (forbidden.pattern.test(fn.body)) {
-        violations.push(
-          \`\${repositoryPath}: async fn \${fn.name} directly uses \${forbidden.name}\`,
-        )
-      }
-    }
-
-    if (
-      /\\bblocking_[A-Za-z0-9_]+\\s*\\(/.test(fn.body) &&
-      !allowedBlockingFiles.has(repositoryPath)
-    ) {
+  for (const forbidden of forbiddenSourcePatterns) {
+    if (forbidden.pattern.test(content)) {
       violations.push(
-        \`\${repositoryPath}: async fn \${fn.name} directly invokes a blocking_* API\`,
+        \`\${repositoryPath}: contains \${forbidden.name}\`,
       )
     }
   }
 }
 
+const cargoFiles = []
+
+async function collectCargoFiles(directory) {
+  const entries = await readdir(directory, {
+    withFileTypes: true,
+  })
+
+  for (const entry of entries) {
+    if (
+      entry.isDirectory() &&
+      ignoredDirectories.has(entry.name)
+    ) {
+      continue
+    }
+
+    const path = join(directory, entry.name)
+
+    if (entry.isDirectory()) {
+      await collectCargoFiles(path)
+      continue
+    }
+
+    if (entry.isFile() && entry.name === 'Cargo.toml') {
+      cargoFiles.push(path)
+    }
+  }
+}
+
+await collectCargoFiles(root)
+
+for (const path of cargoFiles) {
+  const content = await readFile(path, 'utf8')
+  const repositoryPath = relative(root, path).replaceAll(
+    '\\\\',
+    '/',
+  )
+
+  if (
+    /^(?:tracing|tracing-appender|tracing-subscriber)(?:\\.workspace)?\\s*=/m.test(
+      content,
+    )
+  ) {
+    violations.push(
+      \`\${repositoryPath}: declares a tracing dependency\`,
+    )
+  }
+}
+
+const loggingBootstrap = resolve(
+  root,
+  'apps/desktop/src-tauri/src/bootstrap/logging.rs',
+)
+const bootstrapContent = await readFile(
+  loggingBootstrap,
+  'utf8',
+)
+
+const requiredBootstrapFragments = [
+  'use log::LevelFilter;',
+  'tauri_plugin_log::Builder::new()',
+  'TargetKind::LogDir',
+  'TargetKind::Webview',
+]
+
+for (const fragment of requiredBootstrapFragments) {
+  if (!bootstrapContent.includes(fragment)) {
+    violations.push(
+      \`logging bootstrap is missing: \${fragment}\`,
+    )
+  }
+}
+
 if (violations.length > 0) {
   console.error(
-    'Rust async boundary check failed:\\n' +
-      violations.map((item) => \`- \${item}\`).join('\\n'),
+    [
+      'Rust logging architecture check failed:',
+      ...violations.map((violation) => \`- \${violation}\`),
+    ].join('\\n'),
   )
+
   process.exitCode = 1
 } else {
-  console.log('Rust async boundary check passed.')
+  console.log(
+    'Rust logging architecture check passed.',
+  )
 }
 `
 
   stagedFiles.set(relativePath, content)
   changes.push({
     relativePath,
-    description: '新增 Rust async 阻塞操作架构门禁',
+    description: '新增 Rust 日志单轨架构门禁',
   })
 }
 
-async function registerArchitectureGuard() {
+async function registerLoggingGuard() {
   const relativePath = 'package.json'
-  let content = await read(relativePath)
+  const packageJson = JSON.parse(await read(relativePath))
 
-  const packageJson = JSON.parse(content)
   const command =
-    'node tests/architecture/check-rust-async-boundaries.mjs'
+    'node tests/architecture/check-rust-logging.mjs'
 
   if (
     typeof packageJson.scripts?.['test:architecture'] !== 'string'
@@ -490,82 +644,72 @@ async function registerArchitectureGuard() {
     packageJson.scripts['test:architecture'].includes(command)
   ) {
     throw new Error(
-      'test:architecture 已注册 Rust async boundary 检查。',
+      'Rust 日志架构门禁已经注册，可能已执行过脚本。',
     )
   }
 
   packageJson.scripts['test:architecture'] += ` && ${command}`
 
-  content = `${JSON.stringify(packageJson, null, 2)}\n`
-
   stage(
     relativePath,
-    content,
-    '将 Rust async 边界检查注册到架构测试',
+    `${JSON.stringify(packageJson, null, 2)}\n`,
+    '将 Rust 日志单轨检查加入架构测试',
   )
 }
 
 async function validateResult() {
-  const cargo = stagedFiles.get(
-    'apps/desktop/src-tauri/Cargo.toml',
+  const rustFiles = await collectFiles(
+    root,
+    (path) => extname(path) === '.rs',
   )
-  const fileCommands = stagedFiles.get(
-    'apps/desktop/src-tauri/src/commands/file.rs',
-  )
-  const workflow = stagedFiles.get(
-    '.github/workflows/quality.yml',
-  )
-  const packageJson = JSON.parse(stagedFiles.get('package.json'))
 
-  const assertions = [
-    [
-      cargo.includes('tokio.workspace = true'),
-      'Tauri crate 缺少 Tokio workspace 依赖',
-    ],
-    [
-      fileCommands.includes(
-        'let metadata = tokio::fs::metadata(&path).await?;',
-      ),
-      'file_read_draw 未使用 tokio::fs::metadata',
-    ],
-    [
-      fileCommands.includes(
-        'let content = tokio::fs::read_to_string(&path).await?;',
-      ),
-      'file_read_draw 未使用 tokio::fs::read_to_string',
-    ],
-    [
-      fileCommands.includes('tokio::task::spawn_blocking'),
-      '同步原子写入未放入 spawn_blocking',
-    ],
-    [
-      !fileCommands.includes(
-        'std::fs::read_to_string(&path)',
-      ),
-      '仍存在同步 DRAW 文件读取',
-    ],
-    [
-      workflow.includes(
-        'name: Verify JavaScript toolchain',
-      ),
-      'CI 缺少 JavaScript 工具链验证',
-    ],
-    [
-      workflow.includes('name: Verify Rust toolchain'),
-      'CI 缺少 Rust 工具链验证',
-    ],
-    [
-      packageJson.scripts['test:architecture'].includes(
-        'check-rust-async-boundaries.mjs',
-      ),
-      '架构测试未注册 Rust async 边界门禁',
-    ],
-  ]
+  for (const path of rustFiles) {
+    const relativePath = repositoryPath(path)
+    const content =
+      stagedFiles.get(relativePath) ??
+      (await readFile(path, 'utf8'))
 
-  for (const [condition, message] of assertions) {
-    if (!condition) {
-      throw new Error(`最终验证失败：${message}`)
+    if (
+      /\btracing::/.test(content) ||
+      /\buse\s+tracing(?:\s*::|\s*\{)/.test(content)
+    ) {
+      throw new Error(
+        `最终验证失败：${relativePath} 仍存在 tracing 调用。`,
+      )
     }
+  }
+
+  const cargoFiles = await collectCargoManifests()
+
+  for (const path of cargoFiles) {
+    const relativePath = repositoryPath(path)
+    const content =
+      stagedFiles.get(relativePath) ??
+      (await readFile(path, 'utf8'))
+
+    if (
+      /^(?:tracing|tracing-appender|tracing-subscriber)(?:\.workspace)?\s*=/m.test(
+        content,
+      )
+    ) {
+      throw new Error(
+        `最终验证失败：${relativePath} 仍声明 tracing 依赖。`,
+      )
+    }
+  }
+
+  const packageJson = JSON.parse(
+    stagedFiles.get('package.json'),
+  )
+
+  if (
+    !packageJson.scripts['test:architecture'].includes(
+      'check-rust-logging.mjs',
+    )
+  ) {
+    throw new Error(
+      '最终验证失败：日志门禁未注册到 test:architecture。',
+    )
   }
 }
 
@@ -576,7 +720,7 @@ async function writeStagedFiles() {
 
   if (checkOnly) {
     console.log(
-      `检查完成：第三阶段需要修改 ${changedPaths.length} 个文件。`,
+      `检查完成：第四阶段需要修改 ${changedPaths.length} 个文件。`,
     )
 
     for (const change of changes) {
@@ -598,7 +742,7 @@ async function writeStagedFiles() {
   }
 
   console.log(
-    `第三阶段修改完成：共更新 ${changedPaths.length} 个文件。`,
+    `第四阶段修改完成：共更新 ${changedPaths.length} 个文件。`,
   )
 
   for (const change of changes) {
@@ -609,6 +753,7 @@ async function writeStagedFiles() {
 
   console.log('')
   console.log('请执行：')
+  console.log('  pnpm install --lockfile-only')
   console.log('  pnpm format')
   console.log('  cargo fmt --all')
   console.log('  pnpm test:architecture')
@@ -624,11 +769,10 @@ async function writeStagedFiles() {
 
 async function main() {
   await assertRepository()
-  await addTokioToDesktopCrate()
-  await migrateDrawFileIoToTokio()
-  await addRuntimeVersionChecksToCi()
-  await addArchitectureGuardForBlockingFs()
-  await registerArchitectureGuard()
+  await inspectRustLogging()
+  await removeUnusedTracingDependencies()
+  await createLoggingArchitectureGuard()
+  await registerLoggingGuard()
   await validateResult()
   await writeStagedFiles()
 }
@@ -636,7 +780,7 @@ async function main() {
 main().catch((error) => {
   console.error('')
   console.error(
-    '第三阶段修复失败；脚本尚未写入任何文件。',
+    '第四阶段修复失败；脚本尚未写入任何文件。',
   )
   console.error(
     error instanceof Error ? error.stack : String(error),
