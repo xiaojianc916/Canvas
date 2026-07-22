@@ -7,21 +7,16 @@ import { execFileSync } from 'node:child_process'
 
 const ROOT = process.cwd()
 
-const APPLY =
-  process.argv.includes('--apply')
+const APPLY = process.argv.includes('--apply')
 
-const ALLOW_DIRTY =
-  process.argv.includes('--allow-dirty')
+const ALLOW_DIRTY = process.argv.includes('--allow-dirty')
 
 const FILES = {
-  rootPackage:
-    'package.json',
+  rootPackage: 'package.json',
 
-  architectureCheck:
-    'tests/architecture/check-ui-architecture.mjs',
+  architectureCheck: 'tests/architecture/check-ui-architecture.mjs',
 
-  primitives:
-    'foundations/design-system/src/primitives',
+  primitives: 'foundations/design-system/src/primitives',
 }
 
 const ARCHITECTURE_CHECK_SOURCE = String.raw`#!/usr/bin/env node
@@ -454,111 +449,56 @@ if (failures.length > 0) {
 `
 
 function absolute(relativePath) {
-  return path.join(
-    ROOT,
-    relativePath,
-  )
+  return path.join(ROOT, relativePath)
 }
 
 function assertRepository() {
-  const packageFile =
-    absolute(
-      FILES.rootPackage,
-    )
+  const packageFile = absolute(FILES.rootPackage)
 
   if (!fs.existsSync(packageFile)) {
-    throw new Error(
-      '请在 Canvas 仓库根目录运行脚本。',
-    )
+    throw new Error('请在 Canvas 仓库根目录运行脚本。')
   }
 
-  const packageJson = JSON.parse(
-    fs.readFileSync(
-      packageFile,
-      'utf8',
-    ),
-  )
+  const packageJson = JSON.parse(fs.readFileSync(packageFile, 'utf8'))
 
-  if (
-    packageJson.name !==
-    'hybrid-canvas'
-  ) {
-    throw new Error(
-      '当前目录不是 hybrid-canvas 仓库。',
-    )
+  if (packageJson.name !== 'hybrid-canvas') {
+    throw new Error('当前目录不是 hybrid-canvas 仓库。')
   }
 
   if (ALLOW_DIRTY) {
     return
   }
 
-  const status = execFileSync(
-    'git',
-    [
-      'status',
-      '--porcelain',
-    ],
-    {
-      cwd: ROOT,
-      encoding: 'utf8',
-    },
-  ).trim()
+  const status = execFileSync('git', ['status', '--porcelain'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  }).trim()
 
   if (status.length > 0) {
-    throw new Error(
-      'Git 工作区不干净。' +
-        '请先提交，或显式使用 --allow-dirty。',
-    )
+    throw new Error('Git 工作区不干净。' + '请先提交，或显式使用 --allow-dirty。')
   }
 }
 
-function transformRootPackage(
-  content,
-) {
-  const packageJson =
-    JSON.parse(content)
+function transformRootPackage(content) {
+  const packageJson = JSON.parse(content)
 
   packageJson.scripts ??= {}
 
-  const command =
-    'node tests/architecture/check-ui-architecture.mjs'
+  const command = 'node tests/architecture/check-ui-architecture.mjs'
 
-  const existing =
-    packageJson.scripts[
-      'test:architecture'
-    ]
+  const existing = packageJson.scripts['test:architecture']
 
   if (!existing) {
-    packageJson.scripts[
-      'test:architecture'
-    ] = command
-  } else if (
-    !existing.includes(command)
-  ) {
-    packageJson.scripts[
-      'test:architecture'
-    ] =
-      existing +
-      ' && ' +
-      command
+    packageJson.scripts['test:architecture'] = command
+  } else if (!existing.includes(command)) {
+    packageJson.scripts['test:architecture'] = existing + ' && ' + command
   }
 
-  return (
-    JSON.stringify(
-      packageJson,
-      null,
-      2,
-    ) + '\n'
-  )
+  return JSON.stringify(packageJson, null, 2) + '\n'
 }
 
 function findPrimitiveReferences() {
-  const sourceRoots = [
-    'apps',
-    'features',
-    'foundations',
-    'platforms',
-  ]
+  const sourceRoots = ['apps', 'features', 'foundations', 'platforms']
 
   const references = []
 
@@ -567,28 +507,15 @@ function findPrimitiveReferences() {
       return
     }
 
-    const entries =
-      fs.readdirSync(
-        directory,
-        {
-          withFileTypes: true,
-        },
-      )
+    const entries = fs.readdirSync(directory, {
+      withFileTypes: true,
+    })
 
     for (const entry of entries) {
-      const entryPath =
-        path.join(
-          directory,
-          entry.name,
-        )
+      const entryPath = path.join(directory, entry.name)
 
       if (entry.isDirectory()) {
-        if (
-          entryPath ===
-          absolute(
-            FILES.primitives,
-          )
-        ) {
+        if (entryPath === absolute(FILES.primitives)) {
           continue
         }
 
@@ -596,49 +523,22 @@ function findPrimitiveReferences() {
         continue
       }
 
-      if (
-        !entry.isFile() ||
-        !/\.(ts|tsx)$/.test(
-          entry.name,
-        )
-      ) {
+      if (!entry.isFile() || !/\.(ts|tsx)$/.test(entry.name)) {
         continue
       }
 
-      const content =
-        fs.readFileSync(
-          entryPath,
-          'utf8',
-        )
+      const content = fs.readFileSync(entryPath, 'utf8')
 
-      const primitivePattern =
-        /design-system\/src\/primitives|\/primitives\//
+      const primitivePattern = /design-system\/src\/primitives|\/primitives\//
 
-      if (
-        primitivePattern.test(
-          content,
-        )
-      ) {
-        references.push(
-          path
-            .relative(
-              ROOT,
-              entryPath,
-            )
-            .split(path.sep)
-            .join('/'),
-        )
+      if (primitivePattern.test(content)) {
+        references.push(path.relative(ROOT, entryPath).split(path.sep).join('/'))
       }
     }
   }
 
-  for (
-    const sourceRoot of
-      sourceRoots
-  ) {
-    walkSources(
-      absolute(sourceRoot),
-    )
+  for (const sourceRoot of sourceRoots) {
+    walkSources(absolute(sourceRoot))
   }
 
   return references
@@ -647,73 +547,37 @@ function findPrimitiveReferences() {
 function buildChanges() {
   const changes = []
 
-  const architectureFile =
-    absolute(
-      FILES.architectureCheck,
-    )
+  const architectureFile = absolute(FILES.architectureCheck)
 
-  const currentArchitectureCheck =
-    fs.existsSync(
-      architectureFile,
-    )
-      ? fs.readFileSync(
-          architectureFile,
-          'utf8',
-        )
-      : null
+  const currentArchitectureCheck = fs.existsSync(architectureFile)
+    ? fs.readFileSync(architectureFile, 'utf8')
+    : null
 
-  if (
-    currentArchitectureCheck !==
-    ARCHITECTURE_CHECK_SOURCE
-  ) {
+  if (currentArchitectureCheck !== ARCHITECTURE_CHECK_SOURCE) {
     changes.push({
-      relativePath:
-        FILES.architectureCheck,
+      relativePath: FILES.architectureCheck,
 
-      nextContent:
-        ARCHITECTURE_CHECK_SOURCE,
+      nextContent: ARCHITECTURE_CHECK_SOURCE,
     })
   }
 
-  const packageContent =
-    fs.readFileSync(
-      absolute(
-        FILES.rootPackage,
-      ),
-      'utf8',
-    )
+  const packageContent = fs.readFileSync(absolute(FILES.rootPackage), 'utf8')
 
-  const nextPackageContent =
-    transformRootPackage(
-      packageContent,
-    )
+  const nextPackageContent = transformRootPackage(packageContent)
 
-  if (
-    packageContent !==
-    nextPackageContent
-  ) {
+  if (packageContent !== nextPackageContent) {
     changes.push({
-      relativePath:
-        FILES.rootPackage,
+      relativePath: FILES.rootPackage,
 
-      nextContent:
-        nextPackageContent,
+      nextContent: nextPackageContent,
     })
   }
 
-  const primitiveDirectory =
-    absolute(
-      FILES.primitives,
-    )
+  const primitiveDirectory = absolute(FILES.primitives)
 
-  const primitiveReferences =
-    findPrimitiveReferences()
+  const primitiveReferences = findPrimitiveReferences()
 
-  const removePrimitives =
-    fs.existsSync(
-      primitiveDirectory,
-    ) &&
-    primitiveReferences.length === 0
+  const removePrimitives = fs.existsSync(primitiveDirectory) && primitiveReferences.length === 0
 
   return {
     changes,
@@ -723,129 +587,71 @@ function buildChanges() {
 }
 
 function printPlan(plan) {
-  console.log(
-    'Phase 6 清理计划：',
-  )
+  console.log('Phase 6 清理计划：')
 
-  for (
-    const change of
-      plan.changes
-  ) {
-    console.log(
-      '- 写入 ' +
-        change.relativePath,
-    )
+  for (const change of plan.changes) {
+    console.log('- 写入 ' + change.relativePath)
   }
 
   if (plan.removePrimitives) {
-    console.log(
-      '- 删除 ' +
-        FILES.primitives,
-    )
-  } else if (
-    plan.primitiveReferences
-      .length > 0
-  ) {
-    console.log(
-      '- 暂不删除 primitives，仍有引用：',
-    )
+    console.log('- 删除 ' + FILES.primitives)
+  } else if (plan.primitiveReferences.length > 0) {
+    console.log('- 暂不删除 primitives，仍有引用：')
 
-    for (
-      const reference of
-        plan.primitiveReferences
-    ) {
-      console.log(
-        '  - ' + reference,
-      )
+    for (const reference of plan.primitiveReferences) {
+      console.log('  - ' + reference)
     }
   }
 }
 
 function applyPlan(plan) {
-  for (
-    const change of
-      plan.changes
-  ) {
-    const filePath =
-      absolute(
-        change.relativePath,
-      )
+  for (const change of plan.changes) {
+    const filePath = absolute(change.relativePath)
 
-    fs.mkdirSync(
-      path.dirname(filePath),
-      {
-        recursive: true,
-      },
-    )
+    fs.mkdirSync(path.dirname(filePath), {
+      recursive: true,
+    })
 
-    fs.writeFileSync(
-      filePath,
-      change.nextContent,
-      'utf8',
-    )
+    fs.writeFileSync(filePath, change.nextContent, 'utf8')
   }
 
   if (plan.removePrimitives) {
-    fs.rmSync(
-      absolute(
-        FILES.primitives,
-      ),
-      {
-        recursive: true,
-        force: true,
-      },
-    )
+    fs.rmSync(absolute(FILES.primitives), {
+      recursive: true,
+      force: true,
+    })
   }
 
-  execFileSync(
-    'git',
-    [
-      'diff',
-      '--check',
-    ],
-    {
-      cwd: ROOT,
-      stdio: 'inherit',
-    },
-  )
+  execFileSync('git', ['diff', '--check'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+  })
 }
 
 function main() {
   assertRepository()
 
-  const plan =
-    buildChanges()
+  const plan = buildChanges()
 
-  const hasChanges =
-    plan.changes.length > 0 ||
-    plan.removePrimitives
+  const hasChanges = plan.changes.length > 0 || plan.removePrimitives
 
   printPlan(plan)
 
   if (!hasChanges) {
     console.log('')
-    console.log(
-      'Phase 6 没有需要应用的修改。',
-    )
+    console.log('Phase 6 没有需要应用的修改。')
 
     return
   }
 
   if (!APPLY) {
     console.log('')
-    console.log(
-      '当前为预检模式，' +
-        '没有写入文件。',
-    )
+    console.log('当前为预检模式，' + '没有写入文件。')
 
     console.log('')
-    console.log(
-      '应用命令：',
-    )
+    console.log('应用命令：')
 
-    console.log(
-      'node tooling/script/refactor-ui-phase-6.mjs --apply',
-    )
+    console.log('node tooling/script/refactor-ui-phase-6.mjs --apply')
 
     return
   }
@@ -853,9 +659,7 @@ function main() {
   applyPlan(plan)
 
   console.log('')
-  console.log(
-    'Phase 6 架构守卫和遗留清理已写入。',
-  )
+  console.log('Phase 6 架构守卫和遗留清理已写入。')
 
   console.log('')
   console.log('请执行：')
@@ -867,36 +671,21 @@ function main() {
   console.log('pnpm build:desktop')
 
   console.log('')
-  console.log(
-    '放弃本阶段未提交修改：',
-  )
+  console.log('放弃本阶段未提交修改：')
 
-  const changedPaths =
-    plan.changes.map(
-      (change) =>
-        change.relativePath,
-    )
+  const changedPaths = plan.changes.map((change) => change.relativePath)
 
   if (plan.removePrimitives) {
-    changedPaths.push(
-      FILES.primitives,
-    )
+    changedPaths.push(FILES.primitives)
   }
 
-  console.log(
-    'git restore -- ' +
-      changedPaths.join(' '),
-  )
+  console.log('git restore -- ' + changedPaths.join(' '))
 }
 
 try {
   main()
 } catch (error) {
-  console.error(
-    error instanceof Error
-      ? error.message
-      : error,
-  )
+  console.error(error instanceof Error ? error.message : error)
 
   process.exitCode = 1
 }
