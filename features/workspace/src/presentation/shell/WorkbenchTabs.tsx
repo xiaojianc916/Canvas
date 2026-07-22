@@ -63,7 +63,7 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
 
         const width = root.getBoundingClientRect().width
 
-        root.dataset.size =
+        root.dataset['size'] =
           width < 58 ? 'mini' : width < 78 ? 'smaller' : width < 104 ? 'small' : 'normal'
       }
     }

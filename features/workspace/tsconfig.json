@@ -13,5 +13,5 @@
       "@hybrid-canvas/canvas": ["../../editor/core/src/public-api.ts"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"]
 }
