@@ -40,6 +40,37 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
 
   const activeTabId = tabs.find((tab) => tab.isActive)?.id
 
+  const previousActiveTabIdRef = useRef<WorkbenchTabId | undefined>(activeTabId)
+
+  useEffect(() => {
+    const previousActiveTabId = previousActiveTabIdRef.current
+
+    if (previousActiveTabId && previousActiveTabId !== activeTabId) {
+      const previousActivation = tabRefs.current.get(previousActiveTabId)
+
+      const previousTab = previousActivation?.closest<HTMLElement>('.chrome-workbench-tab')
+
+      /*
+       * A browser may retain :hover on the element that just lost its
+       * active appearance for one paint frame. Suppress that hover
+       * until the pointer genuinely leaves the old tab.
+       */
+      if (previousTab?.matches(':hover')) {
+        previousTab.setAttribute('data-suppress-hover', 'true')
+      }
+    }
+
+    if (activeTabId) {
+      const activeActivation = tabRefs.current.get(activeTabId)
+
+      const activeTab = activeActivation?.closest<HTMLElement>('.chrome-workbench-tab')
+
+      activeTab?.removeAttribute('data-suppress-hover')
+    }
+
+    previousActiveTabIdRef.current = activeTabId
+  }, [activeTabId])
+
   useEffect(() => {
     if (!activeTabId) {
       return
@@ -169,6 +200,9 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
               }}
               onDragStart={(event) => handleDragStart(event, tab)}
               onDrop={(event) => handleDrop(event, index)}
+              onPointerLeave={(event) => {
+                event.currentTarget.removeAttribute('data-suppress-hover')
+              }}
               onMouseDown={(event) => {
                 if (event.button === 1 && tab.canClose) {
                   event.preventDefault()

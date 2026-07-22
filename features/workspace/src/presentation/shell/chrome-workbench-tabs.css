@@ -23,9 +23,9 @@
   --chrome-tab-strip: var(--color-chrome);
   --chrome-tab-surface: var(--color-background);
 
-  --chrome-tab-hover: color-mix(in srgb, var(--color-foreground) 9%, var(--chrome-tab-strip));
+  --chrome-tab-hover: color-mix(in srgb, var(--color-foreground) 4%, var(--chrome-tab-strip) 96%);
 
-  --chrome-tab-hover-border: color-mix(in srgb, var(--color-foreground) 13%, transparent);
+  --chrome-tab-hover-border: transparent;
 
   --chrome-tab-outline: color-mix(in srgb, var(--color-foreground) 18%, transparent);
 
@@ -509,3 +509,33 @@
 }
 
 /* END FIXED CHROME ACTIVE TAB SHAPE */
+
+/* BEGIN DEACTIVATED TAB HOVER SUPPRESSION */
+
+/*
+ * The old active tab may retain browser :hover for one paint frame
+ * after activation moves to another tab. During that transient state,
+ * show no hover fill and perform no background transition.
+ */
+.chrome-workbench-tab[data-suppress-hover="true"]:not([data-active="true"])
+.chrome-workbench-tab__content,
+.chrome-workbench-tab:hover[data-suppress-hover="true"]:not([data-active="true"])
+  .chrome-workbench-tab__content {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  transition: none;
+}
+
+/*
+ * The normal inactive hover is fill-only:
+ * no visible border, shadow or gradient.
+ */
+.chrome-workbench-tab:hover:not([data-active="true"]):not([data-suppress-hover="true"])
+.chrome-workbench-tab__content {
+  border-color: transparent;
+  background: var(--chrome-tab-hover);
+  box-shadow: none;
+}
+
+/* END DEACTIVATED TAB HOVER SUPPRESSION */

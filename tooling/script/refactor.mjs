@@ -14,50 +14,49 @@ const root = resolve(process.cwd())
 const apply = process.argv.includes('--apply')
 const skipChecks = process.argv.includes('--skip-checks')
 
-const tabsPath =
-  'features/workspace/src/presentation/shell/WorkbenchTabs.tsx'
+const paths = {
+  tabs:
+    'features/workspace/src/presentation/shell/WorkbenchTabs.tsx',
+  styles:
+    'features/workspace/src/presentation/shell/chrome-workbench-tabs.css',
+}
 
-const stylesPath =
-  'features/workspace/src/presentation/shell/chrome-workbench-tabs.css'
+const suppressionStart =
+  '/* BEGIN DEACTIVATED TAB HOVER SUPPRESSION */'
 
-const styleStartMarker =
-  '/* BEGIN FIXED CHROME ACTIVE TAB SHAPE */'
-
-const styleEndMarker =
-  '/* END FIXED CHROME ACTIVE TAB SHAPE */'
+const suppressionEnd =
+  '/* END DEACTIVATED TAB HOVER SUPPRESSION */'
 
 assertRepository()
 
 if (!apply) {
-  console.log('将执行：')
-  console.log('PATCH  ' + tabsPath)
-  console.log('PATCH  ' + stylesPath)
+  console.log('将直接修改标签 Hover 实现：')
+  console.log('PATCH  ' + paths.tabs)
+  console.log('PATCH  ' + paths.styles)
   console.log('')
-  console.log(
-    '使用稳定的 tab content 节点插入活动标签背景，',
-  )
-  console.log(
-    '不再依赖 separator 的格式或存在位置。',
-  )
+  console.log('- 使用更浅的不透明纯色 Hover')
+  console.log('- Hover 不显示边框')
+  console.log('- 抑制标签失活后的 Hover 闪烁')
+  console.log('- 鼠标离开后恢复正常 Hover')
   console.log('')
   console.log('使用 --apply 确认执行。')
   process.exit(0)
 }
 
 patchTabsComponent()
-patchStyles()
+patchTabsStyles()
 
 if (!skipChecks) {
   runChecks()
 }
 
 console.log('')
-console.log('固定 SVG Chrome 肩部修复完成。')
+console.log('标签 Hover 颜色和切换闪烁已修复。')
 
 function patchTabsComponent() {
   const absolutePath = join(
     root,
-    tabsPath,
+    paths.tabs,
   )
 
   const original = readFileSync(
@@ -67,71 +66,25 @@ function patchTabsComponent() {
 
   let updated = original
 
-  if (
-    !updated.includes(
-      '<ChromeActiveTabShape />',
-    )
-  ) {
-    const contentAnchor =
-      '<div className="chrome-workbench-tab__content">'
+  updated = ensurePreviousActiveRef(
+    updated,
+  )
 
-    const anchorCount =
-      updated.split(contentAnchor).length - 1
+  updated = ensureHoverSuppressionEffect(
+    updated,
+  )
 
-    if (anchorCount !== 1) {
-      throw new Error(
-        tabsPath +
-          ': 预期找到一个稳定 content 节点，实际找到 ' +
-          String(anchorCount) +
-          ' 个。',
-      )
-    }
+  updated = ensurePointerLeaveHandler(
+    updated,
+  )
 
-    updated = updated.replace(
-      contentAnchor,
-      [
-        '<ChromeActiveTabShape />',
-        '',
-        '              ' + contentAnchor,
-      ].join('\n'),
-    )
-  }
-
-  if (
-    !updated.includes(
-      'function ChromeActiveTabShape()',
-    )
-  ) {
-    const functionAnchor =
-      'function TabEndAction'
-
-    const anchorCount =
-      updated.split(functionAnchor).length - 1
-
-    if (anchorCount !== 1) {
-      throw new Error(
-        tabsPath +
-          ': 预期找到一个 TabEndAction，实际找到 ' +
-          String(anchorCount) +
-          ' 个。',
-      )
-    }
-
-    updated = updated.replace(
-      functionAnchor,
-      chromeShapeComponent() +
-        '\n' +
-        functionAnchor,
-    )
-  }
-
-  assertTabsComponent(updated)
+  validateTabsComponent(updated)
 
   if (updated === original) {
     console.log(
       'SKIP   ' +
-        tabsPath +
-        '（SVG 活动标签结构已经存在）',
+        paths.tabs +
+        '（Hover 生命周期已经正确）',
     )
     return
   }
@@ -141,104 +94,233 @@ function patchTabsComponent() {
     updated,
   )
 
-  console.log('PATCH  ' + tabsPath)
+  console.log('PATCH  ' + paths.tabs)
 }
 
-function chromeShapeComponent() {
-  return String.raw`function ChromeActiveTabShape() {
-  return (
-    <div
-      aria-hidden="true"
-      className="chrome-workbench-tab__active-shape"
-    >
-      <svg
-        className="chrome-workbench-tab__active-cap chrome-workbench-tab__active-cap--left"
-        preserveAspectRatio="xMinYMin meet"
-        viewBox="0 0 20 32"
-      >
-        <path
-          className="chrome-workbench-tab__active-cap-fill"
-          d="M0 32H20V2H18C13.6 2 10 5.6 10 10V23C10 28 6 32 0 32Z"
-        />
-        <path
-          className="chrome-workbench-tab__active-cap-outline"
-          d="M0 31.5C6 31.5 10 27.7 10 23V10C10 5.6 13.6 2.5 18 2.5H20"
-        />
-      </svg>
+function ensurePreviousActiveRef(source) {
+  if (
+    source.includes(
+      'previousActiveTabIdRef',
+    )
+  ) {
+    return source
+  }
 
-      <span className="chrome-workbench-tab__active-center" />
+  const anchor =
+    'const activeTabId = tabs.find((tab) => tab.isActive)?.id'
 
-      <svg
-        className="chrome-workbench-tab__active-cap chrome-workbench-tab__active-cap--right"
-        preserveAspectRatio="xMinYMin meet"
-        viewBox="0 0 20 32"
-      >
-        <path
-          className="chrome-workbench-tab__active-cap-fill"
-          d="M0 32H20V2H18C13.6 2 10 5.6 10 10V23C10 28 6 32 0 32Z"
-        />
-        <path
-          className="chrome-workbench-tab__active-cap-outline"
-          d="M0 31.5C6 31.5 10 27.7 10 23V10C10 5.6 13.6 2.5 18 2.5H20"
-        />
-      </svg>
-    </div>
+  const count =
+    source.split(anchor).length - 1
+
+  if (count !== 1) {
+    throw new Error(
+      paths.tabs +
+        ': activeTabId 应出现一次，实际出现 ' +
+        String(count) +
+        ' 次。',
+    )
+  }
+
+  return source.replace(
+    anchor,
+    `${anchor}
+
+  const previousActiveTabIdRef =
+    useRef<WorkbenchTabId | undefined>(
+      activeTabId,
+    )`,
   )
 }
+
+function ensureHoverSuppressionEffect(
+  source,
+) {
+  if (
+    source.includes(
+      "setAttribute('data-suppress-hover', 'true')",
+    ) &&
+    source.includes(
+      "removeAttribute('data-suppress-hover')",
+    )
+  ) {
+    return source
+  }
+
+  const scrollCall =
+    'tabRefs.current.get(activeTabId)?.scrollIntoView'
+
+  const scrollCallIndex =
+    source.indexOf(scrollCall)
+
+  if (scrollCallIndex < 0) {
+    throw new Error(
+      paths.tabs +
+        ': 找不到活动标签 scrollIntoView。',
+    )
+  }
+
+  const effectStart =
+    source.lastIndexOf(
+      '  useEffect(() => {',
+      scrollCallIndex,
+    )
+
+  if (effectStart < 0) {
+    throw new Error(
+      paths.tabs +
+        ': 找不到 scrollIntoView 所属 Effect。',
+    )
+  }
+
+  const effect = String.raw`  useEffect(() => {
+    const previousActiveTabId =
+      previousActiveTabIdRef.current
+
+    if (
+      previousActiveTabId &&
+      previousActiveTabId !== activeTabId
+    ) {
+      const previousActivation =
+        tabRefs.current.get(
+          previousActiveTabId,
+        )
+
+      const previousTab =
+        previousActivation?.closest<HTMLElement>(
+          '.chrome-workbench-tab',
+        )
+
+      /*
+       * A browser may retain :hover on the element that just lost its
+       * active appearance for one paint frame. Suppress that hover
+       * until the pointer genuinely leaves the old tab.
+       */
+      if (previousTab?.matches(':hover')) {
+        previousTab.setAttribute(
+          'data-suppress-hover',
+          'true',
+        )
+      }
+    }
+
+    if (activeTabId) {
+      const activeActivation =
+        tabRefs.current.get(activeTabId)
+
+      const activeTab =
+        activeActivation?.closest<HTMLElement>(
+          '.chrome-workbench-tab',
+        )
+
+      activeTab?.removeAttribute(
+        'data-suppress-hover',
+      )
+    }
+
+    previousActiveTabIdRef.current =
+      activeTabId
+  }, [activeTabId])
+
 `
+
+  return (
+    source.slice(0, effectStart) +
+    effect +
+    source.slice(effectStart)
+  )
 }
 
-function assertTabsComponent(source) {
-  const callCount =
-    source.split(
-      '<ChromeActiveTabShape />',
-    ).length - 1
+function ensurePointerLeaveHandler(
+  source,
+) {
+  if (
+    source.includes(
+      "event.currentTarget.removeAttribute('data-suppress-hover')",
+    )
+  ) {
+    return source
+  }
 
-  const functionCount =
-    source.split(
-      'function ChromeActiveTabShape()',
-    ).length - 1
+  const anchor =
+    '              onMouseDown={(event) => {'
 
-  if (callCount !== 1) {
+  const count =
+    source.split(anchor).length - 1
+
+  if (count !== 1) {
     throw new Error(
-      tabsPath +
-        ': ChromeActiveTabShape 调用应为一次，实际为 ' +
-        String(callCount) +
+      paths.tabs +
+        ': 标签 onMouseDown 应出现一次，实际出现 ' +
+        String(count) +
         ' 次。',
     )
   }
 
-  if (functionCount !== 1) {
-    throw new Error(
-      tabsPath +
-        ': ChromeActiveTabShape 定义应为一次，实际为 ' +
-        String(functionCount) +
-        ' 次。',
-    )
-  }
+  return source.replace(
+    anchor,
+    `              onPointerLeave={(event) => {
+                event.currentTarget.removeAttribute(
+                  'data-suppress-hover',
+                )
+              }}
+${anchor}`,
+  )
+}
 
-  const requiredTokens = [
-    'chrome-workbench-tab__active-cap--left',
-    'chrome-workbench-tab__active-cap--right',
-    'chrome-workbench-tab__active-center',
-    'M0 31.5C6 31.5 10 27.7 10 23',
+function validateTabsComponent(source) {
+  const required = [
+    'previousActiveTabIdRef',
+    "previousTab?.matches(':hover')",
+    "previousTab.setAttribute(",
+    "'data-suppress-hover'",
+    "activeTab?.removeAttribute(",
+    "event.currentTarget.removeAttribute(",
+    'onPointerLeave={(event) => {',
   ]
 
-  for (const token of requiredTokens) {
+  for (const token of required) {
     if (!source.includes(token)) {
       throw new Error(
-        tabsPath +
-          ': SVG 结构缺少 ' +
+        paths.tabs +
+          ': Hover 生命周期缺少必要结构：' +
           token,
       )
     }
   }
+
+  const effectCount =
+    source.match(
+      /previousActiveTabIdRef\.current\s*=\s*activeTabId/g,
+    )?.length ?? 0
+
+  if (effectCount !== 1) {
+    throw new Error(
+      paths.tabs +
+        ': 失活标签 Effect 应出现一次，实际出现 ' +
+        String(effectCount) +
+        ' 次。',
+    )
+  }
+
+  const leaveCount =
+    source.match(
+      /onPointerLeave=\{\(event\)\s*=>/g,
+    )?.length ?? 0
+
+  if (leaveCount !== 1) {
+    throw new Error(
+      paths.tabs +
+        ': pointerleave 处理器应出现一次，实际出现 ' +
+        String(leaveCount) +
+        ' 次。',
+    )
+  }
 }
 
-function patchStyles() {
+function patchTabsStyles() {
   const absolutePath = join(
     root,
-    stylesPath,
+    paths.styles,
   )
 
   const original = readFileSync(
@@ -246,191 +328,315 @@ function patchStyles() {
     'utf8',
   )
 
-  const block = chromeShapeStyles()
-
   let updated = original
 
-  const startIndex =
-    updated.indexOf(styleStartMarker)
+  /*
+   * Opaque light hover color:
+   * both inputs are opaque, so the result is a solid color rather
+   * than a transparent overlay.
+   */
+  updated = upsertCustomProperty(
+    updated,
+    '--chrome-tab-hover',
+    `color-mix(
+    in srgb,
+    var(--color-foreground) 4%,
+    var(--chrome-tab-strip) 96%
+  )`,
+    '--chrome-tab-strip',
+  )
 
-  const endIndex =
-    updated.indexOf(styleEndMarker)
+  /*
+   * Keep existing geometry stable but make the hover border entirely
+   * invisible. No border color is shown during hover.
+   */
+  updated = upsertCustomProperty(
+    updated,
+    '--chrome-tab-hover-border',
+    'transparent',
+    '--chrome-tab-hover',
+  )
 
-  if (
-    startIndex >= 0 ||
-    endIndex >= 0
-  ) {
-    if (
-      startIndex < 0 ||
-      endIndex < 0 ||
-      endIndex < startIndex
-    ) {
-      throw new Error(
-        stylesPath +
-          ': SVG 样式标记不完整，拒绝继续。',
-      )
-    }
+  updated = upsertSuppressionBlock(
+    updated,
+  )
 
-    const end =
-      endIndex +
-      styleEndMarker.length
+  validateStyles(updated)
 
-    updated =
-      updated.slice(0, startIndex) +
-      block +
-      updated.slice(end)
-  } else {
-    updated =
-      updated.trimEnd() +
-      '\n\n' +
-      block +
-      '\n'
+  if (updated === original) {
+    console.log(
+      'SKIP   ' +
+        paths.styles +
+        '（Hover 样式已经正确）',
+    )
+    return
   }
-
-  assertStyles(updated)
 
   atomicWrite(
     absolutePath,
     updated,
   )
 
-  console.log('PATCH  ' + stylesPath)
+  console.log('PATCH  ' + paths.styles)
 }
 
-function chromeShapeStyles() {
-  return String.raw`${styleStartMarker}
+function upsertCustomProperty(
+  source,
+  propertyName,
+  propertyValue,
+  insertAfterProperty,
+) {
+  const propertyStart =
+    source.indexOf(propertyName + ':')
+
+  if (propertyStart >= 0) {
+    const propertyEnd =
+      findCustomPropertyEnd(
+        source,
+        propertyStart,
+      )
+
+    const indentation =
+      getLineIndentation(
+        source,
+        propertyStart,
+      )
+
+    const replacement =
+      propertyName +
+      ': ' +
+      indentMultilineValue(
+        propertyValue,
+        indentation,
+      ) +
+      ';'
+
+    return (
+      source.slice(0, propertyStart) +
+      replacement +
+      source.slice(propertyEnd + 1)
+    )
+  }
+
+  const insertStart =
+    source.indexOf(
+      insertAfterProperty + ':',
+    )
+
+  if (insertStart < 0) {
+    throw new Error(
+      paths.styles +
+        ': 找不到属性插入位置 ' +
+        insertAfterProperty,
+    )
+  }
+
+  const insertEnd =
+    findCustomPropertyEnd(
+      source,
+      insertStart,
+    )
+
+  const indentation =
+    getLineIndentation(
+      source,
+      insertStart,
+    )
+
+  const declaration =
+    '\n' +
+    indentation +
+    propertyName +
+    ': ' +
+    indentMultilineValue(
+      propertyValue,
+      indentation,
+    ) +
+    ';'
+
+  return (
+    source.slice(0, insertEnd + 1) +
+    declaration +
+    source.slice(insertEnd + 1)
+  )
+}
+
+function findCustomPropertyEnd(
+  source,
+  start,
+) {
+  let parenthesisDepth = 0
+
+  for (
+    let index = start;
+    index < source.length;
+    index += 1
+  ) {
+    const character = source[index]
+
+    if (character === '(') {
+      parenthesisDepth += 1
+      continue
+    }
+
+    if (character === ')') {
+      parenthesisDepth -= 1
+      continue
+    }
+
+    if (
+      character === ';' &&
+      parenthesisDepth === 0
+    ) {
+      return index
+    }
+  }
+
+  throw new Error(
+    paths.styles +
+      ': CSS 自定义属性缺少结束分号。',
+  )
+}
+
+function getLineIndentation(
+  source,
+  index,
+) {
+  const lineStart =
+    source.lastIndexOf('\n', index) + 1
+
+  return source
+    .slice(lineStart, index)
+    .match(/^\s*/)?.[0] ?? ''
+}
+
+function indentMultilineValue(
+  value,
+  indentation,
+) {
+  return value.replaceAll(
+    '\n',
+    '\n' + indentation,
+  )
+}
+
+function upsertSuppressionBlock(source) {
+  const block = String.raw`${suppressionStart}
 
 /*
- * Disable the previous box-shadow pseudo-element implementation.
- * Those shadows were clipped into square feet at the strip baseline.
+ * The old active tab may retain browser :hover for one paint frame
+ * after activation moves to another tab. During that transient state,
+ * show no hover fill and perform no background transition.
  */
-.chrome-workbench-tab[data-active="true"]::before,
-.chrome-workbench-tab[data-active="true"]::after {
-  display: none;
-  content: none;
+.chrome-workbench-tab[
+    data-suppress-hover="true"
+  ]:not(
+    [data-active="true"]
+  )
+  .chrome-workbench-tab__content,
+.chrome-workbench-tab:hover[
+    data-suppress-hover="true"
+  ]:not(
+    [data-active="true"]
+  )
+  .chrome-workbench-tab__content {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  transition: none;
+}
+
+/*
+ * The normal inactive hover is fill-only:
+ * no visible border, shadow or gradient.
+ */
+.chrome-workbench-tab:hover:not(
+    [data-active="true"]
+  ):not(
+    [data-suppress-hover="true"]
+  )
+  .chrome-workbench-tab__content {
+  border-color: transparent;
+  background: var(--chrome-tab-hover);
   box-shadow: none;
 }
 
-/*
- * Fixed-cap active tab geometry.
- *
- * The side caps always remain 20×32. Only the center stretches, so
- * shoulder curves and corner radii cannot distort with tab width.
- */
-.chrome-workbench-tab__active-shape {
-  position: absolute;
-  z-index: 3;
-  inset: 0;
-  display: none;
-  overflow: visible;
-  pointer-events: none;
+${suppressionEnd}`
+
+  const start =
+    source.indexOf(suppressionStart)
+
+  const end =
+    source.indexOf(suppressionEnd)
+
+  if (start < 0 && end < 0) {
+    return (
+      source.trimEnd() +
+      '\n\n' +
+      block +
+      '\n'
+    )
+  }
+
+  if (
+    start < 0 ||
+    end < 0 ||
+    end < start
+  ) {
+    throw new Error(
+      paths.styles +
+        ': Hover 抑制样式标记不完整。',
+    )
+  }
+
+  return (
+    source.slice(0, start) +
+    block +
+    source.slice(
+      end + suppressionEnd.length,
+    )
+  )
 }
 
-.chrome-workbench-tab[data-active="true"]
-  .chrome-workbench-tab__active-shape {
-  display: block;
-}
-
-.chrome-workbench-tab__active-cap {
-  position: absolute;
-  top: 0;
-  display: block;
-  width: 20px;
-  height: 32px;
-  overflow: visible;
-}
-
-.chrome-workbench-tab__active-cap--left {
-  left: 0;
-}
-
-.chrome-workbench-tab__active-cap--right {
-  right: 0;
-  transform: scaleX(-1);
-  transform-origin: center;
-}
-
-.chrome-workbench-tab__active-cap-fill {
-  fill: var(--chrome-tab-surface);
-}
-
-.chrome-workbench-tab__active-cap-outline {
-  fill: none;
-  stroke: var(--chrome-tab-outline);
-  stroke-width: 1;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-}
-
-/*
- * Flexible center body.
- *
- * It paints only the top outline. There is no bottom border, allowing
- * the active surface to merge directly into the workspace below.
- */
-.chrome-workbench-tab__active-center {
-  position: absolute;
-  top: 2px;
-  right: 20px;
-  bottom: 0;
-  left: 20px;
-  border-top: 1px solid
-    var(--chrome-tab-outline);
-  background: var(--chrome-tab-surface);
-}
-
-/*
- * Shape owns all active fill and outline. Content is layout only.
- * These declarations intentionally override the old rounded body.
- */
-.chrome-workbench-tab[data-active="true"]
-  .chrome-workbench-tab__content {
-  inset: 2px 12px 0;
-  z-index: 4;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-${styleEndMarker}`
-}
-
-function assertStyles(source) {
-  const requiredTokens = [
-    styleStartMarker,
-    styleEndMarker,
-    '.chrome-workbench-tab__active-shape {',
-    '.chrome-workbench-tab__active-center {',
-    'stroke: var(--chrome-tab-outline);',
-    'display: none;',
-    'content: none;',
+function validateStyles(source) {
+  const required = [
+    '--chrome-tab-hover:',
+    'var(--color-foreground) 4%',
+    'var(--chrome-tab-strip) 96%',
+    '--chrome-tab-hover-border: transparent;',
+    suppressionStart,
+    suppressionEnd,
+    'data-suppress-hover="true"',
+    'background: transparent;',
+    'background: var(--chrome-tab-hover);',
+    'border-color: transparent;',
+    'box-shadow: none;',
   ]
 
-  for (const token of requiredTokens) {
+  for (const token of required) {
     if (!source.includes(token)) {
       throw new Error(
-        stylesPath +
-          ': 修复样式缺少 ' +
+        paths.styles +
+          ': Hover 样式缺少必要结构：' +
           token,
       )
     }
   }
 
   const startCount =
-    source.split(styleStartMarker).length - 1
+    source.split(suppressionStart).length -
+    1
 
   const endCount =
-    source.split(styleEndMarker).length - 1
+    source.split(suppressionEnd).length - 1
 
   if (
     startCount !== 1 ||
     endCount !== 1
   ) {
     throw new Error(
-      stylesPath +
-        ': SVG 样式块标记数量异常。',
+      paths.styles +
+        ': Hover 抑制样式块数量异常。',
     )
   }
 }
@@ -441,8 +647,8 @@ function runChecks() {
     'biome',
     'format',
     '--write',
-    tabsPath,
-    stylesPath,
+    paths.tabs,
+    paths.styles,
   ])
 
   run('pnpm', [
@@ -490,10 +696,7 @@ function assertRepository() {
     )
   }
 
-  for (const path of [
-    tabsPath,
-    stylesPath,
-  ]) {
+  for (const path of Object.values(paths)) {
     if (!existsSync(join(root, path))) {
       throw new Error(
         '缺少目标文件：' + path,
