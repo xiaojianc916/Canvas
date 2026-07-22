@@ -134,7 +134,7 @@ export function WorkspaceShell({
   )
 
   const chrome = (
-    <header className="col-span-full row-1 min-h-0 min-w-0 bg-chrome">
+    <header className="col-span-full row-1 min-h-0 min-w-0 border-b border-divider bg-chrome">
       {renderChrome({
         isSidebarOpen,
         sidebarWidth: dockSidebar ? sidebarWidth : 0,
@@ -177,6 +177,7 @@ export function WorkspaceShell({
         aria-hidden={!dockSidebar}
         className="relative z-20 row-[2/-1] min-h-0 min-w-0 overflow-visible border-r border-divider bg-sidebar"
         style={{
+          borderRightWidth: dockSidebar ? 1 : 0,
           gridColumn: 2,
           pointerEvents: dockSidebar ? 'auto' : 'none',
         }}
@@ -241,8 +242,11 @@ export function WorkspaceShell({
   const canvas = (
     <section
       aria-label="内容区"
-      className="relative z-10 row-2 min-h-0 min-w-0 overflow-hidden border-l border-divider bg-background"
-      style={{ gridColumn: 3 }}
+      className="relative z-10 row-2 min-h-0 min-w-0 overflow-hidden border-r border-divider bg-background"
+      style={{
+        borderRightWidth: dockInspector ? 1 : 0,
+        gridColumn: 3,
+      }}
     >
       <main
         aria-labelledby={'workbench-tab-' + model.activeTabId.replaceAll(/[^a-zA-Z0-9_-]/g, '-')}
@@ -264,7 +268,7 @@ export function WorkspaceShell({
         aria-label="属性检查器"
         className={
           mode === 'wide'
-            ? 'relative row-[2/-1] min-h-0 min-w-0 overflow-visible border-l border-divider'
+            ? 'relative row-[2/-1] min-h-0 min-w-0 overflow-visible'
             : 'pointer-events-none'
         }
         style={{
@@ -339,8 +343,12 @@ export function WorkspaceShell({
 
   const status = hasCanvas ? (
     <div
-      className="relative z-10 min-w-0 border-l border-divider bg-background"
-      style={{ gridColumn: 3, gridRow: 3 }}
+      className="relative z-10 min-w-0 border-r border-divider bg-background"
+      style={{
+        borderRightWidth: dockInspector ? 1 : 0,
+        gridColumn: 3,
+        gridRow: 3,
+      }}
     >
       <StatusBarHost left={statusLeft} right={statusRight} />
     </div>

@@ -20,17 +20,8 @@
   --chrome-tab-strip: var(--color-chrome);
   --chrome-tab-surface: var(--color-background);
 
-  --chrome-tab-boundary: color-mix(
-    in srgb,
-    var(--color-foreground) 15%,
-    var(--chrome-tab-surface) 85%
-  );
-
-  --chrome-tab-divider: color-mix(
-    in srgb,
-    var(--color-foreground) 18%,
-    var(--chrome-tab-strip) 82%
-  );
+  --chrome-tab-boundary: var(--color-divider);
+  --chrome-tab-divider: var(--color-divider);
 
   --chrome-tab-hover: color-mix(in srgb, var(--color-foreground) 4%, var(--chrome-tab-strip) 96%);
 
@@ -45,17 +36,6 @@
   font-size: 12px;
 }
 
-.chrome-workbench-tabs::after {
-  position: absolute;
-  z-index: 2;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 1px;
-  background: var(--chrome-tab-boundary);
-  content: "";
-  pointer-events: none;
-}
 
 .chrome-workbench-tabs__scroller {
   position: relative;

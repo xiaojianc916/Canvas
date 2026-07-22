@@ -39,8 +39,11 @@
   --ui-sidebar-accent: oklch(0.925 0.007 90);
   --ui-sidebar-accent-foreground: oklch(0.18 0.01 90);
 
-  --ui-divider: oklch(0.885 0.004 90);
-  --ui-border: var(--ui-divider);
+  /* Canonical 1px workspace-region divider. */
+  --ui-region-divider-color: oklch(0.9067 0 0);
+  --ui-region-divider-width: 1px;
+  --ui-divider: var(--ui-region-divider-color);
+  --ui-border: var(--ui-region-divider-color);
   --ui-input: oklch(0.84 0.006 90);
   --ui-ring: oklch(0.55 0.19 255);
 
@@ -96,8 +99,8 @@
   --ui-sidebar-accent: #383836;
   --ui-sidebar-accent-foreground: #ffffff;
 
-  --ui-divider: rgb(255 255 255 / 16%);
-  --ui-border: var(--ui-divider);
+  /* Region divider remains theme-invariant. */
+  --ui-border: rgb(255 255 255 / 16%);
   --ui-input: rgb(255 255 255 / 24%);
   --ui-ring: #5e9fe8;
 
