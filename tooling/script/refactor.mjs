@@ -1,547 +1,453 @@
 #!/usr/bin/env node
 
 /**
- * Refactor custom titlebar window dragging.
+ * Canvas 工程审查修复脚本
  *
- * Architecture:
+ * 用法：
+ *   node tooling/script/apply-engineering-review-fixes.mjs
+ *   node tooling/script/apply-engineering-review-fixes.mjs --check
  *
- * React titlebar
- *   -> MainWindowController port
- *   -> Tauri official Window API
- *   -> native window
+ * 自动修改：
+ *   1. 完成 pnpm 11 allowBuilds 审批
+ *   2. 固定 CI Rust 版本为 1.88.0
+ *   3. 删除 Tauri capability 重复权限
+ *   4. 修复 Import 错误文案
+ *   5. 不再吞掉 Tauri Store 初始化错误
+ *   6. 不再静默吞掉设置反序列化错误
+ *   7. 不再静默吞掉最近文件反序列化错误
+ *   8. 统一 DRAW 文件大小校验和错误分类
  *
- * This removes the duplicate custom Rust IPC path for:
- * - start dragging
- * - minimize
- * - toggle maximize
- *
- * Close/destroy remains under the existing application termination boundary.
+ * 脚本采用“先验证全部修改、再统一写入”的方式，任意断言失败时不会写文件。
  */
 
-import fs from 'node:fs'
-import path from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import process from 'node:process'
 
-const ROOT = process.cwd()
+const root = process.cwd()
+const checkOnly = process.argv.includes('--check')
 
-const PATHS = Object.freeze({
-  capability: 'apps/desktop/src-tauri/capabilities/main-window.json',
-  tauriBootstrap: 'apps/desktop/src-tauri/src/bootstrap/app.rs',
-  rustWindowCommands: 'apps/desktop/src-tauri/src/commands/window.rs',
-  nativeWindow:
-    'platforms/desktop-runtime/src/adapters/native-window.ts',
-  titleBar:
-    'apps/desktop/src/presentation/chrome/DesktopTitleBar.tsx',
-  architectureCheck:
-    'tests/architecture/check-window-dragging.mjs',
-  packageJson: 'package.json',
-})
+const files = new Map()
+const changes = []
 
-const REQUIRED_PERMISSIONS = Object.freeze([
-  'core:window:allow-minimize',
-  'core:window:allow-toggle-maximize',
-  'core:window:allow-start-dragging',
-])
-
-const ARCHITECTURE_CHECK_COMMAND =
-  'node tests/architecture/check-window-dragging.mjs'
-
-function absolute(relativePath) {
-  return path.join(ROOT, relativePath)
+function filePath(relativePath) {
+  return resolve(root, relativePath)
 }
 
-function assertRepositoryRoot() {
-  const requiredFiles = [
-    PATHS.capability,
-    PATHS.tauriBootstrap,
-    PATHS.rustWindowCommands,
-    PATHS.nativeWindow,
-    PATHS.titleBar,
-    PATHS.packageJson,
-  ]
+async function load(relativePath) {
+  if (!files.has(relativePath)) {
+    files.set(relativePath, await readFile(filePath(relativePath), 'utf8'))
+  }
 
-  const missing = requiredFiles.filter(
-    (relativePath) => !fs.existsSync(absolute(relativePath)),
+  return files.get(relativePath)
+}
+
+function stage(relativePath, content, description) {
+  files.set(relativePath, content)
+  changes.push({ relativePath, description })
+}
+
+function countOccurrences(content, search) {
+  if (search.length === 0) {
+    throw new Error('不能统计空字符串')
+  }
+
+  let count = 0
+  let offset = 0
+
+  while (true) {
+    const index = content.indexOf(search, offset)
+    if (index === -1) {
+      return count
+    }
+
+    count += 1
+    offset = index + search.length
+  }
+}
+
+function replaceExact(content, search, replacement, options = {}) {
+  const { expected = 1, label = search.slice(0, 80) } = options
+  const actual = countOccurrences(content, search)
+
+  if (actual !== expected) {
+    throw new Error(
+      `修改断言失败：${label}\n预期匹配 ${expected} 次，实际匹配 ${actual} 次。`,
+    )
+  }
+
+  return content.replace(search, replacement)
+}
+
+function replaceAllExact(content, search, replacement, options = {}) {
+  const { expected, label = search.slice(0, 80) } = options
+  const actual = countOccurrences(content, search)
+
+  if (expected !== undefined && actual !== expected) {
+    throw new Error(
+      `修改断言失败：${label}\n预期匹配 ${expected} 次，实际匹配 ${actual} 次。`,
+    )
+  }
+
+  if (actual === 0) {
+    throw new Error(`修改断言失败：${label}\n没有找到待替换内容。`)
+  }
+
+  return content.replaceAll(search, replacement)
+}
+
+async function assertRepository() {
+  const packageJson = JSON.parse(await load('package.json'))
+
+  if (packageJson.name !== 'hybrid-canvas') {
+    throw new Error(
+      `请在 Canvas 仓库根目录执行脚本；当前 package.json.name 为 ${String(
+        packageJson.name,
+      )}`,
+    )
+  }
+}
+
+async function fixPnpmAllowBuilds() {
+  const relativePath = 'pnpm-workspace.yaml'
+  let content = await load(relativePath)
+
+  content = replaceExact(
+    content,
+    `allowBuilds:
+  "@parcel/watcher": true
+  blake3: set this to true or false
+  core-js: set this to true or false
+  esbuild: true
+  leveldown: set this to true or false`,
+    `allowBuilds:
+  "@parcel/watcher": true
+  blake3: true
+  core-js: false
+  esbuild: true
+  leveldown: true`,
+    { label: 'pnpm allowBuilds 审批配置' },
   )
 
-  if (missing.length > 0) {
-    throw new Error(
-      [
-        '当前目录不是预期的 Canvas 仓库根目录。',
-        ...missing.map((file) => `- 缺少 ${file}`),
-      ].join('\n'),
-    )
-  }
+  stage(relativePath, content, '完成 pnpm 11 构建脚本审批')
 }
 
-function readText(relativePath) {
-  return fs.readFileSync(absolute(relativePath), 'utf8')
+async function pinRustToolchainInCi() {
+  const relativePath = '.github/workflows/quality.yml'
+  let content = await load(relativePath)
+
+  content = replaceExact(
+    content,
+    'uses: dtolnay/rust-toolchain@stable',
+    'uses: dtolnay/rust-toolchain@1.88.0',
+    { label: 'GitHub Actions Rust 工具链' },
+  )
+
+  stage(relativePath, content, '将 CI Rust 工具链固定为 1.88.0')
 }
 
-function parseJson(relativePath) {
-  const source = readText(relativePath)
-
-  try {
-    return JSON.parse(source)
-  } catch (cause) {
-    throw new Error(
-      `${relativePath} 不是合法 JSON：${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-    )
-  }
-}
-
-function writeAtomic(relativePath, content) {
-  const target = absolute(relativePath)
-  const temporary = `${target}.${process.pid}.tmp`
-
-  fs.mkdirSync(path.dirname(target), { recursive: true })
-  fs.writeFileSync(temporary, content, 'utf8')
-  fs.renameSync(temporary, target)
-
-  console.log(`updated ${relativePath}`)
-}
-
-function writeJson(relativePath, value) {
-  writeAtomic(relativePath, `${JSON.stringify(value, null, 2)}\n`)
-}
-
-function replaceRequired(source, search, replacement, description) {
-  if (!source.includes(search)) {
-    throw new Error(`无法定位修改点：${description}`)
-  }
-
-  return source.replace(search, replacement)
-}
-
-function removeRequired(source, search, description) {
-  if (!source.includes(search)) {
-    // 支持脚本重复执行。
-    return source
-  }
-
-  return source.replace(search, '')
-}
-
-function updateCapability() {
-  const capability = parseJson(PATHS.capability)
-
-  if (!Array.isArray(capability.windows)) {
-    throw new Error(`${PATHS.capability} 缺少 windows`)
-  }
-
-  if (!capability.windows.includes('main')) {
-    throw new Error(`${PATHS.capability} 没有授权 main 窗口`)
-  }
+async function removeRedundantTauriPermissions() {
+  const relativePath = 'apps/desktop/src-tauri/capabilities/main-window.json'
+  const original = await load(relativePath)
+  const capability = JSON.parse(original)
 
   if (!Array.isArray(capability.permissions)) {
-    throw new Error(`${PATHS.capability} 缺少 permissions`)
+    throw new Error(`${relativePath} 中缺少 permissions 数组`)
   }
 
-  const permissions = capability.permissions.filter(
-    (permission) =>
-      permission !== 'core:window:allow-maximize',
-  )
+  const redundantPermissions = [
+    'core:window:default',
+    'core:event:default',
+  ]
 
-  for (const permission of REQUIRED_PERMISSIONS) {
-    if (!permissions.includes(permission)) {
-      permissions.push(permission)
+  for (const permission of redundantPermissions) {
+    const count = capability.permissions.filter(
+      (value) => value === permission,
+    ).length
+
+    if (count !== 1) {
+      throw new Error(
+        `${relativePath} 中权限 ${permission} 预期出现 1 次，实际出现 ${count} 次`,
+      )
     }
   }
 
-  capability.permissions = permissions
+  capability.permissions = capability.permissions.filter(
+    (permission) => !redundantPermissions.includes(permission),
+  )
 
-  writeJson(PATHS.capability, capability)
+  stage(
+    relativePath,
+    `${JSON.stringify(capability, null, 2)}\n`,
+    '删除 core:default 已包含的重复 Tauri 权限',
+  )
 }
 
-function refactorNativeWindowAdapter() {
-  let source = readText(PATHS.nativeWindow)
+async function fixRustErrorMessage() {
+  const relativePath = 'apps/desktop/src-tauri/src/error.rs'
+  let content = await load(relativePath)
 
-  const helper = `
-async function getMainWindow() {
-  const { getCurrentWindow } = await import('@tauri-apps/api/window')
-  const window = getCurrentWindow()
+  content = replaceExact(
+    content,
+    'Error::Import(e) => write!(f, "Export error: {}", e),',
+    'Error::Import(e) => write!(f, "Import error: {}", e),',
+    { label: 'Import 错误显示文案' },
+  )
 
-  if (window.label !== MAIN_WINDOW_LABEL) {
+  stage(relativePath, content, '修复 Import 错误被显示为 Export 的问题')
+}
+
+async function stopIgnoringStoreInitializationFailure() {
+  const relativePath = 'apps/desktop/src-tauri/src/bootstrap/app.rs'
+  let content = await load(relativePath)
+
+  content = replaceExact(
+    content,
+    `.setup(|app| {
+            let _ = app.store("settings.json");
+            Ok(())
+        })`,
+    `.setup(|app| {
+            app.store("settings.json")?;
+            Ok(())
+        })`,
+    { label: 'Tauri Store 初始化错误处理' },
+  )
+
+  stage(relativePath, content, '不再忽略 settings store 初始化失败')
+}
+
+async function fixSettingsDeserialization() {
+  const relativePath = 'apps/desktop/src-tauri/src/commands/settings.rs'
+  let content = await load(relativePath)
+
+  content = replaceExact(
+    content,
+    'use crate::error::Result;',
+    'use crate::error::{Error, Result};',
+    { label: 'settings.rs Error import' },
+  )
+
+  content = replaceExact(
+    content,
+    `#[command]
+pub async fn settings_get(app: AppHandle) -> Result<AppSettings> {
+    let store = app.store("settings.json")?;
+    let settings: AppSettings = store
+        .get("settings")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+    Ok(settings)
+}`,
+    `#[command]
+pub async fn settings_get(app: AppHandle) -> Result<AppSettings> {
+    let store = app.store("settings.json")?;
+
+    match store.get("settings") {
+        None => Ok(AppSettings::default()),
+        Some(value) => serde_json::from_value(value)
+            .map_err(|error| Error::Validation(format!("invalid settings: {error}"))),
+    }
+}`,
+    { label: 'settings_get 静默降级逻辑' },
+  )
+
+  stage(relativePath, content, '区分设置不存在和设置数据损坏')
+}
+
+async function fixFileCommandErrorHandling() {
+  const relativePath = 'apps/desktop/src-tauri/src/commands/file.rs'
+  let content = await load(relativePath)
+
+  content = replaceExact(
+    content,
+    'use crate::error::Result;',
+    'use crate::error::{Error, Result};',
+    { label: 'file.rs Error import' },
+  )
+
+  content = replaceExact(
+    content,
+    `#[command]
+pub async fn file_recent_list(app: AppHandle) -> Result<Vec<RecentFile>> {
+    let store = app.store("recent-files.json")?;
+    let files: Vec<RecentFile> = store
+        .get("files")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+    Ok(files)
+}`,
+    `#[command]
+pub async fn file_recent_list(app: AppHandle) -> Result<Vec<RecentFile>> {
+    let store = app.store("recent-files.json")?;
+
+    match store.get("files") {
+        None => Ok(Vec::new()),
+        Some(value) => serde_json::from_value(value)
+            .map_err(|error| Error::Validation(format!("invalid recent files: {error}"))),
+    }
+}`,
+    { label: 'file_recent_list 静默降级逻辑' },
+  )
+
+  content = replaceExact(
+    content,
+    `    if request.content.len() as u64 > MAX_DRAW_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "DRAW_FILE_TOO_LARGE",
+        )
+        .into());
+    }
+
+    let path = registry.require(Path::new(&request.path))?;`,
+    `    ensure_draw_size(request.content.len() as u64)?;
+
+    let path = registry.require(Path::new(&request.path))?;`,
+    { label: 'file_save_draw 文件大小校验' },
+  )
+
+  content = replaceExact(
+    content,
+    `    if metadata.len() > MAX_DRAW_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "DRAW_FILE_TOO_LARGE",
+        )
+        .into());
+    }
+
+    let content = std::fs::read_to_string(&path)?;`,
+    `    ensure_draw_size(metadata.len())?;
+
+    let content = std::fs::read_to_string(&path)?;`,
+    { label: 'file_read_draw 文件大小校验' },
+  )
+
+  content = replaceExact(
+    content,
+    `    if content.len() as u64 > MAX_DRAW_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "DRAW_FILE_TOO_LARGE",
+        )
+        .into());
+    }
+
+    let file_path = registry.require(Path::new(&path))?;`,
+    `    ensure_draw_size(content.len() as u64)?;
+
+    let file_path = registry.require(Path::new(&path))?;`,
+    { label: 'file_create_draw 文件大小校验' },
+  )
+
+  content = replaceExact(
+    content,
+    `
+
+fn ensure_draw_path(path: &Path) -> Result<()> {`,
+    `
+
+fn ensure_draw_size(size: u64) -> Result<()> {
+    if size <= MAX_DRAW_FILE_BYTES {
+        return Ok(());
+    }
+
+    Err(Error::Validation(format!(
+        "draw file exceeds {MAX_DRAW_FILE_BYTES} bytes"
+    )))
+}
+
+fn ensure_draw_path(path: &Path) -> Result<()> {`,
+    { label: '插入统一 DRAW 文件大小校验函数' },
+  )
+
+  content = replaceExact(
+    content,
+    `    Err(crate::Error::Validation(format!(
+        "expected a .draw file path: {}",
+        path.display()
+    )))`,
+    `    Err(Error::Validation(format!(
+        "expected a .draw file path: {}",
+        path.display()
+    )))`,
+    { label: '统一 file.rs Error 引用' },
+  )
+
+  stage(
+    relativePath,
+    content,
+    '修复最近文件错误吞噬并统一 DRAW 文件大小校验',
+  )
+}
+
+async function ensureNoUnresolvedAllowBuildPlaceholders() {
+  const content = files.get('pnpm-workspace.yaml')
+
+  if (content.includes('set this to true or false')) {
     throw new Error(
-      \`Expected window "\${MAIN_WINDOW_LABEL}", received "\${window.label}".\`,
+      'pnpm-workspace.yaml 中仍存在 “set this to true or false” 占位值',
     )
   }
-
-  return window
-}
-`
-
-  if (!source.includes('async function getMainWindow()')) {
-    source = replaceRequired(
-      source,
-      "const MAIN_WINDOW_LABEL = 'main'\n",
-      `const MAIN_WINDOW_LABEL = 'main'\n${helper}`,
-      'MainWindowController 官方窗口解析函数',
-    )
-  }
-
-  source = source.replace(
-    /minimize:\s*\(\)\s*=>\s*invoke\('window_minimize',\s*\{\s*label:\s*MAIN_WINDOW_LABEL\s*\}\),/,
-    `async minimize() {
-      const window = await getMainWindow()
-      await window.minimize()
-    },`,
-  )
-
-  source = source.replace(
-    /toggleMaximize:\s*\(\)\s*=>\s*invoke\('window_maximize',\s*\{\s*label:\s*MAIN_WINDOW_LABEL\s*\}\),/,
-    `async toggleMaximize() {
-      const window = await getMainWindow()
-      await window.toggleMaximize()
-    },`,
-  )
-
-  source = source.replace(
-    /startDragging:\s*\(\)\s*=>\s*invoke\('window_start_dragging',\s*\{\s*label:\s*MAIN_WINDOW_LABEL\s*\}\),/,
-    `async startDragging() {
-      const window = await getMainWindow()
-      await window.startDragging()
-    },`,
-  )
-
-  if (source.includes("invoke('window_start_dragging'")) {
-    throw new Error('未能删除自建 window_start_dragging IPC')
-  }
-
-  if (source.includes("invoke('window_minimize'")) {
-    throw new Error('未能删除自建 window_minimize IPC')
-  }
-
-  if (source.includes("invoke('window_maximize'")) {
-    throw new Error('未能删除自建 window_maximize IPC')
-  }
-
-  writeAtomic(PATHS.nativeWindow, source)
 }
 
-function removeObsoleteRustCommandRegistration() {
-  let source = readText(PATHS.tauriBootstrap)
+async function writeChanges() {
+  const uniqueFiles = new Map()
 
-  source = removeRequired(
-    source,
-    '            commands::window::window_start_dragging,\n',
-    '不存在的 window_start_dragging Rust 命令注册',
-  )
-
-  source = removeRequired(
-    source,
-    '            commands::window::window_minimize,\n',
-    '旧 window_minimize Rust 命令注册',
-  )
-
-  source = removeRequired(
-    source,
-    '            commands::window::window_maximize,\n',
-    '旧 window_maximize Rust 命令注册',
-  )
-
-  writeAtomic(PATHS.tauriBootstrap, source)
-}
-
-function removeObsoleteRustCommands() {
-  let source = readText(PATHS.rustWindowCommands)
-
-  const minimizeCommand =
-    /#\[command\]\npub async fn window_minimize\([\s\S]*?\n}\n\n/
-
-  const maximizeCommand =
-    /#\[command\]\npub async fn window_maximize\([\s\S]*?\n}\n\n/
-
-  source = source.replace(minimizeCommand, '')
-  source = source.replace(maximizeCommand, '')
-
-  if (source.includes('pub async fn window_minimize(')) {
-    throw new Error('未能删除旧 window_minimize Rust 命令')
+  for (const change of changes) {
+    uniqueFiles.set(change.relativePath, files.get(change.relativePath))
   }
 
-  if (source.includes('pub async fn window_maximize(')) {
-    throw new Error('未能删除旧 window_maximize Rust 命令')
-  }
+  if (checkOnly) {
+    console.log(`检查完成：需要修改 ${uniqueFiles.size} 个文件。`)
 
-  writeAtomic(PATHS.rustWindowCommands, source)
-}
-
-function refactorTitleBar() {
-  let source = readText(PATHS.titleBar)
-
-  const interactiveSelector = `
-const WINDOW_DRAG_EXCLUSION_SELECTOR = [
-  'button',
-  'a',
-  'input',
-  'textarea',
-  'select',
-  '[contenteditable="true"]',
-  '[role="button"]',
-  '[role="tab"]',
-  '[role="menuitem"]',
-  '[data-window-drag-exclude]',
-].join(',')
-`
-
-  if (!source.includes('WINDOW_DRAG_EXCLUSION_SELECTOR')) {
-    source = replaceRequired(
-      source,
-      "import { Minus, PanelLeftClose, PanelLeftOpen, Square, X } from 'lucide-react'\n",
-      `import { Minus, PanelLeftClose, PanelLeftOpen, Square, X } from 'lucide-react'\n${interactiveSelector}`,
-      '标题栏交互元素排除规则',
-    )
-  }
-
-  const oldHandler = `  function handleDragMouseDown(event: React.MouseEvent<HTMLElement>) {
-    if (event.button !== 0 || (event.target as HTMLElement).closest('button')) {
-      return
-    }
-    if (event.detail === 2) {
-      onMaximize()
-      return
-    }
-    onStartDragging()
-  }`
-
-  const newHandler = `  function handleDragMouseDown(event: React.MouseEvent<HTMLElement>) {
-    if (event.button !== 0) {
-      return
+    for (const change of changes) {
+      console.log(`- ${change.relativePath}: ${change.description}`)
     }
 
-    const target = event.target
-
-    if (
-      !(target instanceof Element) ||
-      target.closest(WINDOW_DRAG_EXCLUSION_SELECTOR)
-    ) {
-      return
-    }
-
-    // Prevent text selection and drag-image behavior before transferring
-    // pointer ownership to the native window manager.
-    event.preventDefault()
-
-    if (event.detail === 2) {
-      onMaximize()
-      return
-    }
-
-    onStartDragging()
-  }`
-
-  if (source.includes(oldHandler)) {
-    source = source.replace(oldHandler, newHandler)
-  } else if (!source.includes('WINDOW_DRAG_EXCLUSION_SELECTOR)')) {
-    throw new Error('无法定位 DesktopTitleBar 拖动处理器')
+    process.exitCode = 1
+    return
   }
 
-  // 只保留手动 startDragging 这一条路径。
-  // 不再同时混用 data-tauri-drag-region。
-  source = source.replace(/\sdata-tauri-drag-region/g, '')
-
-  source = source.replace(
-    'onMouseDown={handleDragMouseDown}',
-    'onMouseDownCapture={handleDragMouseDown}',
-  )
-
-  source = source.replace(
-    '{/* Chrome owns drag behavior; only button elements opt out. */}',
-    `{/*
-          The titlebar owns one drag path through MainWindowController.
-          Interactive descendants explicitly opt out.
-        */}`,
-  )
-
-  if (source.includes('data-tauri-drag-region')) {
-    throw new Error('标题栏仍残留 data-tauri-drag-region 双轨逻辑')
+  for (const [relativePath, content] of uniqueFiles) {
+    await writeFile(filePath(relativePath), content, 'utf8')
   }
 
-  if (!source.includes('onMouseDownCapture={handleDragMouseDown}')) {
-    throw new Error('标题栏没有在捕获阶段接管拖动事件')
+  console.log(`修改完成：共更新 ${uniqueFiles.size} 个文件。`)
+
+  for (const change of changes) {
+    console.log(`- ${change.relativePath}: ${change.description}`)
   }
 
-  writeAtomic(PATHS.titleBar, source)
+  console.log('')
+  console.log('请继续执行：')
+  console.log('  pnpm install --frozen-lockfile')
+  console.log('  pnpm format')
+  console.log('  cargo fmt')
+  console.log('  pnpm verify:release')
+  console.log('  pnpm audit --audit-level high')
+  console.log('  cargo deny check')
 }
 
-function installArchitectureCheck() {
-  const source = `#!/usr/bin/env node
-/* biome-ignore-all lint/suspicious/noConsole: architecture checks intentionally write output. */
+async function main() {
+  await assertRepository()
 
-import fs from 'node:fs'
-import path from 'node:path'
-import process from 'node:process'
+  await fixPnpmAllowBuilds()
+  await pinRustToolchainInCi()
+  await removeRedundantTauriPermissions()
+  await fixRustErrorMessage()
+  await stopIgnoringStoreInitializationFailure()
+  await fixSettingsDeserialization()
+  await fixFileCommandErrorHandling()
+  await ensureNoUnresolvedAllowBuildPlaceholders()
 
-const ROOT = process.cwd()
-const failures = []
-
-function read(relativePath) {
-  return fs.readFileSync(path.join(ROOT, relativePath), 'utf8')
+  await writeChanges()
 }
 
-const capability = JSON.parse(
-  read('apps/desktop/src-tauri/capabilities/main-window.json'),
-)
-
-for (const permission of [
-  'core:window:allow-minimize',
-  'core:window:allow-toggle-maximize',
-  'core:window:allow-start-dragging',
-]) {
-  if (!capability.permissions?.includes(permission)) {
-    failures.push(\`main window 缺少权限：\${permission}\`)
-  }
-}
-
-const adapter = read(
-  'platforms/desktop-runtime/src/adapters/native-window.ts',
-)
-
-for (const officialCall of [
-  'window.minimize()',
-  'window.toggleMaximize()',
-  'window.startDragging()',
-]) {
-  if (!adapter.includes(officialCall)) {
-    failures.push(\`窗口适配器缺少官方调用：\${officialCall}\`)
-  }
-}
-
-for (const obsoleteInvoke of [
-  "invoke('window_minimize'",
-  "invoke('window_maximize'",
-  "invoke('window_start_dragging'",
-]) {
-  if (adapter.includes(obsoleteInvoke)) {
-    failures.push(\`窗口适配器仍使用旧 IPC：\${obsoleteInvoke}\`)
-  }
-}
-
-const titleBar = read(
-  'apps/desktop/src/presentation/chrome/DesktopTitleBar.tsx',
-)
-
-if (!titleBar.includes('onMouseDownCapture={handleDragMouseDown}')) {
-  failures.push('DesktopTitleBar 必须在捕获阶段处理拖动')
-}
-
-if (!titleBar.includes('WINDOW_DRAG_EXCLUSION_SELECTOR')) {
-  failures.push('DesktopTitleBar 缺少交互元素排除规则')
-}
-
-if (titleBar.includes('data-tauri-drag-region')) {
-  failures.push(
-    'DesktopTitleBar 禁止同时混用 data-tauri-drag-region 与手动拖动',
-  )
-}
-
-const bootstrap = read(
-  'apps/desktop/src-tauri/src/bootstrap/app.rs',
-)
-
-for (const obsoleteCommand of [
-  'window_start_dragging',
-  'window_minimize',
-  'window_maximize',
-]) {
-  if (bootstrap.includes(\`commands::window::\${obsoleteCommand}\`)) {
-    failures.push(\`Rust bootstrap 仍注册旧命令：\${obsoleteCommand}\`)
-  }
-}
-
-if (failures.length > 0) {
-  console.error(
-    [
-      'Window dragging architecture checks failed:',
-      ...failures.map((failure) => \`- \${failure}\`),
-    ].join('\\n'),
-  )
-
+main().catch((error) => {
+  console.error('')
+  console.error('修复脚本执行失败，尚未写入任何文件。')
+  console.error(error instanceof Error ? error.stack : error)
   process.exitCode = 1
-} else {
-  console.log('Window dragging architecture checks passed.')
-}
-`
-
-  writeAtomic(PATHS.architectureCheck, source)
-}
-
-function registerArchitectureCheck() {
-  const packageJson = parseJson(PATHS.packageJson)
-  const currentCommand = packageJson.scripts?.['test:architecture']
-
-  if (typeof currentCommand !== 'string') {
-    throw new Error('package.json 缺少 test:architecture')
-  }
-
-  const commands = currentCommand
-    .split('&&')
-    .map((command) => command.trim())
-    .filter(
-      (command) =>
-        command.length > 0 &&
-        command !== ARCHITECTURE_CHECK_COMMAND,
-    )
-
-  packageJson.scripts['test:architecture'] = [
-    ...commands,
-    ARCHITECTURE_CHECK_COMMAND,
-  ].join(' && ')
-
-  writeJson(PATHS.packageJson, packageJson)
-}
-
-function main() {
-  assertRepositoryRoot()
-
-  updateCapability()
-  refactorNativeWindowAdapter()
-  removeObsoleteRustCommandRegistration()
-  removeObsoleteRustCommands()
-  refactorTitleBar()
-  installArchitectureCheck()
-  registerArchitectureCheck()
-
-  console.log(`
-Window dragging refactor completed.
-
-新的唯一调用链：
-
-  DesktopTitleBar
-    -> MainWindowController
-    -> @tauri-apps/api/window
-    -> native window manager
-
-请执行：
-
-  pnpm format
-  pnpm lint
-  pnpm test:architecture
-  pnpm typecheck
-  pnpm build:desktop
-  cargo fmt --all --check
-  cargo clippy --workspace --all-targets --all-features -- -D warnings
-  cargo test --workspace
-
-手工验证：
-
-1. 按住标题栏空白处拖动窗口。
-2. 快速连续拖动。
-3. 双击标题栏最大化，再次双击还原。
-4. 标签页、按钮、输入框不能误触发拖动。
-5. 最小化、最大化、关闭按钮正常。
-6. 在未聚焦状态下单击后再次拖动。
-`)
-}
-
-try {
-  main()
-} catch (cause) {
-  console.error(
-    cause instanceof Error ? cause.stack ?? cause.message : String(cause),
-  )
-
-  process.exitCode = 1
-}
+})

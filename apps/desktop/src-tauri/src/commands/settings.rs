@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
@@ -121,11 +121,12 @@ impl Default for PrivacySettings {
 #[command]
 pub async fn settings_get(app: AppHandle) -> Result<AppSettings> {
     let store = app.store("settings.json")?;
-    let settings: AppSettings = store
-        .get("settings")
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    Ok(settings)
+
+    match store.get("settings") {
+        None => Ok(AppSettings::default()),
+        Some(value) => serde_json::from_value(value)
+            .map_err(|error| Error::Validation(format!("invalid settings: {error}"))),
+    }
 }
 
 #[command]

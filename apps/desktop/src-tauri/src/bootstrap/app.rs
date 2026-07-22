@@ -19,7 +19,7 @@ pub fn build() -> tauri::Builder<Wry> {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            let _ = app.store("settings.json");
+            app.store("settings.json")?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

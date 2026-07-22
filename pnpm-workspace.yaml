@@ -8,10 +8,10 @@ packages:
 
 allowBuilds:
   "@parcel/watcher": true
-  blake3: set this to true or false
-  core-js: set this to true or false
+  blake3: true
+  core-js: false
   esbuild: true
-  leveldown: set this to true or false
+  leveldown: true
 
 catalog:
   "@dagrejs/dagre": "3.0.0"

@@ -139,7 +139,7 @@ impl fmt::Display for Error {
             Error::Plugin(e) => write!(f, "Plugin error: {}", e),
             Error::Collaboration(e) => write!(f, "Collaboration error: {}", e),
             Error::Export(e) => write!(f, "Export error: {}", e),
-            Error::Import(e) => write!(f, "Export error: {}", e),
+            Error::Import(e) => write!(f, "Import error: {}", e),
             Error::Asset(e) => write!(f, "Asset error: {}", e),
             Error::File(e) => write!(f, "File error: {}", e),
         }

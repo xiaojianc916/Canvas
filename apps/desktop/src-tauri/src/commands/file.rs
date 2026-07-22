@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::security::ApprovedPathRegistry;
 use hybrid_canvas_file_native::atomic_write;
 use serde::{Deserialize, Serialize};
@@ -181,11 +181,12 @@ pub struct RecentFile {
 #[command]
 pub async fn file_recent_list(app: AppHandle) -> Result<Vec<RecentFile>> {
     let store = app.store("recent-files.json")?;
-    let files: Vec<RecentFile> = store
-        .get("files")
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    Ok(files)
+
+    match store.get("files") {
+        None => Ok(Vec::new()),
+        Some(value) => serde_json::from_value(value)
+            .map_err(|error| Error::Validation(format!("invalid recent files: {error}"))),
+    }
 }
 
 #[command]
@@ -217,13 +218,7 @@ pub async fn file_save_draw(
     registry: State<'_, ApprovedPathRegistry>,
     request: DrawSaveRequest,
 ) -> Result<()> {
-    if request.content.len() as u64 > MAX_DRAW_FILE_BYTES {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "DRAW_FILE_TOO_LARGE",
-        )
-        .into());
-    }
+    ensure_draw_size(request.content.len() as u64)?;
 
     let path = registry.require(Path::new(&request.path))?;
     ensure_draw_path(&path)?;
@@ -245,13 +240,7 @@ pub async fn file_read_draw(
     ensure_draw_path(&path)?;
     let metadata = std::fs::metadata(&path)?;
 
-    if metadata.len() > MAX_DRAW_FILE_BYTES {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "DRAW_FILE_TOO_LARGE",
-        )
-        .into());
-    }
+    ensure_draw_size(metadata.len())?;
 
     let content = std::fs::read_to_string(&path)?;
     Ok(DrawReadResult { content })
@@ -263,13 +252,7 @@ pub async fn file_create_draw(
     path: String,
     content: String,
 ) -> Result<DrawReadResult> {
-    if content.len() as u64 > MAX_DRAW_FILE_BYTES {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "DRAW_FILE_TOO_LARGE",
-        )
-        .into());
-    }
+    ensure_draw_size(content.len() as u64)?;
 
     let file_path = registry.require(Path::new(&path))?;
     ensure_draw_path(&file_path)?;
@@ -284,6 +267,16 @@ pub async fn file_create_draw(
 }
 
 
+fn ensure_draw_size(size: u64) -> Result<()> {
+    if size <= MAX_DRAW_FILE_BYTES {
+        return Ok(());
+    }
+
+    Err(Error::Validation(format!(
+        "draw file exceeds {MAX_DRAW_FILE_BYTES} bytes"
+    )))
+}
+
 fn ensure_draw_path(path: &Path) -> Result<()> {
     let is_draw = path
         .extension()
@@ -294,7 +287,7 @@ fn ensure_draw_path(path: &Path) -> Result<()> {
         return Ok(());
     }
 
-    Err(crate::Error::Validation(format!(
+    Err(Error::Validation(format!(
         "expected a .draw file path: {}",
         path.display()
     )))
