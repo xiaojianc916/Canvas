@@ -11,407 +11,543 @@ const APPLY =
 const ALLOW_DIRTY =
   process.argv.includes('--allow-dirty')
 
-const TARGET =
-  'features/workspace/src/presentation/commands/CommandPalette.tsx'
+const PUBLIC_API =
+  'foundations/design-system/src/public-api.ts'
 
-const NEXT_SOURCE = String.raw`import {
-  Dialog,
-  EmptyState,
-  Input,
+const GENERATED_FILES = {
+  'foundations/design-system/src/components/ui/dropdown-menu.tsx':
+    String.raw`import { Menu } from '@base-ui/react/menu'
+import {
+  forwardRef,
+  type ComponentPropsWithoutRef,
+} from 'react'
+import { cn } from '../../lib/utils'
+
+export const DropdownMenu =
+  Menu.Root
+
+export const DropdownMenuTrigger =
+  forwardRef<
+    HTMLButtonElement,
+    ComponentPropsWithoutRef<
+      typeof Menu.Trigger
+    >
+  >(function DropdownMenuTrigger(
+    {
+      className,
+      ...props
+    },
+    ref,
+  ) {
+    return (
+      <Menu.Trigger
+        ref={ref}
+        className={cn(
+          'outline-none',
+          'focus-visible:ring-2',
+          'focus-visible:ring-ring',
+          className,
+        )}
+        {...props}
+      />
+    )
+  })
+
+type DropdownMenuContentProps =
+  ComponentPropsWithoutRef<
+    typeof Menu.Popup
+  > & {
+    readonly sideOffset?: number
+
+    readonly side?:
+      ComponentPropsWithoutRef<
+        typeof Menu.Positioner
+      >['side']
+
+    readonly align?:
+      ComponentPropsWithoutRef<
+        typeof Menu.Positioner
+      >['align']
+  }
+
+export const DropdownMenuContent =
+  forwardRef<
+    HTMLDivElement,
+    DropdownMenuContentProps
+  >(function DropdownMenuContent(
+    {
+      className,
+      sideOffset = 6,
+      side = 'bottom',
+      align = 'start',
+      ...props
+    },
+    ref,
+  ) {
+    return (
+      <Menu.Portal>
+        <Menu.Positioner
+          align={align}
+          side={side}
+          sideOffset={sideOffset}
+          className={[
+            'z-[var(--ui-z-popover)]',
+            'outline-none',
+          ].join(' ')}
+        >
+          <Menu.Popup
+            ref={ref}
+            className={cn(
+              'min-w-32 overflow-hidden',
+              'rounded-md',
+              'border border-divider',
+              'bg-popover p-1',
+              'text-popover-foreground',
+              'shadow-xl outline-none',
+              'origin-[var(--transform-origin)]',
+              'transition-[transform,scale,opacity]',
+              'data-[ending-style]:scale-95',
+              'data-[ending-style]:opacity-0',
+              'data-[starting-style]:scale-95',
+              'data-[starting-style]:opacity-0',
+              className,
+            )}
+            {...props}
+          />
+        </Menu.Positioner>
+      </Menu.Portal>
+    )
+  })
+
+export const DropdownMenuItem =
+  forwardRef<
+    HTMLDivElement,
+    ComponentPropsWithoutRef<
+      typeof Menu.Item
+    >
+  >(function DropdownMenuItem(
+    {
+      className,
+      ...props
+    },
+    ref,
+  ) {
+    return (
+      <Menu.Item
+        ref={ref}
+        className={cn(
+          'relative flex min-h-9',
+          'cursor-default select-none',
+          'items-center rounded-sm',
+          'px-2 py-1.5 text-sm',
+          'outline-none',
+          'transition-colors',
+          'focus:bg-accent',
+          'focus:text-accent-foreground',
+          'data-[disabled]:pointer-events-none',
+          'data-[disabled]:opacity-50',
+          className,
+        )}
+        {...props}
+      />
+    )
+  })
+
+export const DropdownMenuGroup =
+  Menu.Group
+
+export const DropdownMenuLabel =
+  forwardRef<
+    HTMLDivElement,
+    ComponentPropsWithoutRef<
+      typeof Menu.GroupLabel
+    >
+  >(function DropdownMenuLabel(
+    {
+      className,
+      ...props
+    },
+    ref,
+  ) {
+    return (
+      <Menu.GroupLabel
+        ref={ref}
+        className={cn(
+          'px-2 py-1.5',
+          'text-sm font-semibold',
+          className,
+        )}
+        {...props}
+      />
+    )
+  })
+
+export const DropdownMenuSeparator =
+  forwardRef<
+    HTMLDivElement,
+    ComponentPropsWithoutRef<
+      typeof Menu.Separator
+    >
+  >(function DropdownMenuSeparator(
+    {
+      className,
+      ...props
+    },
+    ref,
+  ) {
+    return (
+      <Menu.Separator
+        ref={ref}
+        className={cn(
+          '-mx-1 my-1',
+          'h-px bg-divider',
+          className,
+        )}
+        {...props}
+      />
+    )
+  })
+`,
+
+  'features/workspace/src/presentation/shell/ActivityRail.tsx':
+    String.raw`import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@hybrid-canvas/design-system'
 import {
-  Command,
+  BookOpen,
+  Boxes,
+  ChartNoAxesCombined,
+  CircleHelp,
+  ExternalLink,
+  Files,
+  Grid2X2,
+  Image,
+  MessageCircle,
+  Network,
+  RefreshCcw,
   Search,
+  Settings,
 } from 'lucide-react'
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
+import type {
+  ComponentType,
 } from 'react'
-import type {
-  CommandRegistry,
-} from '../../application/public-api'
-import type {
-  RegisteredCommand,
-} from '../../contracts/public-api'
 
-export interface CommandPaletteProps {
-  readonly open: boolean
-  readonly registry: CommandRegistry
-  readonly onOpenChange:
-    (open: boolean) => void
+type NavigationIcon =
+  ComponentType<{
+    className?: string
+    'aria-hidden'?:
+      | boolean
+      | 'true'
+      | 'false'
+  }>
+
+export type CanvasNavigationItemId =
+  | 'pages'
+  | 'documents'
+  | 'search'
+  | 'layers'
+  | 'relations'
+  | 'data'
+  | 'assets'
+  | 'extensions'
+
+export interface CanvasNavigationItem {
+  readonly id:
+    CanvasNavigationItemId
+  readonly label: string
+  readonly icon: NavigationIcon
 }
 
-export function CommandPalette({
-  open,
-  registry,
-  onOpenChange,
-}: CommandPaletteProps) {
-  const [
-    query,
-    setQuery,
-  ] = useState('')
+export interface ActivityRailProps {
+  readonly activeItemId?:
+    CanvasNavigationItemId
 
-  const [
-    activeIndex,
-    setActiveIndex,
-  ] = useState(0)
+  readonly items?:
+    readonly CanvasNavigationItem[]
 
-  const inputRef =
-    useRef<HTMLInputElement>(null)
+  readonly onItemActivate?:
+    (
+      itemId:
+        CanvasNavigationItemId,
+    ) => void
 
-  const commands =
-    useSyncExternalStore(
-      registry.subscribe,
-      registry.getSnapshot,
-      registry.getSnapshot,
-    )
+  readonly onSettingsOpen:
+    () => void
+}
 
-  const filteredCommands =
-    useMemo(
-      () =>
-        filterCommands(
-          commands,
-          query,
-        ),
-      [
-        commands,
-        query,
-      ],
-    )
+const DEFAULT_NAVIGATION:
+  readonly CanvasNavigationItem[] = [
+    {
+      id: 'pages',
+      label: '画布',
+      icon: Grid2X2,
+    },
+    {
+      id: 'search',
+      label: '搜索',
+      icon: Search,
+    },
+    {
+      id: 'relations',
+      label: '关系',
+      icon: Network,
+    },
+    {
+      id: 'assets',
+      label: '素材',
+      icon: Image,
+    },
+    {
+      id: 'extensions',
+      label: '插件',
+      icon: Boxes,
+    },
+    {
+      id: 'data',
+      label: '自动化',
+      icon: ChartNoAxesCombined,
+    },
+    {
+      id: 'documents',
+      label: '恢复',
+      icon: Files,
+    },
+  ]
 
-  const activeCommand =
-    filteredCommands[activeIndex]
-
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-
-    setQuery('')
-    setActiveIndex(0)
-
-    const animationFrame =
-      window.requestAnimationFrame(
-        () => {
-          inputRef.current?.focus()
-        },
-      )
-
-    return () => {
-      window.cancelAnimationFrame(
-        animationFrame,
-      )
-    }
-  }, [
-    open,
-  ])
-
-  useEffect(() => {
-    if (
-      activeIndex <
-      filteredCommands.length
-    ) {
-      return
-    }
-
-    setActiveIndex(
-      Math.max(
-        0,
-        filteredCommands.length - 1,
-      ),
-    )
-  }, [
-    activeIndex,
-    filteredCommands.length,
-  ])
-
-  const executeCommand = (
-    command: RegisteredCommand,
-  ) => {
-    onOpenChange(false)
-
-    void registry.execute(
-      command.id,
-    )
-  }
-
-  const moveActiveIndex = (
-    direction: -1 | 1,
-  ) => {
-    if (
-      filteredCommands.length === 0
-    ) {
-      setActiveIndex(0)
-      return
-    }
-
-    setActiveIndex(
-      (currentIndex) => {
-        const nextIndex =
-          currentIndex + direction
-
-        if (nextIndex < 0) {
-          return (
-            filteredCommands.length - 1
-          )
-        }
-
-        if (
-          nextIndex >=
-          filteredCommands.length
-        ) {
-          return 0
-        }
-
-        return nextIndex
-      },
-    )
-  }
-
+export function ActivityRail({
+  activeItemId = 'pages',
+  items = DEFAULT_NAVIGATION,
+  onItemActivate,
+  onSettingsOpen,
+}: ActivityRailProps) {
   return (
-    <Dialog
-      open={open}
-      className="max-w-xl"
-      description="搜索并执行工作区命令"
-      onOpenChange={onOpenChange}
-      title="命令面板"
+    <nav
+      aria-label="主导航"
+      className={[
+        'flex h-full min-h-0',
+        'flex-col items-center',
+        'bg-sidebar py-2',
+      ].join(' ')}
     >
       <div
         className={[
-          'flex items-center gap-2',
-          'border-b',
-          'border-divider',
-          'px-4',
+          'flex flex-col gap-1',
         ].join(' ')}
       >
-        <Search
-          aria-hidden="true"
-          className={[
-            'size-4',
-            'text-muted-foreground',
-          ].join(' ')}
+        {items.map((item) => (
+          <RailButton
+            key={item.id}
+            active={
+              item.id ===
+              activeItemId
+            }
+            icon={item.icon}
+            label={item.label}
+            onClick={() => {
+              onItemActivate?.(
+                item.id,
+              )
+            }}
+          />
+        ))}
+      </div>
+
+      <div className="flex-1" />
+
+      <div className="flex flex-col gap-1">
+        <RailButton
+          icon={Settings}
+          label="设置"
+          onClick={
+            onSettingsOpen
+          }
         />
 
-        <Input
-          ref={inputRef}
-          aria-activedescendant={
-            activeCommand
-              ? 'command-' +
-                activeCommand.id
+        <HelpMenu />
+      </div>
+    </nav>
+  )
+}
+
+interface RailButtonProps {
+  readonly label: string
+  readonly icon: NavigationIcon
+  readonly active?: boolean
+  readonly onClick?: () => void
+}
+
+function RailButton({
+  label,
+  icon: Icon,
+  active = false,
+  onClick,
+}: RailButtonProps) {
+  const className = active
+    ? [
+        'relative size-9',
+        'bg-sidebar-accent',
+        'text-primary',
+        'hover:bg-sidebar-accent',
+      ].join(' ')
+    : [
+        'size-9',
+        'text-muted-foreground',
+        'hover:bg-sidebar-accent',
+        'hover:text-foreground',
+      ].join(' ')
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          aria-current={
+            active
+              ? 'page'
               : undefined
           }
-          aria-autocomplete="list"
-          aria-controls="command-palette-results"
-          aria-expanded={open}
-          aria-label="搜索命令"
-          className={[
-            'h-12 border-0',
-            'px-0 shadow-none',
-            'focus-visible:ring-0',
-          ].join(' ')}
-          onChange={(event) => {
-            setQuery(
-              event.target.value,
-            )
+          aria-label={label}
+          className={className}
+          onClick={onClick}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          {active ? (
+            <span
+              aria-hidden="true"
+              className={[
+                'absolute -left-2',
+                'h-4 w-0.5',
+                'rounded-r',
+                'bg-primary',
+              ].join(' ')}
+            />
+          ) : null}
 
-            setActiveIndex(0)
-          }}
-          onKeyDown={(event) => {
-            switch (event.key) {
-              case 'ArrowDown':
-                event.preventDefault()
-                moveActiveIndex(1)
-                break
+          <Icon
+            aria-hidden="true"
+            className="size-4"
+          />
+        </Button>
+      </TooltipTrigger>
 
-              case 'ArrowUp':
-                event.preventDefault()
-                moveActiveIndex(-1)
-                break
+      <TooltipContent side="right">
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
-              case 'Home':
-                event.preventDefault()
-                setActiveIndex(0)
-                break
+function HelpMenu() {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="帮助"
+        className={[
+          'grid size-9',
+          'place-items-center',
+          'rounded-md',
+          'text-muted-foreground',
+          'hover:bg-sidebar-accent',
+          'hover:text-foreground',
+          'data-[popup-open]:bg-sidebar-accent',
+        ].join(' ')}
+      >
+        <CircleHelp
+          aria-hidden="true"
+          className="size-4"
+        />
+      </DropdownMenuTrigger>
 
-              case 'End':
-                event.preventDefault()
-
-                setActiveIndex(
-                  Math.max(
-                    0,
-                    filteredCommands.length -
-                      1,
-                  ),
-                )
-                break
-
-              case 'Enter':
-                if (!activeCommand) {
-                  return
-                }
-
-                event.preventDefault()
-
-                executeCommand(
-                  activeCommand,
-                )
-                break
-            }
-          }}
-          placeholder="输入命令名称…"
-          role="combobox"
-          value={query}
+      <DropdownMenuContent
+        align="end"
+        className={[
+          'w-60 rounded-xl p-2',
+        ].join(' ')}
+        side="right"
+        sideOffset={8}
+      >
+        <HelpItem
+          external
+          icon={BookOpen}
+          label="文档"
         />
 
-        <kbd
+        <HelpItem
+          external
+          icon={RefreshCcw}
+          label="更新日志"
+        />
+
+        <DropdownMenuSeparator />
+
+        <HelpItem
+          external
+          icon={MessageCircle}
+          label="Discord"
+        />
+
+        <HelpItem
+          icon={MessageCircle}
+          label="反馈"
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+interface HelpItemProps {
+  readonly label: string
+  readonly icon: NavigationIcon
+  readonly external?: boolean
+}
+
+function HelpItem({
+  label,
+  icon: Icon,
+  external = false,
+}: HelpItemProps) {
+  return (
+    <DropdownMenuItem
+      className={[
+        'min-h-10 gap-3',
+        'rounded-md',
+      ].join(' ')}
+    >
+      <Icon
+        aria-hidden="true"
+        className={[
+          'size-4',
+          'text-muted-foreground',
+        ].join(' ')}
+      />
+
+      <span className="flex-1">
+        {label}
+      </span>
+
+      {external ? (
+        <ExternalLink
+          aria-hidden="true"
           className={[
-            'rounded border',
-            'bg-muted',
-            'px-1.5 py-0.5',
-            'text-[10px]',
+            'size-3.5',
             'text-muted-foreground',
           ].join(' ')}
-        >
-          Esc
-        </kbd>
-      </div>
-
-      <div
-        id="command-palette-results"
-        className={[
-          'max-h-80',
-          'overflow-y-auto',
-          'p-2',
-        ].join(' ')}
-        role="listbox"
-      >
-        {filteredCommands.length >
-        0 ? (
-          filteredCommands.map(
-            (
-              command,
-              index,
-            ) => (
-              <button
-                key={command.id}
-                id={
-                  'command-' +
-                  command.id
-                }
-                aria-selected={
-                  index === activeIndex
-                }
-                className={[
-                  'flex min-h-11',
-                  'w-full items-center',
-                  'gap-3 rounded-md',
-                  'px-3 text-left',
-                  'text-sm outline-none',
-                  'hover:bg-accent',
-                  'aria-selected:bg-accent',
-                  'focus-visible:ring-2',
-                  'focus-visible:ring-ring',
-                ].join(' ')}
-                onClick={() => {
-                  executeCommand(
-                    command,
-                  )
-                }}
-                onFocus={() => {
-                  setActiveIndex(index)
-                }}
-                onMouseEnter={() => {
-                  setActiveIndex(index)
-                }}
-                role="option"
-                type="button"
-              >
-                <Command
-                  aria-hidden="true"
-                  className={[
-                    'size-4',
-                    'text-muted-foreground',
-                  ].join(' ')}
-                />
-
-                <span
-                  className={[
-                    'min-w-0 flex-1',
-                    'truncate',
-                  ].join(' ')}
-                >
-                  {command.label}
-                </span>
-
-                {command.category ? (
-                  <span
-                    className={[
-                      'text-xs',
-                      'text-muted-foreground',
-                    ].join(' ')}
-                  >
-                    {command.category}
-                  </span>
-                ) : null}
-
-                {command.shortcut ? (
-                  <kbd
-                    className={[
-                      'text-xs',
-                      'text-muted-foreground',
-                    ].join(' ')}
-                  >
-                    {command.shortcut}
-                  </kbd>
-                ) : null}
-              </button>
-            ),
-          )
-        ) : (
-          <EmptyState
-            description="尝试输入其他命令名称或分类。"
-            title="没有匹配的命令"
-          />
-        )}
-      </div>
-    </Dialog>
+        />
+      ) : null}
+    </DropdownMenuItem>
   )
 }
-
-function filterCommands(
-  commands:
-    readonly RegisteredCommand[],
-  query: string,
-): readonly RegisteredCommand[] {
-  const normalizedQuery =
-    query
-      .trim()
-      .toLocaleLowerCase()
-
-  if (!normalizedQuery) {
-    return commands
-  }
-
-  return commands.filter(
-    (command) => {
-      const searchableText = [
-        command.category ?? '',
-        command.label,
-        command.id,
-      ]
-        .join(' ')
-        .toLocaleLowerCase()
-
-      return searchableText.includes(
-        normalizedQuery,
-      )
-    },
-  )
+`,
 }
-`
 
 function absolute(relativePath) {
   return path.join(
@@ -446,14 +582,27 @@ function assertRepository() {
     )
   }
 
-  if (
-    !fs.existsSync(
-      absolute(TARGET),
-    )
+  const requiredFiles = [
+    ...Object.keys(
+      GENERATED_FILES,
+    ),
+    PUBLIC_API,
+  ]
+
+  for (
+    const relativePath of
+      requiredFiles
   ) {
-    throw new Error(
-      '缺少目标文件：' + TARGET,
-    )
+    if (
+      !fs.existsSync(
+        absolute(relativePath),
+      )
+    ) {
+      throw new Error(
+        '缺少目标文件：' +
+          relativePath,
+      )
+    }
   }
 
   if (ALLOW_DIRTY) {
@@ -477,32 +626,120 @@ function assertRepository() {
   }
 }
 
-function main() {
-  assertRepository()
+function buildChanges() {
+  const changes =
+    Object.entries(
+      GENERATED_FILES,
+    )
+      .map(
+        ([
+          relativePath,
+          nextContent,
+        ]) => ({
+          relativePath,
+          nextContent,
 
-  const currentSource =
+          currentContent:
+            fs.readFileSync(
+              absolute(
+                relativePath,
+              ),
+              'utf8',
+            ),
+        }),
+      )
+      .filter(
+        (change) =>
+          change.currentContent !==
+          change.nextContent,
+      )
+
+  const publicApiCurrent =
     fs.readFileSync(
-      absolute(TARGET),
+      absolute(PUBLIC_API),
       'utf8',
     )
 
+  const separatorExport =
+    "export { DropdownMenuSeparator } from './components/ui/dropdown-menu'"
+
+  const publicApiNext =
+    publicApiCurrent.includes(
+      'DropdownMenuSeparator',
+    )
+      ? publicApiCurrent
+      : [
+          publicApiCurrent.trimEnd(),
+          separatorExport,
+          '',
+        ].join('\n')
+
   if (
-    currentSource === NEXT_SOURCE
+    publicApiNext !==
+    publicApiCurrent
   ) {
+    changes.push({
+      relativePath: PUBLIC_API,
+      currentContent:
+        publicApiCurrent,
+      nextContent:
+        publicApiNext,
+    })
+  }
+
+  return changes
+}
+
+function applyChanges(changes) {
+  for (const change of changes) {
+    fs.writeFileSync(
+      absolute(
+        change.relativePath,
+      ),
+      change.nextContent,
+      'utf8',
+    )
+  }
+
+  execFileSync(
+    'git',
+    ['diff', '--check'],
+    {
+      cwd: ROOT,
+      stdio: 'inherit',
+    },
+  )
+}
+
+function printPlan(changes) {
+  console.log(
+    'Phase 4B 将修改 ' +
+      changes.length +
+      ' 个文件：',
+  )
+
+  for (const change of changes) {
     console.log(
-      'Phase 4A 没有需要应用的修改。',
+      '- ' + change.relativePath,
+    )
+  }
+}
+
+function main() {
+  assertRepository()
+
+  const changes =
+    buildChanges()
+
+  if (changes.length === 0) {
+    console.log(
+      'Phase 4B 没有需要应用的修改。',
     )
 
     return
   }
 
-  console.log(
-    'Phase 4A 将重构：',
-  )
-
-  console.log(
-    '- ' + TARGET,
-  )
+  printPlan(changes)
 
   if (!APPLY) {
     console.log('')
@@ -515,30 +752,17 @@ function main() {
     )
 
     console.log(
-      'node tooling/script/refactor-ui-phase-4a.mjs --apply',
+      'node tooling/script/refactor-ui-phase-4b.mjs --apply',
     )
 
     return
   }
 
-  fs.writeFileSync(
-    absolute(TARGET),
-    NEXT_SOURCE,
-    'utf8',
-  )
-
-  execFileSync(
-    'git',
-    ['diff', '--check'],
-    {
-      cwd: ROOT,
-      stdio: 'inherit',
-    },
-  )
+  applyChanges(changes)
 
   console.log('')
   console.log(
-    'Phase 4A Command Palette 重构已写入。',
+    'Phase 4B ActivityRail 和 DropdownMenu 重构已写入。',
   )
 
   console.log('')
@@ -556,7 +780,13 @@ function main() {
   )
 
   console.log(
-    'git restore -- ' + TARGET,
+    'git restore -- ' +
+      changes
+        .map(
+          (change) =>
+            change.relativePath,
+        )
+        .join(' '),
   )
 }
 

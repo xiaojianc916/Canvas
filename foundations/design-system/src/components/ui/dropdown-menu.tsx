@@ -1,77 +1,191 @@
 import { Menu } from '@base-ui/react/menu'
-import { forwardRef } from 'react'
+import {
+  forwardRef,
+  type ComponentPropsWithoutRef,
+} from 'react'
 import { cn } from '../../lib/utils'
 
-const DropdownMenu = Menu.Root
+export const DropdownMenu =
+  Menu.Root
 
-const DropdownMenuTrigger = forwardRef<
-  HTMLButtonElement,
-  React.ComponentPropsWithoutRef<typeof Menu.Trigger>
->(({ className, ...props }, ref) => (
-  <Menu.Trigger className={cn('', className)} ref={ref} {...props} />
-))
-DropdownMenuTrigger.displayName = 'DropdownMenuTrigger'
-
-const DropdownMenuContent = forwardRef<
-  HTMLDivElement,
-  React.ComponentPropsWithoutRef<typeof Menu.Popup> & { readonly sideOffset?: number }
->(({ className, sideOffset = 4, ...props }, ref) => (
-  <Menu.Portal>
-    <Menu.Positioner sideOffset={sideOffset}>
-      <Menu.Popup
+export const DropdownMenuTrigger =
+  forwardRef<
+    HTMLButtonElement,
+    ComponentPropsWithoutRef<
+      typeof Menu.Trigger
+    >
+  >(function DropdownMenuTrigger(
+    {
+      className,
+      ...props
+    },
+    ref,
+  ) {
+    return (
+      <Menu.Trigger
+        ref={ref}
         className={cn(
-          'z-50 min-w-32 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+          'outline-none',
+          'focus-visible:ring-2',
+          'focus-visible:ring-ring',
           className,
         )}
-        ref={ref}
         {...props}
       />
-    </Menu.Positioner>
-  </Menu.Portal>
-))
-DropdownMenuContent.displayName = 'DropdownMenuContent'
+    )
+  })
 
-const DropdownMenuItem = forwardRef<
-  HTMLDivElement,
-  React.ComponentPropsWithoutRef<typeof Menu.Item> & { readonly inset?: boolean }
->(({ className, inset, ...props }, ref) => (
-  <Menu.Item
-    className={cn(
-      'relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-      inset && 'pl-8',
+type DropdownMenuContentProps =
+  ComponentPropsWithoutRef<
+    typeof Menu.Popup
+  > & {
+    readonly sideOffset?: number
+
+    readonly side?:
+      ComponentPropsWithoutRef<
+        typeof Menu.Positioner
+      >['side']
+
+    readonly align?:
+      ComponentPropsWithoutRef<
+        typeof Menu.Positioner
+      >['align']
+  }
+
+export const DropdownMenuContent =
+  forwardRef<
+    HTMLDivElement,
+    DropdownMenuContentProps
+  >(function DropdownMenuContent(
+    {
       className,
-    )}
-    ref={ref}
-    {...props}
-  />
-))
-DropdownMenuItem.displayName = 'DropdownMenuItem'
+      sideOffset = 6,
+      side = 'bottom',
+      align = 'start',
+      ...props
+    },
+    ref,
+  ) {
+    return (
+      <Menu.Portal>
+        <Menu.Positioner
+          align={align}
+          side={side}
+          sideOffset={sideOffset}
+          className={[
+            'z-[var(--ui-z-popover)]',
+            'outline-none',
+          ].join(' ')}
+        >
+          <Menu.Popup
+            ref={ref}
+            className={cn(
+              'min-w-32 overflow-hidden',
+              'rounded-md',
+              'border border-divider',
+              'bg-popover p-1',
+              'text-popover-foreground',
+              'shadow-xl outline-none',
+              'origin-[var(--transform-origin)]',
+              'transition-[transform,scale,opacity]',
+              'data-[ending-style]:scale-95',
+              'data-[ending-style]:opacity-0',
+              'data-[starting-style]:scale-95',
+              'data-[starting-style]:opacity-0',
+              className,
+            )}
+            {...props}
+          />
+        </Menu.Positioner>
+      </Menu.Portal>
+    )
+  })
 
-const DropdownMenuLabel = forwardRef<
-  HTMLDivElement,
-  React.ComponentPropsWithoutRef<typeof Menu.GroupLabel> & { readonly inset?: boolean }
->(({ className, inset, ...props }, ref) => (
-  <Menu.GroupLabel
-    className={cn('px-2 py-1.5 text-sm font-semibold', inset && 'pl-8', className)}
-    ref={ref}
-    {...props}
-  />
-))
-DropdownMenuLabel.displayName = 'DropdownMenuLabel'
+export const DropdownMenuItem =
+  forwardRef<
+    HTMLDivElement,
+    ComponentPropsWithoutRef<
+      typeof Menu.Item
+    >
+  >(function DropdownMenuItem(
+    {
+      className,
+      ...props
+    },
+    ref,
+  ) {
+    return (
+      <Menu.Item
+        ref={ref}
+        className={cn(
+          'relative flex min-h-9',
+          'cursor-default select-none',
+          'items-center rounded-sm',
+          'px-2 py-1.5 text-sm',
+          'outline-none',
+          'transition-colors',
+          'focus:bg-accent',
+          'focus:text-accent-foreground',
+          'data-[disabled]:pointer-events-none',
+          'data-[disabled]:opacity-50',
+          className,
+        )}
+        {...props}
+      />
+    )
+  })
 
-const DropdownMenuSeparator = forwardRef<
-  HTMLDivElement,
-  React.ComponentPropsWithoutRef<typeof Menu.Separator>
->(({ className, ...props }, ref) => (
-  <Menu.Separator className={cn('-mx-1 my-1 h-px bg-border', className)} ref={ref} {...props} />
-))
-DropdownMenuSeparator.displayName = 'DropdownMenuSeparator'
+export const DropdownMenuGroup =
+  Menu.Group
 
-export {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-}
+export const DropdownMenuLabel =
+  forwardRef<
+    HTMLDivElement,
+    ComponentPropsWithoutRef<
+      typeof Menu.GroupLabel
+    >
+  >(function DropdownMenuLabel(
+    {
+      className,
+      ...props
+    },
+    ref,
+  ) {
+    return (
+      <Menu.GroupLabel
+        ref={ref}
+        className={cn(
+          'px-2 py-1.5',
+          'text-sm font-semibold',
+          className,
+        )}
+        {...props}
+      />
+    )
+  })
+
+export const DropdownMenuSeparator =
+  forwardRef<
+    HTMLDivElement,
+    ComponentPropsWithoutRef<
+      typeof Menu.Separator
+    >
+  >(function DropdownMenuSeparator(
+    {
+      className,
+      ...props
+    },
+    ref,
+  ) {
+    return (
+      <Menu.Separator
+        ref={ref}
+        className={cn(
+          '-mx-1 my-1',
+          'h-px bg-divider',
+          className,
+        )}
+        {...props}
+      />
+    )
+  })

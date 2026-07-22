@@ -1,4 +1,14 @@
-import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@hybrid-canvas/design-system'
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@hybrid-canvas/design-system'
 import {
   BookOpen,
   Boxes,
@@ -14,7 +24,18 @@ import {
   Search,
   Settings,
 } from 'lucide-react'
-import { type ComponentType, useEffect, useRef, useState } from 'react'
+import type {
+  ComponentType,
+} from 'react'
+
+type NavigationIcon =
+  ComponentType<{
+    className?: string
+    'aria-hidden'?:
+      | boolean
+      | 'true'
+      | 'false'
+  }>
 
 export type CanvasNavigationItemId =
   | 'pages'
@@ -27,27 +48,67 @@ export type CanvasNavigationItemId =
   | 'extensions'
 
 export interface CanvasNavigationItem {
-  readonly id: CanvasNavigationItemId
+  readonly id:
+    CanvasNavigationItemId
   readonly label: string
-  readonly icon: ComponentType<{ className?: string }>
+  readonly icon: NavigationIcon
 }
 
 export interface ActivityRailProps {
-  readonly activeItemId?: CanvasNavigationItemId
-  readonly items?: readonly CanvasNavigationItem[]
-  readonly onItemActivate?: (itemId: CanvasNavigationItemId) => void
-  readonly onSettingsOpen: () => void
+  readonly activeItemId?:
+    CanvasNavigationItemId
+
+  readonly items?:
+    readonly CanvasNavigationItem[]
+
+  readonly onItemActivate?:
+    (
+      itemId:
+        CanvasNavigationItemId,
+    ) => void
+
+  readonly onSettingsOpen:
+    () => void
 }
 
-const DEFAULT_NAVIGATION: readonly CanvasNavigationItem[] = [
-  { id: 'pages', label: '画布', icon: Grid2X2 },
-  { id: 'search', label: '搜索', icon: Search },
-  { id: 'relations', label: '关系', icon: Network },
-  { id: 'assets', label: '素材', icon: Image },
-  { id: 'extensions', label: '插件', icon: Boxes },
-  { id: 'data', label: '自动化', icon: ChartNoAxesCombined },
-  { id: 'documents', label: '恢复', icon: Files },
-]
+const DEFAULT_NAVIGATION:
+  readonly CanvasNavigationItem[] = [
+    {
+      id: 'pages',
+      label: '画布',
+      icon: Grid2X2,
+    },
+    {
+      id: 'search',
+      label: '搜索',
+      icon: Search,
+    },
+    {
+      id: 'relations',
+      label: '关系',
+      icon: Network,
+    },
+    {
+      id: 'assets',
+      label: '素材',
+      icon: Image,
+    },
+    {
+      id: 'extensions',
+      label: '插件',
+      icon: Boxes,
+    },
+    {
+      id: 'data',
+      label: '自动化',
+      icon: ChartNoAxesCombined,
+    },
+    {
+      id: 'documents',
+      label: '恢复',
+      icon: Files,
+    },
+  ]
 
 export function ActivityRail({
   activeItemId = 'pages',
@@ -55,55 +116,60 @@ export function ActivityRail({
   onItemActivate,
   onSettingsOpen,
 }: ActivityRailProps) {
-  const [isHelpOpen, setHelpOpen] = useState(false)
-  const helpMenuRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!isHelpOpen) return
-
-    function handlePointerDown(event: PointerEvent) {
-      if (!helpMenuRef.current?.contains(event.target as Node)) {
-        setHelpOpen(false)
-      }
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setHelpOpen(false)
-      }
-    }
-
-    document.addEventListener('pointerdown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [isHelpOpen])
-
   return (
-    <nav aria-label="主导航" className="flex h-full min-h-0 flex-col items-center bg-sidebar py-2">
-      <div className="flex flex-col gap-1">
-        {items.map(({ icon, id, label }) => (
+    <nav
+      aria-label="主导航"
+      className={[
+        'flex h-full min-h-0',
+        'flex-col items-center',
+        'bg-sidebar py-2',
+      ].join(' ')}
+    >
+      <div
+        className={[
+          'flex flex-col gap-1',
+        ].join(' ')}
+      >
+        {items.map((item) => (
           <RailButton
-            active={id === activeItemId}
-            icon={icon}
-            key={id}
-            label={label}
-            onClick={() => onItemActivate?.(id)}
+            key={item.id}
+            active={
+              item.id ===
+              activeItemId
+            }
+            icon={item.icon}
+            label={item.label}
+            onClick={() => {
+              onItemActivate?.(
+                item.id,
+              )
+            }}
           />
         ))}
       </div>
+
       <div className="flex-1" />
+
       <div className="flex flex-col gap-1">
-        <RailButton icon={Settings} label="设置" onClick={onSettingsOpen} />
-        <div className="relative" ref={helpMenuRef}>
-          <RailButton icon={CircleHelp} label="帮助" onClick={() => setHelpOpen((open) => !open)} />
-          {isHelpOpen ? <HelpMenu /> : null}
-        </div>
+        <RailButton
+          icon={Settings}
+          label="设置"
+          onClick={
+            onSettingsOpen
+          }
+        />
+
+        <HelpMenu />
       </div>
     </nav>
   )
+}
+
+interface RailButtonProps {
+  readonly label: string
+  readonly icon: NavigationIcon
+  readonly active?: boolean
+  readonly onClick?: () => void
 }
 
 function RailButton({
@@ -111,68 +177,160 @@ function RailButton({
   icon: Icon,
   active = false,
   onClick,
-}: {
-  readonly label: string
-  readonly icon: ComponentType<{ className?: string }>
-  readonly active?: boolean
-  readonly onClick?: () => void
-}) {
+}: RailButtonProps) {
+  const className = active
+    ? [
+        'relative size-9',
+        'bg-sidebar-accent',
+        'text-primary',
+        'hover:bg-sidebar-accent',
+      ].join(' ')
+    : [
+        'size-9',
+        'text-muted-foreground',
+        'hover:bg-sidebar-accent',
+        'hover:text-foreground',
+      ].join(' ')
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          aria-current={active ? 'page' : undefined}
-          aria-label={label}
-          className={
+          aria-current={
             active
-              ? 'relative size-8 bg-sidebar-accent text-primary hover:bg-sidebar-accent hover:text-primary'
-              : 'size-8 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
+              ? 'page'
+              : undefined
           }
+          aria-label={label}
+          className={className}
           onClick={onClick}
           size="icon"
           type="button"
           variant="ghost"
         >
-          {active ? <span className="absolute -left-2 h-4 w-0.5 rounded-r bg-primary" /> : null}
-          <Icon className="size-4" />
+          {active ? (
+            <span
+              aria-hidden="true"
+              className={[
+                'absolute -left-2',
+                'h-4 w-0.5',
+                'rounded-r',
+                'bg-primary',
+              ].join(' ')}
+            />
+          ) : null}
+
+          <Icon
+            aria-hidden="true"
+            className="size-4"
+          />
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
+
+      <TooltipContent side="right">
+        {label}
+      </TooltipContent>
     </Tooltip>
   )
 }
 
 function HelpMenu() {
-  const helpItems = [
-    { label: '文档', icon: BookOpen },
-    { label: '更新日志', icon: RefreshCcw },
-    { label: 'Discord', icon: MessageCircle },
-    { label: '反馈', icon: MessageCircle },
-  ] satisfies readonly { label: string; icon: ComponentType<{ className?: string }> }[]
-
   return (
-    <div
-      aria-label="帮助"
-      className="absolute bottom-0 left-10 z-50 w-60 rounded-xl border border-divider bg-background p-2 text-foreground shadow-2xl"
-      role="menu"
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="帮助"
+        className={[
+          'grid size-9',
+          'place-items-center',
+          'rounded-md',
+          'text-muted-foreground',
+          'hover:bg-sidebar-accent',
+          'hover:text-foreground',
+          'data-[popup-open]:bg-sidebar-accent',
+        ].join(' ')}
+      >
+        <CircleHelp
+          aria-hidden="true"
+          className="size-4"
+        />
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent
+        align="end"
+        className={[
+          'w-60 rounded-xl p-2',
+        ].join(' ')}
+        side="right"
+        sideOffset={8}
+      >
+        <HelpItem
+          external
+          icon={BookOpen}
+          label="文档"
+        />
+
+        <HelpItem
+          external
+          icon={RefreshCcw}
+          label="更新日志"
+        />
+
+        <DropdownMenuSeparator />
+
+        <HelpItem
+          external
+          icon={MessageCircle}
+          label="Discord"
+        />
+
+        <HelpItem
+          icon={MessageCircle}
+          label="反馈"
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+interface HelpItemProps {
+  readonly label: string
+  readonly icon: NavigationIcon
+  readonly external?: boolean
+}
+
+function HelpItem({
+  label,
+  icon: Icon,
+  external = false,
+}: HelpItemProps) {
+  return (
+    <DropdownMenuItem
+      className={[
+        'min-h-10 gap-3',
+        'rounded-md',
+      ].join(' ')}
     >
-      <div className="flex flex-col gap-1">
-        {helpItems.map(({ icon: Icon, label }) => (
-          <button
-            aria-label={label}
-            className="flex min-h-9 w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm leading-5 hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            key={label}
-            role="menuitem"
-            type="button"
-          >
-            <Icon className="size-5 shrink-0 stroke-[2.2] text-foreground" />
-            <span className="min-w-0 flex-1">{label}</span>
-            {label === '反馈' ? null : (
-              <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
-            )}
-          </button>
-        ))}
-      </div>
-    </div>
+      <Icon
+        aria-hidden="true"
+        className={[
+          'size-4',
+          'text-muted-foreground',
+        ].join(' ')}
+      />
+
+      <span className="flex-1">
+        {label}
+      </span>
+
+      {external ? (
+        <ExternalLink
+          aria-hidden="true"
+          className={[
+            'size-3.5',
+            'text-muted-foreground',
+          ].join(' ')}
+        />
+      ) : null}
+    </DropdownMenuItem>
   )
 }
