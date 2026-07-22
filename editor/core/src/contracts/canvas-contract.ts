@@ -1,4 +1,15 @@
-export type CanvasToolId = 'select' | 'hand' | 'geo' | 'arrow' | 'text' | 'draw' | 'note'
+export type CanvasToolId =
+  | 'select'
+  | 'hand'
+  | 'geo'
+  | 'arrow'
+  | 'scientific-chart'
+  | 'text'
+  | 'draw'
+  | 'highlight'
+  | 'eraser'
+  | 'note'
+  | 'frame'
 
 export interface CanvasBoundsViewModel {
   readonly x: number

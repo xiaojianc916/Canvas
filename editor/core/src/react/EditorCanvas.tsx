@@ -23,7 +23,13 @@ export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasP
       hideUi: true,
       store,
       onMount: setEditor,
-      options: { maxPages: 100 },
+      options: {
+        maxPages: 100,
+        cameraOptions: {
+          wheelBehavior: 'zoom',
+          zoomSpeed: 1,
+        },
+      },
       shapeUtils: registration.shapeUtils,
       bindingUtils: registration.bindingUtils,
     }
@@ -38,7 +44,10 @@ export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasP
       return
     }
     if (isActive) {
-      editor.updateInstanceState({ isGridMode: false })
+      editor.updateInstanceState({
+        isGridMode: false,
+        isToolLocked: true,
+      })
       session.attachEditor(editor)
       return () => session.detachEditor(editor)
     }

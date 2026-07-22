@@ -19,7 +19,9 @@
   "devDependencies": {
     "@hybrid-canvas/foundations-test-kit": "workspace:*",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:"
   },
   "dependencies": {
     "apache-arrow": "catalog:",
@@ -29,6 +31,12 @@
     "valibot": "catalog:",
     "@hybrid-canvas/foundations-kernel": "workspace:*",
     "@hybrid-canvas/foundations-geometry": "workspace:*",
-    "@hybrid-canvas/asset": "workspace:*"
+    "@hybrid-canvas/asset": "workspace:*",
+    "@hybrid-canvas/canvas": "workspace:*",
+    "@tldraw/tlschema": "catalog:",
+    "@tldraw/validate": "catalog:",
+    "tldraw": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
   }
 }

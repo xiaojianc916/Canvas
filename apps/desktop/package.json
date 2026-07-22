@@ -28,7 +28,8 @@
     "lucide-react": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "tldraw": "catalog:"
+    "tldraw": "catalog:",
+    "@hybrid-canvas/scientific-plot": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/vite": "catalog:",

@@ -1,47 +1,79 @@
 #!/usr/bin/env node
 
 /**
- * Canvas 工具栏精简与形状属性面板续补脚本
+ * 工具预设面板、滚轮缩放、工具锁定与科学图表扩展
  *
  * 使用：
- *   保存为 scripts/refine-toolbar-and-shape-inspector.mjs
+ *   保存为 scripts/add-tool-panels-and-chart.mjs
+ *   node scripts/add-tool-panels-and-chart.mjs
  *
- *   node scripts/refine-toolbar-and-shape-inspector.mjs
- *
- * 建议在前几个修改脚本之后运行。
+ * 建议随后执行：
+ *   pnpm install
+ *   pnpm format
+ *   pnpm typecheck
+ *   pnpm test:architecture
  */
 
-import { readFile, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
 import process from 'node:process'
 
 const root = process.cwd()
 
-const toolbarPath = resolve(
-  root,
-  'editor/core/src/react/CanvasToolbar.tsx',
-)
-
-const shellContractPath = resolve(
-  root,
-  'features/workspace/src/contracts/shell-contract.ts',
-)
-
-const workspaceShellPath = resolve(
-  root,
-  'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
-)
-
-const workspaceContainerPath = resolve(
-  root,
-  'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
-)
+const paths = {
+  canvasContract: resolve(
+    root,
+    'editor/core/src/contracts/canvas-contract.ts',
+  ),
+  editorCanvas: resolve(
+    root,
+    'editor/core/src/react/EditorCanvas.tsx',
+  ),
+  toolbar: resolve(
+    root,
+    'editor/core/src/react/CanvasToolbar.tsx',
+  ),
+  workspaceContainer: resolve(
+    root,
+    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+  ),
+  desktopPackage: resolve(root, 'apps/desktop/package.json'),
+  bootstrapApplication: resolve(
+    root,
+    'apps/desktop/src/bootstrap/application.ts',
+  ),
+  scientificPackage: resolve(
+    root,
+    'features/scientific-plot/package.json',
+  ),
+  scientificPublicApi: resolve(
+    root,
+    'features/scientific-plot/src/public-api.ts',
+  ),
+  scientificExtension: resolve(
+    root,
+    'features/scientific-plot/src/extension.ts',
+  ),
+  chartShape: resolve(
+    root,
+    'features/scientific-plot/src/shapes/ScientificChartShapeUtil.tsx',
+  ),
+  chartTool: resolve(
+    root,
+    'features/scientific-plot/src/tools/ScientificChartTool.ts',
+  ),
+  chartStyle: resolve(
+    root,
+    'features/scientific-plot/src/styles/chart-styles.ts',
+  ),
+}
 
 async function readText(path) {
   return readFile(path, 'utf8')
 }
 
 async function writeText(path, content) {
+  await mkdir(dirname(path), { recursive: true })
   await writeFile(path, content, 'utf8')
 }
 
@@ -65,490 +97,729 @@ function replaceOptional(source, search, replacement = '') {
   return source.slice(0, index) + replacement + source.slice(index + search.length)
 }
 
-function replaceFunctionRange(source, functionName, replacement) {
-  const startMarker = `function ${functionName}(`
-  const startIndex = source.indexOf(startMarker)
-
-  if (startIndex === -1) {
-    throw new Error(`没有找到函数：${functionName}`)
-  }
-
-  const possibleEndMarkers = [
-    'function CanvasSelectionGeometryStatus(',
-    'function CanvasStatusLeftContent(',
-  ]
-
-  let endIndex = -1
-
-  for (const marker of possibleEndMarkers) {
-    const candidate = source.indexOf(marker, startIndex + startMarker.length)
-
-    if (candidate !== -1 && (endIndex === -1 || candidate < endIndex)) {
-      endIndex = candidate
-    }
-  }
-
-  if (endIndex === -1) {
-    throw new Error(`没有找到 ${functionName} 后面的状态栏组件`)
-  }
-
-  return (
-    source.slice(0, startIndex) +
-    replacement +
-    '\n\n' +
-    source.slice(endIndex)
-  )
-}
-
-function insertAfterRequired(source, marker, content, description) {
+function insertBeforeRequired(source, marker, content, description) {
   const index = source.indexOf(marker)
 
   if (index === -1) {
     throw new Error(`没有找到插入位置：${description}`)
   }
 
-  const insertionIndex = index + marker.length
+  return source.slice(0, index) + content + '\n\n' + source.slice(index)
+}
+
+async function updateJson(path, mutate) {
+  const original = await readText(path)
+  const hasBom = original.charCodeAt(0) === 0xfeff
+  const jsonText = hasBom ? original.slice(1) : original
+  const value = JSON.parse(jsonText)
+
+  mutate(value)
+
+  const next = `${JSON.stringify(value, null, 2)}\n`
+
+  await writeText(path, hasBom ? `\ufeff${next}` : next)
+}
+
+const chartStylesSource = String.raw`import { StyleProp } from 'tldraw'
+
+export type ScientificChartType =
+  | 'line'
+  | 'bar'
+  | 'area'
+  | 'scatter'
+
+export const ScientificChartTypeStyle =
+  StyleProp.defineEnum<ScientificChartType>(
+    'hybrid-canvas:scientific-chart-type',
+    {
+      defaultValue: 'line',
+      values: ['line', 'bar', 'area', 'scatter'],
+    },
+  )
+`
+
+const chartToolSource = String.raw`import { BaseBoxShapeTool } from 'tldraw'
+
+export class ScientificChartTool extends BaseBoxShapeTool {
+  static override id = 'scientific-chart'
+  static override initial = 'idle'
+
+  override shapeType = 'scientific-chart'
+}
+`
+
+const chartShapeSource = String.raw`import { T } from '@tldraw/validate'
+import type { CSSProperties, ReactElement } from 'react'
+import {
+  DefaultColorStyle,
+  DefaultSizeStyle,
+  Rectangle2d,
+  ShapeUtil,
+  type TLBaseShape,
+  type TLDefaultColor,
+  type TLDefaultSize,
+  type TLIndicatorPath,
+} from 'tldraw'
+
+import {
+  ScientificChartTypeStyle,
+  type ScientificChartType,
+} from '../styles/chart-styles'
+
+declare module '@tldraw/tlschema' {
+  interface TLGlobalShapePropsMap {
+    'scientific-chart': ScientificChartShapeProps
+  }
+}
+
+export interface ScientificChartShapeProps {
+  readonly w: number
+  readonly h: number
+  readonly chartType: ScientificChartType
+  readonly color: TLDefaultColor
+  readonly size: TLDefaultSize
+  readonly showAxes: boolean
+  readonly showGrid: boolean
+  readonly showLegend: boolean
+}
+
+export type ScientificChartShape = TLBaseShape<
+  'scientific-chart',
+  ScientificChartShapeProps
+>
+
+const COLOR_VALUES: Record<TLDefaultColor, string> = {
+  black: '#1d1d1d',
+  grey: '#6b7280',
+  'light-violet': '#a78bfa',
+  violet: '#7c3aed',
+  blue: '#2563eb',
+  'light-blue': '#60a5fa',
+  yellow: '#eab308',
+  orange: '#f97316',
+  green: '#16a34a',
+  'light-green': '#4ade80',
+  'light-red': '#f87171',
+  red: '#dc2626',
+  white: '#ffffff',
+}
+
+const STROKE_WIDTHS: Record<TLDefaultSize, number> = {
+  s: 2,
+  m: 3,
+  l: 4,
+  xl: 6,
+}
+
+export class ScientificChartShapeUtil extends ShapeUtil<ScientificChartShape> {
+  static override type = 'scientific-chart' as const
+
+  static override props = {
+    w: T.number,
+    h: T.number,
+    chartType: ScientificChartTypeStyle,
+    color: DefaultColorStyle,
+    size: DefaultSizeStyle,
+    showAxes: T.boolean,
+    showGrid: T.boolean,
+    showLegend: T.boolean,
+  }
+
+  getDefaultProps(): ScientificChartShape['props'] {
+    return {
+      w: 420,
+      h: 260,
+      chartType: 'line',
+      color: 'blue',
+      size: 'm',
+      showAxes: true,
+      showGrid: true,
+      showLegend: true,
+    }
+  }
+
+  getGeometry(shape: ScientificChartShape): Rectangle2d {
+    return new Rectangle2d({
+      width: shape.props.w,
+      height: shape.props.h,
+      isFilled: true,
+    })
+  }
+
+  override component(
+    shape: ScientificChartShape,
+  ): ReactElement | null {
+    return <ScientificChartView shape={shape} />
+  }
+
+  override getIndicatorPath(
+    shape: ScientificChartShape,
+  ): TLIndicatorPath | undefined {
+    const path = new Path2D()
+    path.rect(0, 0, shape.props.w, shape.props.h)
+    return path
+  }
+
+  override toSvg(
+    shape: ScientificChartShape,
+  ): ReactElement | null {
+    const { w, h } = shape.props
+
+    return (
+      <foreignObject height={h} width={w} x={0} y={0}>
+        <ScientificChartView shape={shape} />
+      </foreignObject>
+    )
+  }
+}
+
+function ScientificChartView({
+  shape,
+}: {
+  readonly shape: ScientificChartShape
+}) {
+  const {
+    w,
+    h,
+    chartType,
+    color,
+    size,
+    showAxes,
+    showGrid,
+    showLegend,
+  } = shape.props
+
+  const stroke = COLOR_VALUES[color]
+  const strokeWidth = STROKE_WIDTHS[size]
+
+  const padding = 34
+  const chartWidth = Math.max(1, w - padding * 2)
+  const chartHeight = Math.max(1, h - padding * 2)
+
+  const values = [0.25, 0.52, 0.4, 0.76, 0.61, 0.88, 0.72]
+  const points = values
+    .map((value, index) => {
+      const x =
+        padding +
+        (index / Math.max(1, values.length - 1)) * chartWidth
+      const y = padding + (1 - value) * chartHeight
+
+      return String(x) + ',' + String(y)
+    })
+    .join(' ')
+
+  const rootStyle: CSSProperties = {
+    width: w,
+    height: h,
+    background: '#ffffff',
+    border: '1px solid #d9dde3',
+    borderRadius: 8,
+    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    overflow: 'hidden',
+    userSelect: 'none',
+  }
 
   return (
-    source.slice(0, insertionIndex) +
-    content +
-    source.slice(insertionIndex)
+    <div style={rootStyle}>
+      <svg
+        aria-label="科学图表"
+        height={h}
+        role="img"
+        viewBox={'0 0 ' + String(w) + ' ' + String(h)}
+        width={w}
+      >
+        {showGrid
+          ? [0.25, 0.5, 0.75].map((ratio) => {
+              const y = padding + chartHeight * ratio
+
+              return (
+                <line
+                  key={ratio}
+                  stroke="#e8ebef"
+                  strokeDasharray="4 4"
+                  x1={padding}
+                  x2={w - padding}
+                  y1={y}
+                  y2={y}
+                />
+              )
+            })
+          : null}
+
+        {showAxes ? (
+          <>
+            <line
+              stroke="#4b5563"
+              strokeWidth="1.5"
+              x1={padding}
+              x2={padding}
+              y1={padding}
+              y2={h - padding}
+            />
+            <line
+              stroke="#4b5563"
+              strokeWidth="1.5"
+              x1={padding}
+              x2={w - padding}
+              y1={h - padding}
+              y2={h - padding}
+            />
+          </>
+        ) : null}
+
+        {chartType === 'bar'
+          ? values.map((value, index) => {
+              const slotWidth = chartWidth / values.length
+              const barWidth = Math.max(4, slotWidth * 0.58)
+              const barHeight = value * chartHeight
+              const x =
+                padding +
+                index * slotWidth +
+                (slotWidth - barWidth) / 2
+              const y = h - padding - barHeight
+
+              return (
+                <rect
+                  fill={stroke}
+                  height={barHeight}
+                  key={String(index)}
+                  rx="2"
+                  width={barWidth}
+                  x={x}
+                  y={y}
+                />
+              )
+            })
+          : null}
+
+        {chartType === 'area' ? (
+          <polygon
+            fill={stroke}
+            fillOpacity="0.2"
+            points={
+              String(padding) +
+              ',' +
+              String(h - padding) +
+              ' ' +
+              points +
+              ' ' +
+              String(w - padding) +
+              ',' +
+              String(h - padding)
+            }
+            stroke={stroke}
+            strokeLinejoin="round"
+            strokeWidth={strokeWidth}
+          />
+        ) : null}
+
+        {chartType === 'line' ? (
+          <polyline
+            fill="none"
+            points={points}
+            stroke={stroke}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={strokeWidth}
+          />
+        ) : null}
+
+        {chartType === 'scatter'
+          ? values.map((value, index) => {
+              const x =
+                padding +
+                (index / Math.max(1, values.length - 1)) *
+                  chartWidth
+              const y = padding + (1 - value) * chartHeight
+
+              return (
+                <circle
+                  cx={x}
+                  cy={y}
+                  fill={stroke}
+                  key={String(index)}
+                  r={strokeWidth + 2}
+                />
+              )
+            })
+          : null}
+
+        {showLegend ? (
+          <>
+            <circle
+              cx={w - 92}
+              cy={18}
+              fill={stroke}
+              r="4"
+            />
+            <text
+              fill="#4b5563"
+              fontFamily="sans-serif"
+              fontSize="11"
+              x={w - 82}
+              y={22}
+            >
+              数据系列
+            </text>
+          </>
+        ) : null}
+      </svg>
+    </div>
   )
 }
+`
 
-async function refineToolbar() {
-  let source = await readText(toolbarPath)
+const scientificExtensionSource = String.raw`import type { HybridCanvasExtension } from '@hybrid-canvas/canvas/extensions'
 
-  /*
-   * 删除顶部工具栏中的缩放工具。
-   * 右下角 CanvasZoomControl 继续保留。
-   */
-  source = source.replace(
-    /\n\s*\{\n\s*id: 'zoom',\n\s*label: '缩放',\n\s*shortcut: 'Z',\n\s*icon: ZoomIn,\n\s*\},?/,
-    '',
-  )
+import { ScientificChartShapeUtil } from './shapes/ScientificChartShapeUtil'
+import { ScientificChartTool } from './tools/ScientificChartTool'
 
-  /*
-   * 兼容紧凑写法。
-   */
-  source = source.replace(
-    /\n\s*\{\s*id: 'zoom',\s*label: '缩放',\s*shortcut: 'Z',\s*icon: ZoomIn\s*\},?/,
-    '',
-  )
+export const scientificPlotExtension: HybridCanvasExtension = {
+  id: '@hybrid-canvas/scientific-plot',
+  version: '0.1.0',
+  apiVersion: '1',
+  shapeUtils: [ScientificChartShapeUtil],
+  tools: [ScientificChartTool],
+  shapeLabels: {
+    'scientific-chart': '图表',
+  },
+}
+`
 
-  /*
-   * 删除工具栏右侧的复制按钮。
-   * Ctrl/Cmd+D 和右侧属性栏中的复制功能仍然保留。
-   */
-  source = source.replace(
-    /\n\s*<ToolbarButton\n\s*disabled=\{!hasSelection\}\n\s*icon=\{Copy\}\n\s*label="复制对象"\n\s*onClick=\{\(\) => \{\n\s*if \(editor\) \{\n\s*editor\.duplicateShapes\(selectedIds\)\n\s*\}\n\s*\}\}\n\s*shortcut="Ctrl\+D"\n\s*\/>/,
-    '',
-  )
+async function createScientificChartExtension() {
+  await writeText(paths.chartStyle, chartStylesSource)
+  await writeText(paths.chartTool, chartToolSource)
+  await writeText(paths.chartShape, chartShapeSource)
+  await writeText(paths.scientificExtension, scientificExtensionSource)
 
-  /*
-   * 删除工具栏右侧的删除按钮。
-   * 注意：这里删除的是 action 按钮，不是 tldraw 橡皮擦工具。
-   */
-  source = source.replace(
-    /\n\s*<ToolbarButton\n\s*disabled=\{!hasSelection\}\n\s*icon=\{Eraser\}\n\s*label="删除"\n\s*onClick=\{\(\) => editor\?\.deleteShapes\(selectedIds\)\}\n\s*shortcut="Delete"\n\s*\/>/,
-    '',
-  )
+  let publicApi = await readText(paths.scientificPublicApi)
 
-  /*
-   * 如果 Copy 图标已经没有使用，则删除导入。
-   */
-  const copyUsageCount = (source.match(/\bCopy\b/g) ?? []).length
-
-  if (copyUsageCount <= 1) {
-    source = source.replace(/\n\s*Copy,/, '')
+  if (!publicApi.includes('scientificPlotExtension')) {
+    publicApi += `
+export { scientificPlotExtension } from './extension'
+export {
+  type ScientificChartShape,
+  type ScientificChartShapeProps,
+  ScientificChartShapeUtil,
+} from './shapes/ScientificChartShapeUtil'
+export {
+  ScientificChartTypeStyle,
+  type ScientificChartType,
+} from './styles/chart-styles'
+export { ScientificChartTool } from './tools/ScientificChartTool'
+`
   }
 
-  await writeText(toolbarPath, source)
+  await writeText(paths.scientificPublicApi, publicApi)
+
+  await updateJson(paths.scientificPackage, (pkg) => {
+    pkg.dependencies ??= {}
+
+    pkg.dependencies['@hybrid-canvas/canvas'] = 'workspace:*'
+    pkg.dependencies['@tldraw/tlschema'] = 'catalog:'
+    pkg.dependencies['@tldraw/validate'] = 'catalog:'
+    pkg.dependencies.tldraw = 'catalog:'
+    pkg.dependencies.react = 'catalog:'
+    pkg.dependencies['react-dom'] = 'catalog:'
+
+    pkg.devDependencies ??= {}
+    pkg.devDependencies['@types/react'] = 'catalog:'
+    pkg.devDependencies['@types/react-dom'] = 'catalog:'
+  })
+
+  await updateJson(paths.desktopPackage, (pkg) => {
+    pkg.dependencies ??= {}
+    pkg.dependencies['@hybrid-canvas/scientific-plot'] =
+      'workspace:*'
+  })
 }
 
-async function extendShellContract() {
-  let source = await readText(shellContractPath)
+async function registerScientificChartExtension() {
+  let source = await readText(paths.bootstrapApplication)
 
-  if (source.includes('readonly inspectorSelectionKey?: string')) {
-    return
+  if (
+    !source.includes(
+      "import { scientificPlotExtension } from '@hybrid-canvas/scientific-plot'",
+    )
+  ) {
+    source = source.replace(
+      "import { flowchartExtension } from '@hybrid-canvas/flowchart'\n",
+      `import { flowchartExtension } from '@hybrid-canvas/flowchart'
+import { scientificPlotExtension } from '@hybrid-canvas/scientific-plot'
+`,
+    )
   }
 
-  source = replaceRequired(
+  source = replaceOptional(
     source,
-    '  readonly inspector: ReactNode\n',
-    `  readonly inspector: ReactNode
-  /**
-   * 当前编辑器选区标识。
-   * 仅用于请求显示属性面板，不承载画布文档状态。
-   */
-  readonly inspectorSelectionKey?: string
-`,
-    'WorkspaceShellProps inspector',
+    'extensions: [flowchartExtension],',
+    'extensions: [flowchartExtension, scientificPlotExtension],',
   )
 
-  await writeText(shellContractPath, source)
+  await writeText(paths.bootstrapApplication, source)
 }
 
-async function enableAutomaticInspectorOpening() {
-  let source = await readText(workspaceShellPath)
+async function updateCanvasToolIds() {
+  let source = await readText(paths.canvasContract)
 
-  if (!source.includes('  inspectorSelectionKey,\n')) {
-    source = replaceRequired(
-      source,
-      `  inspector,
-  statusLeft,`,
-      `  inspector,
-  inspectorSelectionKey,
-  statusLeft,`,
-      'WorkspaceShell 参数',
-    )
-  }
+  source = source.replace(
+    /export type CanvasToolId =[\s\S]*?\n\nexport interface CanvasBoundsViewModel/,
+    `export type CanvasToolId =
+  | 'select'
+  | 'hand'
+  | 'geo'
+  | 'arrow'
+  | 'scientific-chart'
+  | 'text'
+  | 'draw'
+  | 'highlight'
+  | 'eraser'
+  | 'note'
+  | 'frame'
 
-  if (!source.includes('previousInspectorSelectionKeyRef')) {
-    source = replaceRequired(
-      source,
-      `  const previousModeRef = useRef(mode)
-`,
-      `  const previousModeRef = useRef(mode)
-  const previousInspectorSelectionKeyRef = useRef(
-    inspectorSelectionKey ?? '',
+export interface CanvasBoundsViewModel`,
   )
+
+  await writeText(paths.canvasContract, source)
+}
+
+async function configureWheelAndToolLock() {
+  let source = await readText(paths.editorCanvas)
+
+  source = replaceOptional(
+    source,
+    'options: { maxPages: 100 },',
+    `options: {
+        maxPages: 100,
+        cameraOptions: {
+          wheelBehavior: 'zoom',
+          zoomSpeed: 1,
+        },
+      },`,
+  )
+
+  source = replaceOptional(
+    source,
+    'editor.updateInstanceState({ isGridMode: false })',
+    `editor.updateInstanceState({
+        isGridMode: false,
+        isToolLocked: true,
+      })`,
+  )
+
+  source = replaceOptional(
+    source,
+    'editor.updateInstanceState({ isGridMode: true })',
+    `editor.updateInstanceState({
+        isGridMode: false,
+        isToolLocked: true,
+      })`,
+  )
+
+  await writeText(paths.editorCanvas, source)
+}
+
+async function replaceLineWithChartTool() {
+  let source = await readText(paths.toolbar)
+
+  if (!source.includes('ChartNoAxes,')) {
+    source = source.replace(
+      '  BringToFront,\n',
+      `  BringToFront,
+  ChartNoAxes,
 `,
-      'WorkspaceShell refs',
     )
   }
 
-  if (!source.includes("'workspace inspector selection changed'")) {
-    const marker = `  useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {`
+  source = source.replace(
+    /\{\s*id: 'line',\s*label: '直线',\s*shortcut: 'L',\s*icon: LineChart,?\s*\},?/,
+    `{
+    id: 'scientific-chart',
+    label: '图表',
+    shortcut: 'C',
+    icon: ChartNoAxes,
+  },`,
+  )
 
-    const effect = `  /*
-   * 选中新的形状时自动打开右侧属性面板。
-   * 选区标识只包含 shape id，不镜像 tldraw 文档数据。
+  source = source.replace(
+    /\n\s*LineChart,/,
+    '',
+  )
+
+  /*
+   * 如果前面的脚本尚未添加过 line，则在连接工具后插入图表。
    */
-  useEffect(() => {
-    const previousKey = previousInspectorSelectionKeyRef.current
-    const nextKey = inspectorSelectionKey ?? ''
-
-    previousInspectorSelectionKeyRef.current = nextKey
-
-    if (!nextKey || nextKey === previousKey) {
-      return
-    }
-
-    if (mode !== 'wide') {
-      setSidebarOpen(false)
-    }
-
-    setInspectorOpen(true)
-  }, [
-    inspectorSelectionKey,
-    mode,
-    'workspace inspector selection changed',
-  ])
-
+  if (!source.includes("id: 'scientific-chart'")) {
+    const arrowBlock = `  {
+    id: 'arrow',
+    label: '连接',
+    shortcut: 'A',
+    icon: ArrowRight,
+  },
 `
 
     source = replaceRequired(
       source,
-      marker,
-      effect + marker,
-      'WorkspaceShell 自动打开属性面板 effect',
+      arrowBlock,
+      `${arrowBlock}  {
+    id: 'scientific-chart',
+    label: '图表',
+    shortcut: 'C',
+    icon: ChartNoAxes,
+  },
+`,
+      '连接工具',
     )
   }
 
-  await writeText(workspaceShellPath, source)
+  await writeText(paths.toolbar, source)
 }
 
-function ensureCanvasReactImport(source) {
+function ensureWorkspaceImports(source) {
   if (
-    source.includes(
-      "import { EditorSessionHost, useEditor } from '@hybrid-canvas/canvas/react'",
+    !source.includes(
+      "from '@hybrid-canvas/scientific-plot'",
     )
   ) {
-    return source
+    const marker =
+      "import { ConfirmationDialog } from '@hybrid-canvas/design-system'\n"
+
+    source = replaceRequired(
+      source,
+      marker,
+      `${marker}import {
+  ScientificChartTypeStyle,
+  type ScientificChartType,
+} from '@hybrid-canvas/scientific-plot'
+`,
+      'scientific plot import',
+    )
   }
 
-  return replaceRequired(
-    source,
-    "import { EditorSessionHost } from '@hybrid-canvas/canvas/react'",
-    "import { EditorSessionHost, useEditor } from '@hybrid-canvas/canvas/react'",
-    'useEditor 导入',
-  )
-}
+  const tldrawImportPattern =
+    /import\s*\{([\s\S]*?)\}\s*from 'tldraw'/
 
-function ensureTldrawImport(source) {
-  const requiredImport = `import {
-  DefaultArrowheadEndStyle,
-  DefaultArrowheadStartStyle,
-  DefaultColorStyle,
-  DefaultDashStyle,
-  DefaultFillStyle,
-  DefaultFontStyle,
-  DefaultSizeStyle,
-  DefaultTextAlignStyle,
-  type TLShape,
-  useValue,
-} from 'tldraw'`
-
-  const importPattern = /import\s*\{[\s\S]*?\}\s*from 'tldraw'/
-
-  if (importPattern.test(source)) {
-    return source.replace(importPattern, requiredImport)
-  }
-
-  const reactImportPattern = /import\s*\{[\s\S]*?\}\s*from 'react'\n/
-  const match = source.match(reactImportPattern)
+  const match = source.match(tldrawImportPattern)
 
   if (!match) {
-    throw new Error('没有找到 React import，无法插入 tldraw import')
+    throw new Error('没有找到 WorkspaceContainer 的 tldraw import')
   }
 
-  return source.replace(
-    reactImportPattern,
-    match[0] + requiredImport + '\n',
+  const requiredNames = [
+    'DefaultArrowheadEndStyle',
+    'DefaultArrowheadStartStyle',
+    'DefaultColorStyle',
+    'DefaultDashStyle',
+    'DefaultFillStyle',
+    'DefaultFontStyle',
+    'DefaultSizeStyle',
+    'DefaultTextAlignStyle',
+    'GeoShapeGeoStyle',
+    'type Editor',
+    'type TLShape',
+    'useValue',
+  ]
+
+  const current = match[1] ?? ''
+  const names = new Set(
+    current
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean),
   )
+
+  for (const name of requiredNames) {
+    names.add(name)
+  }
+
+  const replacement = `import {
+  ${Array.from(names).sort().join(',\n  ')},
+} from 'tldraw'`
+
+  return source.replace(tldrawImportPattern, replacement)
 }
 
-const shapeInspectorSource = String.raw`function CanvasInspectorContent({
-  hasActiveCanvas,
+const toolInspectorSource = String.raw`function CanvasActiveToolInspector({
+  editor,
+  toolId,
 }: {
-  readonly hasActiveCanvas: boolean
+  readonly editor: Editor
+  readonly toolId: string
 }) {
-  const editor = useEditor()
-
-  const selectedShapes = useValue(
-    'canvas inspector selected shapes',
-    () => editor?.getSelectedShapes() ?? [],
-    [editor],
-  )
-
-  if (!hasActiveCanvas || !editor) {
-    return (
-      <div className="rounded-lg border border-dashed border-divider px-4 py-10 text-center">
-        <p className="text-xs font-medium">没有活动画布</p>
-        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-          激活一个画布后，可以在这里编辑对象属性。
-        </p>
-      </div>
-    )
-  }
-
-  if (selectedShapes.length === 0) {
-    return (
-      <div className="space-y-4">
-        <header className="border-b border-divider pb-3">
-          <h2 className="text-sm font-semibold">画布</h2>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            选择对象后显示对应属性
-          </p>
-        </header>
-
-        <ShapeInspectorSection title="视图">
-          <div className="grid grid-cols-2 gap-2">
-            <ShapeInspectorButton onClick={() => editor.zoomToFit()}>
-              适应内容
-            </ShapeInspectorButton>
-
-            <ShapeInspectorButton onClick={() => editor.resetZoom()}>
-              恢复 100%
-            </ShapeInspectorButton>
-
-            <ShapeInspectorButton
-              className="col-span-2"
-              onClick={() => editor.selectAll()}
-            >
-              选择全部对象
-            </ShapeInspectorButton>
-          </div>
-        </ShapeInspectorSection>
-
-        <div className="rounded-lg border border-dashed border-divider px-4 py-8 text-center">
-          <p className="text-xs font-medium">未选择对象</p>
-          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-            单击形状、文本、箭头或其他对象以编辑属性。
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  const selectedIds = selectedShapes.map((shape) => shape.id)
-  const primaryShape = selectedShapes[0]
-
-  if (!primaryShape) {
-    return null
-  }
-
-  const commonType = selectedShapes.every(
-    (shape) => shape.type === primaryShape.type,
-  )
-    ? primaryShape.type
-    : 'mixed'
-
-  const commonColor = getCommonShapeProp(selectedShapes, 'color')
-  const commonFill = getCommonShapeProp(selectedShapes, 'fill')
-  const commonDash = getCommonShapeProp(selectedShapes, 'dash')
-  const commonSize = getCommonShapeProp(selectedShapes, 'size')
-  const commonFont = getCommonShapeProp(selectedShapes, 'font')
-  const commonAlign = getCommonShapeProp(selectedShapes, 'textAlign')
-  const commonGeo = getCommonShapeProp(selectedShapes, 'geo')
-  const commonArrowheadStart = getCommonShapeProp(
-    selectedShapes,
-    'arrowheadStart',
-  )
-  const commonArrowheadEnd = getCommonShapeProp(
-    selectedShapes,
-    'arrowheadEnd',
-  )
-
-  const applyStyle = (
-    style:
-      | typeof DefaultColorStyle
-      | typeof DefaultFillStyle
-      | typeof DefaultDashStyle
-      | typeof DefaultSizeStyle
-      | typeof DefaultFontStyle
-      | typeof DefaultTextAlignStyle
-      | typeof DefaultArrowheadStartStyle
-      | typeof DefaultArrowheadEndStyle,
+  const applyNextStyle = (
+    style: Parameters<Editor['setStyleForNextShapes']>[0],
     value: string,
   ) => {
-    editor.setStyleForSelectedShapes(style as never, value as never)
+    editor.setStyleForNextShapes(style, value as never)
   }
 
-  const updateGeo = (geo: string) => {
-    const updates = selectedShapes.flatMap((shape) => {
-      if (shape.type !== 'geo') {
-        return []
-      }
-
-      return [
-        {
-          id: shape.id,
-          type: shape.type,
-          props: {
-            geo,
-          },
-        },
-      ]
-    })
-
-    if (updates.length > 0) {
-      editor.updateShapes(updates as never)
-    }
-  }
-
-  const allLocked = selectedShapes.every((shape) => shape.isLocked)
-
-  const toggleLocked = () => {
-    editor.updateShapes(
-      selectedShapes.map((shape) => ({
-        id: shape.id,
-        type: shape.type,
-        isLocked: !allLocked,
-      })) as never,
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      <header className="border-b border-divider pb-3">
-        <h2 className="truncate text-sm font-semibold">
-          {selectedShapes.length === 1
-            ? getInspectorShapeName(commonType)
-            : String(selectedShapes.length) + ' 个对象'}
-        </h2>
-
-        <p className="mt-1 truncate text-[11px] text-muted-foreground">
-          {selectedShapes.length === 1
-            ? getInspectorShapeDescription(commonType)
-            : commonType === 'mixed'
-              ? '多个不同类型的对象'
-              : getInspectorShapeName(commonType)}
-        </p>
-      </header>
-
-      <ShapeInspectorSection title="颜色">
-        <div className="grid grid-cols-6 gap-1.5">
-          {SHAPE_COLORS.map((color) => (
-            <button
-              aria-label={'设置颜色为' + color.label}
-              className={
-                'size-7 rounded-md border transition-transform hover:scale-105 ' +
-                (commonColor === color.value
-                  ? 'ring-2 ring-primary ring-offset-1'
-                  : '')
-              }
-              key={color.value}
-              onClick={() =>
-                applyStyle(DefaultColorStyle, color.value)
-              }
-              style={{ backgroundColor: color.css }}
-              title={color.label}
-              type="button"
-            />
-          ))}
-        </div>
-      </ShapeInspectorSection>
-
-      {supportsFill(commonType) ? (
-        <ShapeInspectorSection title="填充">
-          <ShapeInspectorSegmentedControl
-            onChange={(value) =>
-              applyStyle(DefaultFillStyle, value)
+  const commonColorPanel = (
+    <ShapeInspectorSection title="颜色">
+      <div className="grid grid-cols-6 gap-1.5">
+        {SHAPE_COLORS.map((color) => (
+          <button
+            aria-label={'设置默认颜色为' + color.label}
+            className="size-7 rounded-md border transition-transform hover:scale-105"
+            key={color.value}
+            onClick={() =>
+              applyNextStyle(DefaultColorStyle, color.value)
             }
-            options={[
-              { value: 'none', label: '无' },
-              { value: 'semi', label: '半透明' },
-              { value: 'solid', label: '实心' },
-              { value: 'pattern', label: '图案' },
-            ]}
-            value={commonFill}
+            style={{ backgroundColor: color.css }}
+            title={color.label}
+            type="button"
           />
-        </ShapeInspectorSection>
-      ) : null}
+        ))}
+      </div>
+    </ShapeInspectorSection>
+  )
 
-      {supportsStroke(commonType) ? (
-        <>
-          <ShapeInspectorSection title="线型">
-            <ShapeInspectorSegmentedControl
-              onChange={(value) =>
-                applyStyle(DefaultDashStyle, value)
-              }
-              options={[
-                { value: 'draw', label: '手绘' },
-                { value: 'solid', label: '实线' },
-                { value: 'dashed', label: '虚线' },
-                { value: 'dotted', label: '点线' },
-              ]}
-              value={commonDash}
-            />
-          </ShapeInspectorSection>
+  const sizePanel = (
+    <ShapeInspectorSection title="粗细">
+      <ShapeInspectorSegmentedControl
+        onChange={(value) =>
+          applyNextStyle(DefaultSizeStyle, value)
+        }
+        options={[
+          { value: 's', label: '细' },
+          { value: 'm', label: '中' },
+          { value: 'l', label: '粗' },
+          { value: 'xl', label: '特粗' },
+        ]}
+        value={null}
+      />
+    </ShapeInspectorSection>
+  )
 
-          <ShapeInspectorSection title="粗细">
-            <ShapeInspectorSegmentedControl
-              onChange={(value) =>
-                applyStyle(DefaultSizeStyle, value)
-              }
-              options={[
-                { value: 's', label: '细' },
-                { value: 'm', label: '中' },
-                { value: 'l', label: '粗' },
-                { value: 'xl', label: '特粗' },
-              ]}
-              value={commonSize}
-            />
-          </ShapeInspectorSection>
-        </>
-      ) : null}
+  const dashPanel = (
+    <ShapeInspectorSection title="线型">
+      <ShapeInspectorSegmentedControl
+        onChange={(value) =>
+          applyNextStyle(DefaultDashStyle, value)
+        }
+        options={[
+          { value: 'draw', label: '手绘' },
+          { value: 'solid', label: '实线' },
+          { value: 'dashed', label: '虚线' },
+          { value: 'dotted', label: '点线' },
+        ]}
+        value={null}
+      />
+    </ShapeInspectorSection>
+  )
 
-      {commonType === 'geo' ? (
-        <ShapeInspectorSection title="形状">
+  if (toolId === 'geo') {
+    return (
+      <ToolPanel title="形状" description="连续创建形状">
+        <ShapeInspectorSection title="形状类型">
           <select
-            className="h-8 w-full rounded-md border border-divider bg-background px-2 text-[11px] outline-none focus:border-primary"
-            onChange={(event) => updateGeo(event.target.value)}
-            value={commonGeo ?? 'rectangle'}
+            className="h-8 w-full rounded-md border border-divider bg-background px-2 text-[11px]"
+            defaultValue="rectangle"
+            onChange={(event) =>
+              applyNextStyle(
+                GeoShapeGeoStyle,
+                event.target.value,
+              )
+            }
           >
             <option value="rectangle">矩形</option>
             <option value="ellipse">椭圆</option>
@@ -556,407 +827,449 @@ const shapeInspectorSource = String.raw`function CanvasInspectorContent({
             <option value="diamond">菱形</option>
             <option value="pentagon">五边形</option>
             <option value="hexagon">六边形</option>
-            <option value="octagon">八边形</option>
             <option value="star">星形</option>
             <option value="cloud">云形</option>
-            <option value="rhombus">平行四边形</option>
-            <option value="trapezoid">梯形</option>
             <option value="arrow-right">右箭头</option>
             <option value="arrow-left">左箭头</option>
-            <option value="arrow-up">上箭头</option>
-            <option value="arrow-down">下箭头</option>
           </select>
         </ShapeInspectorSection>
-      ) : null}
 
-      {commonType === 'text' || commonType === 'note' ? (
-        <>
-          <ShapeInspectorSection title="字体">
-            <ShapeInspectorSegmentedControl
-              onChange={(value) =>
-                applyStyle(DefaultFontStyle, value)
-              }
-              options={[
-                { value: 'draw', label: '手写' },
-                { value: 'sans', label: '无衬线' },
-                { value: 'serif', label: '衬线' },
-                { value: 'mono', label: '等宽' },
-              ]}
-              value={commonFont}
-            />
-          </ShapeInspectorSection>
+        {commonColorPanel}
 
-          <ShapeInspectorSection title="对齐">
-            <ShapeInspectorSegmentedControl
-              onChange={(value) =>
-                applyStyle(DefaultTextAlignStyle, value)
-              }
-              options={[
-                { value: 'start', label: '左' },
-                { value: 'middle', label: '中' },
-                { value: 'end', label: '右' },
-              ]}
-              value={commonAlign}
-            />
-          </ShapeInspectorSection>
-        </>
-      ) : null}
+        <ShapeInspectorSection title="填充">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              applyNextStyle(DefaultFillStyle, value)
+            }
+            options={[
+              { value: 'none', label: '无' },
+              { value: 'semi', label: '半透明' },
+              { value: 'solid', label: '实心' },
+              { value: 'pattern', label: '图案' },
+            ]}
+            value={null}
+          />
+        </ShapeInspectorSection>
 
-      {commonType === 'arrow' ? (
-        <>
-          <ShapeInspectorSection title="起点">
-            <ShapeInspectorArrowheadSelect
-              onChange={(value) =>
-                applyStyle(DefaultArrowheadStartStyle, value)
-              }
-              value={commonArrowheadStart}
-            />
-          </ShapeInspectorSection>
+        {dashPanel}
+        {sizePanel}
+      </ToolPanel>
+    )
+  }
 
-          <ShapeInspectorSection title="终点">
-            <ShapeInspectorArrowheadSelect
-              onChange={(value) =>
-                applyStyle(DefaultArrowheadEndStyle, value)
-              }
-              value={commonArrowheadEnd}
-            />
-          </ShapeInspectorSection>
-        </>
-      ) : null}
+  if (toolId === 'arrow') {
+    return (
+      <ToolPanel title="连接" description="连续创建连接线">
+        {commonColorPanel}
+        {dashPanel}
+        {sizePanel}
 
-      <ShapeInspectorSection title="排列">
-        <div className="grid grid-cols-2 gap-2">
-          <ShapeInspectorButton
-            onClick={() => editor.bringToFront(selectedIds)}
-          >
-            置于顶层
-          </ShapeInspectorButton>
+        <ShapeInspectorSection title="起点">
+          <ShapeInspectorArrowheadSelect
+            onChange={(value) =>
+              applyNextStyle(
+                DefaultArrowheadStartStyle,
+                value,
+              )
+            }
+            value="none"
+          />
+        </ShapeInspectorSection>
 
-          <ShapeInspectorButton
-            onClick={() => editor.sendToBack(selectedIds)}
-          >
-            置于底层
-          </ShapeInspectorButton>
+        <ShapeInspectorSection title="终点">
+          <ShapeInspectorArrowheadSelect
+            onChange={(value) =>
+              applyNextStyle(
+                DefaultArrowheadEndStyle,
+                value,
+              )
+            }
+            value="arrow"
+          />
+        </ShapeInspectorSection>
+      </ToolPanel>
+    )
+  }
 
-          <ShapeInspectorButton
-            onClick={() => editor.bringForward(selectedIds)}
-          >
-            上移一层
-          </ShapeInspectorButton>
+  if (toolId === 'scientific-chart') {
+    return (
+      <ToolPanel title="图表" description="拖拽创建科学图表">
+        <ShapeInspectorSection title="图表类型">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              applyNextStyle(
+                ScientificChartTypeStyle,
+                value as ScientificChartType,
+              )
+            }
+            options={[
+              { value: 'line', label: '折线' },
+              { value: 'bar', label: '柱状' },
+              { value: 'area', label: '面积' },
+              { value: 'scatter', label: '散点' },
+            ]}
+            value={null}
+          />
+        </ShapeInspectorSection>
 
-          <ShapeInspectorButton
-            onClick={() => editor.sendBackward(selectedIds)}
-          >
-            下移一层
-          </ShapeInspectorButton>
+        {commonColorPanel}
+        {sizePanel}
+
+        <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
+          在画布中按住鼠标拖拽创建图表。创建后选中图表，可继续编辑类型、颜色和尺寸。
         </div>
-      </ShapeInspectorSection>
+      </ToolPanel>
+    )
+  }
 
-      <ShapeInspectorSection title="对象操作">
-        <div className="grid grid-cols-2 gap-2">
-          <ShapeInspectorButton
-            onClick={() => editor.duplicateShapes(selectedIds)}
-          >
-            复制
-          </ShapeInspectorButton>
+  if (toolId === 'text') {
+    return (
+      <ToolPanel title="文本" description="连续创建文本">
+        {commonColorPanel}
 
-          <ShapeInspectorButton onClick={toggleLocked}>
-            {allLocked ? '解除锁定' : '锁定'}
-          </ShapeInspectorButton>
+        <ShapeInspectorSection title="字体">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              applyNextStyle(DefaultFontStyle, value)
+            }
+            options={[
+              { value: 'draw', label: '手写' },
+              { value: 'sans', label: '无衬线' },
+              { value: 'serif', label: '衬线' },
+              { value: 'mono', label: '等宽' },
+            ]}
+            value={null}
+          />
+        </ShapeInspectorSection>
 
-          <ShapeInspectorButton
-            className="col-span-2 border-destructive/40 text-destructive hover:bg-destructive/10"
-            onClick={() => editor.deleteShapes(selectedIds)}
-          >
-            删除对象
-          </ShapeInspectorButton>
+        {sizePanel}
+
+        <ShapeInspectorSection title="对齐">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              applyNextStyle(
+                DefaultTextAlignStyle,
+                value,
+              )
+            }
+            options={[
+              { value: 'start', label: '左' },
+              { value: 'middle', label: '中' },
+              { value: 'end', label: '右' },
+            ]}
+            value={null}
+          />
+        </ShapeInspectorSection>
+      </ToolPanel>
+    )
+  }
+
+  if (toolId === 'draw' || toolId === 'highlight') {
+    return (
+      <ToolPanel
+        title={toolId === 'highlight' ? '高亮' : '自由绘制'}
+        description={
+          toolId === 'highlight'
+            ? '连续绘制高亮标记'
+            : '连续自由绘制'
+        }
+      >
+        {commonColorPanel}
+        {dashPanel}
+        {sizePanel}
+      </ToolPanel>
+    )
+  }
+
+  if (toolId === 'note') {
+    return (
+      <ToolPanel title="便签" description="连续创建便签">
+        {commonColorPanel}
+
+        <ShapeInspectorSection title="填充">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              applyNextStyle(DefaultFillStyle, value)
+            }
+            options={[
+              { value: 'semi', label: '半透明' },
+              { value: 'solid', label: '实心' },
+              { value: 'pattern', label: '图案' },
+            ]}
+            value={null}
+          />
+        </ShapeInspectorSection>
+
+        <ShapeInspectorSection title="字体">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              applyNextStyle(DefaultFontStyle, value)
+            }
+            options={[
+              { value: 'draw', label: '手写' },
+              { value: 'sans', label: '无衬线' },
+              { value: 'serif', label: '衬线' },
+              { value: 'mono', label: '等宽' },
+            ]}
+            value={null}
+          />
+        </ShapeInspectorSection>
+
+        {sizePanel}
+      </ToolPanel>
+    )
+  }
+
+  if (toolId === 'frame') {
+    return (
+      <ToolPanel title="画框" description="连续创建画框">
+        {commonColorPanel}
+        {dashPanel}
+        {sizePanel}
+      </ToolPanel>
+    )
+  }
+
+  if (toolId === 'eraser') {
+    return (
+      <ToolPanel title="橡皮擦" description="拖动以删除对象">
+        <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
+          按住鼠标拖过对象进行删除。橡皮擦会保持激活，直到手动切换工具或按 Esc。
         </div>
-      </ShapeInspectorSection>
+      </ToolPanel>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border border-dashed border-divider px-4 py-8 text-center">
+      <p className="text-xs font-medium">
+        {toolId === 'hand' ? '移动画布' : '选择工具'}
+      </p>
+      <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+        {toolId === 'hand'
+          ? '拖动画布进行平移，滚轮用于缩放。'
+          : '选择画布中的对象以编辑对应属性。'}
+      </p>
     </div>
   )
 }
 
-const SHAPE_COLORS = [
-  { value: 'black', label: '黑色', css: '#1d1d1d' },
-  { value: 'grey', label: '灰色', css: '#9ca3af' },
-  { value: 'red', label: '红色', css: '#ef4444' },
-  { value: 'orange', label: '橙色', css: '#f97316' },
-  { value: 'yellow', label: '黄色', css: '#eab308' },
-  { value: 'green', label: '绿色', css: '#22c55e' },
-  { value: 'blue', label: '蓝色', css: '#3b82f6' },
-  { value: 'violet', label: '紫色', css: '#8b5cf6' },
-  { value: 'light-red', label: '浅红', css: '#fca5a5' },
-  { value: 'light-green', label: '浅绿', css: '#86efac' },
-  { value: 'light-blue', label: '浅蓝', css: '#93c5fd' },
-  { value: 'light-violet', label: '浅紫', css: '#c4b5fd' },
-] as const
-
-function ShapeInspectorSection({
+function ToolPanel({
   title,
+  description,
   children,
 }: {
   readonly title: string
+  readonly description: string
   readonly children: import('react').ReactNode
 }) {
   return (
-    <section className="space-y-2.5 border-b border-divider pb-4 last:border-b-0">
-      <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-        {title}
-      </h3>
+    <div className="space-y-4">
+      <header className="border-b border-divider pb-3">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {description}
+        </p>
+      </header>
       {children}
-    </section>
-  )
-}
-
-function ShapeInspectorButton({
-  children,
-  onClick,
-  className = '',
-}: {
-  readonly children: import('react').ReactNode
-  readonly onClick: () => void
-  readonly className?: string
-}) {
-  return (
-    <button
-      className={
-        'min-h-8 rounded-md border border-divider bg-background px-2 text-[11px] ' +
-        'transition-colors hover:bg-accent ' +
-        className
-      }
-      onClick={onClick}
-      type="button"
-    >
-      {children}
-    </button>
-  )
-}
-
-function ShapeInspectorSegmentedControl({
-  options,
-  value,
-  onChange,
-}: {
-  readonly options: readonly {
-    readonly value: string
-    readonly label: string
-  }[]
-  readonly value: string | null
-  readonly onChange: (value: string) => void
-}) {
-  return (
-    <div
-      className="grid gap-1.5"
-      style={{
-        gridTemplateColumns:
-          'repeat(' + String(options.length) + ', minmax(0, 1fr))',
-      }}
-    >
-      {options.map((option) => (
-        <button
-          className={
-            'h-8 rounded-md border px-1 text-[10px] transition-colors ' +
-            (value === option.value
-              ? 'border-primary bg-primary/10 text-primary'
-              : 'border-divider bg-background hover:bg-accent')
-          }
-          key={option.value}
-          onClick={() => onChange(option.value)}
-          type="button"
-        >
-          {option.label}
-        </button>
-      ))}
     </div>
   )
 }
+`
 
-function ShapeInspectorArrowheadSelect({
-  value,
-  onChange,
-}: {
-  readonly value: string | null
-  readonly onChange: (value: string) => void
-}) {
-  return (
-    <select
-      className="h-8 w-full rounded-md border border-divider bg-background px-2 text-[11px] outline-none focus:border-primary"
-      onChange={(event) => onChange(event.target.value)}
-      value={value ?? 'none'}
-    >
-      <option value="none">无</option>
-      <option value="arrow">箭头</option>
-      <option value="triangle">实心三角</option>
-      <option value="square">方形</option>
-      <option value="dot">圆点</option>
-      <option value="diamond">菱形</option>
-      <option value="inverted">反向三角</option>
-      <option value="bar">横线</option>
-    </select>
-  )
-}
+async function connectActiveToolInspector() {
+  let source = await readText(paths.workspaceContainer)
 
-function getCommonShapeProp(
-  shapes: readonly TLShape[],
-  key: string,
-): string | null {
-  const firstShape = shapes[0]
-
-  if (!firstShape) {
-    return null
-  }
-
-  const firstProps =
-    firstShape.props as unknown as Record<string, unknown>
-  const firstValue = firstProps[key]
-
-  if (typeof firstValue !== 'string') {
-    return null
-  }
-
-  const isShared = shapes.every((shape) => {
-    const props = shape.props as unknown as Record<string, unknown>
-    return props[key] === firstValue
-  })
-
-  return isShared ? firstValue : null
-}
-
-function supportsFill(type: string): boolean {
-  return type === 'geo' || type === 'note' || type === 'frame'
-}
-
-function supportsStroke(type: string): boolean {
-  return [
-    'geo',
-    'draw',
-    'highlight',
-    'arrow',
-    'line',
-    'note',
-    'frame',
-    'mixed',
-  ].includes(type)
-}
-
-function getInspectorShapeName(type: string): string {
-  const names: Record<string, string> = {
-    geo: '形状',
-    text: '文本',
-    draw: '自由绘制',
-    highlight: '高亮',
-    arrow: '箭头',
-    line: '直线',
-    note: '便签',
-    frame: '画框',
-    image: '图片',
-    video: '视频',
-    bookmark: '书签',
-    embed: '嵌入内容',
-    group: '对象组',
-    mixed: '多个对象',
-  }
-
-  return names[type] ?? type
-}
-
-function getInspectorShapeDescription(type: string): string {
-  const descriptions: Record<string, string> = {
-    geo: '编辑形状、颜色、填充和边框',
-    text: '编辑字体、字号、颜色和对齐',
-    draw: '编辑画笔颜色、线型和粗细',
-    highlight: '编辑高亮颜色和粗细',
-    arrow: '编辑箭头、端点、颜色和线型',
-    line: '编辑线条颜色、线型和粗细',
-    note: '编辑便签文字、颜色和填充',
-    frame: '编辑画框样式',
-    image: '编辑图片对象和层级',
-    video: '编辑视频对象和层级',
-    group: '编辑对象组和层级',
-  }
-
-  return descriptions[type] ?? '编辑所选对象的属性'
-}`
-
-async function updateWorkspaceContainer() {
-  let source = await readText(workspaceContainerPath)
-
-  source = ensureCanvasReactImport(source)
-  source = ensureTldrawImport(source)
+  source = ensureWorkspaceImports(source)
 
   /*
-   * 建立当前选区 key。这里只保留 ID，用于 UI 打开请求，
-   * 不复制 shape props，也不建立第二套画布状态。
+   * 让属性栏订阅当前工具。
    */
-  if (!source.includes("'workspace inspector selection key'")) {
-    source = insertAfterRequired(
-      source,
-      `  const [pendingCloseSessionId, setPendingCloseSessionId] = useState<CanvasSessionId | null>(null)
-`,
-      `
-  const editor = useEditor()
+  const selectedShapesMarker = `  const selectedShapes = useValue(
+    'canvas inspector selected shapes',
+    () => editor?.getSelectedShapes() ?? [],
+    [editor],
+  )
+`
 
-  const inspectorSelectionKey = useValue(
-    'workspace inspector selection key',
-    () =>
-      editor
-        ? editor
-            .getSelectedShapeIds()
-            .map(String)
-            .sort()
-            .join('|')
-        : '',
+  if (
+    source.includes(selectedShapesMarker) &&
+    !source.includes("'canvas inspector active tool'")
+  ) {
+    source = replaceRequired(
+      source,
+      selectedShapesMarker,
+      `${selectedShapesMarker}
+  const activeToolId = useValue(
+    'canvas inspector active tool',
+    () => editor?.getCurrentToolId() ?? 'select',
     [editor],
   )
 `,
-      'WorkspaceContainer state',
+      'CanvasInspector activeToolId',
     )
   }
 
-  if (!source.includes('inspectorSelectionKey={inspectorSelectionKey}')) {
-    source = replaceRequired(
-      source,
-      `      inspector={<CanvasInspectorContent hasActiveCanvas={workbench.activeCanvas !== null} />}
-      mainContent={mainContent}`,
-      `      inspector={
-        <CanvasInspectorContent
-          hasActiveCanvas={workbench.activeCanvas !== null}
-        />
-      }
-      inspectorSelectionKey={inspectorSelectionKey}
-      mainContent={mainContent}`,
-      'WorkspaceShell inspector props',
+  /*
+   * 未选对象时显示当前工具配置，而不是只显示空状态。
+   */
+  const emptySelectionStart = `  if (selectedShapes.length === 0) {
+    return (
+      <div className="space-y-4">`
+
+  const emptySelectionEnd = `      </div>
     )
   }
 
-  source = replaceFunctionRange(
-    source,
-    'CanvasInspectorContent',
-    shapeInspectorSource,
+  const selectedIds = selectedShapes.map((shape) => shape.id)`
+
+  const startIndex = source.indexOf(emptySelectionStart)
+  const endIndex = source.indexOf(
+    emptySelectionEnd,
+    startIndex,
   )
 
-  await writeText(workspaceContainerPath, source)
+  if (startIndex !== -1 && endIndex !== -1) {
+    const replacement = `  if (selectedShapes.length === 0) {
+    return (
+      <CanvasActiveToolInspector
+        editor={editor}
+        toolId={activeToolId}
+      />
+    )
+  }
+
+  const selectedIds = selectedShapes.map((shape) => shape.id)`
+
+    source =
+      source.slice(0, startIndex) +
+      replacement +
+      source.slice(endIndex + emptySelectionEnd.length)
+  }
+
+  /*
+   * 工具切换也触发右侧栏自动打开。
+   * select / hand 不强制打开；其他创建工具会打开。
+   */
+  source = source.replace(
+    /const inspectorSelectionKey = useValue\([\s\S]*?\n  \)\n/,
+    `const inspectorSelectionKey = useValue(
+    'workspace inspector selection key',
+    () => {
+      if (!editor) {
+        return ''
+      }
+
+      const selectedIds = editor
+        .getSelectedShapeIds()
+        .map(String)
+        .sort()
+
+      if (selectedIds.length > 0) {
+        return 'selection:' + selectedIds.join('|')
+      }
+
+      const toolId = editor.getCurrentToolId()
+
+      if (toolId === 'select' || toolId === 'hand') {
+        return ''
+      }
+
+      return 'tool:' + toolId
+    },
+    [editor],
+  )
+`,
+  )
+
+  if (!source.includes('function CanvasActiveToolInspector(')) {
+    const marker = source.includes('const SHAPE_COLORS')
+      ? 'const SHAPE_COLORS'
+      : 'function CanvasSelectionGeometryStatus('
+
+    source = insertBeforeRequired(
+      source,
+      marker,
+      toolInspectorSource,
+      'CanvasActiveToolInspector',
+    )
+  }
+
+  /*
+   * 图表对象选中后显示图表类型设置。
+   */
+  source = replaceOptional(
+    source,
+    `{commonType === 'geo' ? (`,
+    `{commonType === 'scientific-chart' ? (
+        <ShapeInspectorSection title="图表类型">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              editor.setStyleForSelectedShapes(
+                ScientificChartTypeStyle,
+                value as ScientificChartType,
+              )
+            }
+            options={[
+              { value: 'line', label: '折线' },
+              { value: 'bar', label: '柱状' },
+              { value: 'area', label: '面积' },
+              { value: 'scatter', label: '散点' },
+            ]}
+            value={getCommonShapeProp(
+              selectedShapes,
+              'chartType',
+            )}
+          />
+        </ShapeInspectorSection>
+      ) : null}
+
+      {commonType === 'geo' ? (`,
+  )
+
+  source = replaceOptional(
+    source,
+    `    frame: '画框',
+`,
+    `    frame: '画框',
+    'scientific-chart': '图表',
+`,
+  )
+
+  source = replaceOptional(
+    source,
+    `    frame: '编辑画框样式',
+`,
+    `    frame: '编辑画框样式',
+    'scientific-chart': '编辑图表类型、颜色和数据展示',
+`,
+  )
+
+  await writeText(paths.workspaceContainer, source)
 }
 
 async function main() {
-  console.log('正在精简工具栏并接入形状属性面板……')
+  console.log('正在接入工具预设面板和科学图表……')
 
-  await refineToolbar()
-  await extendShellContract()
-  await enableAutomaticInspectorOpening()
-  await updateWorkspaceContainer()
+  await createScientificChartExtension()
+  await registerScientificChartExtension()
+  await updateCanvasToolIds()
+  await configureWheelAndToolLock()
+  await replaceLineWithChartTool()
+  await connectActiveToolInspector()
 
   console.log('')
-  console.log('修改完成：')
-  console.log('  ✓ 删除顶部缩放工具')
-  console.log('  ✓ 保留画布右下角缩放控件')
-  console.log('  ✓ 删除重复的复制和删除按钮')
-  console.log('  ✓ 保留真正的橡皮擦绘图工具')
-  console.log('  ✓ 选中对象时自动打开右侧栏')
-  console.log('  ✓ 根据对象类型显示对应属性 UI')
-  console.log('  ✓ 几何信息继续显示在底部状态栏')
+  console.log('完成：')
+  console.log('  ✓ 点击创建工具时自动打开对应右侧面板')
+  console.log('  ✓ 形状、连接、文本、高亮等显示专属配置')
+  console.log('  ✓ “直线”已替换为真正的“图表”工具')
+  console.log('  ✓ 支持折线、柱状、面积和散点图')
+  console.log('  ✓ 滚轮上滑放大、下滑缩小')
+  console.log('  ✓ 缩放中心跟随鼠标位置')
+  console.log('  ✓ 创建工具保持激活，不再自动切回选择')
   console.log('')
-  console.log('请执行：')
+  console.log('接下来执行：')
+  console.log('  pnpm install')
   console.log('  pnpm format')
   console.log('  pnpm typecheck')
   console.log('  pnpm test:architecture')
