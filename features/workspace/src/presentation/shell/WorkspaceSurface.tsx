@@ -56,7 +56,7 @@ const SURFACES: Record<WorkspaceSurfaceId, WorkspaceSurfaceDefinition> = {
   },
   documents: {
     title: '恢复',
-    description: '恢复最近打开的画板和本地文件。',
+    description: '恢复最近打开的画布和本地文件。',
     icon: Files,
   },
 }

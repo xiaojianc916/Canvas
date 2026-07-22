@@ -233,7 +233,7 @@ function useApplicationCommands(runtime: AppShellRuntime, toggleCommandPalette: 
 
       runtime.commands.register({
         id: 'workspace.create-canvas',
-        label: '新建画板',
+        label: '新建画布',
         category: '文件',
         shortcut: 'Ctrl+N',
         execute() {

@@ -406,3 +406,85 @@
     animation: none;
   }
 }
+
+/* BEGIN CANONICAL FIXED TAB CONTENT GEOMETRY */
+
+/*
+ * State-invariant content geometry.
+ *
+ * Activation changes only the background shape. It must never alter
+ * the content box occupied by icon, title, status and close button.
+ */
+.chrome-workbench-tab .chrome-workbench-tab__content,
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__content,
+.chrome-workbench-tab:not([data-active="true"]) .chrome-workbench-tab__content {
+  inset: 2px 12px 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/*
+ * Keep text metrics identical across activation changes. Changing
+ * font weight changes glyph widths and creates a second visible jump.
+ */
+.chrome-workbench-tab .chrome-workbench-tab__title,
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__title {
+  font-weight: 400;
+}
+
+/*
+ * Existing content-based hover paint is disabled. Hover is rendered
+ * by the independent ::before paint layer below.
+ */
+.chrome-workbench-tab:hover:not([data-active="true"]) .chrome-workbench-tab__content,
+.chrome-workbench-tab:hover:not([data-active="true"]):not([data-suppress-hover="true"])
+  .chrome-workbench-tab__content {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/*
+ * Paint-only hover surface.
+ *
+ * This layer can appear and disappear without changing the content
+ * element's dimensions or position.
+ */
+.chrome-workbench-tab:not([data-active="true"])::before {
+  position: absolute;
+  z-index: 3;
+  inset: 2px 3px;
+  display: block;
+  border: 0;
+  border-radius: 8px;
+  outline: 0;
+  background: var(--chrome-tab-hover);
+  box-shadow: none;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 80ms ease-out;
+}
+
+.chrome-workbench-tab:hover:not([data-active="true"]):not([data-suppress-hover="true"])::before {
+  opacity: 1;
+}
+
+.chrome-workbench-tab[data-suppress-hover="true"]:not([data-active="true"])::before {
+  opacity: 0;
+  transition: none;
+}
+
+/*
+ * Active-tab geometry remains owned by ChromeActiveTabShape.
+ */
+.chrome-workbench-tab[data-active="true"]::before {
+  display: none;
+  content: none;
+}
+
+/* END CANONICAL FIXED TAB CONTENT GEOMETRY */
