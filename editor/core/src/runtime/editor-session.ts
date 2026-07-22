@@ -1,5 +1,11 @@
 import { createTLStore, getSnapshot as getStoreEditorSnapshot, loadSnapshot } from '@tldraw/editor'
-import type { Editor, TLEditorSnapshot, TLStore } from 'tldraw'
+import {
+  defaultBindingUtils,
+  defaultShapeUtils,
+  type Editor,
+  type TLEditorSnapshot,
+  type TLStore,
+} from 'tldraw'
 
 import {
   buildExtensionRegistration,
@@ -47,8 +53,14 @@ export interface EditorSession {
 export function createEditorSession(options: CreateEditorSessionOptions): EditorSession {
   const registration = buildExtensionRegistration(options.extensions)
   const store = createTLStore({
-    shapeUtils: registration.shapeUtils,
-    bindingUtils: registration.bindingUtils,
+    shapeUtils: [
+      ...defaultShapeUtils,
+      ...registration.shapeUtils,
+    ],
+    bindingUtils: [
+      ...defaultBindingUtils,
+      ...registration.bindingUtils,
+    ],
   })
   if (options.initialSnapshot) {
     loadSnapshot(store, options.initialSnapshot)
@@ -56,12 +68,46 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
   let attachedEditor: Editor | null = null
   let state: EditorSessionState = 'created'
   const listeners = new Set<() => void>()
-  const stopObserving = store.listen(
-    () => {
-      for (const listener of listeners) {
-        listener()
+
+  let sessionSnapshot: EditorSessionSnapshot = {
+    pages: [],
+  }
+
+  function createSessionSnapshot(): EditorSessionSnapshot {
+    const editor = attachedEditor
+
+    if (!editor) {
+      return {
+        pages: [],
       }
-    },
+    }
+
+    const activePageId =
+      editor.getCurrentPageId()
+
+    return {
+      pages: editor
+        .getPages()
+        .map((page) => ({
+          id: page.id,
+          title: page.name,
+          isActive:
+            page.id === activePageId,
+        })),
+    }
+  }
+
+  function publishSessionSnapshot(): void {
+    sessionSnapshot =
+      createSessionSnapshot()
+
+    for (const listener of listeners) {
+      listener()
+    }
+  }
+
+  const stopObserving = store.listen(
+    publishSessionSnapshot,
     { scope: 'document' },
   )
 
@@ -89,11 +135,13 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
       }
       attachedEditor = editor
       state = 'attached'
+      publishSessionSnapshot()
     },
     detachEditor(editor) {
       if (attachedEditor === editor) {
         attachedEditor = null
         state = 'detached'
+        publishSessionSnapshot()
       }
     },
     getSnapshot() {
@@ -101,18 +149,7 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
       return attachedEditor?.getSnapshot() ?? getStoreEditorSnapshot(store)
     },
     getSessionSnapshot() {
-      const editor = attachedEditor
-      if (!editor) {
-        return { pages: [] }
-      }
-      const activePageId = editor.getCurrentPageId()
-      return {
-        pages: editor.getPages().map((page) => ({
-          id: page.id,
-          title: page.name,
-          isActive: page.id === activePageId,
-        })),
-      }
+      return sessionSnapshot
     },
     subscribe(listener) {
       listeners.add(listener)

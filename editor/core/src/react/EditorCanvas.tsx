@@ -24,6 +24,8 @@ export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasP
       store,
       onMount: setEditor,
       options: { maxPages: 100 },
+      shapeUtils: registration.shapeUtils,
+      bindingUtils: registration.bindingUtils,
     }
     if (hasTools) {
       base.tools = registration.tools
