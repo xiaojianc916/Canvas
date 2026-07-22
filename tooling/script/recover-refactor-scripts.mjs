@@ -11,548 +11,280 @@ const APPLY =
 const ALLOW_DIRTY =
   process.argv.includes('--allow-dirty')
 
-const PUBLIC_API =
-  'foundations/design-system/src/public-api.ts'
+const FILES = {
+  feedback:
+    'apps/desktop/src/presentation/ui/ui-feedback.tsx',
 
-const GENERATED_FILES = {
-  'foundations/design-system/src/components/ui/dropdown-menu.tsx':
-    String.raw`import { Menu } from '@base-ui/react/menu'
+  appShell:
+    'apps/desktop/src/presentation/AppShell.tsx',
+
+  workspaceContainer:
+    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+
+  errorBoundary:
+    'apps/desktop/src/bootstrap/ApplicationErrorBoundary.tsx',
+}
+
+const FEEDBACK_SOURCE = String.raw`import {
+  error as reportError,
+} from '@hybrid-canvas/foundations-observability'
 import {
-  forwardRef,
-  type ComponentPropsWithoutRef,
+  AlertCircle,
+  X,
+} from 'lucide-react'
+import {
+  useEffect,
+  useState,
 } from 'react'
-import { cn } from '../../lib/utils'
 
-export const DropdownMenu =
-  Menu.Root
+const EVENT_NAME =
+  'hybrid-canvas:ui-feedback'
 
-export const DropdownMenuTrigger =
-  forwardRef<
-    HTMLButtonElement,
-    ComponentPropsWithoutRef<
-      typeof Menu.Trigger
-    >
-  >(function DropdownMenuTrigger(
-    {
-      className,
-      ...props
-    },
-    ref,
-  ) {
-    return (
-      <Menu.Trigger
-        ref={ref}
-        className={cn(
-          'outline-none',
-          'focus-visible:ring-2',
-          'focus-visible:ring-ring',
-          className,
-        )}
-        {...props}
-      />
-    )
-  })
+const USER_MESSAGES:
+  Readonly<Record<string, string>> = {
+    'canvas save failed':
+      '画布保存失败，请重试。',
 
-type DropdownMenuContentProps =
-  ComponentPropsWithoutRef<
-    typeof Menu.Popup
-  > & {
-    readonly sideOffset?: number
+    'canvas open failed':
+      '无法打开画布，请检查文件后重试。',
 
-    readonly side?:
-      ComponentPropsWithoutRef<
-        typeof Menu.Positioner
-      >['side']
+    'canvas close request failed':
+      '无法关闭画布，请重试。',
 
-    readonly align?:
-      ComponentPropsWithoutRef<
-        typeof Menu.Positioner
-      >['align']
+    'discard and close canvas failed':
+      '无法放弃更改并关闭画布。',
+
+    'main window minimize failed':
+      '窗口最小化失败。',
+
+    'main window maximize failed':
+      '窗口最大化或还原失败。',
+
+    'main window drag failed':
+      '窗口拖动暂时不可用。',
+
+    'settings load failed':
+      '设置读取失败。',
   }
 
-export const DropdownMenuContent =
-  forwardRef<
-    HTMLDivElement,
-    DropdownMenuContentProps
-  >(function DropdownMenuContent(
-    {
-      className,
-      sideOffset = 6,
-      side = 'bottom',
-      align = 'start',
-      ...props
-    },
-    ref,
-  ) {
-    return (
-      <Menu.Portal>
-        <Menu.Positioner
-          align={align}
-          side={side}
-          sideOffset={sideOffset}
-          className={[
-            'z-[var(--ui-z-popover)]',
-            'outline-none',
-          ].join(' ')}
-        >
-          <Menu.Popup
-            ref={ref}
-            className={cn(
-              'min-w-32 overflow-hidden',
-              'rounded-md',
-              'border border-divider',
-              'bg-popover p-1',
-              'text-popover-foreground',
-              'shadow-xl outline-none',
-              'origin-[var(--transform-origin)]',
-              'transition-[transform,scale,opacity]',
-              'data-[ending-style]:scale-95',
-              'data-[ending-style]:opacity-0',
-              'data-[starting-style]:scale-95',
-              'data-[starting-style]:opacity-0',
-              className,
-            )}
-            {...props}
-          />
-        </Menu.Positioner>
-      </Menu.Portal>
-    )
-  })
-
-export const DropdownMenuItem =
-  forwardRef<
-    HTMLDivElement,
-    ComponentPropsWithoutRef<
-      typeof Menu.Item
-    >
-  >(function DropdownMenuItem(
-    {
-      className,
-      ...props
-    },
-    ref,
-  ) {
-    return (
-      <Menu.Item
-        ref={ref}
-        className={cn(
-          'relative flex min-h-9',
-          'cursor-default select-none',
-          'items-center rounded-sm',
-          'px-2 py-1.5 text-sm',
-          'outline-none',
-          'transition-colors',
-          'focus:bg-accent',
-          'focus:text-accent-foreground',
-          'data-[disabled]:pointer-events-none',
-          'data-[disabled]:opacity-50',
-          className,
-        )}
-        {...props}
-      />
-    )
-  })
-
-export const DropdownMenuGroup =
-  Menu.Group
-
-export const DropdownMenuLabel =
-  forwardRef<
-    HTMLDivElement,
-    ComponentPropsWithoutRef<
-      typeof Menu.GroupLabel
-    >
-  >(function DropdownMenuLabel(
-    {
-      className,
-      ...props
-    },
-    ref,
-  ) {
-    return (
-      <Menu.GroupLabel
-        ref={ref}
-        className={cn(
-          'px-2 py-1.5',
-          'text-sm font-semibold',
-          className,
-        )}
-        {...props}
-      />
-    )
-  })
-
-export const DropdownMenuSeparator =
-  forwardRef<
-    HTMLDivElement,
-    ComponentPropsWithoutRef<
-      typeof Menu.Separator
-    >
-  >(function DropdownMenuSeparator(
-    {
-      className,
-      ...props
-    },
-    ref,
-  ) {
-    return (
-      <Menu.Separator
-        ref={ref}
-        className={cn(
-          '-mx-1 my-1',
-          'h-px bg-divider',
-          className,
-        )}
-        {...props}
-      />
-    )
-  })
-`,
-
-  'features/workspace/src/presentation/shell/ActivityRail.tsx':
-    String.raw`import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@hybrid-canvas/design-system'
-import {
-  BookOpen,
-  Boxes,
-  ChartNoAxesCombined,
-  CircleHelp,
-  ExternalLink,
-  Files,
-  Grid2X2,
-  Image,
-  MessageCircle,
-  Network,
-  RefreshCcw,
-  Search,
-  Settings,
-} from 'lucide-react'
-import type {
-  ComponentType,
-} from 'react'
-
-type NavigationIcon =
-  ComponentType<{
-    className?: string
-    'aria-hidden'?:
-      | boolean
-      | 'true'
-      | 'false'
-  }>
-
-export type CanvasNavigationItemId =
-  | 'pages'
-  | 'documents'
-  | 'search'
-  | 'layers'
-  | 'relations'
-  | 'data'
-  | 'assets'
-  | 'extensions'
-
-export interface CanvasNavigationItem {
-  readonly id:
-    CanvasNavigationItemId
-  readonly label: string
-  readonly icon: NavigationIcon
+interface UiNotice {
+  readonly id: number
+  readonly message: string
 }
 
-export interface ActivityRailProps {
-  readonly activeItemId?:
-    CanvasNavigationItemId
-
-  readonly items?:
-    readonly CanvasNavigationItem[]
-
-  readonly onItemActivate?:
-    (
-      itemId:
-        CanvasNavigationItemId,
-    ) => void
-
-  readonly onSettingsOpen:
-    () => void
+interface UiFeedbackEventDetail {
+  readonly id: number
+  readonly message: string
 }
 
-const DEFAULT_NAVIGATION:
-  readonly CanvasNavigationItem[] = [
-    {
-      id: 'pages',
-      label: '画布',
-      icon: Grid2X2,
-    },
-    {
-      id: 'search',
-      label: '搜索',
-      icon: Search,
-    },
-    {
-      id: 'relations',
-      label: '关系',
-      icon: Network,
-    },
-    {
-      id: 'assets',
-      label: '素材',
-      icon: Image,
-    },
-    {
-      id: 'extensions',
-      label: '插件',
-      icon: Boxes,
-    },
-    {
-      id: 'data',
-      label: '自动化',
-      icon: ChartNoAxesCombined,
-    },
-    {
-      id: 'documents',
-      label: '恢复',
-      icon: Files,
-    },
-  ]
+let nextNoticeId = 1
 
-export function ActivityRail({
-  activeItemId = 'pages',
-  items = DEFAULT_NAVIGATION,
-  onItemActivate,
-  onSettingsOpen,
-}: ActivityRailProps) {
-  return (
-    <nav
-      aria-label="主导航"
-      className={[
-        'flex h-full min-h-0',
-        'flex-col items-center',
-        'bg-sidebar py-2',
-      ].join(' ')}
-    >
-      <div
-        className={[
-          'flex flex-col gap-1',
-        ].join(' ')}
-      >
-        {items.map((item) => (
-          <RailButton
-            key={item.id}
-            active={
-              item.id ===
-              activeItemId
-            }
-            icon={item.icon}
-            label={item.label}
-            onClick={() => {
-              onItemActivate?.(
-                item.id,
-              )
-            }}
-          />
-        ))}
-      </div>
+export function reportUiError(
+  message: string,
+  context: Record<string, unknown>,
+): void {
+  reportError(
+    message,
+    context,
+  )
 
-      <div className="flex-1" />
+  if (typeof window === 'undefined') {
+    return
+  }
 
-      <div className="flex flex-col gap-1">
-        <RailButton
-          icon={Settings}
-          label="设置"
-          onClick={
-            onSettingsOpen
-          }
-        />
+  const detail:
+    UiFeedbackEventDetail = {
+      id: nextNoticeId,
 
-        <HelpMenu />
-      </div>
-    </nav>
+      message:
+        USER_MESSAGES[message] ??
+        '操作失败，请重试。',
+    }
+
+  nextNoticeId += 1
+
+  window.dispatchEvent(
+    new CustomEvent(
+      EVENT_NAME,
+      {
+        detail,
+      },
+    ),
   )
 }
 
-interface RailButtonProps {
-  readonly label: string
-  readonly icon: NavigationIcon
-  readonly active?: boolean
-  readonly onClick?: () => void
-}
+export function UiFeedbackRegion() {
+  const [
+    notices,
+    setNotices,
+  ] = useState<
+    readonly UiNotice[]
+  >([])
 
-function RailButton({
-  label,
-  icon: Icon,
-  active = false,
-  onClick,
-}: RailButtonProps) {
-  const className = active
-    ? [
-        'relative size-9',
-        'bg-sidebar-accent',
-        'text-primary',
-        'hover:bg-sidebar-accent',
-      ].join(' ')
-    : [
-        'size-9',
-        'text-muted-foreground',
-        'hover:bg-sidebar-accent',
-        'hover:text-foreground',
-      ].join(' ')
+  useEffect(() => {
+    const timers =
+      new Set<number>()
+
+    const handleFeedback = (
+      event: Event,
+    ) => {
+      const notice = (
+        event as CustomEvent<
+          UiFeedbackEventDetail
+        >
+      ).detail
+
+      setNotices(
+        (current) => [
+          ...current.filter(
+            (item) =>
+              item.message !==
+              notice.message,
+          ),
+          notice,
+        ].slice(-3),
+      )
+
+      const timer =
+        window.setTimeout(
+          () => {
+            setNotices(
+              (current) =>
+                current.filter(
+                  (item) =>
+                    item.id !==
+                    notice.id,
+                ),
+            )
+
+            timers.delete(timer)
+          },
+          5500,
+        )
+
+      timers.add(timer)
+    }
+
+    window.addEventListener(
+      EVENT_NAME,
+      handleFeedback,
+    )
+
+    return () => {
+      window.removeEventListener(
+        EVENT_NAME,
+        handleFeedback,
+      )
+
+      for (
+        const timer of timers
+      ) {
+        window.clearTimeout(timer)
+      }
+    }
+  }, [])
+
+  const dismiss = (
+    id: number,
+  ) => {
+    setNotices((current) =>
+      current.filter(
+        (item) =>
+          item.id !== id,
+      ),
+    )
+  }
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          aria-current={
-            active
-              ? 'page'
-              : undefined
-          }
-          aria-label={label}
-          className={className}
-          onClick={onClick}
-          size="icon"
-          type="button"
-          variant="ghost"
+    <div
+      aria-live="polite"
+      aria-relevant="additions"
+      className={[
+        'pointer-events-none',
+        'fixed bottom-4 right-4',
+        'z-[var(--ui-z-toast)]',
+        'grid gap-2',
+        'w-[min(380px,calc(100vw-32px))]',
+      ].join(' ')}
+    >
+      {notices.map((notice) => (
+        <div
+          key={notice.id}
+          className={[
+            'pointer-events-auto',
+            'flex items-start gap-3',
+            'rounded-lg border',
+            'border-destructive/30',
+            'bg-background p-3',
+            'text-sm shadow-xl',
+          ].join(' ')}
+          role="alert"
         >
-          {active ? (
-            <span
-              aria-hidden="true"
-              className={[
-                'absolute -left-2',
-                'h-4 w-0.5',
-                'rounded-r',
-                'bg-primary',
-              ].join(' ')}
-            />
-          ) : null}
-
-          <Icon
+          <AlertCircle
             aria-hidden="true"
-            className="size-4"
+            className={[
+              'mt-0.5 size-4',
+              'shrink-0',
+              'text-destructive',
+            ].join(' ')}
           />
-        </Button>
-      </TooltipTrigger>
 
-      <TooltipContent side="right">
-        {label}
-      </TooltipContent>
-    </Tooltip>
+          <span
+            className={[
+              'min-w-0 flex-1',
+              'leading-5',
+            ].join(' ')}
+          >
+            {notice.message}
+          </span>
+
+          <button
+            aria-label="关闭提示"
+            className={[
+              'grid size-7',
+              'place-items-center',
+              'rounded-md',
+              'text-muted-foreground',
+              'hover:bg-accent',
+              'focus-visible:outline-none',
+              'focus-visible:ring-2',
+              'focus-visible:ring-ring',
+            ].join(' ')}
+            onClick={() => {
+              dismiss(notice.id)
+            }}
+            type="button"
+          >
+            <X
+              aria-hidden="true"
+              className="size-3.5"
+            />
+          </button>
+        </div>
+      ))}
+    </div>
   )
 }
-
-function HelpMenu() {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label="帮助"
-        className={[
-          'grid size-9',
-          'place-items-center',
-          'rounded-md',
-          'text-muted-foreground',
-          'hover:bg-sidebar-accent',
-          'hover:text-foreground',
-          'data-[popup-open]:bg-sidebar-accent',
-        ].join(' ')}
-      >
-        <CircleHelp
-          aria-hidden="true"
-          className="size-4"
-        />
-      </DropdownMenuTrigger>
-
-      <DropdownMenuContent
-        align="end"
-        className={[
-          'w-60 rounded-xl p-2',
-        ].join(' ')}
-        side="right"
-        sideOffset={8}
-      >
-        <HelpItem
-          external
-          icon={BookOpen}
-          label="文档"
-        />
-
-        <HelpItem
-          external
-          icon={RefreshCcw}
-          label="更新日志"
-        />
-
-        <DropdownMenuSeparator />
-
-        <HelpItem
-          external
-          icon={MessageCircle}
-          label="Discord"
-        />
-
-        <HelpItem
-          icon={MessageCircle}
-          label="反馈"
-        />
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-interface HelpItemProps {
-  readonly label: string
-  readonly icon: NavigationIcon
-  readonly external?: boolean
-}
-
-function HelpItem({
-  label,
-  icon: Icon,
-  external = false,
-}: HelpItemProps) {
-  return (
-    <DropdownMenuItem
-      className={[
-        'min-h-10 gap-3',
-        'rounded-md',
-      ].join(' ')}
-    >
-      <Icon
-        aria-hidden="true"
-        className={[
-          'size-4',
-          'text-muted-foreground',
-        ].join(' ')}
-      />
-
-      <span className="flex-1">
-        {label}
-      </span>
-
-      {external ? (
-        <ExternalLink
-          aria-hidden="true"
-          className={[
-            'size-3.5',
-            'text-muted-foreground',
-          ].join(' ')}
-        />
-      ) : null}
-    </DropdownMenuItem>
-  )
-}
-`,
-}
+`
 
 function absolute(relativePath) {
   return path.join(
     ROOT,
     relativePath,
+  )
+}
+
+function read(relativePath) {
+  const filePath =
+    absolute(relativePath)
+
+  if (!fs.existsSync(filePath)) {
+    return null
+  }
+
+  return fs.readFileSync(
+    filePath,
+    'utf8',
   )
 }
 
@@ -583,10 +315,9 @@ function assertRepository() {
   }
 
   const requiredFiles = [
-    ...Object.keys(
-      GENERATED_FILES,
-    ),
-    PUBLIC_API,
+    FILES.appShell,
+    FILES.workspaceContainer,
+    FILES.errorBoundary,
   ]
 
   for (
@@ -626,65 +357,201 @@ function assertRepository() {
   }
 }
 
-function buildChanges() {
-  const changes =
-    Object.entries(
-      GENERATED_FILES,
+function replaceOnce(
+  content,
+  search,
+  replacement,
+  label,
+) {
+  const count =
+    content.split(search).length - 1
+
+  if (count !== 1) {
+    throw new Error(
+      label +
+        '：预期匹配 1 次，实际匹配 ' +
+        count +
+        ' 次。',
     )
-      .map(
-        ([
-          relativePath,
-          nextContent,
-        ]) => ({
-          relativePath,
-          nextContent,
+  }
 
-          currentContent:
-            fs.readFileSync(
-              absolute(
-                relativePath,
-              ),
-              'utf8',
-            ),
-        }),
-      )
-      .filter(
-        (change) =>
-          change.currentContent !==
-          change.nextContent,
-      )
+  return content.replace(
+    search,
+    replacement,
+  )
+}
 
-  const publicApiCurrent =
-    fs.readFileSync(
-      absolute(PUBLIC_API),
-      'utf8',
+function transformAppShell(content) {
+  let next = content
+
+  const oldImport =
+    "import { error as reportError } from '@hybrid-canvas/foundations-observability'"
+
+  const newImport =
+    "import { reportUiError as reportError, UiFeedbackRegion } from './ui/ui-feedback'"
+
+  if (next.includes(oldImport)) {
+    next = replaceOnce(
+      next,
+      oldImport,
+      newImport,
+      'AppShell 错误导入',
     )
-
-  const separatorExport =
-    "export { DropdownMenuSeparator } from './components/ui/dropdown-menu'"
-
-  const publicApiNext =
-    publicApiCurrent.includes(
-      'DropdownMenuSeparator',
+  } else if (
+    !next.includes(newImport)
+  ) {
+    throw new Error(
+      'AppShell 中没有找到预期的错误导入。',
     )
-      ? publicApiCurrent
-      : [
-          publicApiCurrent.trimEnd(),
-          separatorExport,
-          '',
-        ].join('\n')
+  }
 
   if (
-    publicApiNext !==
-    publicApiCurrent
+    !next.includes(
+      '<UiFeedbackRegion />',
+    )
+  ) {
+    const anchor =
+      '      <ConfirmationDialog'
+
+    next = replaceOnce(
+      next,
+      anchor,
+      [
+        '      <UiFeedbackRegion />',
+        '',
+        anchor,
+      ].join('\n'),
+      'AppShell Feedback Region',
+    )
+  }
+
+  return next
+}
+
+function transformWorkspaceContainer(
+  content,
+) {
+  const oldImport =
+    "import { error as reportError } from '@hybrid-canvas/foundations-observability'"
+
+  const newImport =
+    "import { reportUiError as reportError } from '../ui/ui-feedback'"
+
+  if (content.includes(oldImport)) {
+    return replaceOnce(
+      content,
+      oldImport,
+      newImport,
+      'WorkspaceContainer 错误导入',
+    )
+  }
+
+  if (content.includes(newImport)) {
+    return content
+  }
+
+  throw new Error(
+    'WorkspaceContainer 中没有找到预期的错误导入。',
+  )
+}
+
+function transformErrorBoundary(
+  content,
+) {
+  if (
+    content.includes('<summary') &&
+    content.includes('技术详情')
+  ) {
+    return content
+  }
+
+  const oldBlock = [
+    '<pre className="mt-4 max-h-36 overflow-auto rounded-lg bg-muted p-3 text-[11px] leading-5 text-muted-foreground">',
+    '            {error.message}',
+    '          </pre>',
+  ].join('\n')
+
+  const newBlock = [
+    '<details className="mt-4 rounded-lg bg-muted p-3 text-xs text-muted-foreground">',
+    '            <summary className="cursor-pointer font-medium">技术详情</summary>',
+    '            <pre className="mt-2 max-h-32 overflow-auto text-[11px] leading-5">{error.message}</pre>',
+    '          </details>',
+  ].join('\n')
+
+  return replaceOnce(
+    content,
+    oldBlock,
+    newBlock,
+    'ApplicationErrorBoundary 技术详情',
+  )
+}
+
+function buildChanges() {
+  const changes = []
+
+  const feedbackCurrent =
+    read(FILES.feedback)
+
+  if (
+    feedbackCurrent !==
+    FEEDBACK_SOURCE
   ) {
     changes.push({
-      relativePath: PUBLIC_API,
+      relativePath:
+        FILES.feedback,
+
       currentContent:
-        publicApiCurrent,
+        feedbackCurrent,
+
       nextContent:
-        publicApiNext,
+        FEEDBACK_SOURCE,
     })
+  }
+
+  const transforms = [
+    [
+      FILES.appShell,
+      transformAppShell,
+    ],
+    [
+      FILES.workspaceContainer,
+      transformWorkspaceContainer,
+    ],
+    [
+      FILES.errorBoundary,
+      transformErrorBoundary,
+    ],
+  ]
+
+  for (
+    const [
+      relativePath,
+      transform,
+    ] of transforms
+  ) {
+    const currentContent =
+      read(relativePath)
+
+    if (currentContent === null) {
+      throw new Error(
+        '缺少目标文件：' +
+          relativePath,
+      )
+    }
+
+    const nextContent =
+      transform(currentContent)
+
+    if (
+      currentContent !==
+      nextContent
+    ) {
+      changes.push({
+        relativePath,
+        currentContent,
+        nextContent,
+      })
+    }
   }
 
   return changes
@@ -692,10 +559,20 @@ function buildChanges() {
 
 function applyChanges(changes) {
   for (const change of changes) {
-    fs.writeFileSync(
+    const filePath =
       absolute(
         change.relativePath,
-      ),
+      )
+
+    fs.mkdirSync(
+      path.dirname(filePath),
+      {
+        recursive: true,
+      },
+    )
+
+    fs.writeFileSync(
+      filePath,
       change.nextContent,
       'utf8',
     )
@@ -713,7 +590,7 @@ function applyChanges(changes) {
 
 function printPlan(changes) {
   console.log(
-    'Phase 4B 将修改 ' +
+    'Phase 5A 将修改 ' +
       changes.length +
       ' 个文件：',
   )
@@ -733,7 +610,7 @@ function main() {
 
   if (changes.length === 0) {
     console.log(
-      'Phase 4B 没有需要应用的修改。',
+      'Phase 5A 没有需要应用的修改。',
     )
 
     return
@@ -752,7 +629,7 @@ function main() {
     )
 
     console.log(
-      'node tooling/script/refactor-ui-phase-4b.mjs --apply',
+      'node tooling/script/refactor-ui-phase-5a.mjs --apply',
     )
 
     return
@@ -762,7 +639,7 @@ function main() {
 
   console.log('')
   console.log(
-    'Phase 4B ActivityRail 和 DropdownMenu 重构已写入。',
+    'Phase 5A 用户可见错误反馈已写入。',
   )
 
   console.log('')

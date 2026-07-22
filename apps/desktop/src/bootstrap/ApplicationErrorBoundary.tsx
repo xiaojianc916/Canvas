@@ -45,9 +45,10 @@ export class ApplicationErrorBoundary extends Component<
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             界面发生了未处理错误。错误信息已输出到开发日志，你可以重新加载后继续。
           </p>
-          <pre className="mt-4 max-h-36 overflow-auto rounded-lg bg-muted p-3 text-[11px] leading-5 text-muted-foreground">
-            {error.message}
-          </pre>
+          <details className="mt-4 rounded-lg bg-muted p-3 text-xs text-muted-foreground">
+            <summary className="cursor-pointer font-medium">技术详情</summary>
+            <pre className="mt-2 max-h-32 overflow-auto text-[11px] leading-5">{error.message}</pre>
+          </details>
           <Button className="mt-5" onClick={() => window.location.reload()} type="button">
             <RotateCcw className="size-4" />
             重新加载

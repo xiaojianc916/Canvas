@@ -1,6 +1,6 @@
 import { EditorProvider } from '@hybrid-canvas/canvas/react'
 import { ConfirmationDialog } from '@hybrid-canvas/design-system'
-import { error as reportError } from '@hybrid-canvas/foundations-observability'
+import { reportUiError as reportError, UiFeedbackRegion } from './ui/ui-feedback'
 import type { MainWindowController } from '@hybrid-canvas/platforms-desktop-runtime'
 import type { SettingsStore } from '@hybrid-canvas/settings'
 import { SettingsDialog } from '@hybrid-canvas/settings/react'
@@ -137,6 +137,8 @@ export function AppShell({ runtime }: AppShellProps) {
         open={isSettingsOpen}
         store={runtime.settings}
       />
+
+      <UiFeedbackRegion />
 
       <ConfirmationDialog
         confirmLabel="放弃全部并退出"
