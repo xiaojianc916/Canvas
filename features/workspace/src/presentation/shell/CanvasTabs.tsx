@@ -94,7 +94,7 @@ export function CanvasTabs({ tabs, onActivate, onClose, onCreate }: CanvasTabsPr
   }, [activeSessionId, tabs.length])
 
   return (
-    <header ref={shellRef} className="relative h-full min-w-0 flex-1 overflow-hidden bg-chrome">
+    <header className="relative h-full min-w-0 flex-1 overflow-hidden bg-chrome" ref={shellRef}>
       <svg
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 size-full"
@@ -112,9 +112,9 @@ export function CanvasTabs({ tabs, onActivate, onClose, onCreate }: CanvasTabsPr
       </svg>
 
       <div
-        ref={scrollerRef}
         aria-label="已打开文档"
         className="relative z-10 flex h-full min-w-0 items-end overflow-x-auto overflow-y-hidden px-7"
+        ref={scrollerRef}
         role="tablist"
       >
         <div className="flex h-full min-w-max items-end gap-1.25">
@@ -159,7 +159,6 @@ const DocumentTab = forwardRef<HTMLDivElement, DocumentTabProps>(function Docume
 ) {
   return (
     <div
-      ref={ref}
       aria-selected={model.isActive}
       className={cn(
         'group mb-0 flex h-[calc(100%-5px)] shrink-0 items-center gap-2.5 rounded-[10px] border-0 bg-transparent px-3.5 text-sm outline-none transition-[color,background-color] duration-150 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-3px]',
@@ -174,6 +173,7 @@ const DocumentTab = forwardRef<HTMLDivElement, DocumentTabProps>(function Docume
           onActivate(model.sessionId)
         }
       }}
+      ref={ref}
       role="tab"
       style={{ width: TAB_WIDTH }}
       tabIndex={model.isActive ? 0 : -1}

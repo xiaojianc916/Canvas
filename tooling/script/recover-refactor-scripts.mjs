@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
-import { execFileSync } from 'node:child_process'
 
 const ROOT = process.cwd()
 const APPLY = process.argv.includes('--apply')

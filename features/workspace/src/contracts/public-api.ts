@@ -1,3 +1,8 @@
+export type {
+  RegisteredCommand,
+  UICommand,
+  UICommandHandler,
+} from './command-contract'
 export {
   type ActiveCanvasViewModel,
   type CanvasId,
@@ -9,9 +14,3 @@ export {
   type WorkbenchSessionStore,
   type WorkbenchViewModel,
 } from './workbench-contract'
-
-export type {
-  RegisteredCommand,
-  UICommand,
-  UICommandHandler,
-} from './command-contract'

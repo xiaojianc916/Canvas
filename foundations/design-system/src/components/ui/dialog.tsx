@@ -136,7 +136,6 @@ export function Dialog({
       role="presentation"
     >
       <div
-        ref={panelRef}
         aria-busy={busy || undefined}
         aria-describedby={description ? descriptionId : undefined}
         aria-labelledby={titleId}
@@ -157,6 +156,7 @@ export function Dialog({
           className,
         )}
         onKeyDown={handlePanelKeyDown}
+        ref={panelRef}
         role="dialog"
         tabIndex={-1}
       >
@@ -170,14 +170,14 @@ export function Dialog({
           )}
         >
           <div className="min-w-0">
-            <h2 id={titleId} className="text-base font-semibold">
+            <h2 className="text-base font-semibold" id={titleId}>
               {title}
             </h2>
 
             {description ? (
               <p
-                id={descriptionId}
                 className={cn('mt-1 text-sm', 'leading-5', 'text-muted-foreground')}
+                id={descriptionId}
               >
                 {description}
               </p>
@@ -185,12 +185,12 @@ export function Dialog({
           </div>
 
           <Button
-            ref={closeButtonRef}
             aria-label={closeLabel}
             disabled={busy}
             onClick={() => {
               onOpenChange(false)
             }}
+            ref={closeButtonRef}
             size="icon"
             type="button"
             variant="ghost"

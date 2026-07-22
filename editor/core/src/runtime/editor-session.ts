@@ -1,5 +1,5 @@
 import { createTLStore, getSnapshot as getStoreEditorSnapshot, loadSnapshot } from '@tldraw/editor'
-import type { Editor, TLStore, TLEditorSnapshot } from 'tldraw'
+import type { Editor, TLEditorSnapshot, TLStore } from 'tldraw'
 
 import {
   buildExtensionRegistration,

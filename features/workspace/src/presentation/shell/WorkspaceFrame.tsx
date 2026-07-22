@@ -27,8 +27,8 @@ export function WorkspaceFrame({
 }: WorkspaceFrameProps) {
   return (
     <div
-      ref={rootRef}
       className="workspace-shell relative grid h-dvh w-full min-h-0 overflow-hidden bg-background text-foreground"
+      ref={rootRef}
       style={{ gridTemplateColumns, gridTemplateRows }}
     >
       {/* Layout ownership lives here so borders stay single-source and predictable. */}

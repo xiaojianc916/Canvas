@@ -33,7 +33,7 @@ export class UiErrorBoundary extends Component<UiErrorBoundaryProps, UiErrorBoun
     }
     return (
       this.props.fallback ?? (
-        <section role="alert" className="grid size-full place-items-center p-6 text-center">
+        <section className="grid size-full place-items-center p-6 text-center" role="alert">
           <div>
             <h2 className="text-base font-semibold">界面区域暂时不可用</h2>
             <p className="mt-2 text-sm text-muted-foreground">{this.props.area}</p>

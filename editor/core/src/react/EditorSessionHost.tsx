@@ -23,7 +23,6 @@ export function EditorSessionHost({ activeSessionId, sessions, onSave }: EditorS
         const isActive = sessionId === activeSessionId
         return (
           <div
-            key={sessionId}
             aria-hidden={!isActive}
             className={
               isActive
@@ -31,6 +30,7 @@ export function EditorSessionHost({ activeSessionId, sessions, onSave }: EditorS
                 : 'pointer-events-none absolute inset-0 invisible z-0'
             }
             data-session-id={sessionId}
+            key={sessionId}
           >
             <EditorCanvas
               isActive={isActive}

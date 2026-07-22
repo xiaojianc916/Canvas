@@ -1,5 +1,5 @@
-import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
+import { createRoot } from 'react-dom/client'
 import { AppShell } from '../presentation/AppShell'
 import { ApplicationErrorBoundary } from './ApplicationErrorBoundary'
 import { createApplicationRuntime } from './application'

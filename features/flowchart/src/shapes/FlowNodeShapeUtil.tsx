@@ -1,6 +1,6 @@
 import { T } from '@tldraw/validate'
-import { Rectangle2d, ShapeUtil, type TLBaseShape, type TLIndicatorPath } from 'tldraw'
 import type { ReactElement } from 'react'
+import { Rectangle2d, ShapeUtil, type TLBaseShape, type TLIndicatorPath } from 'tldraw'
 
 declare module '@tldraw/tlschema' {
   interface TLGlobalShapePropsMap {
@@ -103,7 +103,7 @@ export class FlowNodeShapeUtil extends ShapeUtil<FlowNodeShape> {
     const { label, w, h, color } = shape.props
 
     return (
-      <foreignObject x={0} y={0} width={w} height={h}>
+      <foreignObject height={h} width={w} x={0} y={0}>
         <div
           style={{
             width: w,

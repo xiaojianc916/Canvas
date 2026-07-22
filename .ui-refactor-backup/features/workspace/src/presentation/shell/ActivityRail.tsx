@@ -14,7 +14,7 @@ import {
   Search,
   Settings,
 } from 'lucide-react'
-import { useEffect, useRef, useState, type ComponentType } from 'react'
+import { type ComponentType, useEffect, useRef, useState } from 'react'
 
 export type CanvasNavigationItemId =
   | 'pages'

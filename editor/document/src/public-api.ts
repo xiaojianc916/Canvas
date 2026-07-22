@@ -9,7 +9,7 @@ export {
   type CanvasSessionId,
   type CanvasSessionSnapshot,
   type CreateCanvasDocumentServiceDependencies,
+  createCanvasDocumentService,
   type DrawPersistencePort,
   type OpenedCanvasSession,
-  createCanvasDocumentService,
 } from './application/canvas-document-service'

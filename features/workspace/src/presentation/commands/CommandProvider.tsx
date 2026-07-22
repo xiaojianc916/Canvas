@@ -9,7 +9,7 @@ import {
   useSyncExternalStore,
 } from 'react'
 
-import { createCommandRegistry, type CommandRegistry } from '../../application/public-api'
+import { type CommandRegistry, createCommandRegistry } from '../../application/public-api'
 import type { RegisteredCommand } from '../../contracts/public-api'
 
 interface CommandContextValue {

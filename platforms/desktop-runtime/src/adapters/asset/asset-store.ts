@@ -1,5 +1,5 @@
-import { invoke } from '@hybrid-canvas/desktop-ipc'
 import type { AssetStore } from '@hybrid-canvas/asset'
+import { invoke } from '@hybrid-canvas/desktop-ipc'
 
 export function createDesktopAssetStore(): AssetStore {
   return {

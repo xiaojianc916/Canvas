@@ -7,8 +7,8 @@ export {
 } from './canvas-contract'
 
 export {
-  HYBRID_CANVAS_EXTENSION_API_VERSION,
-  type ExtensionRegistration,
   buildExtensionRegistration,
+  type ExtensionRegistration,
+  HYBRID_CANVAS_EXTENSION_API_VERSION,
   type HybridCanvasExtension,
 } from './extension-contract'

@@ -7,9 +7,9 @@ import { InspectorHost } from '../inspector/InspectorHost'
 import { StatusBarHost } from '../status/StatusBarHost'
 import { ActivityRail, type CanvasNavigationItemId } from './ActivityRail'
 import { SidebarSplitter } from './SidebarSplitter'
+import { useWorkspaceLayoutMode } from './useWorkspaceLayout'
 import { WorkspaceFrame } from './WorkspaceFrame'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
-import { useWorkspaceLayoutMode } from './useWorkspaceLayout'
 
 const SIDEBAR_MIN = 220
 const SIDEBAR_MAX = 420
@@ -461,21 +461,21 @@ export function WorkspaceShell({
   return (
     <TooltipProvider delayDuration={450}>
       <WorkspaceFrame
-        rootRef={rootRef}
-        chrome={chrome}
-        rail={rail}
-        sidebar={sidebar}
         canvas={canvas}
+        chrome={chrome}
+        gridTemplateColumns={columns}
+        gridTemplateRows={rows}
         inspector={inspectorRegion}
-        statusBar={status}
         overlays={
           <>
             {assistantOverlay}
             {overlays}
           </>
         }
-        gridTemplateColumns={columns}
-        gridTemplateRows={rows}
+        rail={rail}
+        rootRef={rootRef}
+        sidebar={sidebar}
+        statusBar={status}
       />
     </TooltipProvider>
   )

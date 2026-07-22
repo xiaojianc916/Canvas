@@ -1,2 +1,2 @@
-export { IpcInvocationError, isIpcError, type IpcError } from './error'
+export { type IpcError, IpcInvocationError, isIpcError } from './error'
 export { invoke } from './invoke'

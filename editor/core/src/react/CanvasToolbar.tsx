@@ -8,15 +8,15 @@ import {
 } from '@hybrid-canvas/design-system'
 import {
   ArrowRight,
+  Copy,
+  Eraser,
+  Grid2X2,
   Hand,
+  MoreHorizontal,
   MousePointer2,
   Pencil,
   Save,
   Shapes,
-  Copy,
-  Eraser,
-  Grid2X2,
-  MoreHorizontal,
   StickyNote,
   Type,
 } from 'lucide-react'

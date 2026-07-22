@@ -1,4 +1,4 @@
-import type { FlowNode, FlowEdge } from '../domain/graph'
+import type { FlowEdge, FlowNode } from '../domain/graph'
 
 export interface LayoutResult {
   nodes: FlowNode[]

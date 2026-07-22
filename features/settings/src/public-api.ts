@@ -1,7 +1,7 @@
 export {
-  DEFAULT_APP_SETTINGS,
   type AppSettings,
   type CanvasSettings,
+  DEFAULT_APP_SETTINGS,
   type EditorSettings,
   type ExportSettings,
   type PrivacySettings,

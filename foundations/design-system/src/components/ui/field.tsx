@@ -50,7 +50,7 @@ export function Field({
       </label>
 
       {description ? (
-        <p id={descriptionId} className={cn('text-xs leading-5', 'text-muted-foreground')}>
+        <p className={cn('text-xs leading-5', 'text-muted-foreground')} id={descriptionId}>
           {description}
         </p>
       ) : null}
@@ -64,8 +64,8 @@ export function Field({
 
       {error ? (
         <p
-          id={errorId}
           className={cn('flex items-start gap-1', 'text-xs leading-5', 'text-destructive')}
+          id={errorId}
           role="alert"
         >
           {error}

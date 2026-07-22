@@ -1,9 +1,8 @@
 import { Input } from '@hybrid-canvas/design-system'
 import { Command, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-
-import type { RegisteredCommand } from '../../contracts/public-api'
 import type { CommandRegistry } from '../../application/public-api'
+import type { RegisteredCommand } from '../../contracts/public-api'
 
 export interface CommandPaletteProps {
   readonly open: boolean

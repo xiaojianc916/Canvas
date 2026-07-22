@@ -1,6 +1,6 @@
 import { Minus, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { type Editor, Tldraw, useValue, type TldrawProps } from 'tldraw'
+import { type Editor, Tldraw, type TldrawProps, useValue } from 'tldraw'
 
 import type { EditorSession } from '../runtime/editor-session'
 import { CanvasToolbar } from './CanvasToolbar'

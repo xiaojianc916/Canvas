@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
-  createApplicationTerminationCoordinator,
   type ApplicationTerminationSnapshot,
+  createApplicationTerminationCoordinator,
 } from './application-termination-coordinator'
 
 function flushMicrotasks(): Promise<void> {

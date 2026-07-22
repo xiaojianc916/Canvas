@@ -15,12 +15,11 @@ import {
   createWorkbenchSessionController,
 } from '@hybrid-canvas/workspace/application'
 import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
-
+import { type CanvasWorkflow, createCanvasWorkflow } from '../application/canvas/canvas-workflow'
 import {
-  createApplicationTerminationCoordinator,
   type ApplicationTerminationCoordinator,
+  createApplicationTerminationCoordinator,
 } from '../application/termination/application-termination-coordinator'
-import { createCanvasWorkflow, type CanvasWorkflow } from '../application/canvas/canvas-workflow'
 
 export interface ApplicationRuntime {
   readonly workspace: WorkbenchSessionStore

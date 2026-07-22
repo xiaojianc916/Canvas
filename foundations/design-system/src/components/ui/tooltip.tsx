@@ -11,7 +11,7 @@ const TooltipProvider = ({
 }: React.ComponentPropsWithoutRef<typeof Tooltip.Provider> & {
   readonly delayDuration?: number
 }) => (
-  <Tooltip.Provider delay={delayDuration} closeDelay={closeDelay} timeout={timeout}>
+  <Tooltip.Provider closeDelay={closeDelay} delay={delayDuration} timeout={timeout}>
     {children}
   </Tooltip.Provider>
 )
@@ -38,7 +38,7 @@ const TooltipContent = forwardRef<
   }
 >(({ className, sideOffset = 4, side, ...props }, ref) => (
   <Tooltip.Portal>
-    <Tooltip.Positioner sideOffset={sideOffset} side={side as Tooltip.Positioner.Props['side']}>
+    <Tooltip.Positioner side={side as Tooltip.Positioner.Props['side']} sideOffset={sideOffset}>
       <Tooltip.Popup
         className={cn(
           'z-50 overflow-hidden rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
@@ -52,4 +52,4 @@ const TooltipContent = forwardRef<
 ))
 TooltipContent.displayName = 'TooltipContent'
 
-export { TooltipRoot as Tooltip, TooltipContent, TooltipProvider, TooltipTrigger }
+export { TooltipContent, TooltipProvider, TooltipRoot as Tooltip, TooltipTrigger }

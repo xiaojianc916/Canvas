@@ -46,4 +46,4 @@ const TabsContent = forwardRef<HTMLDivElement, React.ComponentPropsWithoutRef<ty
 )
 TabsContent.displayName = 'TabsContent'
 
-export { TabsRoot as Tabs, TabsContent, TabsList, TabsTrigger }
+export { TabsContent, TabsList, TabsRoot as Tabs, TabsTrigger }

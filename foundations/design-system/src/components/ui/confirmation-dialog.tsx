@@ -26,16 +26,9 @@ export function ConfirmationDialog({
 }: ConfirmationDialogProps) {
   return (
     <Dialog
-      open={open}
-      title={title}
-      description={description}
       busy={busy}
       closeOnOverlayClick={!busy}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          onCancel()
-        }
-      }}
+      description={description}
       footer={
         <div className={cnFooter()}>
           <Button disabled={busy} onClick={onCancel} type="button" variant="ghost">
@@ -53,6 +46,13 @@ export function ConfirmationDialog({
           </Button>
         </div>
       }
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          onCancel()
+        }
+      }}
+      open={open}
+      title={title}
     >
       <div className="sr-only">{description}</div>
     </Dialog>

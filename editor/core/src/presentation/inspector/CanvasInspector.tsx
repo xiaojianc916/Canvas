@@ -65,7 +65,7 @@ export function CanvasInspector() {
       </InspectorSection>
       <Separator />
       <InspectorSection icon={<Component className="size-3.5" />} title="语义">
-        <PropertyRow label="类型" value={firstShape?.type ?? 'unknown'} monospace />
+        <PropertyRow label="类型" monospace value={firstShape?.type ?? 'unknown'} />
         <PropertyRow label="选择数量" value="1" />
       </InspectorSection>
     </div>

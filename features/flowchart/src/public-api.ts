@@ -1,10 +1,10 @@
-export {
-  FlowNodeShapeUtil,
-  type FlowNodeShape,
-  type FlowNodeType,
-  type FlowNodeShapeProps,
-} from './shapes/FlowNodeShapeUtil'
-export { flowchartExtension } from './extension'
-export { layoutWithDagre, type LayoutResult } from './layout/dagre-adapter'
 export type { FlowEdge, FlowEdgeId, FlowNode, FlowNodeId } from './domain/graph'
+export { flowchartExtension } from './extension'
+export { type LayoutResult, layoutWithDagre } from './layout/dagre-adapter'
 export type { LayoutEngine } from './ports/layout-engine'
+export {
+  type FlowNodeShape,
+  type FlowNodeShapeProps,
+  FlowNodeShapeUtil,
+  type FlowNodeType,
+} from './shapes/FlowNodeShapeUtil'

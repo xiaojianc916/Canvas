@@ -9,7 +9,6 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
 ) {
   return (
     <select
-      ref={ref}
       className={cn(
         'h-10 w-full rounded-md border border-input',
         'bg-background px-3 text-sm text-foreground',
@@ -18,6 +17,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
         'disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
+      ref={ref}
       {...props}
     />
   )

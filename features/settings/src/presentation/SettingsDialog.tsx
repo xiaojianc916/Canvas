@@ -250,7 +250,6 @@ export function SettingsDialog({ open, store, onOpenChange }: SettingsDialogProp
 
   return (
     <Dialog
-      open={open}
       busy={busy}
       className={[
         'h-[min(680px,calc(100dvh-2rem))]',
@@ -261,23 +260,24 @@ export function SettingsDialog({ open, store, onOpenChange }: SettingsDialogProp
       ].join(' ')}
       closeOnOverlayClick={!busy}
       description="调整 Hybrid Canvas 的使用体验"
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          closeDialog()
-        }
-      }}
-      title="设置"
       footer={
         <SettingsFooter
           busy={busy}
           canReset={Boolean(draft)}
           canSave={Boolean(draft)}
-          operation={state.status === 'saving' ? state.operation : undefined}
           onCancel={closeDialog}
           onReset={resetSettings}
           onSave={saveSettings}
+          operation={state.status === 'saving' ? state.operation : undefined}
         />
       }
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          closeDialog()
+        }
+      }}
+      open={open}
+      title="设置"
     >
       <div
         className={[
@@ -301,17 +301,17 @@ export function SettingsDialog({ open, store, onOpenChange }: SettingsDialogProp
           {state.status === 'error' && state.draft ? (
             <SettingsErrorBanner
               message={state.message}
-              operation={state.operation}
               onRetry={retryLastOperation}
+              operation={state.operation}
             />
           ) : null}
 
           {draft && section === 'general' ? (
-            <GeneralSettingsPanel settings={draft} onChange={updateDraft} />
+            <GeneralSettingsPanel onChange={updateDraft} settings={draft} />
           ) : null}
 
           {draft && section === 'canvas' ? (
-            <CanvasSettingsPanel settings={draft} onChange={updateDraft} />
+            <CanvasSettingsPanel onChange={updateDraft} settings={draft} />
           ) : null}
 
           {section === 'about' ? <AboutSettingsPanel /> : null}
@@ -346,7 +346,6 @@ function SettingsNavigation({ activeSection, onSectionChange }: SettingsNavigati
 
         return (
           <button
-            key={item.id}
             aria-current={active ? 'page' : undefined}
             className={[
               'w-full rounded-md',
@@ -361,6 +360,7 @@ function SettingsNavigation({ activeSection, onSectionChange }: SettingsNavigati
                 ? 'bg-accent font-medium text-accent-foreground'
                 : 'text-muted-foreground hover:bg-muted hover:text-foreground',
             ].join(' ')}
+            key={item.id}
             onClick={() => {
               onSectionChange(item.id)
             }}
@@ -383,7 +383,7 @@ function GeneralSettingsPanel({ settings, onChange }: SettingsPanelProps) {
   return (
     <section aria-labelledby="general-settings-title" className="grid max-w-xl gap-8">
       <header>
-        <h3 id="general-settings-title" className="text-base font-semibold">
+        <h3 className="text-base font-semibold" id="general-settings-title">
           常规
         </h3>
 
@@ -392,18 +392,18 @@ function GeneralSettingsPanel({ settings, onChange }: SettingsPanelProps) {
         </p>
       </header>
 
-      <Field label="外观" description="选择应用界面的颜色模式。">
+      <Field description="选择应用界面的颜色模式。" label="外观">
         {({ inputId, describedBy }) => (
           <Select
-            id={inputId}
             aria-describedby={describedBy}
-            value={settings.theme}
+            id={inputId}
             onChange={(event) => {
               onChange({
                 ...settings,
                 theme: event.target.value as ThemeMode,
               })
             }}
+            value={settings.theme}
           >
             <option value="light">浅色</option>
 
@@ -414,18 +414,18 @@ function GeneralSettingsPanel({ settings, onChange }: SettingsPanelProps) {
         )}
       </Field>
 
-      <Field label="语言" description="控制应用界面使用的语言。">
+      <Field description="控制应用界面使用的语言。" label="语言">
         {({ inputId, describedBy }) => (
           <Select
-            id={inputId}
             aria-describedby={describedBy}
-            value={settings.language}
+            id={inputId}
             onChange={(event) => {
               onChange({
                 ...settings,
                 language: event.target.value as AppSettings['language'],
               })
             }}
+            value={settings.language}
           >
             <option value="zh-CN">简体中文</option>
 
@@ -453,7 +453,7 @@ function CanvasSettingsPanel({ settings, onChange }: SettingsPanelProps) {
   return (
     <section aria-labelledby="canvas-settings-title" className="grid max-w-xl gap-6">
       <header>
-        <h3 id="canvas-settings-title" className="text-base font-semibold">
+        <h3 className="text-base font-semibold" id="canvas-settings-title">
           画布
         </h3>
 
@@ -492,12 +492,11 @@ function CanvasSettingsPanel({ settings, onChange }: SettingsPanelProps) {
         }}
       />
 
-      <Field label="默认缩放" description="新建画布时使用的默认缩放比例。">
+      <Field description="新建画布时使用的默认缩放比例。" label="默认缩放">
         {({ inputId, describedBy }) => (
           <Select
-            id={inputId}
             aria-describedby={describedBy}
-            value={settings.canvas.defaultZoom}
+            id={inputId}
             onChange={(event) => {
               onChange({
                 ...settings,
@@ -507,6 +506,7 @@ function CanvasSettingsPanel({ settings, onChange }: SettingsPanelProps) {
                 },
               })
             }}
+            value={settings.canvas.defaultZoom}
           >
             <option value="1">100%</option>
 
@@ -559,7 +559,7 @@ function AboutSettingsPanel() {
       aria-labelledby="about-settings-title"
       className={['max-w-xl rounded-lg', 'border border-divider', 'p-5'].join(' ')}
     >
-      <h3 id="about-settings-title" className="text-base font-semibold">
+      <h3 className="text-base font-semibold" id="about-settings-title">
         Hybrid Canvas
       </h3>
 
