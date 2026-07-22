@@ -3,7 +3,7 @@ use crate::security::ApprovedPathRegistry;
 use hybrid_canvas_file_native::atomic_write;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tauri::{AppHandle, State, command};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_fs::FilePath;

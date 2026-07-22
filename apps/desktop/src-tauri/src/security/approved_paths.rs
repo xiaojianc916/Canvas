@@ -8,7 +8,7 @@ use std::sync::RwLock;
 /// Renderer-provided paths are never trusted on their own. A path must first
 /// be approved by file_open or file_save during the current application
 /// process.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ApprovedPathRegistry {
     paths: RwLock<HashSet<PathBuf>>,
 }
