@@ -97,11 +97,7 @@ export function WorkspaceShell({
     }
 
     setInspectorOpen(true)
-  }, [
-    inspectorSelectionKey,
-    mode,
-    'workspace inspector selection changed',
-  ])
+  }, [inspectorSelectionKey, mode])
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {

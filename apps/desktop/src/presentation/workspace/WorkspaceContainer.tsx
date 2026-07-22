@@ -1,5 +1,32 @@
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
 import {
+  EditorSessionHost,
+  useEditor,
+} from '@hybrid-canvas/canvas/react'
+import { ConfirmationDialog } from '@hybrid-canvas/design-system'
+import {
+  ScientificChartTypeStyle,
+  type ScientificChartType,
+} from '@hybrid-canvas/scientific-plot'
+import type {
+  CanvasSessionId,
+  WorkbenchSessionStore,
+  WorkbenchTabId,
+  WorkspaceShellActions,
+} from '@hybrid-canvas/workspace/contracts'
+import {
+  NoCanvasSurface,
+  WorkbenchTabs,
+  WorkspaceShell,
+  WorkspaceSurface,
+} from '@hybrid-canvas/workspace/react'
+import {
+  useCallback,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react'
+import {
   DefaultArrowheadEndStyle,
   DefaultArrowheadStartStyle,
   DefaultColorStyle,
@@ -8,6 +35,8 @@ import {
   DefaultFontStyle,
   DefaultSizeStyle,
   DefaultTextAlignStyle,
+  GeoShapeGeoStyle,
+  type Editor,
   type TLShape,
   useValue,
 } from 'tldraw'
@@ -75,14 +104,31 @@ export function WorkspaceContainer({
 
   const inspectorSelectionKey = useValue(
     'workspace inspector selection key',
-    () =>
-      editor
-        ? editor
-            .getSelectedShapeIds()
-            .map(String)
-            .sort()
-            .join('|')
-        : '',
+    () => {
+      if (!editor) {
+        return ''
+      }
+
+      const selectedIds = editor
+        .getSelectedShapeIds()
+        .map(String)
+        .sort()
+
+      if (selectedIds.length > 0) {
+        return 'selection:' + selectedIds.join('|')
+      }
+
+      const toolId = editor.getCurrentToolId()
+
+      if (
+        toolId === 'select' ||
+        toolId === 'hand'
+      ) {
+        return ''
+      }
+
+      return 'tool:' + toolId
+    },
     [editor],
   )
 
@@ -394,6 +440,12 @@ function CanvasInspectorContent({
     [editor],
   )
 
+  const activeToolId = useValue(
+    'canvas inspector active tool',
+    () => editor?.getCurrentToolId() ?? 'select',
+    [editor],
+  )
+
   if (!hasActiveCanvas || !editor) {
     return (
       <div className="rounded-lg border border-dashed border-divider px-4 py-10 text-center">
@@ -407,40 +459,10 @@ function CanvasInspectorContent({
 
   if (selectedShapes.length === 0) {
     return (
-      <div className="space-y-4">
-        <header className="border-b border-divider pb-3">
-          <h2 className="text-sm font-semibold">画布</h2>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            选择对象后显示对应属性
-          </p>
-        </header>
-
-        <ShapeInspectorSection title="视图">
-          <div className="grid grid-cols-2 gap-2">
-            <ShapeInspectorButton onClick={() => editor.zoomToFit()}>
-              适应内容
-            </ShapeInspectorButton>
-
-            <ShapeInspectorButton onClick={() => editor.resetZoom()}>
-              恢复 100%
-            </ShapeInspectorButton>
-
-            <ShapeInspectorButton
-              className="col-span-2"
-              onClick={() => editor.selectAll()}
-            >
-              选择全部对象
-            </ShapeInspectorButton>
-          </div>
-        </ShapeInspectorSection>
-
-        <div className="rounded-lg border border-dashed border-divider px-4 py-8 text-center">
-          <p className="text-xs font-medium">未选择对象</p>
-          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-            单击形状、文本、箭头或其他对象以编辑属性。
-          </p>
-        </div>
-      </div>
+      <CanvasActiveToolPanel
+        editor={editor}
+        toolId={activeToolId}
+      />
     )
   }
 
@@ -614,6 +636,29 @@ function CanvasInspectorContent({
         </>
       ) : null}
 
+      {commonType === 'scientific-chart' ? (
+        <ShapeInspectorSection title="图表类型">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              editor.setStyleForSelectedShapes(
+                ScientificChartTypeStyle,
+                value as ScientificChartType,
+              )
+            }
+            options={[
+              { value: 'line', label: '折线' },
+              { value: 'bar', label: '柱状' },
+              { value: 'area', label: '面积' },
+              { value: 'scatter', label: '散点' },
+            ]}
+            value={getCommonShapeProp(
+              selectedShapes,
+              'chartType',
+            )}
+          />
+        </ShapeInspectorSection>
+      ) : null}
+
       {commonType === 'geo' ? (
         <ShapeInspectorSection title="形状">
           <select
@@ -746,6 +791,404 @@ function CanvasInspectorContent({
     </div>
   )
 }
+
+function CanvasActiveToolPanel({
+  editor,
+  toolId,
+}: {
+  readonly editor: Editor
+  readonly toolId: string
+}) {
+  const applyNextStyle = (
+    style: Parameters<Editor['setStyleForNextShapes']>[0],
+    value: string,
+  ) => {
+    editor.setStyleForNextShapes(
+      style,
+      value as never,
+    )
+  }
+
+  const colors = (
+    <ShapeInspectorSection title="颜色">
+      <div className="grid grid-cols-6 gap-1.5">
+        {SHAPE_COLORS.map((color) => (
+          <button
+            aria-label={'设置默认颜色为' + color.label}
+            className="size-7 rounded-md border transition-transform hover:scale-105"
+            key={color.value}
+            onClick={() =>
+              applyNextStyle(
+                DefaultColorStyle,
+                color.value,
+              )
+            }
+            style={{
+              backgroundColor: color.css,
+            }}
+            title={color.label}
+            type="button"
+          />
+        ))}
+      </div>
+    </ShapeInspectorSection>
+  )
+
+  const size = (
+    <ShapeInspectorSection title="粗细">
+      <ShapeInspectorSegmentedControl
+        onChange={(value) =>
+          applyNextStyle(DefaultSizeStyle, value)
+        }
+        options={[
+          { value: 's', label: '细' },
+          { value: 'm', label: '中' },
+          { value: 'l', label: '粗' },
+          { value: 'xl', label: '特粗' },
+        ]}
+        value={null}
+      />
+    </ShapeInspectorSection>
+  )
+
+  const dash = (
+    <ShapeInspectorSection title="线型">
+      <ShapeInspectorSegmentedControl
+        onChange={(value) =>
+          applyNextStyle(DefaultDashStyle, value)
+        }
+        options={[
+          { value: 'draw', label: '手绘' },
+          { value: 'solid', label: '实线' },
+          { value: 'dashed', label: '虚线' },
+          { value: 'dotted', label: '点线' },
+        ]}
+        value={null}
+      />
+    </ShapeInspectorSection>
+  )
+
+  if (toolId === 'geo') {
+    return (
+      <CanvasToolPanelHeader
+        description="在画布中连续创建形状"
+        title="形状"
+      >
+        <ShapeInspectorSection title="形状类型">
+          <select
+            className="h-8 w-full rounded-md border border-divider bg-background px-2 text-[11px] outline-none focus:border-primary"
+            defaultValue="rectangle"
+            onChange={(event) =>
+              applyNextStyle(
+                GeoShapeGeoStyle,
+                event.target.value,
+              )
+            }
+          >
+            <option value="rectangle">矩形</option>
+            <option value="ellipse">椭圆</option>
+            <option value="triangle">三角形</option>
+            <option value="diamond">菱形</option>
+            <option value="pentagon">五边形</option>
+            <option value="hexagon">六边形</option>
+            <option value="octagon">八边形</option>
+            <option value="star">星形</option>
+            <option value="cloud">云形</option>
+            <option value="rhombus">平行四边形</option>
+            <option value="trapezoid">梯形</option>
+            <option value="arrow-right">右箭头</option>
+            <option value="arrow-left">左箭头</option>
+            <option value="arrow-up">上箭头</option>
+            <option value="arrow-down">下箭头</option>
+          </select>
+        </ShapeInspectorSection>
+
+        {colors}
+
+        <ShapeInspectorSection title="填充">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              applyNextStyle(
+                DefaultFillStyle,
+                value,
+              )
+            }
+            options={[
+              { value: 'none', label: '无' },
+              { value: 'semi', label: '半透明' },
+              { value: 'solid', label: '实心' },
+              { value: 'pattern', label: '图案' },
+            ]}
+            value={null}
+          />
+        </ShapeInspectorSection>
+
+        {dash}
+        {size}
+      </CanvasToolPanelHeader>
+    )
+  }
+
+  if (toolId === 'arrow') {
+    return (
+      <CanvasToolPanelHeader
+        description="在画布中连续创建连接线"
+        title="连接"
+      >
+        {colors}
+        {dash}
+        {size}
+
+        <ShapeInspectorSection title="起点">
+          <ShapeInspectorArrowheadSelect
+            onChange={(value) =>
+              applyNextStyle(
+                DefaultArrowheadStartStyle,
+                value,
+              )
+            }
+            value="none"
+          />
+        </ShapeInspectorSection>
+
+        <ShapeInspectorSection title="终点">
+          <ShapeInspectorArrowheadSelect
+            onChange={(value) =>
+              applyNextStyle(
+                DefaultArrowheadEndStyle,
+                value,
+              )
+            }
+            value="arrow"
+          />
+        </ShapeInspectorSection>
+      </CanvasToolPanelHeader>
+    )
+  }
+
+  if (toolId === 'scientific-chart') {
+    return (
+      <CanvasToolPanelHeader
+        description="拖拽创建图表"
+        title="图表"
+      >
+        <ShapeInspectorSection title="图表类型">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              applyNextStyle(
+                ScientificChartTypeStyle,
+                value,
+              )
+            }
+            options={[
+              { value: 'line', label: '折线' },
+              { value: 'bar', label: '柱状' },
+              { value: 'area', label: '面积' },
+              { value: 'scatter', label: '散点' },
+            ]}
+            value={null}
+          />
+        </ShapeInspectorSection>
+
+        {colors}
+        {size}
+
+        <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
+          在画布中按住鼠标并拖拽创建图表。图表工具会保持激活，可连续创建多个图表。
+        </div>
+      </CanvasToolPanelHeader>
+    )
+  }
+
+  if (toolId === 'text') {
+    return (
+      <CanvasToolPanelHeader
+        description="在画布中连续创建文本"
+        title="文本"
+      >
+        {colors}
+
+        <ShapeInspectorSection title="字体">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              applyNextStyle(
+                DefaultFontStyle,
+                value,
+              )
+            }
+            options={[
+              { value: 'draw', label: '手写' },
+              { value: 'sans', label: '无衬线' },
+              { value: 'serif', label: '衬线' },
+              { value: 'mono', label: '等宽' },
+            ]}
+            value={null}
+          />
+        </ShapeInspectorSection>
+
+        {size}
+
+        <ShapeInspectorSection title="对齐">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              applyNextStyle(
+                DefaultTextAlignStyle,
+                value,
+              )
+            }
+            options={[
+              { value: 'start', label: '左' },
+              { value: 'middle', label: '中' },
+              { value: 'end', label: '右' },
+            ]}
+            value={null}
+          />
+        </ShapeInspectorSection>
+      </CanvasToolPanelHeader>
+    )
+  }
+
+  if (
+    toolId === 'draw' ||
+    toolId === 'highlight'
+  ) {
+    return (
+      <CanvasToolPanelHeader
+        description={
+          toolId === 'highlight'
+            ? '连续绘制高亮标记'
+            : '连续自由绘制'
+        }
+        title={
+          toolId === 'highlight'
+            ? '高亮'
+            : '自由绘制'
+        }
+      >
+        {colors}
+        {dash}
+        {size}
+      </CanvasToolPanelHeader>
+    )
+  }
+
+  if (toolId === 'note') {
+    return (
+      <CanvasToolPanelHeader
+        description="在画布中连续创建便签"
+        title="便签"
+      >
+        {colors}
+
+        <ShapeInspectorSection title="填充">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              applyNextStyle(
+                DefaultFillStyle,
+                value,
+              )
+            }
+            options={[
+              { value: 'semi', label: '半透明' },
+              { value: 'solid', label: '实心' },
+              { value: 'pattern', label: '图案' },
+            ]}
+            value={null}
+          />
+        </ShapeInspectorSection>
+
+        <ShapeInspectorSection title="字体">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              applyNextStyle(
+                DefaultFontStyle,
+                value,
+              )
+            }
+            options={[
+              { value: 'draw', label: '手写' },
+              { value: 'sans', label: '无衬线' },
+              { value: 'serif', label: '衬线' },
+              { value: 'mono', label: '等宽' },
+            ]}
+            value={null}
+          />
+        </ShapeInspectorSection>
+
+        {size}
+      </CanvasToolPanelHeader>
+    )
+  }
+
+  if (toolId === 'frame') {
+    return (
+      <CanvasToolPanelHeader
+        description="在画布中连续创建画框"
+        title="画框"
+      >
+        {colors}
+        {dash}
+        {size}
+      </CanvasToolPanelHeader>
+    )
+  }
+
+  if (toolId === 'eraser') {
+    return (
+      <CanvasToolPanelHeader
+        description="拖过对象进行删除"
+        title="橡皮擦"
+      >
+        <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
+          橡皮擦将保持激活。手动点击“选择”或切换其他工具后退出。
+        </div>
+      </CanvasToolPanelHeader>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border border-dashed border-divider px-4 py-8 text-center">
+      <p className="text-xs font-medium">
+        {toolId === 'hand'
+          ? '移动画布'
+          : '选择工具'}
+      </p>
+
+      <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+        {toolId === 'hand'
+          ? '拖动画布进行平移，滚轮用于缩放。'
+          : '选择画布中的对象以编辑对应属性。'}
+      </p>
+    </div>
+  )
+}
+
+function CanvasToolPanelHeader({
+  title,
+  description,
+  children,
+}: {
+  readonly title: string
+  readonly description: string
+  readonly children: import('react').ReactNode
+}) {
+  return (
+    <div className="space-y-4">
+      <header className="border-b border-divider pb-3">
+        <h2 className="text-sm font-semibold">
+          {title}
+        </h2>
+
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {description}
+        </p>
+      </header>
+
+      {children}
+    </div>
+  )
+}
+
 
 const SHAPE_COLORS = [
   { value: 'black', label: '黑色', css: '#1d1d1d' },
@@ -906,6 +1349,7 @@ function supportsStroke(type: string): boolean {
     'line',
     'note',
     'frame',
+    'scientific-chart',
     'mixed',
   ].includes(type)
 }
@@ -920,6 +1364,7 @@ function getInspectorShapeName(type: string): string {
     line: '直线',
     note: '便签',
     frame: '画框',
+    'scientific-chart': '图表',
     image: '图片',
     video: '视频',
     bookmark: '书签',
@@ -941,6 +1386,7 @@ function getInspectorShapeDescription(type: string): string {
     line: '编辑线条颜色、线型和粗细',
     note: '编辑便签文字、颜色和填充',
     frame: '编辑画框样式',
+    'scientific-chart': '编辑图表类型、颜色和展示样式',
     image: '编辑图片对象和层级',
     video: '编辑视频对象和层级',
     group: '编辑对象组和层级',
