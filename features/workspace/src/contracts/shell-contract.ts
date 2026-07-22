@@ -44,6 +44,11 @@ export interface WorkspaceShellProps {
   readonly renderChrome: (props: WorkspaceChromeRenderProps) => ReactNode
   readonly mainContent: ReactNode
   readonly inspector: ReactNode
+  /**
+   * 当前编辑器选区标识。
+   * 仅用于请求显示属性面板，不承载画布文档状态。
+   */
+  readonly inspectorSelectionKey?: string
   readonly statusLeft: ReactNode
   readonly statusRight?: ReactNode
   readonly assistantOverlay?: ReactNode

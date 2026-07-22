@@ -34,6 +34,7 @@ export function WorkspaceShell({
   renderChrome,
   mainContent,
   inspector,
+  inspectorSelectionKey,
   statusLeft,
   statusRight,
   assistantOverlay,
@@ -42,6 +43,9 @@ export function WorkspaceShell({
   const mode = useWorkspaceLayoutMode()
   const rootRef = useRef<HTMLDivElement | null>(null)
   const previousModeRef = useRef(mode)
+  const previousInspectorSelectionKeyRef = useRef(
+    inspectorSelectionKey ?? '',
+  )
 
   const [isSidebarOpen, setSidebarOpen] = useState(true)
   const [isInspectorOpen, setInspectorOpen] = useState(false)
@@ -73,6 +77,31 @@ export function WorkspaceShell({
       setInspectorOpen(false)
     }
   }, [mode])
+
+  /*
+   * 选中新的形状时自动打开右侧属性面板。
+   * 选区标识只包含 shape id，不镜像 tldraw 文档数据。
+   */
+  useEffect(() => {
+    const previousKey = previousInspectorSelectionKeyRef.current
+    const nextKey = inspectorSelectionKey ?? ''
+
+    previousInspectorSelectionKeyRef.current = nextKey
+
+    if (!nextKey || nextKey === previousKey) {
+      return
+    }
+
+    if (mode !== 'wide') {
+      setSidebarOpen(false)
+    }
+
+    setInspectorOpen(true)
+  }, [
+    inspectorSelectionKey,
+    mode,
+    'workspace inspector selection changed',
+  ])
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {

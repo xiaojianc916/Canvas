@@ -1,27 +1,16 @@
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
-import { EditorSessionHost, useEditor } from '@hybrid-canvas/canvas/react'
-import { ConfirmationDialog } from '@hybrid-canvas/design-system'
-import type {
-  CanvasSessionId,
-  WorkbenchSessionStore,
-  WorkbenchTabId,
-  WorkspaceShellActions,
-} from '@hybrid-canvas/workspace/contracts'
 import {
-  NoCanvasSurface,
-  WorkbenchTabs,
-  WorkspaceShell,
-  WorkspaceSurface,
-} from '@hybrid-canvas/workspace/react'
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from 'react'
-import { type TLShape, useValue } from 'tldraw'
+  DefaultArrowheadEndStyle,
+  DefaultArrowheadStartStyle,
+  DefaultColorStyle,
+  DefaultDashStyle,
+  DefaultFillStyle,
+  DefaultFontStyle,
+  DefaultSizeStyle,
+  DefaultTextAlignStyle,
+  type TLShape,
+  useValue,
+} from 'tldraw'
 
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
 import { DesktopTitleBar } from '../chrome/DesktopTitleBar'
@@ -81,6 +70,21 @@ export function WorkspaceContainer({
   onWindowStartDragging,
 }: WorkspaceContainerProps) {
   const [pendingCloseSessionId, setPendingCloseSessionId] = useState<CanvasSessionId | null>(null)
+
+  const editor = useEditor()
+
+  const inspectorSelectionKey = useValue(
+    'workspace inspector selection key',
+    () =>
+      editor
+        ? editor
+            .getSelectedShapeIds()
+            .map(String)
+            .sort()
+            .join('|')
+        : '',
+    [editor],
+  )
 
   const workbench = useSyncExternalStore(
     port.workspace.subscribe,
@@ -257,7 +261,12 @@ export function WorkspaceContainer({
   return (
     <WorkspaceShell
       actions={actions}
-      inspector={<CanvasInspectorContent hasActiveCanvas={workbench.activeCanvas !== null} />}
+      inspector={
+        <CanvasInspectorContent
+          hasActiveCanvas={workbench.activeCanvas !== null}
+        />
+      }
+      inspectorSelectionKey={inspectorSelectionKey}
       mainContent={mainContent}
       model={model}
       overlays={
@@ -372,7 +381,11 @@ function renderActiveSurface({
   }
 }
 
-function CanvasInspectorContent({ hasActiveCanvas }: { readonly hasActiveCanvas: boolean }) {
+function CanvasInspectorContent({
+  hasActiveCanvas,
+}: {
+  readonly hasActiveCanvas: boolean
+}) {
   const editor = useEditor()
 
   const selectedShapes = useValue(
@@ -381,109 +394,103 @@ function CanvasInspectorContent({ hasActiveCanvas }: { readonly hasActiveCanvas:
     [editor],
   )
 
-
-  const selectedIds = useMemo(
-    () => selectedShapes.map((shape) => shape.id),
-    [selectedShapes],
-  )
-
-  const selection = useMemo(() => {
-    if (selectedShapes.length === 0) {
-      return null
-    }
-
-    const first = selectedShapes[0]
-
-    if (!first) {
-      return null
-    }
-
-    const firstProps = first.props as unknown as Record<string, unknown>
-    const firstBounds = editor?.getShapePageBounds(first)
-
-    return {
-      type:
-        selectedShapes.every((shape) => shape.type === first.type)
-          ? getShapeTypeLabel(first.type)
-          : '多个类型',
-      x: getSharedNumber(selectedShapes, (shape) => shape.x),
-      y: getSharedNumber(selectedShapes, (shape) => shape.y),
-      rotation: getSharedNumber(selectedShapes, (shape) => radiansToDegrees(shape.rotation)),
-      opacity: getSharedNumber(selectedShapes, (shape) => shape.opacity * 100),
-      width:
-        selectedShapes.length === 1 && firstBounds
-          ? Math.round(firstBounds.width * 100) / 100
-          : null,
-      height:
-        selectedShapes.length === 1 && firstBounds
-          ? Math.round(firstBounds.height * 100) / 100
-          : null,
-      color: typeof firstProps.color === 'string' ? firstProps.color : null,
-      fill: typeof firstProps.fill === 'string' ? firstProps.fill : null,
-      isLocked: selectedShapes.every((shape) => shape.isLocked),
-    }
-  }, [editor, selectedShapes])
-
   if (!hasActiveCanvas || !editor) {
     return (
-      <InspectorEmptyState
-        description="激活一个画布后，可以在这里编辑画布和对象属性。"
-        title="没有活动画布"
-      />
+      <div className="rounded-lg border border-dashed border-divider px-4 py-10 text-center">
+        <p className="text-xs font-medium">没有活动画布</p>
+        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+          激活一个画布后，可以在这里编辑对象属性。
+        </p>
+      </div>
     )
   }
 
-  const updateTopLevelNumber = (
-    key: 'x' | 'y' | 'rotation' | 'opacity',
-    value: number,
+  if (selectedShapes.length === 0) {
+    return (
+      <div className="space-y-4">
+        <header className="border-b border-divider pb-3">
+          <h2 className="text-sm font-semibold">画布</h2>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            选择对象后显示对应属性
+          </p>
+        </header>
+
+        <ShapeInspectorSection title="视图">
+          <div className="grid grid-cols-2 gap-2">
+            <ShapeInspectorButton onClick={() => editor.zoomToFit()}>
+              适应内容
+            </ShapeInspectorButton>
+
+            <ShapeInspectorButton onClick={() => editor.resetZoom()}>
+              恢复 100%
+            </ShapeInspectorButton>
+
+            <ShapeInspectorButton
+              className="col-span-2"
+              onClick={() => editor.selectAll()}
+            >
+              选择全部对象
+            </ShapeInspectorButton>
+          </div>
+        </ShapeInspectorSection>
+
+        <div className="rounded-lg border border-dashed border-divider px-4 py-8 text-center">
+          <p className="text-xs font-medium">未选择对象</p>
+          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+            单击形状、文本、箭头或其他对象以编辑属性。
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const selectedIds = selectedShapes.map((shape) => shape.id)
+  const primaryShape = selectedShapes[0]
+
+  if (!primaryShape) {
+    return null
+  }
+
+  const commonType = selectedShapes.every(
+    (shape) => shape.type === primaryShape.type,
+  )
+    ? primaryShape.type
+    : 'mixed'
+
+  const commonColor = getCommonShapeProp(selectedShapes, 'color')
+  const commonFill = getCommonShapeProp(selectedShapes, 'fill')
+  const commonDash = getCommonShapeProp(selectedShapes, 'dash')
+  const commonSize = getCommonShapeProp(selectedShapes, 'size')
+  const commonFont = getCommonShapeProp(selectedShapes, 'font')
+  const commonAlign = getCommonShapeProp(selectedShapes, 'textAlign')
+  const commonGeo = getCommonShapeProp(selectedShapes, 'geo')
+  const commonArrowheadStart = getCommonShapeProp(
+    selectedShapes,
+    'arrowheadStart',
+  )
+  const commonArrowheadEnd = getCommonShapeProp(
+    selectedShapes,
+    'arrowheadEnd',
+  )
+
+  const applyStyle = (
+    style:
+      | typeof DefaultColorStyle
+      | typeof DefaultFillStyle
+      | typeof DefaultDashStyle
+      | typeof DefaultSizeStyle
+      | typeof DefaultFontStyle
+      | typeof DefaultTextAlignStyle
+      | typeof DefaultArrowheadStartStyle
+      | typeof DefaultArrowheadEndStyle,
+    value: string,
   ) => {
-    const normalizedValue =
-      key === 'rotation'
-        ? degreesToRadians(value)
-        : key === 'opacity'
-          ? clamp(value / 100, 0, 1)
-          : value
-
-    editor.updateShapes(
-      selectedShapes.map((shape) => ({
-        id: shape.id,
-        type: shape.type,
-        [key]: normalizedValue,
-      })) as never,
-    )
+    editor.setStyleForSelectedShapes(style as never, value as never)
   }
 
-  const updateSize = (key: 'w' | 'h', value: number) => {
-    if (selectedShapes.length !== 1 || value <= 0) {
-      return
-    }
-
-    const shape = selectedShapes[0]
-
-    if (!shape) {
-      return
-    }
-
-    const props = shape.props as unknown as Record<string, unknown>
-
-    if (typeof props[key] !== 'number') {
-      return
-    }
-
-    editor.updateShape({
-      id: shape.id,
-      type: shape.type,
-      props: {
-        [key]: value,
-      },
-    } as never)
-  }
-
-  const updateShapeStyle = (key: 'color' | 'fill', value: string) => {
+  const updateGeo = (geo: string) => {
     const updates = selectedShapes.flatMap((shape) => {
-      const props = shape.props as unknown as Record<string, unknown>
-
-      if (!(key in props)) {
+      if (shape.type !== 'geo') {
         return []
       }
 
@@ -492,7 +499,7 @@ function CanvasInspectorContent({ hasActiveCanvas }: { readonly hasActiveCanvas:
           id: shape.id,
           type: shape.type,
           props: {
-            [key]: value,
+            geo,
           },
         },
       ]
@@ -503,210 +510,244 @@ function CanvasInspectorContent({ hasActiveCanvas }: { readonly hasActiveCanvas:
     }
   }
 
-  const toggleLocked = () => {
-    const shouldLock = !selectedShapes.every((shape) => shape.isLocked)
+  const allLocked = selectedShapes.every((shape) => shape.isLocked)
 
+  const toggleLocked = () => {
     editor.updateShapes(
       selectedShapes.map((shape) => ({
         id: shape.id,
         type: shape.type,
-        isLocked: shouldLock,
+        isLocked: !allLocked,
       })) as never,
-    )
-  }
-
-  if (!selection) {
-    return (
-      <div className="space-y-4">
-        <InspectorHeader
-          description="选择画布中的对象以编辑其属性"
-          title="画布"
-        />
-
-
-        <InspectorSection title="视图">
-          <div className="grid grid-cols-2 gap-2">
-            <InspectorButton onClick={() => editor.zoomToFit()}>
-              适应画布
-            </InspectorButton>
-            <InspectorButton onClick={() => editor.resetZoom()}>
-              100%
-            </InspectorButton>
-            <InspectorButton
-              className="col-span-2"
-              onClick={() => editor.selectAll()}
-            >
-              选择全部对象
-            </InspectorButton>
-          </div>
-        </InspectorSection>
-
-        <div className="rounded-lg border border-dashed border-divider px-4 py-8 text-center">
-          <p className="text-xs font-medium">未选择对象</p>
-          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-            单击或框选对象后，可以修改位置、尺寸、样式和排列方式。
-          </p>
-        </div>
-      </div>
     )
   }
 
   return (
     <div className="space-y-4">
-      <InspectorHeader
-        description={
-          selectedShapes.length === 1
-            ? selection.type
-            : String(selectedShapes.length) + ' 个对象 · ' + selection.type
-        }
-        title={selectedShapes.length === 1 ? selection.type : '多个对象'}
-      />
+      <header className="border-b border-divider pb-3">
+        <h2 className="truncate text-sm font-semibold">
+          {selectedShapes.length === 1
+            ? getInspectorShapeName(commonType)
+            : String(selectedShapes.length) + ' 个对象'}
+        </h2>
 
-      <InspectorSection title="外观">
-        <div className="space-y-3">
-          <div>
-            <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              颜色
-            </div>
-            <div className="grid grid-cols-6 gap-1.5">
-              {TL_DRAW_COLORS.map((color) => (
-                <button
-                  aria-label={'设置颜色为 ' + color.label}
-                  className={
-                    'size-7 rounded-md border transition-transform hover:scale-105 ' +
-                    (selection.color === color.value
-                      ? 'ring-2 ring-primary ring-offset-1'
-                      : '')
-                  }
-                  key={color.value}
-                  onClick={() => updateShapeStyle('color', color.value)}
-                  style={{ backgroundColor: color.css }}
-                  title={color.label}
-                  type="button"
-                />
-              ))}
-            </div>
-          </div>
+        <p className="mt-1 truncate text-[11px] text-muted-foreground">
+          {selectedShapes.length === 1
+            ? getInspectorShapeDescription(commonType)
+            : commonType === 'mixed'
+              ? '多个不同类型的对象'
+              : getInspectorShapeName(commonType)}
+        </p>
+      </header>
 
-          <div>
-            <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              填充
-            </div>
-            <div className="grid grid-cols-4 gap-1.5">
-              {TL_DRAW_FILLS.map((fill) => (
-                <button
-                  className={
-                    'h-8 rounded-md border px-2 text-[11px] transition-colors hover:bg-accent ' +
-                    (selection.fill === fill.value
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'bg-background')
-                  }
-                  key={fill.value}
-                  onClick={() => updateShapeStyle('fill', fill.value)}
-                  type="button"
-                >
-                  {fill.label}
-                </button>
-              ))}
-            </div>
-          </div>
+      <ShapeInspectorSection title="颜色">
+        <div className="grid grid-cols-6 gap-1.5">
+          {SHAPE_COLORS.map((color) => (
+            <button
+              aria-label={'设置颜色为' + color.label}
+              className={
+                'size-7 rounded-md border transition-transform hover:scale-105 ' +
+                (commonColor === color.value
+                  ? 'ring-2 ring-primary ring-offset-1'
+                  : '')
+              }
+              key={color.value}
+              onClick={() =>
+                applyStyle(DefaultColorStyle, color.value)
+              }
+              style={{ backgroundColor: color.css }}
+              title={color.label}
+              type="button"
+            />
+          ))}
         </div>
-      </InspectorSection>
+      </ShapeInspectorSection>
 
-      <InspectorSection title="对齐与分布">
-        <div className="grid grid-cols-3 gap-1.5">
-          <InspectorButton
-            disabled={selectedShapes.length < 2}
-            onClick={() => editor.alignShapes(selectedIds, 'left')}
-          >
-            左对齐
-          </InspectorButton>
-          <InspectorButton
-            disabled={selectedShapes.length < 2}
-            onClick={() => editor.alignShapes(selectedIds, 'center-horizontal')}
-          >
-            水平居中
-          </InspectorButton>
-          <InspectorButton
-            disabled={selectedShapes.length < 2}
-            onClick={() => editor.alignShapes(selectedIds, 'right')}
-          >
-            右对齐
-          </InspectorButton>
-          <InspectorButton
-            disabled={selectedShapes.length < 2}
-            onClick={() => editor.alignShapes(selectedIds, 'top')}
-          >
-            顶对齐
-          </InspectorButton>
-          <InspectorButton
-            disabled={selectedShapes.length < 2}
-            onClick={() => editor.alignShapes(selectedIds, 'center-vertical')}
-          >
-            垂直居中
-          </InspectorButton>
-          <InspectorButton
-            disabled={selectedShapes.length < 2}
-            onClick={() => editor.alignShapes(selectedIds, 'bottom')}
-          >
-            底对齐
-          </InspectorButton>
-          <InspectorButton
-            disabled={selectedShapes.length < 3}
-            onClick={() => editor.distributeShapes(selectedIds, 'horizontal')}
-          >
-            水平分布
-          </InspectorButton>
-          <InspectorButton
-            disabled={selectedShapes.length < 3}
-            onClick={() => editor.distributeShapes(selectedIds, 'vertical')}
-          >
-            垂直分布
-          </InspectorButton>
-          <InspectorButton onClick={() => editor.zoomToSelection()}>
-            定位选区
-          </InspectorButton>
-        </div>
-      </InspectorSection>
+      {supportsFill(commonType) ? (
+        <ShapeInspectorSection title="填充">
+          <ShapeInspectorSegmentedControl
+            onChange={(value) =>
+              applyStyle(DefaultFillStyle, value)
+            }
+            options={[
+              { value: 'none', label: '无' },
+              { value: 'semi', label: '半透明' },
+              { value: 'solid', label: '实心' },
+              { value: 'pattern', label: '图案' },
+            ]}
+            value={commonFill}
+          />
+        </ShapeInspectorSection>
+      ) : null}
 
-      <InspectorSection title="层级">
+      {supportsStroke(commonType) ? (
+        <>
+          <ShapeInspectorSection title="线型">
+            <ShapeInspectorSegmentedControl
+              onChange={(value) =>
+                applyStyle(DefaultDashStyle, value)
+              }
+              options={[
+                { value: 'draw', label: '手绘' },
+                { value: 'solid', label: '实线' },
+                { value: 'dashed', label: '虚线' },
+                { value: 'dotted', label: '点线' },
+              ]}
+              value={commonDash}
+            />
+          </ShapeInspectorSection>
+
+          <ShapeInspectorSection title="粗细">
+            <ShapeInspectorSegmentedControl
+              onChange={(value) =>
+                applyStyle(DefaultSizeStyle, value)
+              }
+              options={[
+                { value: 's', label: '细' },
+                { value: 'm', label: '中' },
+                { value: 'l', label: '粗' },
+                { value: 'xl', label: '特粗' },
+              ]}
+              value={commonSize}
+            />
+          </ShapeInspectorSection>
+        </>
+      ) : null}
+
+      {commonType === 'geo' ? (
+        <ShapeInspectorSection title="形状">
+          <select
+            className="h-8 w-full rounded-md border border-divider bg-background px-2 text-[11px] outline-none focus:border-primary"
+            onChange={(event) => updateGeo(event.target.value)}
+            value={commonGeo ?? 'rectangle'}
+          >
+            <option value="rectangle">矩形</option>
+            <option value="ellipse">椭圆</option>
+            <option value="triangle">三角形</option>
+            <option value="diamond">菱形</option>
+            <option value="pentagon">五边形</option>
+            <option value="hexagon">六边形</option>
+            <option value="octagon">八边形</option>
+            <option value="star">星形</option>
+            <option value="cloud">云形</option>
+            <option value="rhombus">平行四边形</option>
+            <option value="trapezoid">梯形</option>
+            <option value="arrow-right">右箭头</option>
+            <option value="arrow-left">左箭头</option>
+            <option value="arrow-up">上箭头</option>
+            <option value="arrow-down">下箭头</option>
+          </select>
+        </ShapeInspectorSection>
+      ) : null}
+
+      {commonType === 'text' || commonType === 'note' ? (
+        <>
+          <ShapeInspectorSection title="字体">
+            <ShapeInspectorSegmentedControl
+              onChange={(value) =>
+                applyStyle(DefaultFontStyle, value)
+              }
+              options={[
+                { value: 'draw', label: '手写' },
+                { value: 'sans', label: '无衬线' },
+                { value: 'serif', label: '衬线' },
+                { value: 'mono', label: '等宽' },
+              ]}
+              value={commonFont}
+            />
+          </ShapeInspectorSection>
+
+          <ShapeInspectorSection title="对齐">
+            <ShapeInspectorSegmentedControl
+              onChange={(value) =>
+                applyStyle(DefaultTextAlignStyle, value)
+              }
+              options={[
+                { value: 'start', label: '左' },
+                { value: 'middle', label: '中' },
+                { value: 'end', label: '右' },
+              ]}
+              value={commonAlign}
+            />
+          </ShapeInspectorSection>
+        </>
+      ) : null}
+
+      {commonType === 'arrow' ? (
+        <>
+          <ShapeInspectorSection title="起点">
+            <ShapeInspectorArrowheadSelect
+              onChange={(value) =>
+                applyStyle(DefaultArrowheadStartStyle, value)
+              }
+              value={commonArrowheadStart}
+            />
+          </ShapeInspectorSection>
+
+          <ShapeInspectorSection title="终点">
+            <ShapeInspectorArrowheadSelect
+              onChange={(value) =>
+                applyStyle(DefaultArrowheadEndStyle, value)
+              }
+              value={commonArrowheadEnd}
+            />
+          </ShapeInspectorSection>
+        </>
+      ) : null}
+
+      <ShapeInspectorSection title="排列">
         <div className="grid grid-cols-2 gap-2">
-          <InspectorButton onClick={() => editor.bringToFront(selectedIds)}>
+          <ShapeInspectorButton
+            onClick={() => editor.bringToFront(selectedIds)}
+          >
             置于顶层
-          </InspectorButton>
-          <InspectorButton onClick={() => editor.sendToBack(selectedIds)}>
-            置于底层
-          </InspectorButton>
-          <InspectorButton onClick={() => editor.bringForward(selectedIds)}>
-            上移一层
-          </InspectorButton>
-          <InspectorButton onClick={() => editor.sendBackward(selectedIds)}>
-            下移一层
-          </InspectorButton>
-        </div>
-      </InspectorSection>
+          </ShapeInspectorButton>
 
-      <InspectorSection title="操作">
+          <ShapeInspectorButton
+            onClick={() => editor.sendToBack(selectedIds)}
+          >
+            置于底层
+          </ShapeInspectorButton>
+
+          <ShapeInspectorButton
+            onClick={() => editor.bringForward(selectedIds)}
+          >
+            上移一层
+          </ShapeInspectorButton>
+
+          <ShapeInspectorButton
+            onClick={() => editor.sendBackward(selectedIds)}
+          >
+            下移一层
+          </ShapeInspectorButton>
+        </div>
+      </ShapeInspectorSection>
+
+      <ShapeInspectorSection title="对象操作">
         <div className="grid grid-cols-2 gap-2">
-          <InspectorButton onClick={() => editor.duplicateShapes(selectedIds)}>
-            复制对象
-          </InspectorButton>
-          <InspectorButton onClick={toggleLocked}>
-            {selection.isLocked ? '解除锁定' : '锁定对象'}
-          </InspectorButton>
-          <InspectorButton
+          <ShapeInspectorButton
+            onClick={() => editor.duplicateShapes(selectedIds)}
+          >
+            复制
+          </ShapeInspectorButton>
+
+          <ShapeInspectorButton onClick={toggleLocked}>
+            {allLocked ? '解除锁定' : '锁定'}
+          </ShapeInspectorButton>
+
+          <ShapeInspectorButton
             className="col-span-2 border-destructive/40 text-destructive hover:bg-destructive/10"
             onClick={() => editor.deleteShapes(selectedIds)}
           >
-            删除所选对象
-          </InspectorButton>
+            删除对象
+          </ShapeInspectorButton>
         </div>
-      </InspectorSection>
+      </ShapeInspectorSection>
     </div>
   )
 }
 
-const TL_DRAW_COLORS = [
+const SHAPE_COLORS = [
   { value: 'black', label: '黑色', css: '#1d1d1d' },
   { value: 'grey', label: '灰色', css: '#9ca3af' },
   { value: 'red', label: '红色', css: '#ef4444' },
@@ -721,35 +762,13 @@ const TL_DRAW_COLORS = [
   { value: 'light-violet', label: '浅紫', css: '#c4b5fd' },
 ] as const
 
-const TL_DRAW_FILLS = [
-  { value: 'none', label: '无' },
-  { value: 'semi', label: '半透明' },
-  { value: 'solid', label: '实心' },
-  { value: 'pattern', label: '图案' },
-] as const
-
-interface InspectorHeaderProps {
+function ShapeInspectorSection({
+  title,
+  children,
+}: {
   readonly title: string
-  readonly description: string
-}
-
-function InspectorHeader({ title, description }: InspectorHeaderProps) {
-  return (
-    <header className="border-b border-divider pb-3">
-      <h2 className="truncate text-sm font-semibold">{title}</h2>
-      <p className="mt-1 truncate text-[11px] text-muted-foreground">
-        {description}
-      </p>
-    </header>
-  )
-}
-
-interface InspectorSectionProps {
-  readonly title: string
-  readonly children: ReactNode
-}
-
-function InspectorSection({ title, children }: InspectorSectionProps) {
+  readonly children: import('react').ReactNode
+}) {
   return (
     <section className="space-y-2.5 border-b border-divider pb-4 last:border-b-0">
       <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
@@ -760,27 +779,22 @@ function InspectorSection({ title, children }: InspectorSectionProps) {
   )
 }
 
-interface InspectorButtonProps {
-  readonly children: ReactNode
-  readonly onClick: () => void
-  readonly disabled?: boolean
-  readonly className?: string
-}
-
-function InspectorButton({
+function ShapeInspectorButton({
   children,
   onClick,
-  disabled = false,
   className = '',
-}: InspectorButtonProps) {
+}: {
+  readonly children: import('react').ReactNode
+  readonly onClick: () => void
+  readonly className?: string
+}) {
   return (
     <button
       className={
         'min-h-8 rounded-md border border-divider bg-background px-2 text-[11px] ' +
-        'transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40 ' +
+        'transition-colors hover:bg-accent ' +
         className
       }
-      disabled={disabled}
       onClick={onClick}
       type="button"
     >
@@ -789,167 +803,150 @@ function InspectorButton({
   )
 }
 
-interface InspectorNumberFieldProps {
-  readonly label: string
-  readonly value: number | null
-  readonly onCommit: (value: number) => void
-  readonly mixed?: boolean
-  readonly suffix?: string
-  readonly min?: number
-  readonly max?: number
-  readonly disabled?: boolean
-}
-
-function InspectorNumberField({
-  label,
+function ShapeInspectorSegmentedControl({
+  options,
   value,
-  onCommit,
-  mixed = false,
-  suffix,
-  min,
-  max,
-  disabled = false,
-}: InspectorNumberFieldProps) {
-  const [draft, setDraft] = useState(
-    value === null ? '' : formatInspectorNumber(value),
-  )
-
-  useEffect(() => {
-    setDraft(value === null ? '' : formatInspectorNumber(value))
-  }, [value])
-
-  const commit = () => {
-    const parsed = Number.parseFloat(draft)
-
-    if (!Number.isFinite(parsed)) {
-      setDraft(value === null ? '' : formatInspectorNumber(value))
-      return
-    }
-
-    onCommit(clampOptional(parsed, min, max))
-  }
-
+  onChange,
+}: {
+  readonly options: readonly {
+    readonly value: string
+    readonly label: string
+  }[]
+  readonly value: string | null
+  readonly onChange: (value: string) => void
+}) {
   return (
-    <label className="flex h-8 items-center rounded-md border border-divider bg-background focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/30">
-      <span className="w-8 shrink-0 pl-2 text-[10px] font-medium text-muted-foreground">
-        {label}
-      </span>
-      <input
-        className="min-w-0 flex-1 bg-transparent px-1 text-right text-[11px] outline-none disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={disabled}
-        inputMode="decimal"
-        onBlur={commit}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.currentTarget.blur()
+    <div
+      className="grid gap-1.5"
+      style={{
+        gridTemplateColumns:
+          'repeat(' + String(options.length) + ', minmax(0, 1fr))',
+      }}
+    >
+      {options.map((option) => (
+        <button
+          className={
+            'h-8 rounded-md border px-1 text-[10px] transition-colors ' +
+            (value === option.value
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-divider bg-background hover:bg-accent')
           }
-
-          if (event.key === 'Escape') {
-            setDraft(value === null ? '' : formatInspectorNumber(value))
-            event.currentTarget.blur()
-          }
-        }}
-        placeholder={mixed ? '多个' : '0'}
-        value={draft}
-      />
-      {suffix ? (
-        <span className="pr-2 text-[10px] text-muted-foreground">{suffix}</span>
-      ) : null}
-    </label>
-  )
-}
-
-
-interface InspectorEmptyStateProps {
-  readonly title: string
-  readonly description: string
-}
-
-function InspectorEmptyState({
-  title,
-  description,
-}: InspectorEmptyStateProps) {
-  return (
-    <div className="rounded-lg border border-dashed border-divider px-4 py-10 text-center">
-      <p className="text-xs font-medium">{title}</p>
-      <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-        {description}
-      </p>
+          key={option.value}
+          onClick={() => onChange(option.value)}
+          type="button"
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   )
 }
 
-function getSharedNumber(
-  shapes: readonly TLShape[],
-  read: (shape: TLShape) => number,
-): number | null {
-  const first = shapes[0]
+function ShapeInspectorArrowheadSelect({
+  value,
+  onChange,
+}: {
+  readonly value: string | null
+  readonly onChange: (value: string) => void
+}) {
+  return (
+    <select
+      className="h-8 w-full rounded-md border border-divider bg-background px-2 text-[11px] outline-none focus:border-primary"
+      onChange={(event) => onChange(event.target.value)}
+      value={value ?? 'none'}
+    >
+      <option value="none">无</option>
+      <option value="arrow">箭头</option>
+      <option value="triangle">实心三角</option>
+      <option value="square">方形</option>
+      <option value="dot">圆点</option>
+      <option value="diamond">菱形</option>
+      <option value="inverted">反向三角</option>
+      <option value="bar">横线</option>
+    </select>
+  )
+}
 
-  if (!first) {
+function getCommonShapeProp(
+  shapes: readonly TLShape[],
+  key: string,
+): string | null {
+  const firstShape = shapes[0]
+
+  if (!firstShape) {
     return null
   }
 
-  const firstValue = read(first)
+  const firstProps =
+    firstShape.props as unknown as Record<string, unknown>
+  const firstValue = firstProps[key]
 
-  if (shapes.every((shape) => Math.abs(read(shape) - firstValue) < 0.001)) {
-    return Math.round(firstValue * 100) / 100
+  if (typeof firstValue !== 'string') {
+    return null
   }
 
-  return null
+  const isShared = shapes.every((shape) => {
+    const props = shape.props as unknown as Record<string, unknown>
+    return props[key] === firstValue
+  })
+
+  return isShared ? firstValue : null
 }
 
-function getShapeTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
+function supportsFill(type: string): boolean {
+  return type === 'geo' || type === 'note' || type === 'frame'
+}
+
+function supportsStroke(type: string): boolean {
+  return [
+    'geo',
+    'draw',
+    'highlight',
+    'arrow',
+    'line',
+    'note',
+    'frame',
+    'mixed',
+  ].includes(type)
+}
+
+function getInspectorShapeName(type: string): string {
+  const names: Record<string, string> = {
     geo: '形状',
     text: '文本',
-    draw: '手绘',
+    draw: '自由绘制',
+    highlight: '高亮',
     arrow: '箭头',
-    line: '线条',
+    line: '直线',
     note: '便签',
     frame: '画框',
     image: '图片',
     video: '视频',
     bookmark: '书签',
     embed: '嵌入内容',
-    highlight: '高亮',
+    group: '对象组',
+    mixed: '多个对象',
   }
 
-  return labels[type] ?? type
+  return names[type] ?? type
 }
 
-function radiansToDegrees(value: number): number {
-  return (value * 180) / Math.PI
-}
-
-function degreesToRadians(value: number): number {
-  return (value * Math.PI) / 180
-}
-
-function formatInspectorNumber(value: number): string {
-  return String(Math.round(value * 100) / 100)
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
-}
-
-function clampOptional(
-  value: number,
-  min: number | undefined,
-  max: number | undefined,
-): number {
-  let result = value
-
-  if (min !== undefined) {
-    result = Math.max(min, result)
+function getInspectorShapeDescription(type: string): string {
+  const descriptions: Record<string, string> = {
+    geo: '编辑形状、颜色、填充和边框',
+    text: '编辑字体、字号、颜色和对齐',
+    draw: '编辑画笔颜色、线型和粗细',
+    highlight: '编辑高亮颜色和粗细',
+    arrow: '编辑箭头、端点、颜色和线型',
+    line: '编辑线条颜色、线型和粗细',
+    note: '编辑便签文字、颜色和填充',
+    frame: '编辑画框样式',
+    image: '编辑图片对象和层级',
+    video: '编辑视频对象和层级',
+    group: '编辑对象组和层级',
   }
 
-  if (max !== undefined) {
-    result = Math.min(max, result)
-  }
-
-  return result
+  return descriptions[type] ?? '编辑所选对象的属性'
 }
 
 function CanvasSelectionGeometryStatus() {

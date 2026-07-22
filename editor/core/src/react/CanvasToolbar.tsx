@@ -13,7 +13,6 @@ import {
   ArrowRightToLine,
   ArrowUpToLine,
   BringToFront,
-  Copy,
   Eraser,
   FlipHorizontal2,
   FlipVertical2,
@@ -125,12 +124,6 @@ const CORE_CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     label: '画框',
     shortcut: 'F',
     icon: Frame,
-  },
-  {
-    id: 'zoom',
-    label: '缩放',
-    shortcut: 'Z',
-    icon: ZoomIn,
   },
 ]
 
@@ -278,26 +271,6 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
           label="重做"
           onClick={() => editor?.redo()}
           shortcut="Ctrl+Shift+Z"
-        />
-
-        <ToolbarButton
-          disabled={!hasSelection}
-          icon={Copy}
-          label="复制对象"
-          onClick={() => {
-            if (editor) {
-              editor.duplicateShapes(selectedIds)
-            }
-          }}
-          shortcut="Ctrl+D"
-        />
-
-        <ToolbarButton
-          disabled={!hasSelection}
-          icon={Eraser}
-          label="删除"
-          onClick={() => editor?.deleteShapes(selectedIds)}
-          shortcut="Delete"
         />
       </div>
 
