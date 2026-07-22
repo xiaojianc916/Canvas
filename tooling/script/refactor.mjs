@@ -1,295 +1,124 @@
 #!/usr/bin/env node
 
-/**
- * 修正新建标签按钮的位置：
- *
- * - 标签较少：加号紧跟最后一个标签
- * - 标签增多：加号自然向右移动
- * - 标签溢出：加号 sticky 在标签视口右侧
- * - 加号始终可见，但不是永久固定在顶部栏最右侧
- *
- * 运行：
- * node tooling/script/refactor.mjs --apply
- */
-
+import { readFile, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
-import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
 
-const SCRIPT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url))
+const root = process.cwd()
+const shouldApply = process.argv.includes('--apply')
 
-function findRepositoryRoot(startDirectory) {
-  let currentDirectory = startDirectory
-
-  while (true) {
-    if (
-      fs.existsSync(path.join(currentDirectory, 'package.json')) &&
-      fs.existsSync(path.join(currentDirectory, 'pnpm-workspace.yaml'))
-    ) {
-      return currentDirectory
-    }
-
-    const parentDirectory = path.dirname(currentDirectory)
-
-    if (parentDirectory === currentDirectory) {
-      throw new Error('找不到 Canvas 仓库根目录。')
-    }
-
-    currentDirectory = parentDirectory
-  }
-}
-
-const ROOT = findRepositoryRoot(SCRIPT_DIRECTORY)
-
-const WORKBENCH_TABS_PATH = path.join(
-  ROOT,
-  'features/workspace/src/presentation/shell/WorkbenchTabs.tsx',
+const editorSessionPath = path.join(
+  root,
+  'editor/core/src/runtime/editor-session.ts',
 )
 
-const WORKBENCH_TABS_CSS_PATH = path.join(
-  ROOT,
-  'features/workspace/src/presentation/shell/chrome-workbench-tabs.css',
+const refactorScriptPath = path.join(
+  root,
+  'tooling/script/refactor.mjs',
 )
 
-function readFile(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`文件不存在：${path.relative(ROOT, filePath)}`)
+const documentServicePath = path.join(
+  root,
+  'editor/document/src/application/canvas-document-service.ts',
+)
+
+const documentServiceTestPath = path.join(
+  root,
+  'editor/document/src/application/canvas-document-service.test.ts',
+)
+
+const oldBootstrapFunction = `function isInitialDocumentBootstrapChange(entry: unknown): boolean {
+  if (!isRecord(entry)) {
+    return false
   }
 
-  return fs.readFileSync(filePath, 'utf8')
-}
+  const changes = entry.changes
 
-function writeFile(filePath, content) {
-  fs.writeFileSync(filePath, content, 'utf8')
-  console.log(`已修改：${path.relative(ROOT, filePath)}`)
-}
-
-function updateWorkbenchTabsMarkup() {
-  let content = readFile(WORKBENCH_TABS_PATH)
-
-  if (
-    content.includes(
-      'className="chrome-workbench-tabs__new-tab chrome-workbench-tabs__new-tab--sticky"',
-    )
-  ) {
-    console.log('加号按钮结构已经是 sticky 版本。')
-    return
+  if (!isRecord(changes)) {
+    return false
   }
 
-  /*
-   * 上一版结构：
-   *
-   * viewport
-   * ├── scroller
-   * │   └── tabs
-   * └── actions
-   *     └── plus
-   *
-   * 修正后：
-   *
-   * viewport
-   * └── scroller
-   *     ├── tabs
-   *     ├── sticky plus
-   *     └── remaining drag region
-   */
-  const fixedActionsTailPattern =
-    /        <\/div>\s*<\/div>\s*<div\s+className="chrome-workbench-tabs__actions"\s+data-window-drag-exclude\s*>\s*<button\s+aria-label="新建画布"\s+className="chrome-workbench-tabs__new-tab"\s+onClick=\{onCreate\}\s+type="button"\s*>\s*<Plus\s+aria-hidden="true"\s+className="size-3\.5"\s*\/>\s*<\/button>\s*<\/div>\s*<\/div>/
+  const removed = isRecord(changes.removed) ? Object.values(changes.removed) : []
 
-  if (!fixedActionsTailPattern.test(content)) {
-    throw new Error(
-      [
-        '无法找到上一版固定在右侧的加号按钮结构。',
-        '请确认 WorkbenchTabs.tsx 已执行过上一版标签栏脚本。',
-      ].join('\n'),
-    )
+  if (removed.length > 0) {
+    return false
   }
 
-  const stickyTail = `          <button
-            aria-label="新建画布"
-            className="chrome-workbench-tabs__new-tab chrome-workbench-tabs__new-tab--sticky"
-            data-window-drag-exclude
-            onClick={onCreate}
-            type="button"
-          >
-            <Plus
-              aria-hidden="true"
-              className="size-3.5"
-            />
-          </button>
+  const added = isRecord(changes.added) ? Object.values(changes.added) : []
 
-          <div
-            aria-hidden="true"
-            className="chrome-workbench-tabs__drag-region"
-          />
-        </div>
-      </div>
-    </div>`
+  const updatedValues = isRecord(changes.updated) ? Object.values(changes.updated) : []
 
-  content = content.replace(
-    fixedActionsTailPattern,
-    stickyTail,
+  const updated = updatedValues.flatMap((value) =>
+    Array.isArray(value) ? value : [value],
   )
 
-  writeFile(WORKBENCH_TABS_PATH, content)
-}
+  const affectedRecords = [...added, ...updated].filter(isRecord)
 
-function updateWorkbenchTabsCss() {
-  let content = readFile(WORKBENCH_TABS_CSS_PATH)
-
-  const overrideStart =
-    '/* BEGIN FIXED WORKBENCH TAB VIEWPORT */'
-  const overrideEnd =
-    '/* END FIXED WORKBENCH TAB VIEWPORT */'
-
-  const existingStart = content.indexOf(overrideStart)
-  const existingEnd = content.indexOf(overrideEnd)
-
-  if (existingStart >= 0 && existingEnd >= 0) {
-    content =
-      content.slice(0, existingStart) +
-      content.slice(
-        existingEnd + overrideEnd.length,
-      )
+  if (affectedRecords.length === 0) {
+    return false
   }
 
-  const overrides = `
+  return affectedRecords.every((record) => {
+    const typeName = record.typeName
+    return typeName === 'document' || typeName === 'page'
+  })
+}`
 
-/* BEGIN FIXED WORKBENCH TAB VIEWPORT */
-
-/*
- * Tab density:
- *
- * Tabs shrink before overflow, but retain enough room for an icon
- * and a recognizable title.
- */
-.chrome-workbench-tabs {
-  --chrome-tab-min-width: 88px;
-  --chrome-tab-preferred-width: 168px;
-  --chrome-tab-max-width: 220px;
-
-  display: flex;
-  align-items: stretch;
-  min-width: 0;
-}
-
-/*
- * The viewport clips tabs at a real layout boundary.
- * Tabs cannot paint below the sidebar toggle or window controls.
- */
-.chrome-workbench-tabs__viewport {
-  position: relative;
-  min-width: 0;
-  height: 100%;
-  flex: 1 1 auto;
-  overflow: hidden;
-}
-
-.chrome-workbench-tabs__scroller {
-  position: relative;
-  width: 100%;
-  min-width: 0;
-  height: 100%;
-  scroll-padding-inline: 4px 34px;
-  scroll-snap-type: x proximity;
-  overscroll-behavior-inline: contain;
-}
-
-.chrome-workbench-tab {
-  min-width: var(--chrome-tab-min-width);
-  max-width: var(--chrome-tab-max-width);
-  flex: 0 1 var(--chrome-tab-preferred-width);
-  scroll-snap-align: start;
-  scroll-snap-stop: normal;
-}
-
-/*
- * Narrow inactive tabs reserve their available width for the title.
- * Their close button becomes available when hovered.
- */
-.chrome-workbench-tab:not([data-active="true"]):not(:hover)
-  .chrome-workbench-tab__close {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.chrome-workbench-tab:not([data-active="true"]):hover
-  .chrome-workbench-tab__close {
-  pointer-events: auto;
-}
-
-/*
- * Inline-until-overflow:
- *
- * In normal layout, the button sits immediately after the final tab.
- * When tabs exceed the viewport, position: sticky keeps the button
- * visible at the right edge of the tab viewport.
- */
-.chrome-workbench-tabs__new-tab--sticky {
-  position: sticky;
-  z-index: 8;
-  right: 4px;
-  align-self: center;
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
-  margin: 0 3px 1px 2px;
-  background: var(--chrome-tab-strip);
-  isolation: isolate;
-}
-
-.chrome-workbench-tabs__new-tab--sticky:hover {
-  color: var(--color-foreground);
-  background: color-mix(
-    in srgb,
-    var(--color-foreground) 8%,
-    var(--chrome-tab-strip)
-  );
-}
-
-.chrome-workbench-tabs__new-tab--sticky:active {
-  background: color-mix(
-    in srgb,
-    var(--color-foreground) 14%,
-    var(--chrome-tab-strip)
-  );
-}
-
-/*
- * Empty space after the inline plus button remains draggable.
- * It grows only when the tab strip has unused space.
- */
-.chrome-workbench-tabs__drag-region {
-  height: 100%;
-  min-width: 24px;
-  flex: 1 0 24px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chrome-workbench-tabs__scroller {
-    scroll-behavior: auto;
+const fixedBootstrapFunction = `function isInitialDocumentBootstrapChange(entry: unknown): boolean {
+  if (!isRecord(entry)) {
+    return false
   }
-}
 
-/* END FIXED WORKBENCH TAB VIEWPORT */
-`
+  const changes = entry['changes']
 
-  content = `${content.trimEnd()}${overrides}\n`
+  if (!isRecord(changes)) {
+    return false
+  }
 
-  writeFile(WORKBENCH_TABS_CSS_PATH, content)
-}
+  const removedValue = changes['removed']
+  const removed = isRecord(removedValue)
+    ? Object.values(removedValue)
+    : []
 
-function run(command, args) {
-  console.log(`\n> ${command} ${args.join(' ')}`)
+  if (removed.length > 0) {
+    return false
+  }
+
+  const addedValue = changes['added']
+  const added = isRecord(addedValue)
+    ? Object.values(addedValue)
+    : []
+
+  const updatedValue = changes['updated']
+  const updatedValues = isRecord(updatedValue)
+    ? Object.values(updatedValue)
+    : []
+
+  const updated = updatedValues.flatMap((value) =>
+    Array.isArray(value) ? value : [value],
+  )
+
+  const affectedRecords = [...added, ...updated].filter(isRecord)
+
+  if (affectedRecords.length === 0) {
+    return false
+  }
+
+  return affectedRecords.every((record) => {
+    const typeName = record['typeName']
+
+    return typeName === 'document' || typeName === 'page'
+  })
+}`
+
+const oldRunFunction = `function run(command, args) {
+  console.log(\`\\n> \${command} \${args.join(' ')}\`)
 
   const result = spawnSync(command, args, {
-    cwd: ROOT,
+    cwd: root,
     stdio: 'inherit',
     shell: process.platform === 'win32',
-    windowsHide: true,
-    env: process.env,
   })
 
   if (result.error) {
@@ -297,52 +126,331 @@ function run(command, args) {
   }
 
   if (result.status !== 0) {
-    throw new Error(
-      `命令执行失败（退出码 ${String(result.status)}）：` +
-        `${command} ${args.join(' ')}`,
+    fail(\`\${command} 执行失败，退出码：\${String(result.status)}\`)
+  }
+}`
+
+const fixedRunFunction = `function run(command, args) {
+  const executable =
+    process.platform === 'win32' && command === 'pnpm'
+      ? 'pnpm.cmd'
+      : command
+
+  console.log(\`\\n> \${command} \${args.join(' ')}\`)
+
+  const result = spawnSync(executable, args, {
+    cwd: root,
+    stdio: 'inherit',
+    shell: false,
+  })
+
+  if (result.error) {
+    throw result.error
+  }
+
+  if (result.status !== 0) {
+    fail(
+      \`\${command} 执行失败，退出码：\${String(result.status)}\`,
+    )
+  }
+}`
+
+function fail(message) {
+  throw new Error(`[fix-refactor] ${message}`)
+}
+
+async function fileExists(filePath) {
+  try {
+    await readFile(filePath)
+    return true
+  } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    ) {
+      return false
+    }
+
+    throw error
+  }
+}
+
+function replaceExactlyOnce(source, search, replacement, description) {
+  const count = source.split(search).length - 1
+
+  if (count === 0 && source.includes(replacement)) {
+    console.log(`已修复，跳过：${description}`)
+    return {
+      content: source,
+      changed: false,
+    }
+  }
+
+  if (count !== 1) {
+    fail(
+      `${description}：预期找到 1 个旧代码块，实际找到 ${String(count)} 个。`,
+    )
+  }
+
+  return {
+    content: source.replace(search, replacement),
+    changed: true,
+  }
+}
+
+function replaceBootstrapFunctionByBoundary(source, description) {
+  const startMarker =
+    'function isInitialDocumentBootstrapChange(entry: unknown): boolean {'
+
+  const endMarker =
+    '\n\nfunction hasInitialDocumentAndPage'
+
+  const start = source.indexOf(startMarker)
+
+  if (start === -1) {
+    if (source.includes(fixedBootstrapFunction)) {
+      console.log(`已修复，跳过：${description}`)
+      return {
+        content: source,
+        changed: false,
+      }
+    }
+
+    fail(`${description}：没有找到初始化变更识别函数。`)
+  }
+
+  const end = source.indexOf(endMarker, start)
+
+  if (end === -1) {
+    fail(`${description}：无法确定初始化变更识别函数的结束位置。`)
+  }
+
+  const currentFunction = source.slice(start, end)
+
+  if (currentFunction === fixedBootstrapFunction) {
+    console.log(`已修复，跳过：${description}`)
+    return {
+      content: source,
+      changed: false,
+    }
+  }
+
+  return {
+    content:
+      source.slice(0, start) +
+      fixedBootstrapFunction +
+      source.slice(end),
+    changed: true,
+  }
+}
+
+async function assertRepository() {
+  const packageJsonPath = path.join(root, 'package.json')
+
+  if (!(await fileExists(packageJsonPath))) {
+    fail('当前目录不存在 package.json，请在仓库根目录执行。')
+  }
+
+  const packageJson = JSON.parse(
+    await readFile(packageJsonPath, 'utf8'),
+  )
+
+  if (packageJson.name !== 'hybrid-canvas') {
+    fail(
+      '当前目录不是 hybrid-canvas 仓库根目录，' +
+        `package.json.name=${String(packageJson.name)}`,
+    )
+  }
+
+  for (const requiredPath of [
+    editorSessionPath,
+    refactorScriptPath,
+    documentServicePath,
+    documentServiceTestPath,
+  ]) {
+    if (!(await fileExists(requiredPath))) {
+      fail(`缺少文件：${path.relative(root, requiredPath)}`)
+    }
+  }
+}
+
+async function patchEditorSession() {
+  const source = await readFile(editorSessionPath, 'utf8')
+
+  let result
+
+  if (source.includes(oldBootstrapFunction)) {
+    result = replaceExactlyOnce(
+      source,
+      oldBootstrapFunction,
+      fixedBootstrapFunction,
+      '修复 editor-session.ts 的索引签名访问',
+    )
+  } else {
+    result = replaceBootstrapFunctionByBoundary(
+      source,
+      '修复 editor-session.ts 的索引签名访问',
+    )
+  }
+
+  if (result.changed) {
+    await writeFile(editorSessionPath, result.content)
+    console.log(
+      `已修改：${path.relative(root, editorSessionPath)}`,
+    )
+  }
+
+  return result.changed
+}
+
+async function patchOriginalRefactorScript() {
+  let source = await readFile(refactorScriptPath, 'utf8')
+  let changed = false
+
+  /*
+   * refactor.mjs 内的 TypeScript 内容位于模板字符串中，
+   * 但函数边界仍然可以按普通字符串安全定位。
+   */
+  const bootstrapResult = source.includes(oldBootstrapFunction)
+    ? replaceExactlyOnce(
+        source,
+        oldBootstrapFunction,
+        fixedBootstrapFunction,
+        '修复 refactor.mjs 生成的 TypeScript 代码',
+      )
+    : replaceBootstrapFunctionByBoundary(
+        source,
+        '修复 refactor.mjs 生成的 TypeScript 代码',
+      )
+
+  source = bootstrapResult.content
+  changed ||= bootstrapResult.changed
+
+  const runResult = replaceExactlyOnce(
+    source,
+    oldRunFunction,
+    fixedRunFunction,
+    '修复 refactor.mjs 的 Windows 子进程调用',
+  )
+
+  source = runResult.content
+  changed ||= runResult.changed
+
+  if (changed) {
+    await writeFile(refactorScriptPath, source)
+    console.log(
+      `已修改：${path.relative(root, refactorScriptPath)}`,
+    )
+  }
+
+  return changed
+}
+
+function run(command, args) {
+  const executable =
+    process.platform === 'win32' && command === 'pnpm'
+      ? 'pnpm.cmd'
+      : command
+
+  console.log(`\n> ${command} ${args.join(' ')}`)
+
+  const result = spawnSync(executable, args, {
+    cwd: root,
+    stdio: 'inherit',
+    shell: false,
+  })
+
+  if (result.error) {
+    throw result.error
+  }
+
+  if (result.status !== 0) {
+    fail(
+      `${command} 执行失败，退出码：${String(result.status)}`,
     )
   }
 }
 
-function main() {
-  if (!process.argv.includes('--apply')) {
-    throw new Error('请添加 --apply 参数执行修改。')
-  }
-
-  console.log(`仓库目录：${ROOT}\n`)
-
-  updateWorkbenchTabsMarkup()
-  updateWorkbenchTabsCss()
-
+async function verify() {
   run('pnpm', [
     'exec',
     'biome',
     'format',
     '--write',
-    'features/workspace/src/presentation/shell/WorkbenchTabs.tsx',
-    'features/workspace/src/presentation/shell/chrome-workbench-tabs.css',
+    path.relative(root, editorSessionPath),
+    path.relative(root, refactorScriptPath),
   ])
 
   run('pnpm', [
     '--filter',
-    '@hybrid-canvas/workspace',
+    '@hybrid-canvas/canvas',
     'typecheck',
   ])
 
+  run('pnpm', [
+    '--filter',
+    '@hybrid-canvas/document',
+    'typecheck',
+  ])
+
+  run('pnpm', [
+    '--filter',
+    '@hybrid-canvas/document',
+    'test',
+  ])
+
   run('pnpm', ['test:architecture'])
-
-  console.log('\n修改完成：')
-  console.log('- 标签较少时，加号紧跟最后一个标签')
-  console.log('- 标签增加时，加号自然向右移动')
-  console.log('- 标签溢出时，加号吸附到视口右侧')
-  console.log('- 加号始终保持可见')
-  console.log('- 加号不再永久固定在顶部栏最右侧')
 }
 
-try {
-  main()
-} catch (error) {
-  console.error('\n修改失败：')
-  console.error(error instanceof Error ? error.message : error)
+async function main() {
+  await assertRepository()
+
+  if (!shouldApply) {
+    console.log(`
+该脚本将执行以下修改：
+
+1. 修复 editor-session.ts 的 TS4111 索引签名错误。
+2. 同步修复 refactor.mjs 中生成该函数的模板。
+3. 将 Windows 下的 spawnSync 改为 pnpm.cmd + shell:false。
+4. 执行格式化、类型检查、测试和架构检查。
+
+确认后执行：
+
+node tooling\\\\script\\\\fix-refactor.mjs --apply
+`)
+    return
+  }
+
+  console.log('开始修复重构脚本和已生成代码……\n')
+
+  const editorChanged = await patchEditorSession()
+  const scriptChanged = await patchOriginalRefactorScript()
+
+  if (!editorChanged && !scriptChanged) {
+    console.log('\n代码已经是修复后的状态，直接执行验证。')
+  } else {
+    console.log('\n代码修复完成，开始验证。')
+  }
+
+  await verify()
+
+  console.log(`
+修复完成。
+
+已验证：
+- @hybrid-canvas/canvas 类型检查
+- @hybrid-canvas/document 类型检查
+- @hybrid-canvas/document 回归测试
+- 架构测试
+
+现在不需要再次运行原始 refactor.mjs。
+`)
+}
+
+main().catch((error) => {
+  console.error('\n修复失败：')
+  console.error(error)
   process.exitCode = 1
-}
+})

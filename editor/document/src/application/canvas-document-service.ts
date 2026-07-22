@@ -92,17 +92,17 @@ interface OwnedCanvasSession {
   readonly editor: EditorSession
   stopObserving: () => void
   filePath: string | null
-  revision: number
-  savedRevision: number
+  currentFingerprint: string
+  savedFingerprint: string
   state: CanvasSessionState
   saveOperation: Promise<void> | null
 }
 
 const ALLOWED_TRANSITIONS: Readonly<Record<CanvasSessionState, readonly CanvasSessionState[]>> = {
   clean: ['dirty', 'saving', 'closing'],
-  dirty: ['saving', 'closing'],
+  dirty: ['clean', 'saving', 'closing'],
   saving: ['clean', 'dirty', 'failed'],
-  failed: ['dirty', 'saving', 'closing'],
+  failed: ['clean', 'dirty', 'saving', 'closing'],
   closing: ['closed'],
   closed: [],
 }
@@ -192,20 +192,28 @@ export function createCanvasDocumentService({
       return
     }
 
-    const capturedRevision = session.revision
+    /*
+     * Snapshot and fingerprint are captured together so a savepoint always
+     * identifies the exact document version written to disk.
+     */
+    const captured = session.editor.capturePersistenceSnapshot()
+
     transition(session, 'saving')
     emit()
 
     try {
-      const snapshot = session.editor.getSnapshot()
-      const content = serializeDrawDocument(snapshot)
+      const content = serializeDrawDocument(captured.snapshot)
 
       await persistence.write(filePath, content)
 
       session.filePath = filePath
-      session.savedRevision = capturedRevision
+      session.savedFingerprint = captured.fingerprint
+      session.currentFingerprint = session.editor.getDocumentFingerprint()
 
-      transition(session, session.revision === capturedRevision ? 'clean' : 'dirty')
+      transition(
+        session,
+        session.currentFingerprint === session.savedFingerprint ? 'clean' : 'dirty',
+      )
       emit()
     } catch (error) {
       transition(session, 'failed')
@@ -298,25 +306,48 @@ export function createCanvasDocumentService({
     filePath: string | null,
     initialState: 'clean' | 'dirty',
   ): OwnedCanvasSession {
+    const initialFingerprint = editor.getDocumentFingerprint()
+
     const session: OwnedCanvasSession = {
       editor,
       filePath,
-      revision: 0,
-      savedRevision: initialState === 'clean' ? 0 : -1,
+      currentFingerprint: initialFingerprint,
+      savedFingerprint: initialState === 'clean' ? initialFingerprint : '__NO_SAVEPOINT__',
       state: initialState,
       saveOperation: null,
       stopObserving: () => {},
     }
 
-    session.stopObserving = editor.onUserDocumentChange(() => {
+    session.stopObserving = editor.onDocumentChange((change) => {
       if (session.state === 'closing' || session.state === 'closed') {
         return
       }
 
-      session.revision += 1
+      session.currentFingerprint = change.fingerprint
 
-      if (session.state !== 'saving' && session.state !== 'dirty') {
-        transition(session, 'dirty')
+      /*
+       * A brand-new TLStore receives its default document/page records during
+       * first mount. Those records define the empty document's clean baseline.
+       */
+      if (change.kind === 'baseline-established' && session.state === 'clean') {
+        session.savedFingerprint = change.fingerprint
+        return
+      }
+
+      /*
+       * While a write is running, keep the public saving state. performSave()
+       * compares the latest fingerprint with the captured savepoint after the
+       * atomic write finishes.
+       */
+      if (session.state === 'saving') {
+        return
+      }
+
+      const nextState: 'clean' | 'dirty' =
+        session.currentFingerprint === session.savedFingerprint ? 'clean' : 'dirty'
+
+      if (session.state !== nextState) {
+        transition(session, nextState)
         emit()
       }
     })
