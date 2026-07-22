@@ -8,11 +8,20 @@ import { execFileSync } from 'node:child_process'
 const ROOT = process.cwd()
 const APPLY = process.argv.includes('--apply')
 const ROLLBACK = process.argv.includes('--rollback')
-const ALLOW_DIRTY = process.argv.includes('--allow-dirty')
+const ALLOW_DIRTY =
+  process.argv.includes('--allow-dirty')
+
+const TARGET_FILE =
+  'features/settings/src/presentation/SettingsDialog.tsx'
 
 const BACKUP_DIRECTORY = path.join(
   ROOT,
-  '.canvas-ui-phase-2a-backup',
+  '.canvas-ui-phase-2b-backup',
+)
+
+const BACKUP_FILE = path.join(
+  BACKUP_DIRECTORY,
+  TARGET_FILE,
 )
 
 const MANIFEST_FILE = path.join(
@@ -20,52 +29,13 @@ const MANIFEST_FILE = path.join(
   'manifest.json',
 )
 
-const FILES = {
-  rootPackage: 'package.json',
-
-  publicApi:
-    'foundations/design-system/src/public-api.ts',
-
-  dialog:
-    'foundations/design-system/src/components/ui/dialog.tsx',
-
-  field:
-    'foundations/design-system/src/components/ui/field.tsx',
-
-  confirmationDialog:
-    'foundations/design-system/src/components/ui/confirmation-dialog.tsx',
-
-  architectureCheck:
-    'tests/architecture/check-ui-dialogs.mjs',
-}
-
 function absolute(relativePath) {
   return path.join(ROOT, relativePath)
 }
 
-function read(relativePath) {
-  const filePath = absolute(relativePath)
-
-  if (!fs.existsSync(filePath)) {
-    return null
-  }
-
-  return fs.readFileSync(filePath, 'utf8')
-}
-
-function write(relativePath, content) {
-  const filePath = absolute(relativePath)
-
-  fs.mkdirSync(path.dirname(filePath), {
-    recursive: true,
-  })
-
-  fs.writeFileSync(filePath, content, 'utf8')
-}
-
 function assertRepository() {
   const packageFile = absolute(
-    FILES.rootPackage,
+    'package.json',
   )
 
   if (!fs.existsSync(packageFile)) {
@@ -80,7 +50,17 @@ function assertRepository() {
 
   if (packageJson.name !== 'hybrid-canvas') {
     throw new Error(
-      `当前目录不是目标仓库：${packageJson.name}`,
+      '当前目录不是 hybrid-canvas 仓库。',
+    )
+  }
+
+  const targetFile = absolute(
+    TARGET_FILE,
+  )
+
+  if (!fs.existsSync(targetFile)) {
+    throw new Error(
+      '缺少目标文件：' + TARGET_FILE,
     )
   }
 
@@ -100,853 +80,1026 @@ function assertRepository() {
   if (status.length > 0) {
     throw new Error(
       '当前 Git 工作区存在未提交修改。' +
-        '请先提交，或使用 --allow-dirty。',
+        '请先提交，或添加 --allow-dirty。',
     )
   }
 }
 
-const DIALOG_COMPONENT = String.raw`import { X } from 'lucide-react'
+const SETTINGS_DIALOG_SOURCE = String.raw`import {
+  applyThemePreference,
+  Button,
+  Dialog,
+  ErrorState,
+  Field,
+  LoadingState,
+  Select,
+  Switch,
+} from '@hybrid-canvas/design-system'
+import type {
+  AppSettings,
+  SettingsStore,
+  ThemeMode,
+} from '@hybrid-canvas/settings'
 import {
-  type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
+  useCallback,
   useEffect,
-  useId,
   useRef,
+  useState,
 } from 'react'
-import { createPortal } from 'react-dom'
-import { cn } from '../../lib/utils'
-import { Button } from './button'
 
-const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',')
+type SettingsSection =
+  | 'general'
+  | 'canvas'
+  | 'about'
 
-export interface DialogProps {
-  readonly open: boolean
-  readonly title: string
-  readonly description?: string
-  readonly children: ReactNode
-  readonly footer?: ReactNode
-  readonly className?: string
-  readonly contentClassName?: string
-  readonly busy?: boolean
-  readonly closeLabel?: string
-  readonly closeOnOverlayClick?: boolean
-  readonly onOpenChange: (open: boolean) => void
+type SettingsOperation =
+  | 'load'
+  | 'save'
+  | 'reset'
+
+type SettingsViewState =
+  | {
+      readonly status: 'idle'
+    }
+  | {
+      readonly status: 'loading'
+    }
+  | {
+      readonly status: 'ready'
+      readonly draft: AppSettings
+    }
+  | {
+      readonly status: 'saving'
+      readonly operation:
+        | 'save'
+        | 'reset'
+      readonly draft: AppSettings
+    }
+  | {
+      readonly status: 'error'
+      readonly operation: SettingsOperation
+      readonly message: string
+      readonly draft?: AppSettings
+    }
+
+interface SettingsSectionItem {
+  readonly id: SettingsSection
+  readonly label: string
 }
 
-export function Dialog({
+const SECTIONS:
+  readonly SettingsSectionItem[] = [
+    {
+      id: 'general',
+      label: '常规',
+    },
+    {
+      id: 'canvas',
+      label: '画布',
+    },
+    {
+      id: 'about',
+      label: '关于',
+    },
+  ]
+
+export interface SettingsDialogProps {
+  readonly open: boolean
+  readonly store: SettingsStore
+  readonly onOpenChange:
+    (open: boolean) => void
+}
+
+export function SettingsDialog({
   open,
-  title,
-  description,
-  children,
-  footer,
-  className,
-  contentClassName,
-  busy = false,
-  closeLabel = '关闭',
-  closeOnOverlayClick = true,
+  store,
   onOpenChange,
-}: DialogProps) {
-  const titleId = useId()
-  const descriptionId = useId()
+}: SettingsDialogProps) {
+  const [
+    section,
+    setSection,
+  ] = useState<SettingsSection>(
+    'general',
+  )
 
-  const panelRef =
-    useRef<HTMLDivElement>(null)
+  const [
+    state,
+    setState,
+  ] = useState<SettingsViewState>({
+    status: 'idle',
+  })
 
-  const closeButtonRef =
-    useRef<HTMLButtonElement>(null)
+  const initialSettingsRef =
+    useRef<AppSettings | null>(null)
+
+  const requestIdRef =
+    useRef(0)
+
+  const loadSettings =
+    useCallback(() => {
+      const requestId =
+        requestIdRef.current + 1
+
+      requestIdRef.current =
+        requestId
+
+      setState({
+        status: 'loading',
+      })
+
+      void store.load().then(
+        (settings) => {
+          if (
+            requestIdRef.current !==
+            requestId
+          ) {
+            return
+          }
+
+          initialSettingsRef.current =
+            settings
+
+          applyThemePreference(
+            settings.theme,
+          )
+
+          setState({
+            status: 'ready',
+            draft: settings,
+          })
+        },
+        (cause: unknown) => {
+          if (
+            requestIdRef.current !==
+            requestId
+          ) {
+            return
+          }
+
+          setState({
+            status: 'error',
+            operation: 'load',
+            message:
+              getErrorMessage(cause),
+          })
+        },
+      )
+    }, [
+      store,
+    ])
 
   useEffect(() => {
     if (!open) {
+      requestIdRef.current += 1
       return
     }
 
-    const previouslyFocused =
-      document.activeElement
-
-    const animationFrame =
-      window.requestAnimationFrame(() => {
-        closeButtonRef.current?.focus()
-      })
-
-    const handleDocumentKeyDown = (
-      event: KeyboardEvent,
-    ) => {
-      if (
-        event.key === 'Escape' &&
-        !busy
-      ) {
-        event.preventDefault()
-        onOpenChange(false)
-      }
-    }
-
-    document.addEventListener(
-      'keydown',
-      handleDocumentKeyDown,
-    )
+    setSection('general')
+    loadSettings()
 
     return () => {
-      window.cancelAnimationFrame(
-        animationFrame,
-      )
-
-      document.removeEventListener(
-        'keydown',
-        handleDocumentKeyDown,
-      )
-
-      if (
-        previouslyFocused instanceof
-        HTMLElement
-      ) {
-        previouslyFocused.focus()
-      }
+      requestIdRef.current += 1
     }
   }, [
-    busy,
-    onOpenChange,
+    loadSettings,
     open,
   ])
 
-  if (!open) {
-    return null
-  }
+  const draft =
+    getDraft(state)
 
-  const handlePanelKeyDown = (
-    event:
-      ReactKeyboardEvent<HTMLDivElement>,
+  const busy =
+    state.status === 'saving'
+
+  const updateDraft = (
+    nextSettings: AppSettings,
   ) => {
-    if (event.key !== 'Tab') {
+    if (busy) {
       return
     }
 
-    const focusableElements =
-      Array.from(
-        panelRef.current
-          ?.querySelectorAll<HTMLElement>(
-            FOCUSABLE_SELECTOR,
-          ) ?? [],
-      )
+    applyThemePreference(
+      nextSettings.theme,
+    )
 
-    const firstElement =
-      focusableElements[0]
-
-    const lastElement =
-      focusableElements[
-        focusableElements.length - 1
-      ]
-
-    if (!firstElement || !lastElement) {
-      event.preventDefault()
-      panelRef.current?.focus()
-      return
-    }
-
-    if (
-      event.shiftKey &&
-      document.activeElement ===
-        firstElement
-    ) {
-      event.preventDefault()
-      lastElement.focus()
-      return
-    }
-
-    if (
-      !event.shiftKey &&
-      document.activeElement ===
-        lastElement
-    ) {
-      event.preventDefault()
-      firstElement.focus()
-    }
+    setState({
+      status: 'ready',
+      draft: nextSettings,
+    })
   }
 
-  return createPortal(
-    <div
-      className={cn(
-        'fixed inset-0',
-        'z-[var(--ui-z-dialog)]',
-        'grid place-items-center',
-        'bg-black/40 p-4',
-        'backdrop-blur-[2px]',
-      )}
-      onMouseDown={(event) => {
-        if (
-          event.target ===
-            event.currentTarget &&
-          closeOnOverlayClick &&
-          !busy
-        ) {
-          onOpenChange(false)
-        }
-      }}
-      role="presentation"
-    >
-      <div
-        ref={panelRef}
-        aria-busy={
-          busy || undefined
-        }
-        aria-describedby={
-          description
-            ? descriptionId
-            : undefined
-        }
-        aria-labelledby={titleId}
-        aria-modal="true"
-        className={cn(
-          'flex w-full max-w-lg',
-          'max-h-[calc(100dvh-2rem)]',
-          'flex-col overflow-hidden',
-          'rounded-xl border',
-          'border-divider',
-          'bg-background',
-          'text-foreground',
-          'shadow-2xl outline-none',
-          'max-sm:max-h-dvh',
-          'max-sm:h-dvh',
-          'max-sm:max-w-none',
-          'max-sm:rounded-none',
-          className,
-        )}
-        onKeyDown={
-          handlePanelKeyDown
-        }
-        role="dialog"
-        tabIndex={-1}
-      >
-        <header
-          className={cn(
-            'flex min-h-14',
-            'shrink-0 items-start',
-            'justify-between gap-4',
-            'border-b border-divider',
-            'px-5 py-4',
-          )}
-        >
-          <div className="min-w-0">
-            <h2
-              id={titleId}
-              className="text-base font-semibold"
-            >
-              {title}
-            </h2>
+  const closeDialog = () => {
+    if (busy) {
+      return
+    }
 
-            {description ? (
-              <p
-                id={descriptionId}
-                className={cn(
-                  'mt-1 text-sm',
-                  'leading-5',
-                  'text-muted-foreground',
-                )}
-              >
-                {description}
-              </p>
-            ) : null}
-          </div>
+    const initialSettings =
+      initialSettingsRef.current
 
-          <Button
-            ref={closeButtonRef}
-            aria-label={closeLabel}
-            disabled={busy}
-            onClick={() => {
-              onOpenChange(false)
-            }}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <X
-              aria-hidden="true"
-              className="size-4"
-            />
-          </Button>
-        </header>
+    if (initialSettings) {
+      applyThemePreference(
+        initialSettings.theme,
+      )
+    }
 
-        <div
-          className={cn(
-            'min-h-0 flex-1',
-            'overflow-auto',
-            contentClassName,
-          )}
-        >
-          {children}
-        </div>
+    onOpenChange(false)
+  }
 
-        {footer ? (
-          <footer
-            className={cn(
-              'shrink-0',
-              'border-t border-divider',
-              'px-5 py-3',
-            )}
-          >
-            {footer}
-          </footer>
-        ) : null}
-      </div>
-    </div>,
-    document.body,
-  )
-}
-`
+  const saveSettings = () => {
+    if (!draft || busy) {
+      return
+    }
 
-const FIELD_COMPONENT = String.raw`import {
-  type ReactNode,
-  useId,
-} from 'react'
-import { cn } from '../../lib/utils'
+    const settingsToSave = draft
 
-export interface FieldControlIds {
-  readonly inputId: string
-  readonly descriptionId?: string
-  readonly errorId?: string
-  readonly describedBy?: string
-}
+    setState({
+      status: 'saving',
+      operation: 'save',
+      draft: settingsToSave,
+    })
 
-export interface FieldProps {
-  readonly label: string
-  readonly description?: string
-  readonly error?: string
-  readonly required?: boolean
-  readonly className?: string
-  readonly children: (
-    ids: FieldControlIds,
-  ) => ReactNode
-}
+    void store.save(
+      settingsToSave,
+    ).then(
+      () => {
+        initialSettingsRef.current =
+          settingsToSave
 
-export function Field({
-  label,
-  description,
-  error,
-  required = false,
-  className,
-  children,
-}: FieldProps) {
-  const inputId = useId()
+        applyThemePreference(
+          settingsToSave.theme,
+        )
 
-  const descriptionId =
-  description
-    ? inputId + '-description'
-    : undefined
+        setState({
+          status: 'ready',
+          draft: settingsToSave,
+        })
 
-  const errorId =
-  error
-    ? inputId + '-error'
-    : undefined
+        onOpenChange(false)
+      },
+      (cause: unknown) => {
+        setState({
+          status: 'error',
+          operation: 'save',
+          message:
+            getErrorMessage(cause),
+          draft: settingsToSave,
+        })
+      },
+    )
+  }
 
-  const describedBy = [
-    descriptionId,
-    errorId,
-  ]
-    .filter(Boolean)
-    .join(' ') || undefined
+  const resetSettings = () => {
+    if (!draft || busy) {
+      return
+    }
 
-  return (
-    <div
-      className={cn(
-        'grid gap-2',
-        className,
-      )}
-    >
-      <label
-        className="text-sm font-medium"
-        htmlFor={inputId}
-      >
-        {label}
+    const currentDraft = draft
 
-        {required ? (
-          <>
-            <span
-              aria-hidden="true"
-              className="ml-1 text-destructive"
-            >
-              *
-            </span>
+    setState({
+      status: 'saving',
+      operation: 'reset',
+      draft: currentDraft,
+    })
 
-            <span className="sr-only">
-              必填
-            </span>
-          </>
-        ) : null}
-      </label>
+    void store.reset().then(
+      (resetSettingsValue) => {
+        initialSettingsRef.current =
+          resetSettingsValue
 
-      {description ? (
-        <p
-          id={descriptionId}
-          className={cn(
-            'text-xs leading-5',
-            'text-muted-foreground',
-          )}
-        >
-          {description}
-        </p>
-      ) : null}
+        applyThemePreference(
+          resetSettingsValue.theme,
+        )
 
-      {children({
-        inputId,
-        descriptionId,
-        errorId,
-        describedBy,
-      })}
+        setState({
+          status: 'ready',
+          draft:
+            resetSettingsValue,
+        })
+      },
+      (cause: unknown) => {
+        setState({
+          status: 'error',
+          operation: 'reset',
+          message:
+            getErrorMessage(cause),
+          draft: currentDraft,
+        })
+      },
+    )
+  }
 
-      {error ? (
-        <p
-          id={errorId}
-          className={cn(
-            'flex items-start gap-1',
-            'text-xs leading-5',
-            'text-destructive',
-          )}
-          role="alert"
-        >
-          {error}
-        </p>
-      ) : null}
-    </div>
-  )
-}
-`
+  const retryLastOperation = () => {
+    if (
+      state.status !== 'error'
+    ) {
+      return
+    }
 
-const CONFIRMATION_DIALOG_COMPONENT = String.raw`import { Button } from './button'
-import { Dialog } from './dialog'
+    if (
+      state.operation === 'load'
+    ) {
+      loadSettings()
+      return
+    }
 
-export interface ConfirmationDialogProps {
-  readonly open: boolean
-  readonly title: string
-  readonly description: string
-  readonly confirmLabel: string
-  readonly cancelLabel?: string
-  readonly destructive?: boolean
-  readonly busy?: boolean
-  readonly onConfirm: () => void
-  readonly onCancel: () => void
-}
+    if (
+      state.operation === 'save'
+    ) {
+      saveSettings()
+      return
+    }
 
-export function ConfirmationDialog({
-  open,
-  title,
-  description,
-  confirmLabel,
-  cancelLabel = '取消',
-  destructive = false,
-  busy = false,
-  onConfirm,
-  onCancel,
-}: ConfirmationDialogProps) {
+    resetSettings()
+  }
+
   return (
     <Dialog
       open={open}
-      title={title}
-      description={description}
       busy={busy}
+      className={[
+        'h-[min(680px,calc(100dvh-2rem))]',
+        'max-w-[920px]',
+        'max-sm:h-dvh',
+        'max-sm:max-h-dvh',
+        'max-sm:rounded-none',
+      ].join(' ')}
       closeOnOverlayClick={!busy}
+      description="调整 Hybrid Canvas 的使用体验"
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
-          onCancel()
+          closeDialog()
         }
       }}
+      title="设置"
       footer={
-        <div
-          className={cnFooter()}
-        >
-          <Button
-            disabled={busy}
-            onClick={onCancel}
-            type="button"
-            variant="ghost"
-          >
-            {cancelLabel}
-          </Button>
-
-          <Button
-            aria-busy={
-              busy || undefined
-            }
-            disabled={busy}
-            onClick={onConfirm}
-            type="button"
-            variant={
-              destructive
-                ? 'destructive'
-                : 'default'
-            }
-          >
-            {busy
-              ? '处理中…'
-              : confirmLabel}
-          </Button>
-        </div>
+        <SettingsFooter
+          busy={busy}
+          canReset={Boolean(draft)}
+          canSave={Boolean(draft)}
+          operation={
+            state.status === 'saving'
+              ? state.operation
+              : undefined
+          }
+          onCancel={closeDialog}
+          onReset={resetSettings}
+          onSave={saveSettings}
+        />
       }
     >
-      <div className="sr-only">
-        {description}
+      <div
+        className={[
+          'grid h-full min-h-0',
+          'grid-cols-[224px_minmax(0,1fr)]',
+          'max-sm:grid-cols-1',
+          'max-sm:grid-rows-[auto_minmax(0,1fr)]',
+        ].join(' ')}
+      >
+        <SettingsNavigation
+          activeSection={section}
+          onSectionChange={
+            setSection
+          }
+        />
+
+        <main
+          className={[
+            'min-h-0 overflow-y-auto',
+            'p-6 max-sm:p-4',
+          ].join(' ')}
+        >
+          {state.status === 'idle' ||
+          state.status === 'loading' ? (
+            <LoadingState
+              label="正在读取设置…"
+            />
+          ) : null}
+
+          {state.status === 'error' &&
+          !state.draft ? (
+            <ErrorState
+              message={state.message}
+              onRetry={
+                retryLastOperation
+              }
+            />
+          ) : null}
+
+          {state.status === 'error' &&
+          state.draft ? (
+            <SettingsErrorBanner
+              message={state.message}
+              operation={
+                state.operation
+              }
+              onRetry={
+                retryLastOperation
+              }
+            />
+          ) : null}
+
+          {draft &&
+          section === 'general' ? (
+            <GeneralSettingsPanel
+              settings={draft}
+              onChange={updateDraft}
+            />
+          ) : null}
+
+          {draft &&
+          section === 'canvas' ? (
+            <CanvasSettingsPanel
+              settings={draft}
+              onChange={updateDraft}
+            />
+          ) : null}
+
+          {section === 'about' ? (
+            <AboutSettingsPanel />
+          ) : null}
+        </main>
       </div>
     </Dialog>
   )
 }
 
-function cnFooter(): string {
-  return [
-    'flex flex-wrap',
-    'justify-end gap-2',
-  ].join(' ')
-}
-`
-
-const DIALOG_ARCHITECTURE_CHECK = String.raw`#!/usr/bin/env node
-
-import fs from 'node:fs'
-import path from 'node:path'
-import process from 'node:process'
-
-const ROOT = process.cwd()
-
-const IGNORED_DIRECTORIES = new Set([
-  '.git',
-  '.turbo',
-  '.canvas-ui-refactor-backup',
-  '.canvas-ui-phase-2a-backup',
-  'dist',
-  'node_modules',
-  'target',
-])
-
-function walk(directory) {
-  return fs
-    .readdirSync(
-      directory,
-      {
-        withFileTypes: true,
-      },
-    )
-    .flatMap((entry) => {
-      if (
-        IGNORED_DIRECTORIES.has(
-          entry.name,
-        )
-      ) {
-        return []
-      }
-
-      const entryPath = path.join(
-        directory,
-        entry.name,
-      )
-
-      if (entry.isDirectory()) {
-        return walk(entryPath)
-      }
-
-      return entry.isFile()
-        ? [entryPath]
-        : []
-    })
+interface SettingsNavigationProps {
+  readonly activeSection:
+    SettingsSection
+  readonly onSectionChange:
+    (section: SettingsSection) => void
 }
 
-const sourceFiles = walk(ROOT).filter(
-  (filePath) =>
-    filePath.endsWith('.tsx'),
-)
-
-const failures = []
-
-for (const filePath of sourceFiles) {
-  const relativePath =
-    path.relative(ROOT, filePath)
-
-  const normalizedPath =
-    relativePath.split(path.sep).join('/')
-
-  const content =
-    fs.readFileSync(
-      filePath,
-      'utf8',
-    )
-
-  const isDesignSystemDialog =
-    normalizedPath.startsWith(
-      'foundations/design-system/' +
-        'src/components/ui/',
-    )
-
-  if (
-    !isDesignSystemDialog &&
-    /role=["']dialog["']/.test(content) &&
-    /fixed[\s\S]{0,300}inset-0/.test(
-      content,
-    )
-  ) {
-    failures.push(
-      normalizedPath +
-        ': Feature 不应自行实现 Dialog Overlay',
-    )
-  }
-
-  if (
-    /role=["']dialog["']/.test(content) &&
-    !/aria-labelledby=/.test(content)
-  ) {
-    failures.push(
-      normalizedPath +
-        ': Dialog 缺少 aria-labelledby',
-    )
-  }
-
-  if (
-    /role=["']dialog["']/.test(content) &&
-    !/aria-modal=/.test(content)
-  ) {
-    failures.push(
-      normalizedPath +
-        ': Dialog 缺少 aria-modal',
-    )
-  }
-}
-
-if (failures.length > 0) {
-  console.error(
-
-  process.exitCode = 1
-} else {
-  console.log(
-    'Dialog architecture checks passed.',
-  )
-}
-`
-
-const GENERATED_FILES = new Map([
-  [
-    FILES.dialog,
-    DIALOG_COMPONENT,
-  ],
-  [
-    FILES.field,
-    FIELD_COMPONENT,
-  ],
-  [
-    FILES.confirmationDialog,
-    CONFIRMATION_DIALOG_COMPONENT,
-  ],
-  [
-    FILES.architectureCheck,
-    DIALOG_ARCHITECTURE_CHECK,
-  ],
-])
-
-function transformPublicApi(content) {
-  const exportsToAdd = [
-    "export { Dialog, type DialogProps } from './components/ui/dialog'",
-    "export { Field, type FieldControlIds, type FieldProps } from './components/ui/field'",
-    "export { ConfirmationDialog, type ConfirmationDialogProps } from './components/ui/confirmation-dialog'",
-  ]
-
-  let next = content.trimEnd()
-
-  for (const exportLine of exportsToAdd) {
-    const modulePath =
-      exportLine.match(/from '([^']+)'/)?.[1]
-
-    if (!modulePath) {
-      throw new Error(
-        `无法解析导出语句：${exportLine}`,
-      )
-    }
-
-    const existingExportPattern =
-      new RegExp(
-        `export\\s+\\{[^}]*\\}\\s+from\\s+['"]${escapeRegExp(modulePath)}['"]`,
-        's',
-      )
-
-    if (
-      !existingExportPattern.test(next)
-    ) {
-      next += `\n${exportLine}`
-    }
-  }
-
-  return `${next}\n`
-}
-
-function transformRootPackage(content) {
-  const packageJson = JSON.parse(content)
-
-  packageJson.scripts ??= {}
-
-  const command =
-    'node tests/architecture/check-ui-dialogs.mjs'
-
-  const existing =
-    packageJson.scripts[
-      'test:architecture'
-    ]
-
-  if (!existing) {
-    packageJson.scripts[
-      'test:architecture'
-    ] = command
-  } else if (!existing.includes(command)) {
-    packageJson.scripts[
-      'test:architecture'
-    ] = `${existing} && ${command}`
-  }
-
+function SettingsNavigation({
+  activeSection,
+  onSectionChange,
+}: SettingsNavigationProps) {
   return (
-    JSON.stringify(
-      packageJson,
-      null,
-      2,
-    ) + '\n'
+    <nav
+      aria-label="设置分类"
+      className={[
+        'border-r border-divider',
+        'bg-muted/30 p-4',
+        'max-sm:flex',
+        'max-sm:gap-1',
+        'max-sm:overflow-x-auto',
+        'max-sm:border-b',
+        'max-sm:border-r-0',
+        'max-sm:p-2',
+      ].join(' ')}
+    >
+      {SECTIONS.map((item) => {
+        const active =
+          activeSection === item.id
+
+        return (
+          <button
+            key={item.id}
+            aria-current={
+              active
+                ? 'page'
+                : undefined
+            }
+            className={[
+              'w-full rounded-md',
+              'px-3 py-2',
+              'text-left text-sm',
+              'outline-none',
+              'focus-visible:ring-2',
+              'focus-visible:ring-ring',
+              'max-sm:w-auto',
+              'max-sm:shrink-0',
+              active
+                ? 'bg-accent font-medium text-accent-foreground'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+            ].join(' ')}
+            onClick={() => {
+              onSectionChange(
+                item.id,
+              )
+            }}
+            type="button"
+          >
+            {item.label}
+          </button>
+        )
+      })}
+    </nav>
   )
 }
 
-function escapeRegExp(value) {
-  return value.replace(
-    /[.*+?^${}()|[\]\\]/g,
-    '\\$&',
+interface SettingsPanelProps {
+  readonly settings: AppSettings
+  readonly onChange:
+    (settings: AppSettings) => void
+}
+
+function GeneralSettingsPanel({
+  settings,
+  onChange,
+}: SettingsPanelProps) {
+  return (
+    <section
+      aria-labelledby="general-settings-title"
+      className="grid max-w-xl gap-8"
+    >
+      <header>
+        <h3
+          id="general-settings-title"
+          className="text-base font-semibold"
+        >
+          常规
+        </h3>
+
+        <p
+          className={[
+            'mt-1 text-sm',
+            'text-muted-foreground',
+          ].join(' ')}
+        >
+          调整应用外观、语言和保存行为。
+        </p>
+      </header>
+
+      <Field
+        label="外观"
+        description="选择应用界面的颜色模式。"
+      >
+        {({
+          inputId,
+          describedBy,
+        }) => (
+          <Select
+            id={inputId}
+            aria-describedby={
+              describedBy
+            }
+            value={settings.theme}
+            onChange={(event) => {
+              onChange({
+                ...settings,
+                theme:
+                  event.target
+                    .value as ThemeMode,
+              })
+            }}
+          >
+            <option value="light">
+              浅色
+            </option>
+
+            <option value="dark">
+              深色
+            </option>
+
+            <option value="system">
+              跟随系统
+            </option>
+          </Select>
+        )}
+      </Field>
+
+      <Field
+        label="语言"
+        description="控制应用界面使用的语言。"
+      >
+        {({
+          inputId,
+          describedBy,
+        }) => (
+          <Select
+            id={inputId}
+            aria-describedby={
+              describedBy
+            }
+            value={settings.language}
+            onChange={(event) => {
+              onChange({
+                ...settings,
+                language:
+                  event.target.value as
+                    AppSettings['language'],
+              })
+            }}
+          >
+            <option value="zh-CN">
+              简体中文
+            </option>
+
+            <option value="en">
+              English
+            </option>
+          </Select>
+        )}
+      </Field>
+
+      <SettingsToggle
+        checked={settings.autoSave}
+        description="编辑画布时自动保存到当前文件。"
+        label="自动保存"
+        onChange={(checked) => {
+          onChange({
+            ...settings,
+            autoSave: checked,
+          })
+        }}
+      />
+    </section>
   )
 }
 
-const TRANSFORMS = new Map([
-  [
-    FILES.publicApi,
-    transformPublicApi,
-  ],
-  [
-    FILES.rootPackage,
-    transformRootPackage,
-  ],
-])
+function CanvasSettingsPanel({
+  settings,
+  onChange,
+}: SettingsPanelProps) {
+  return (
+    <section
+      aria-labelledby="canvas-settings-title"
+      className="grid max-w-xl gap-6"
+    >
+      <header>
+        <h3
+          id="canvas-settings-title"
+          className="text-base font-semibold"
+        >
+          画布
+        </h3>
 
-function buildChanges() {
-  const changes = []
+        <p
+          className={[
+            'mt-1 text-sm',
+            'text-muted-foreground',
+          ].join(' ')}
+        >
+          调整网格、吸附和默认缩放。
+        </p>
+      </header>
 
-  for (
-    const [
-      relativePath,
-      nextContent,
-    ] of GENERATED_FILES
-  ) {
-    const originalContent =
-      read(relativePath)
+      <SettingsToggle
+        checked={
+          settings.canvas.showGrid
+        }
+        description="在画布背景中显示辅助网格。"
+        label="显示网格"
+        onChange={(checked) => {
+          onChange({
+            ...settings,
+            canvas: {
+              ...settings.canvas,
+              showGrid: checked,
+            },
+          })
+        }}
+      />
 
-    if (originalContent !== nextContent) {
-      changes.push({
-        relativePath,
-        originalContent,
-        nextContent,
-      })
-    }
-  }
+      <SettingsToggle
+        checked={
+          settings.canvas.snapToGrid
+        }
+        description="移动图形时自动吸附到网格。"
+        label="吸附到网格"
+        onChange={(checked) => {
+          onChange({
+            ...settings,
+            canvas: {
+              ...settings.canvas,
+              snapToGrid: checked,
+            },
+          })
+        }}
+      />
 
-  for (
-    const [
-      relativePath,
-      transform,
-    ] of TRANSFORMS
-  ) {
-    const originalContent =
-      read(relativePath)
+      <Field
+        label="默认缩放"
+        description="新建画布时使用的默认缩放比例。"
+      >
+        {({
+          inputId,
+          describedBy,
+        }) => (
+          <Select
+            id={inputId}
+            aria-describedby={
+              describedBy
+            }
+            value={
+              settings.canvas.defaultZoom
+            }
+            onChange={(event) => {
+              onChange({
+                ...settings,
+                canvas: {
+                  ...settings.canvas,
+                  defaultZoom:
+                    Number(
+                      event.target.value,
+                    ),
+                },
+              })
+            }}
+          >
+            <option value="1">
+              100%
+            </option>
 
-    if (originalContent === null) {
-      throw new Error(
-        `缺少目标文件：${relativePath}`,
-      )
-    }
+            <option value="0.75">
+              75%
+            </option>
 
-    const nextContent =
-      transform(originalContent)
-
-    if (originalContent !== nextContent) {
-      changes.push({
-        relativePath,
-        originalContent,
-        nextContent,
-      })
-    }
-  }
-
-  return changes
+            <option value="0.5">
+              50%
+            </option>
+          </Select>
+        )}
+      </Field>
+    </section>
+  )
 }
 
-function backup(change) {
-  const backupFile = path.join(
-    BACKUP_DIRECTORY,
-    change.relativePath,
+interface SettingsToggleProps {
+  readonly checked: boolean
+  readonly label: string
+  readonly description: string
+  readonly onChange:
+    (checked: boolean) => void
+}
+
+function SettingsToggle({
+  checked,
+  label,
+  description,
+  onChange,
+}: SettingsToggleProps) {
+  return (
+    <div
+      className={[
+        'flex min-h-14',
+        'items-center',
+        'justify-between',
+        'gap-5',
+        'border-b',
+        'border-divider',
+        'py-3',
+      ].join(' ')}
+    >
+      <div>
+        <div className="text-sm font-medium">
+          {label}
+        </div>
+
+        <p
+          className={[
+            'mt-1 text-xs',
+            'leading-5',
+            'text-muted-foreground',
+          ].join(' ')}
+        >
+          {description}
+        </p>
+      </div>
+
+      <Switch
+        aria-label={label}
+        checked={checked}
+        onCheckedChange={onChange}
+      />
+    </div>
+  )
+}
+
+function AboutSettingsPanel() {
+  return (
+    <section
+      aria-labelledby="about-settings-title"
+      className={[
+        'max-w-xl rounded-lg',
+        'border border-divider',
+        'p-5',
+      ].join(' ')}
+    >
+      <h3
+        id="about-settings-title"
+        className="text-base font-semibold"
+      >
+        Hybrid Canvas
+      </h3>
+
+      <p
+        className={[
+          'mt-2 text-sm',
+          'text-muted-foreground',
+        ].join(' ')}
+      >
+        基于 tldraw 的本地优先画布应用。
+      </p>
+
+      <dl
+        className={[
+          'mt-5 grid',
+          'grid-cols-[100px_1fr]',
+          'gap-y-2 text-sm',
+        ].join(' ')}
+      >
+        <dt className="text-muted-foreground">
+          版本
+        </dt>
+
+        <dd>0.1.0</dd>
+
+        <dt className="text-muted-foreground">
+          设置存储
+        </dt>
+
+        <dd>Tauri Store</dd>
+      </dl>
+    </section>
+  )
+}
+
+interface SettingsFooterProps {
+  readonly busy: boolean
+  readonly canSave: boolean
+  readonly canReset: boolean
+  readonly operation?:
+    | 'save'
+    | 'reset'
+  readonly onSave: () => void
+  readonly onReset: () => void
+  readonly onCancel: () => void
+}
+
+function SettingsFooter({
+  busy,
+  canSave,
+  canReset,
+  operation,
+  onSave,
+  onReset,
+  onCancel,
+}: SettingsFooterProps) {
+  return (
+    <div
+      className={[
+        'flex flex-wrap',
+        'items-center',
+        'justify-between',
+        'gap-3',
+      ].join(' ')}
+    >
+      <Button
+        disabled={
+          busy || !canReset
+        }
+        onClick={onReset}
+        type="button"
+        variant="ghost"
+      >
+        {busy &&
+        operation === 'reset'
+          ? '正在重置…'
+          : '恢复默认'}
+      </Button>
+
+      <div className="flex gap-2">
+        <Button
+          disabled={busy}
+          onClick={onCancel}
+          type="button"
+          variant="ghost"
+        >
+          取消
+        </Button>
+
+        <Button
+          disabled={
+            busy || !canSave
+          }
+          onClick={onSave}
+          type="button"
+        >
+          {busy &&
+          operation === 'save'
+            ? '正在保存…'
+            : '保存'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+interface SettingsErrorBannerProps {
+  readonly operation:
+    SettingsOperation
+  readonly message: string
+  readonly onRetry: () => void
+}
+
+function SettingsErrorBanner({
+  operation,
+  message,
+  onRetry,
+}: SettingsErrorBannerProps) {
+  return (
+    <div
+      className={[
+        'mb-5 rounded-md',
+        'border',
+        'border-destructive/30',
+        'bg-destructive/10',
+        'p-3',
+      ].join(' ')}
+      role="alert"
+    >
+      <p
+        className={[
+          'text-sm',
+          'text-destructive',
+        ].join(' ')}
+      >
+        {getOperationLabel(
+          operation,
+        )}
+        ：{message}
+      </p>
+
+      <Button
+        className="mt-3"
+        onClick={onRetry}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        重试
+      </Button>
+    </div>
+  )
+}
+
+function getDraft(
+  state: SettingsViewState,
+): AppSettings | undefined {
+  if ('draft' in state) {
+    return state.draft
+  }
+
+  return undefined
+}
+
+function getOperationLabel(
+  operation: SettingsOperation,
+): string {
+  if (operation === 'load') {
+    return '读取设置失败'
+  }
+
+  if (operation === 'save') {
+    return '保存设置失败'
+  }
+
+  return '重置设置失败'
+}
+
+function getErrorMessage(
+  cause: unknown,
+): string {
+  if (
+    cause instanceof Error &&
+    cause.message.trim().length > 0
+  ) {
+    return cause.message
+  }
+
+  return '设置操作失败，请重试。'
+}
+`
+
+function backupCurrentFile() {
+  const sourceFile = absolute(
+    TARGET_FILE,
   )
 
   fs.mkdirSync(
-    path.dirname(backupFile),
+    path.dirname(BACKUP_FILE),
     {
       recursive: true,
     },
   )
 
-  if (change.originalContent === null) {
-    fs.writeFileSync(
-      `${backupFile}.missing`,
-      '',
-      'utf8',
-    )
-
-    return
-  }
-
-  fs.writeFileSync(
-    backupFile,
-    change.originalContent,
-    'utf8',
+  fs.copyFileSync(
+    sourceFile,
+    BACKUP_FILE,
   )
-}
-
-function applyChanges(changes) {
-  if (fs.existsSync(BACKUP_DIRECTORY)) {
-    throw new Error(
-      'Phase 2A 备份目录已经存在。' +
-        '请先执行 --rollback。',
-    )
-  }
-
-  fs.mkdirSync(
-    BACKUP_DIRECTORY,
-    {
-      recursive: true,
-    },
-  )
-
-  for (const change of changes) {
-    backup(change)
-
-    write(
-      change.relativePath,
-      change.nextContent,
-    )
-  }
-
-  const manifest = {
-    createdAt:
-      new Date().toISOString(),
-
-    files: changes.map(
-      (change) =>
-        change.relativePath,
-    ),
-  }
 
   fs.writeFileSync(
     MANIFEST_FILE,
     JSON.stringify(
-      manifest,
+      {
+        createdAt:
+          new Date().toISOString(),
+
+        targetFile:
+          TARGET_FILE,
+      },
       null,
       2,
     ),
@@ -954,64 +1107,42 @@ function applyChanges(changes) {
   )
 }
 
-function rollbackChanges() {
-  if (!fs.existsSync(MANIFEST_FILE)) {
+function applyRefactor() {
+  if (fs.existsSync(BACKUP_DIRECTORY)) {
     throw new Error(
-      '没有找到 Phase 2A 回滚清单。',
+      'Phase 2B 备份目录已经存在。' +
+        '请先回滚或删除该备份目录。',
     )
   }
 
-  const manifest = JSON.parse(
-    fs.readFileSync(
-      MANIFEST_FILE,
-      'utf8',
-    ),
+  backupCurrentFile()
+
+  fs.writeFileSync(
+    absolute(TARGET_FILE),
+    SETTINGS_DIALOG_SOURCE,
+    'utf8',
   )
 
-  for (
-    const relativePath of manifest.files
+  console.log(
+    'Phase 2B 已应用：' +
+      TARGET_FILE,
+  )
+}
+
+function rollbackRefactor() {
+  if (
+    !fs.existsSync(MANIFEST_FILE) ||
+    !fs.existsSync(BACKUP_FILE)
   ) {
-    const backupFile = path.join(
-      BACKUP_DIRECTORY,
-      relativePath,
-    )
-
-    const missingMarker =
-      `${backupFile}.missing`
-
-    if (fs.existsSync(missingMarker)) {
-      fs.rmSync(
-        absolute(relativePath),
-        {
-          force: true,
-          recursive: true,
-        },
-      )
-
-      continue
-    }
-
-    if (!fs.existsSync(backupFile)) {
-      throw new Error(
-        `备份文件缺失：${relativePath}`,
-      )
-    }
-
-    const destination =
-      absolute(relativePath)
-
-    fs.mkdirSync(
-      path.dirname(destination),
-      {
-        recursive: true,
-      },
-    )
-
-    fs.copyFileSync(
-      backupFile,
-      destination,
+    throw new Error(
+      '没有找到 Phase 2B 回滚文件。',
     )
   }
+
+  fs.copyFileSync(
+    BACKUP_FILE,
+    absolute(TARGET_FILE),
+  )
 
   fs.rmSync(
     BACKUP_DIRECTORY,
@@ -1022,46 +1153,73 @@ function rollbackChanges() {
   )
 
   console.log(
-    'Phase 2A 已回滚。',
+    'Phase 2B 已回滚。',
   )
 }
 
-function printPlan(changes) {
+function printPlan() {
+  const currentContent =
+    fs.readFileSync(
+      absolute(TARGET_FILE),
+      'utf8',
+    )
+
+  if (
+    currentContent ===
+    SETTINGS_DIALOG_SOURCE
+  ) {
+    console.log(
+      'SettingsDialog 已经是目标版本。',
+    )
+
+    return false
+  }
+
   console.log(
-    `Phase 2A 将修改 ${changes.length} 个文件：`,
+    'Phase 2B 将重构：',
   )
 
-  for (const change of changes) {
-    const operation =
-      change.originalContent === null
-        ? '创建'
-        : '修改'
+  console.log(
+    '- ' + TARGET_FILE,
+  )
 
-    console.log(
-      `- [${operation}] ${change.relativePath}`,
-    )
-  }
+  console.log(
+    '- 使用判别联合管理加载、保存和错误状态',
+  )
+
+  console.log(
+    '- 支持主题实时预览和取消恢复',
+  )
+
+  console.log(
+    '- 支持读取、保存和重置失败重试',
+  )
+
+  console.log(
+    '- 使用统一 Dialog、Field、Select、Switch',
+  )
+
+  console.log(
+    '- 增加窄屏全屏布局',
+  )
+
+  return true
 }
 
 function main() {
   assertRepository()
 
   if (ROLLBACK) {
-    rollbackChanges()
+    rollbackRefactor()
     return
   }
 
-  const changes = buildChanges()
+  const hasChanges =
+    printPlan()
 
-  if (changes.length === 0) {
-    console.log(
-      'Phase 2A 没有需要应用的修改。',
-    )
-
+  if (!hasChanges) {
     return
   }
-
-  printPlan(changes)
 
   if (!APPLY) {
     console.log('')
@@ -1070,18 +1228,13 @@ function main() {
     )
 
     console.log(
-      '应用命令：node tooling/script/refactor-ui-phase-2a.mjs --apply',
+      '应用：node tooling/script/refactor-ui-phase-2b.mjs --apply --allow-dirty',
     )
 
     return
   }
 
-  applyChanges(changes)
-
-  console.log('')
-  console.log(
-    'Phase 2A 已应用。',
-  )
+  applyRefactor()
 
   console.log('')
   console.log('请执行：')
@@ -1092,9 +1245,9 @@ function main() {
   console.log('pnpm test')
   console.log('pnpm build:desktop')
   console.log('')
-  console.log('回滚命令：')
+  console.log('回滚：')
   console.log(
-    'node tooling/script/refactor-ui-phase-2a.mjs --rollback --allow-dirty',
+    'node tooling/script/refactor-ui-phase-2b.mjs --rollback --allow-dirty',
   )
 }
 
