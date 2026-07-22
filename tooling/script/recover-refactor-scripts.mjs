@@ -6,37 +6,923 @@ import process from 'node:process'
 import { execFileSync } from 'node:child_process'
 
 const ROOT = process.cwd()
-const APPLY = process.argv.includes('--apply')
-const ROLLBACK = process.argv.includes('--rollback')
+const APPLY =
+  process.argv.includes('--apply')
 const ALLOW_DIRTY =
   process.argv.includes('--allow-dirty')
 
-const TARGET_FILE =
-  'features/settings/src/presentation/SettingsDialog.tsx'
+const GENERATED_FILES = {
+  'features/workspace/src/presentation/shell/useWorkspaceLayout.ts':
+    String.raw`import { useSyncExternalStore } from 'react'
 
-const BACKUP_DIRECTORY = path.join(
-  ROOT,
-  '.canvas-ui-phase-2b-backup',
-)
+export type WorkspaceLayoutMode =
+  | 'wide'
+  | 'compact'
+  | 'narrow'
 
-const BACKUP_FILE = path.join(
-  BACKUP_DIRECTORY,
-  TARGET_FILE,
-)
+function getSnapshot():
+  WorkspaceLayoutMode {
+  if (window.innerWidth >= 1280) {
+    return 'wide'
+  }
 
-const MANIFEST_FILE = path.join(
-  BACKUP_DIRECTORY,
-  'manifest.json',
-)
+  if (window.innerWidth >= 900) {
+    return 'compact'
+  }
+
+  return 'narrow'
+}
+
+function getServerSnapshot():
+  WorkspaceLayoutMode {
+  return 'wide'
+}
+
+function subscribe(
+  listener: () => void,
+): () => void {
+  window.addEventListener(
+    'resize',
+    listener,
+    {
+      passive: true,
+    },
+  )
+
+  return () => {
+    window.removeEventListener(
+      'resize',
+      listener,
+    )
+  }
+}
+
+export function useWorkspaceLayoutMode():
+  WorkspaceLayoutMode {
+  return useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  )
+}
+`,
+
+  'features/workspace/src/presentation/shell/SidebarSplitter.tsx':
+    String.raw`export interface SidebarSplitterProps {
+  readonly width: number
+  readonly min: number
+  readonly max: number
+  readonly onResizeStart: () => void
+  readonly onResize:
+    (width: number) => void
+  readonly onCollapse: () => void
+}
+
+export function SidebarSplitter({
+  width,
+  min,
+  max,
+  onResizeStart,
+  onResize,
+  onCollapse,
+}: SidebarSplitterProps) {
+  const clamp = (
+    nextWidth: number,
+  ) => {
+    return Math.max(
+      min,
+      Math.min(
+        max,
+        nextWidth,
+      ),
+    )
+  }
+
+  return (
+    <div
+      aria-label="调整侧边栏宽度"
+      aria-orientation="vertical"
+      aria-valuemax={max}
+      aria-valuemin={min}
+      aria-valuenow={
+        Math.round(width)
+      }
+      className={[
+        'absolute right-0 top-0',
+        'z-20 h-full w-2',
+        'translate-x-1/2',
+        'cursor-col-resize',
+        'bg-transparent',
+        'outline-none',
+        'hover:bg-primary/15',
+        'focus-visible:bg-primary/25',
+      ].join(' ')}
+      onDoubleClick={onCollapse}
+      onKeyDown={(event) => {
+        switch (event.key) {
+          case 'ArrowLeft':
+            event.preventDefault()
+
+            onResize(
+              clamp(width - 16),
+            )
+            break
+
+          case 'ArrowRight':
+            event.preventDefault()
+
+            onResize(
+              clamp(width + 16),
+            )
+            break
+
+          case 'Home':
+            event.preventDefault()
+            onResize(min)
+            break
+
+          case 'End':
+            event.preventDefault()
+            onResize(max)
+            break
+        }
+      }}
+      onPointerDown={(event) => {
+        if (event.button !== 0) {
+          return
+        }
+
+        event.preventDefault()
+
+        document.body.style.cursor =
+          'col-resize'
+
+        document.body.style.userSelect =
+          'none'
+
+        onResizeStart()
+      }}
+      role="separator"
+      tabIndex={0}
+    />
+  )
+}
+`,
+
+  'features/workspace/src/presentation/shell/WorkspaceShell.tsx':
+    String.raw`import {
+  Button,
+  TooltipProvider,
+} from '@hybrid-canvas/design-system'
+import {
+  PanelLeftClose,
+  PanelRightClose,
+  PanelRightOpen,
+} from 'lucide-react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import type {
+  WorkspaceShellProps,
+} from '../../contracts/shell-contract'
+import {
+  NoCanvasSurface,
+} from '../empty/NoCanvasSurface'
+import {
+  InspectorHost,
+} from '../inspector/InspectorHost'
+import {
+  StatusBarHost,
+} from '../status/StatusBarHost'
+import {
+  ActivityRail,
+  type CanvasNavigationItemId,
+} from './ActivityRail'
+import {
+  SidebarSplitter,
+} from './SidebarSplitter'
+import {
+  WorkspaceFrame,
+} from './WorkspaceFrame'
+import {
+  WorkspaceSidebar,
+} from './WorkspaceSidebar'
+import {
+  useWorkspaceLayoutMode,
+} from './useWorkspaceLayout'
+
+const SIDEBAR_MIN = 220
+const SIDEBAR_MAX = 420
+const SIDEBAR_DEFAULT = 280
+
+export function WorkspaceShell({
+  model,
+  actions,
+  pages,
+  renderChrome,
+  editor,
+  inspector,
+  statusLeft,
+  statusRight,
+  assistantOverlay,
+  overlays,
+}: WorkspaceShellProps) {
+  const mode =
+    useWorkspaceLayoutMode()
+
+  const [
+    isSidebarOpen,
+    setSidebarOpen,
+  ] = useState(true)
+
+  const [
+    isInspectorOpen,
+    setInspectorOpen,
+  ] = useState(
+    mode === 'wide',
+  )
+
+  const [
+    activeNavigationItem,
+    setActiveNavigationItem,
+  ] = useState<
+    CanvasNavigationItemId
+  >('pages')
+
+  const [
+    sidebarWidth,
+    setSidebarWidth,
+  ] = useState(
+    SIDEBAR_DEFAULT,
+  )
+
+  const [
+    isResizing,
+    setResizing,
+  ] = useState(false)
+
+  const rootRef =
+    useRef<HTMLDivElement | null>(
+      null,
+    )
+
+  const previousModeRef =
+    useRef(mode)
+
+  const hasCanvas =
+    model.activeCanvas !== null
+
+  const dockSidebar =
+    mode !== 'narrow' &&
+    isSidebarOpen
+
+  const dockInspector =
+    mode === 'wide' &&
+    isInspectorOpen &&
+    hasCanvas
+
+  useEffect(() => {
+    const previousMode =
+      previousModeRef.current
+
+    if (previousMode === mode) {
+      return
+    }
+
+    previousModeRef.current = mode
+
+    if (mode === 'compact') {
+      setInspectorOpen(false)
+    }
+
+    if (mode === 'narrow') {
+      setSidebarOpen(false)
+      setInspectorOpen(false)
+    }
+  }, [
+    mode,
+  ])
+
+  useEffect(() => {
+    const handlePointerMove = (
+      event: PointerEvent,
+    ) => {
+      if (
+        !isResizing ||
+        !rootRef.current
+      ) {
+        return
+      }
+
+      const rootRectangle =
+        rootRef.current
+          .getBoundingClientRect()
+
+      const computedStyle =
+        window.getComputedStyle(
+          rootRef.current,
+        )
+
+      const railWidth =
+        Number.parseFloat(
+          computedStyle
+            .getPropertyValue(
+              '--activity-rail-width',
+            ),
+        ) || 48
+
+      const nextWidth =
+        event.clientX -
+        rootRectangle.left -
+        railWidth
+
+      setSidebarWidth(
+        Math.max(
+          SIDEBAR_MIN,
+          Math.min(
+            SIDEBAR_MAX,
+            nextWidth,
+          ),
+        ),
+      )
+    }
+
+    const stopResize = () => {
+      setResizing(false)
+
+      document.body.style
+        .removeProperty('cursor')
+
+      document.body.style
+        .removeProperty(
+          'user-select',
+        )
+    }
+
+    const handleKeyDown = (
+      event: KeyboardEvent,
+    ) => {
+      if (
+        event.key === 'Escape' &&
+        isResizing
+      ) {
+        stopResize()
+      }
+    }
+
+    window.addEventListener(
+      'pointermove',
+      handlePointerMove,
+    )
+
+    window.addEventListener(
+      'pointerup',
+      stopResize,
+    )
+
+    window.addEventListener(
+      'pointercancel',
+      stopResize,
+    )
+
+    window.addEventListener(
+      'blur',
+      stopResize,
+    )
+
+    document.addEventListener(
+      'keydown',
+      handleKeyDown,
+    )
+
+    return () => {
+      window.removeEventListener(
+        'pointermove',
+        handlePointerMove,
+      )
+
+      window.removeEventListener(
+        'pointerup',
+        stopResize,
+      )
+
+      window.removeEventListener(
+        'pointercancel',
+        stopResize,
+      )
+
+      window.removeEventListener(
+        'blur',
+        stopResize,
+      )
+
+      document.removeEventListener(
+        'keydown',
+        handleKeyDown,
+      )
+
+      document.body.style
+        .removeProperty('cursor')
+
+      document.body.style
+        .removeProperty(
+          'user-select',
+        )
+    }
+  }, [
+    isResizing,
+  ])
+
+  useEffect(() => {
+    if (
+      mode === 'wide' ||
+      (
+        !isSidebarOpen &&
+        !isInspectorOpen
+      )
+    ) {
+      return
+    }
+
+    const handleKeyDown = (
+      event: KeyboardEvent,
+    ) => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      event.preventDefault()
+      setSidebarOpen(false)
+      setInspectorOpen(false)
+    }
+
+    document.addEventListener(
+      'keydown',
+      handleKeyDown,
+    )
+
+    return () => {
+      document.removeEventListener(
+        'keydown',
+        handleKeyDown,
+      )
+    }
+  }, [
+    isInspectorOpen,
+    isSidebarOpen,
+    mode,
+  ])
+
+  const openSidebar = () => {
+    if (mode === 'narrow') {
+      setInspectorOpen(false)
+    }
+
+    setSidebarOpen(true)
+  }
+
+  const openInspector = () => {
+    if (mode !== 'wide') {
+      setSidebarOpen(false)
+    }
+
+    setInspectorOpen(true)
+  }
+
+  const toggleSidebar = () => {
+    if (isSidebarOpen) {
+      setSidebarOpen(false)
+      return
+    }
+
+    openSidebar()
+  }
+
+  const columns = useMemo(
+    () =>
+      [
+        'var(--activity-rail-width)',
+
+        dockSidebar
+          ? sidebarWidth + 'px'
+          : '0px',
+
+        'minmax(0, 1fr)',
+
+        dockInspector
+          ? 'var(--inspector-width)'
+          : '0px',
+      ].join(' '),
+    [
+      dockInspector,
+      dockSidebar,
+      sidebarWidth,
+    ],
+  )
+
+  const rows = hasCanvas
+    ? [
+        'var(--chrome-height)',
+        'minmax(0, 1fr)',
+        'var(--status-height)',
+      ].join(' ')
+    : [
+        'var(--chrome-height)',
+        'minmax(0, 1fr)',
+      ].join(' ')
+
+  const chrome = (
+    <header
+      className={[
+        'col-span-full row-1',
+        'min-h-0 min-w-0',
+        'border-b border-divider',
+        'bg-chrome',
+      ].join(' ')}
+    >
+      {renderChrome({
+        isSidebarOpen,
+        sidebarWidth:
+          dockSidebar
+            ? sidebarWidth
+            : 0,
+
+        tabs: model.tabs,
+
+        onSidebarToggle:
+          toggleSidebar,
+
+        onActivateCanvas:
+          actions.activateCanvas,
+
+        onCloseCanvas:
+          actions.closeCanvas,
+
+        onCreateCanvas:
+          actions.createCanvas,
+      })}
+    </header>
+  )
+
+  const rail = (
+    <div
+      className={[
+        'row-[2/-1]',
+        'min-h-0',
+        'border-r',
+        'border-divider',
+        'bg-sidebar',
+      ].join(' ')}
+      style={{
+        gridColumn: 1,
+      }}
+    >
+      <ActivityRail
+        activeItemId={
+          activeNavigationItem
+        }
+        onItemActivate={(item) => {
+          setActiveNavigationItem(
+            item,
+          )
+
+          openSidebar()
+        }}
+        onSettingsOpen={
+          actions.openSettingsWindow
+        }
+      />
+    </div>
+  )
+
+  const sidebarContent = (
+    <WorkspaceSidebar
+      activeNavigationItem={
+        activeNavigationItem
+      }
+      onActivatePage={
+        actions.activatePage
+      }
+      onClose={() => {
+        setSidebarOpen(false)
+      }}
+      onCreatePage={
+        actions.createPage
+      }
+      pages={pages}
+    />
+  )
+
+  const sidebar = (
+    <>
+      <div
+        className={[
+          'relative row-[2/-1]',
+          'min-h-0 min-w-0',
+          'border-r',
+          'border-divider',
+          'bg-sidebar',
+        ].join(' ')}
+        style={{
+          gridColumn: 2,
+        }}
+      >
+        {dockSidebar
+          ? sidebarContent
+          : null}
+
+        {dockSidebar ? (
+          <SidebarSplitter
+            max={SIDEBAR_MAX}
+            min={SIDEBAR_MIN}
+            onCollapse={() => {
+              setSidebarOpen(false)
+            }}
+            onResize={
+              setSidebarWidth
+            }
+            onResizeStart={() => {
+              setResizing(true)
+            }}
+            width={sidebarWidth}
+          />
+        ) : null}
+      </div>
+
+      {mode === 'narrow' &&
+      isSidebarOpen ? (
+        <div
+          className={[
+            'fixed inset-x-0',
+            'bottom-0',
+            'top-[var(--chrome-height)]',
+            'z-[var(--ui-z-popover)]',
+          ].join(' ')}
+        >
+          <button
+            aria-label="关闭工作区导航"
+            className={[
+              'absolute inset-0',
+              'cursor-default',
+              'bg-black/35',
+            ].join(' ')}
+            onClick={() => {
+              setSidebarOpen(false)
+            }}
+            type="button"
+          />
+
+          <aside
+            aria-label="工作区导航"
+            className={[
+              'relative',
+              'ml-[var(--activity-rail-width)]',
+              'h-full',
+              'w-[min(82vw,320px)]',
+              'border-r',
+              'border-divider',
+              'bg-sidebar',
+              'shadow-2xl',
+            ].join(' ')}
+          >
+            <div className="relative h-full">
+              {sidebarContent}
+
+              <Button
+                aria-label="关闭侧边栏"
+                className={[
+                  'absolute',
+                  'right-2 top-2',
+                ].join(' ')}
+                onClick={() => {
+                  setSidebarOpen(false)
+                }}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <PanelLeftClose
+                  aria-hidden="true"
+                  className="size-4"
+                />
+              </Button>
+            </div>
+          </aside>
+        </div>
+      ) : null}
+    </>
+  )
+
+  const canvas = (
+    <section
+      aria-label="内容区"
+      className={[
+        'row-2',
+        'min-h-0 min-w-0',
+        'overflow-hidden',
+      ].join(' ')}
+      style={{
+        gridColumn: 3,
+      }}
+    >
+      <main
+        className={[
+          'relative h-full',
+          'min-h-0 min-w-0',
+          'overflow-hidden',
+        ].join(' ')}
+      >
+        {hasCanvas
+          ? editor
+          : (
+              <NoCanvasSurface
+                onCreateDocument={
+                  actions.createCanvas
+                }
+                onOpenDocument={
+                  actions.openCanvas
+                }
+              />
+            )}
+      </main>
+    </section>
+  )
+
+  const inspectorContent = (
+    <InspectorHost>
+      {inspector}
+    </InspectorHost>
+  )
+
+  const inspectorRegion =
+    hasCanvas ? (
+      <>
+        <aside
+          aria-label="属性检查器"
+          className={
+            dockInspector
+              ? [
+                  'row-[2/-1]',
+                  'min-h-0 min-w-0',
+                  'border-l',
+                  'border-divider',
+                ].join(' ')
+              : 'pointer-events-none'
+          }
+          style={{
+            gridColumn: 4,
+          }}
+        >
+          {dockInspector ? (
+            <div className="relative h-full">
+              <Button
+                aria-label="收起属性面板"
+                className={[
+                  'absolute -left-8',
+                  'top-3 z-30',
+                  'size-7',
+                  'rounded-r-none',
+                ].join(' ')}
+                onClick={() => {
+                  setInspectorOpen(false)
+                }}
+                size="icon"
+                type="button"
+                variant="outline"
+              >
+                <PanelRightClose
+                  aria-hidden="true"
+                  className="size-3.5"
+                />
+              </Button>
+
+              {inspectorContent}
+            </div>
+          ) : null}
+        </aside>
+
+        {!dockInspector &&
+        !isInspectorOpen ? (
+          <Button
+            aria-expanded={false}
+            aria-label="展开属性面板"
+            className={[
+              'fixed right-0',
+              'top-[calc(var(--chrome-height)+12px)]',
+              'z-30',
+              'rounded-r-none',
+            ].join(' ')}
+            onClick={openInspector}
+            size="icon"
+            type="button"
+            variant="outline"
+          >
+            <PanelRightOpen
+              aria-hidden="true"
+              className="size-4"
+            />
+          </Button>
+        ) : null}
+
+        {mode !== 'wide' &&
+        isInspectorOpen ? (
+          <div
+            className={[
+              'fixed inset-x-0',
+              'bottom-0',
+              'top-[var(--chrome-height)]',
+              'z-[var(--ui-z-popover)]',
+            ].join(' ')}
+          >
+            <button
+              aria-label="关闭属性检查器"
+              className={[
+                'absolute inset-0',
+                'cursor-default',
+                'bg-black/35',
+              ].join(' ')}
+              onClick={() => {
+                setInspectorOpen(false)
+              }}
+              type="button"
+            />
+
+            <aside
+              aria-label="属性检查器"
+              className={[
+                'relative ml-auto',
+                'h-full',
+                'w-[min(92vw,340px)]',
+                'border-l',
+                'border-divider',
+                'bg-sidebar',
+                'shadow-2xl',
+              ].join(' ')}
+            >
+              {inspectorContent}
+            </aside>
+          </div>
+        ) : null}
+      </>
+    ) : null
+
+  const status = hasCanvas ? (
+    <div
+      className="min-w-0"
+      style={{
+        gridColumn: 3,
+        gridRow: 3,
+      }}
+    >
+      <StatusBarHost
+        left={statusLeft}
+        right={statusRight}
+      />
+    </div>
+  ) : null
+
+  return (
+    <TooltipProvider
+      delayDuration={450}
+    >
+      <WorkspaceFrame
+        rootRef={rootRef}
+        chrome={chrome}
+        rail={rail}
+        sidebar={sidebar}
+        canvas={canvas}
+        inspector={inspectorRegion}
+        statusBar={status}
+        overlays={
+          <>
+            {assistantOverlay}
+            {overlays}
+          </>
+        }
+        gridTemplateColumns={
+          columns
+        }
+        gridTemplateRows={rows}
+      />
+    </TooltipProvider>
+  )
+}
+`,
+}
 
 function absolute(relativePath) {
-  return path.join(ROOT, relativePath)
+  return path.join(
+    ROOT,
+    relativePath,
+  )
 }
 
 function assertRepository() {
-  const packageFile = absolute(
-    'package.json',
-  )
+  const packageFile =
+    absolute('package.json')
 
   if (!fs.existsSync(packageFile)) {
     throw new Error(
@@ -45,26 +931,38 @@ function assertRepository() {
   }
 
   const packageJson = JSON.parse(
-    fs.readFileSync(packageFile, 'utf8'),
+    fs.readFileSync(
+      packageFile,
+      'utf8',
+    ),
   )
 
-  if (packageJson.name !== 'hybrid-canvas') {
+  if (
+    packageJson.name !==
+    'hybrid-canvas'
+  ) {
     throw new Error(
       '当前目录不是 hybrid-canvas 仓库。',
     )
   }
 
-  const targetFile = absolute(
-    TARGET_FILE,
-  )
-
-  if (!fs.existsSync(targetFile)) {
-    throw new Error(
-      '缺少目标文件：' + TARGET_FILE,
-    )
+  for (
+    const relativePath of
+      Object.keys(GENERATED_FILES)
+  ) {
+    if (
+      !fs.existsSync(
+        absolute(relativePath),
+      )
+    ) {
+      throw new Error(
+        '缺少目标文件：' +
+          relativePath,
+      )
+    }
   }
 
-  if (ROLLBACK || ALLOW_DIRTY) {
+  if (ALLOW_DIRTY) {
     return
   }
 
@@ -79,1147 +977,100 @@ function assertRepository() {
 
   if (status.length > 0) {
     throw new Error(
-      '当前 Git 工作区存在未提交修改。' +
-        '请先提交，或添加 --allow-dirty。',
+      'Git 工作区不干净。' +
+        '请先提交，或显式使用 --allow-dirty。',
     )
   }
 }
 
-const SETTINGS_DIALOG_SOURCE = String.raw`import {
-  applyThemePreference,
-  Button,
-  Dialog,
-  ErrorState,
-  Field,
-  LoadingState,
-  Select,
-  Switch,
-} from '@hybrid-canvas/design-system'
-import type {
-  AppSettings,
-  SettingsStore,
-  ThemeMode,
-} from '@hybrid-canvas/settings'
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
-
-type SettingsSection =
-  | 'general'
-  | 'canvas'
-  | 'about'
-
-type SettingsOperation =
-  | 'load'
-  | 'save'
-  | 'reset'
-
-type SettingsViewState =
-  | {
-      readonly status: 'idle'
-    }
-  | {
-      readonly status: 'loading'
-    }
-  | {
-      readonly status: 'ready'
-      readonly draft: AppSettings
-    }
-  | {
-      readonly status: 'saving'
-      readonly operation:
-        | 'save'
-        | 'reset'
-      readonly draft: AppSettings
-    }
-  | {
-      readonly status: 'error'
-      readonly operation: SettingsOperation
-      readonly message: string
-      readonly draft?: AppSettings
-    }
-
-interface SettingsSectionItem {
-  readonly id: SettingsSection
-  readonly label: string
-}
-
-const SECTIONS:
-  readonly SettingsSectionItem[] = [
-    {
-      id: 'general',
-      label: '常规',
-    },
-    {
-      id: 'canvas',
-      label: '画布',
-    },
-    {
-      id: 'about',
-      label: '关于',
-    },
-  ]
-
-export interface SettingsDialogProps {
-  readonly open: boolean
-  readonly store: SettingsStore
-  readonly onOpenChange:
-    (open: boolean) => void
-}
-
-export function SettingsDialog({
-  open,
-  store,
-  onOpenChange,
-}: SettingsDialogProps) {
-  const [
-    section,
-    setSection,
-  ] = useState<SettingsSection>(
-    'general',
+function buildChanges() {
+  return Object.entries(
+    GENERATED_FILES,
   )
+    .map(
+      ([
+        relativePath,
+        nextContent,
+      ]) => ({
+        relativePath,
 
-  const [
-    state,
-    setState,
-  ] = useState<SettingsViewState>({
-    status: 'idle',
-  })
+        currentContent:
+          fs.readFileSync(
+            absolute(relativePath),
+            'utf8',
+          ),
 
-  const initialSettingsRef =
-    useRef<AppSettings | null>(null)
-
-  const requestIdRef =
-    useRef(0)
-
-  const loadSettings =
-    useCallback(() => {
-      const requestId =
-        requestIdRef.current + 1
-
-      requestIdRef.current =
-        requestId
-
-      setState({
-        status: 'loading',
-      })
-
-      void store.load().then(
-        (settings) => {
-          if (
-            requestIdRef.current !==
-            requestId
-          ) {
-            return
-          }
-
-          initialSettingsRef.current =
-            settings
-
-          applyThemePreference(
-            settings.theme,
-          )
-
-          setState({
-            status: 'ready',
-            draft: settings,
-          })
-        },
-        (cause: unknown) => {
-          if (
-            requestIdRef.current !==
-            requestId
-          ) {
-            return
-          }
-
-          setState({
-            status: 'error',
-            operation: 'load',
-            message:
-              getErrorMessage(cause),
-          })
-        },
-      )
-    }, [
-      store,
-    ])
-
-  useEffect(() => {
-    if (!open) {
-      requestIdRef.current += 1
-      return
-    }
-
-    setSection('general')
-    loadSettings()
-
-    return () => {
-      requestIdRef.current += 1
-    }
-  }, [
-    loadSettings,
-    open,
-  ])
-
-  const draft =
-    getDraft(state)
-
-  const busy =
-    state.status === 'saving'
-
-  const updateDraft = (
-    nextSettings: AppSettings,
-  ) => {
-    if (busy) {
-      return
-    }
-
-    applyThemePreference(
-      nextSettings.theme,
+        nextContent,
+      }),
     )
-
-    setState({
-      status: 'ready',
-      draft: nextSettings,
-    })
-  }
-
-  const closeDialog = () => {
-    if (busy) {
-      return
-    }
-
-    const initialSettings =
-      initialSettingsRef.current
-
-    if (initialSettings) {
-      applyThemePreference(
-        initialSettings.theme,
-      )
-    }
-
-    onOpenChange(false)
-  }
-
-  const saveSettings = () => {
-    if (!draft || busy) {
-      return
-    }
-
-    const settingsToSave = draft
-
-    setState({
-      status: 'saving',
-      operation: 'save',
-      draft: settingsToSave,
-    })
-
-    void store.save(
-      settingsToSave,
-    ).then(
-      () => {
-        initialSettingsRef.current =
-          settingsToSave
-
-        applyThemePreference(
-          settingsToSave.theme,
-        )
-
-        setState({
-          status: 'ready',
-          draft: settingsToSave,
-        })
-
-        onOpenChange(false)
-      },
-      (cause: unknown) => {
-        setState({
-          status: 'error',
-          operation: 'save',
-          message:
-            getErrorMessage(cause),
-          draft: settingsToSave,
-        })
-      },
+    .filter(
+      (change) =>
+        change.currentContent !==
+        change.nextContent,
     )
-  }
-
-  const resetSettings = () => {
-    if (!draft || busy) {
-      return
-    }
-
-    const currentDraft = draft
-
-    setState({
-      status: 'saving',
-      operation: 'reset',
-      draft: currentDraft,
-    })
-
-    void store.reset().then(
-      (resetSettingsValue) => {
-        initialSettingsRef.current =
-          resetSettingsValue
-
-        applyThemePreference(
-          resetSettingsValue.theme,
-        )
-
-        setState({
-          status: 'ready',
-          draft:
-            resetSettingsValue,
-        })
-      },
-      (cause: unknown) => {
-        setState({
-          status: 'error',
-          operation: 'reset',
-          message:
-            getErrorMessage(cause),
-          draft: currentDraft,
-        })
-      },
-    )
-  }
-
-  const retryLastOperation = () => {
-    if (
-      state.status !== 'error'
-    ) {
-      return
-    }
-
-    if (
-      state.operation === 'load'
-    ) {
-      loadSettings()
-      return
-    }
-
-    if (
-      state.operation === 'save'
-    ) {
-      saveSettings()
-      return
-    }
-
-    resetSettings()
-  }
-
-  return (
-    <Dialog
-      open={open}
-      busy={busy}
-      className={[
-        'h-[min(680px,calc(100dvh-2rem))]',
-        'max-w-[920px]',
-        'max-sm:h-dvh',
-        'max-sm:max-h-dvh',
-        'max-sm:rounded-none',
-      ].join(' ')}
-      closeOnOverlayClick={!busy}
-      description="调整 Hybrid Canvas 的使用体验"
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          closeDialog()
-        }
-      }}
-      title="设置"
-      footer={
-        <SettingsFooter
-          busy={busy}
-          canReset={Boolean(draft)}
-          canSave={Boolean(draft)}
-          operation={
-            state.status === 'saving'
-              ? state.operation
-              : undefined
-          }
-          onCancel={closeDialog}
-          onReset={resetSettings}
-          onSave={saveSettings}
-        />
-      }
-    >
-      <div
-        className={[
-          'grid h-full min-h-0',
-          'grid-cols-[224px_minmax(0,1fr)]',
-          'max-sm:grid-cols-1',
-          'max-sm:grid-rows-[auto_minmax(0,1fr)]',
-        ].join(' ')}
-      >
-        <SettingsNavigation
-          activeSection={section}
-          onSectionChange={
-            setSection
-          }
-        />
-
-        <main
-          className={[
-            'min-h-0 overflow-y-auto',
-            'p-6 max-sm:p-4',
-          ].join(' ')}
-        >
-          {state.status === 'idle' ||
-          state.status === 'loading' ? (
-            <LoadingState
-              label="正在读取设置…"
-            />
-          ) : null}
-
-          {state.status === 'error' &&
-          !state.draft ? (
-            <ErrorState
-              message={state.message}
-              onRetry={
-                retryLastOperation
-              }
-            />
-          ) : null}
-
-          {state.status === 'error' &&
-          state.draft ? (
-            <SettingsErrorBanner
-              message={state.message}
-              operation={
-                state.operation
-              }
-              onRetry={
-                retryLastOperation
-              }
-            />
-          ) : null}
-
-          {draft &&
-          section === 'general' ? (
-            <GeneralSettingsPanel
-              settings={draft}
-              onChange={updateDraft}
-            />
-          ) : null}
-
-          {draft &&
-          section === 'canvas' ? (
-            <CanvasSettingsPanel
-              settings={draft}
-              onChange={updateDraft}
-            />
-          ) : null}
-
-          {section === 'about' ? (
-            <AboutSettingsPanel />
-          ) : null}
-        </main>
-      </div>
-    </Dialog>
-  )
 }
 
-interface SettingsNavigationProps {
-  readonly activeSection:
-    SettingsSection
-  readonly onSectionChange:
-    (section: SettingsSection) => void
-}
-
-function SettingsNavigation({
-  activeSection,
-  onSectionChange,
-}: SettingsNavigationProps) {
-  return (
-    <nav
-      aria-label="设置分类"
-      className={[
-        'border-r border-divider',
-        'bg-muted/30 p-4',
-        'max-sm:flex',
-        'max-sm:gap-1',
-        'max-sm:overflow-x-auto',
-        'max-sm:border-b',
-        'max-sm:border-r-0',
-        'max-sm:p-2',
-      ].join(' ')}
-    >
-      {SECTIONS.map((item) => {
-        const active =
-          activeSection === item.id
-
-        return (
-          <button
-            key={item.id}
-            aria-current={
-              active
-                ? 'page'
-                : undefined
-            }
-            className={[
-              'w-full rounded-md',
-              'px-3 py-2',
-              'text-left text-sm',
-              'outline-none',
-              'focus-visible:ring-2',
-              'focus-visible:ring-ring',
-              'max-sm:w-auto',
-              'max-sm:shrink-0',
-              active
-                ? 'bg-accent font-medium text-accent-foreground'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-            ].join(' ')}
-            onClick={() => {
-              onSectionChange(
-                item.id,
-              )
-            }}
-            type="button"
-          >
-            {item.label}
-          </button>
-        )
-      })}
-    </nav>
-  )
-}
-
-interface SettingsPanelProps {
-  readonly settings: AppSettings
-  readonly onChange:
-    (settings: AppSettings) => void
-}
-
-function GeneralSettingsPanel({
-  settings,
-  onChange,
-}: SettingsPanelProps) {
-  return (
-    <section
-      aria-labelledby="general-settings-title"
-      className="grid max-w-xl gap-8"
-    >
-      <header>
-        <h3
-          id="general-settings-title"
-          className="text-base font-semibold"
-        >
-          常规
-        </h3>
-
-        <p
-          className={[
-            'mt-1 text-sm',
-            'text-muted-foreground',
-          ].join(' ')}
-        >
-          调整应用外观、语言和保存行为。
-        </p>
-      </header>
-
-      <Field
-        label="外观"
-        description="选择应用界面的颜色模式。"
-      >
-        {({
-          inputId,
-          describedBy,
-        }) => (
-          <Select
-            id={inputId}
-            aria-describedby={
-              describedBy
-            }
-            value={settings.theme}
-            onChange={(event) => {
-              onChange({
-                ...settings,
-                theme:
-                  event.target
-                    .value as ThemeMode,
-              })
-            }}
-          >
-            <option value="light">
-              浅色
-            </option>
-
-            <option value="dark">
-              深色
-            </option>
-
-            <option value="system">
-              跟随系统
-            </option>
-          </Select>
-        )}
-      </Field>
-
-      <Field
-        label="语言"
-        description="控制应用界面使用的语言。"
-      >
-        {({
-          inputId,
-          describedBy,
-        }) => (
-          <Select
-            id={inputId}
-            aria-describedby={
-              describedBy
-            }
-            value={settings.language}
-            onChange={(event) => {
-              onChange({
-                ...settings,
-                language:
-                  event.target.value as
-                    AppSettings['language'],
-              })
-            }}
-          >
-            <option value="zh-CN">
-              简体中文
-            </option>
-
-            <option value="en">
-              English
-            </option>
-          </Select>
-        )}
-      </Field>
-
-      <SettingsToggle
-        checked={settings.autoSave}
-        description="编辑画布时自动保存到当前文件。"
-        label="自动保存"
-        onChange={(checked) => {
-          onChange({
-            ...settings,
-            autoSave: checked,
-          })
-        }}
-      />
-    </section>
-  )
-}
-
-function CanvasSettingsPanel({
-  settings,
-  onChange,
-}: SettingsPanelProps) {
-  return (
-    <section
-      aria-labelledby="canvas-settings-title"
-      className="grid max-w-xl gap-6"
-    >
-      <header>
-        <h3
-          id="canvas-settings-title"
-          className="text-base font-semibold"
-        >
-          画布
-        </h3>
-
-        <p
-          className={[
-            'mt-1 text-sm',
-            'text-muted-foreground',
-          ].join(' ')}
-        >
-          调整网格、吸附和默认缩放。
-        </p>
-      </header>
-
-      <SettingsToggle
-        checked={
-          settings.canvas.showGrid
-        }
-        description="在画布背景中显示辅助网格。"
-        label="显示网格"
-        onChange={(checked) => {
-          onChange({
-            ...settings,
-            canvas: {
-              ...settings.canvas,
-              showGrid: checked,
-            },
-          })
-        }}
-      />
-
-      <SettingsToggle
-        checked={
-          settings.canvas.snapToGrid
-        }
-        description="移动图形时自动吸附到网格。"
-        label="吸附到网格"
-        onChange={(checked) => {
-          onChange({
-            ...settings,
-            canvas: {
-              ...settings.canvas,
-              snapToGrid: checked,
-            },
-          })
-        }}
-      />
-
-      <Field
-        label="默认缩放"
-        description="新建画布时使用的默认缩放比例。"
-      >
-        {({
-          inputId,
-          describedBy,
-        }) => (
-          <Select
-            id={inputId}
-            aria-describedby={
-              describedBy
-            }
-            value={
-              settings.canvas.defaultZoom
-            }
-            onChange={(event) => {
-              onChange({
-                ...settings,
-                canvas: {
-                  ...settings.canvas,
-                  defaultZoom:
-                    Number(
-                      event.target.value,
-                    ),
-                },
-              })
-            }}
-          >
-            <option value="1">
-              100%
-            </option>
-
-            <option value="0.75">
-              75%
-            </option>
-
-            <option value="0.5">
-              50%
-            </option>
-          </Select>
-        )}
-      </Field>
-    </section>
-  )
-}
-
-interface SettingsToggleProps {
-  readonly checked: boolean
-  readonly label: string
-  readonly description: string
-  readonly onChange:
-    (checked: boolean) => void
-}
-
-function SettingsToggle({
-  checked,
-  label,
-  description,
-  onChange,
-}: SettingsToggleProps) {
-  return (
-    <div
-      className={[
-        'flex min-h-14',
-        'items-center',
-        'justify-between',
-        'gap-5',
-        'border-b',
-        'border-divider',
-        'py-3',
-      ].join(' ')}
-    >
-      <div>
-        <div className="text-sm font-medium">
-          {label}
-        </div>
-
-        <p
-          className={[
-            'mt-1 text-xs',
-            'leading-5',
-            'text-muted-foreground',
-          ].join(' ')}
-        >
-          {description}
-        </p>
-      </div>
-
-      <Switch
-        aria-label={label}
-        checked={checked}
-        onCheckedChange={onChange}
-      />
-    </div>
-  )
-}
-
-function AboutSettingsPanel() {
-  return (
-    <section
-      aria-labelledby="about-settings-title"
-      className={[
-        'max-w-xl rounded-lg',
-        'border border-divider',
-        'p-5',
-      ].join(' ')}
-    >
-      <h3
-        id="about-settings-title"
-        className="text-base font-semibold"
-      >
-        Hybrid Canvas
-      </h3>
-
-      <p
-        className={[
-          'mt-2 text-sm',
-          'text-muted-foreground',
-        ].join(' ')}
-      >
-        基于 tldraw 的本地优先画布应用。
-      </p>
-
-      <dl
-        className={[
-          'mt-5 grid',
-          'grid-cols-[100px_1fr]',
-          'gap-y-2 text-sm',
-        ].join(' ')}
-      >
-        <dt className="text-muted-foreground">
-          版本
-        </dt>
-
-        <dd>0.1.0</dd>
-
-        <dt className="text-muted-foreground">
-          设置存储
-        </dt>
-
-        <dd>Tauri Store</dd>
-      </dl>
-    </section>
-  )
-}
-
-interface SettingsFooterProps {
-  readonly busy: boolean
-  readonly canSave: boolean
-  readonly canReset: boolean
-  readonly operation?:
-    | 'save'
-    | 'reset'
-  readonly onSave: () => void
-  readonly onReset: () => void
-  readonly onCancel: () => void
-}
-
-function SettingsFooter({
-  busy,
-  canSave,
-  canReset,
-  operation,
-  onSave,
-  onReset,
-  onCancel,
-}: SettingsFooterProps) {
-  return (
-    <div
-      className={[
-        'flex flex-wrap',
-        'items-center',
-        'justify-between',
-        'gap-3',
-      ].join(' ')}
-    >
-      <Button
-        disabled={
-          busy || !canReset
-        }
-        onClick={onReset}
-        type="button"
-        variant="ghost"
-      >
-        {busy &&
-        operation === 'reset'
-          ? '正在重置…'
-          : '恢复默认'}
-      </Button>
-
-      <div className="flex gap-2">
-        <Button
-          disabled={busy}
-          onClick={onCancel}
-          type="button"
-          variant="ghost"
-        >
-          取消
-        </Button>
-
-        <Button
-          disabled={
-            busy || !canSave
-          }
-          onClick={onSave}
-          type="button"
-        >
-          {busy &&
-          operation === 'save'
-            ? '正在保存…'
-            : '保存'}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-interface SettingsErrorBannerProps {
-  readonly operation:
-    SettingsOperation
-  readonly message: string
-  readonly onRetry: () => void
-}
-
-function SettingsErrorBanner({
-  operation,
-  message,
-  onRetry,
-}: SettingsErrorBannerProps) {
-  return (
-    <div
-      className={[
-        'mb-5 rounded-md',
-        'border',
-        'border-destructive/30',
-        'bg-destructive/10',
-        'p-3',
-      ].join(' ')}
-      role="alert"
-    >
-      <p
-        className={[
-          'text-sm',
-          'text-destructive',
-        ].join(' ')}
-      >
-        {getOperationLabel(
-          operation,
-        )}
-        ：{message}
-      </p>
-
-      <Button
-        className="mt-3"
-        onClick={onRetry}
-        size="sm"
-        type="button"
-        variant="outline"
-      >
-        重试
-      </Button>
-    </div>
-  )
-}
-
-function getDraft(
-  state: SettingsViewState,
-): AppSettings | undefined {
-  if ('draft' in state) {
-    return state.draft
-  }
-
-  return undefined
-}
-
-function getOperationLabel(
-  operation: SettingsOperation,
-): string {
-  if (operation === 'load') {
-    return '读取设置失败'
-  }
-
-  if (operation === 'save') {
-    return '保存设置失败'
-  }
-
-  return '重置设置失败'
-}
-
-function getErrorMessage(
-  cause: unknown,
-): string {
-  if (
-    cause instanceof Error &&
-    cause.message.trim().length > 0
-  ) {
-    return cause.message
-  }
-
-  return '设置操作失败，请重试。'
-}
-`
-
-function backupCurrentFile() {
-  const sourceFile = absolute(
-    TARGET_FILE,
-  )
-
-  fs.mkdirSync(
-    path.dirname(BACKUP_FILE),
-    {
-      recursive: true,
-    },
-  )
-
-  fs.copyFileSync(
-    sourceFile,
-    BACKUP_FILE,
-  )
-
-  fs.writeFileSync(
-    MANIFEST_FILE,
-    JSON.stringify(
+function applyChanges(changes) {
+  for (const change of changes) {
+    fs.mkdirSync(
+      path.dirname(
+        absolute(
+          change.relativePath,
+        ),
+      ),
       {
-        createdAt:
-          new Date().toISOString(),
-
-        targetFile:
-          TARGET_FILE,
+        recursive: true,
       },
-      null,
-      2,
-    ),
-    'utf8',
-  )
-}
-
-function applyRefactor() {
-  if (fs.existsSync(BACKUP_DIRECTORY)) {
-    throw new Error(
-      'Phase 2B 备份目录已经存在。' +
-        '请先回滚或删除该备份目录。',
     )
-  }
 
-  backupCurrentFile()
-
-  fs.writeFileSync(
-    absolute(TARGET_FILE),
-    SETTINGS_DIALOG_SOURCE,
-    'utf8',
-  )
-
-  console.log(
-    'Phase 2B 已应用：' +
-      TARGET_FILE,
-  )
-}
-
-function rollbackRefactor() {
-  if (
-    !fs.existsSync(MANIFEST_FILE) ||
-    !fs.existsSync(BACKUP_FILE)
-  ) {
-    throw new Error(
-      '没有找到 Phase 2B 回滚文件。',
-    )
-  }
-
-  fs.copyFileSync(
-    BACKUP_FILE,
-    absolute(TARGET_FILE),
-  )
-
-  fs.rmSync(
-    BACKUP_DIRECTORY,
-    {
-      recursive: true,
-      force: true,
-    },
-  )
-
-  console.log(
-    'Phase 2B 已回滚。',
-  )
-}
-
-function printPlan() {
-  const currentContent =
-    fs.readFileSync(
-      absolute(TARGET_FILE),
+    fs.writeFileSync(
+      absolute(
+        change.relativePath,
+      ),
+      change.nextContent,
       'utf8',
     )
-
-  if (
-    currentContent ===
-    SETTINGS_DIALOG_SOURCE
-  ) {
-    console.log(
-      'SettingsDialog 已经是目标版本。',
-    )
-
-    return false
   }
 
+  execFileSync(
+    'git',
+    ['diff', '--check'],
+    {
+      cwd: ROOT,
+      stdio: 'inherit',
+    },
+  )
+}
+
+function printPlan(changes) {
   console.log(
-    'Phase 2B 将重构：',
+    'Phase 3 将修改 ' +
+      changes.length +
+      ' 个文件：',
   )
 
-  console.log(
-    '- ' + TARGET_FILE,
-  )
-
-  console.log(
-    '- 使用判别联合管理加载、保存和错误状态',
-  )
-
-  console.log(
-    '- 支持主题实时预览和取消恢复',
-  )
-
-  console.log(
-    '- 支持读取、保存和重置失败重试',
-  )
-
-  console.log(
-    '- 使用统一 Dialog、Field、Select、Switch',
-  )
-
-  console.log(
-    '- 增加窄屏全屏布局',
-  )
-
-  return true
+  for (const change of changes) {
+    console.log(
+      '- ' + change.relativePath,
+    )
+  }
 }
 
 function main() {
   assertRepository()
 
-  if (ROLLBACK) {
-    rollbackRefactor()
+  const changes =
+    buildChanges()
+
+  if (changes.length === 0) {
+    console.log(
+      'Phase 3 没有需要应用的修改。',
+    )
+
     return
   }
 
-  const hasChanges =
-    printPlan()
-
-  if (!hasChanges) {
-    return
-  }
+  printPlan(changes)
 
   if (!APPLY) {
     console.log('')
@@ -1228,26 +1079,45 @@ function main() {
     )
 
     console.log(
-      '应用：node tooling/script/refactor-ui-phase-2b.mjs --apply --allow-dirty',
+      '应用命令：',
+    )
+
+    console.log(
+      'node tooling/script/refactor-ui-phase-3.mjs --apply',
     )
 
     return
   }
 
-  applyRefactor()
+  applyChanges(changes)
 
   console.log('')
-  console.log('请执行：')
+  console.log(
+    'Phase 3 Workspace 响应式重构已写入。',
+  )
+
+  console.log('')
+  console.log('请依次执行：')
   console.log('pnpm format')
   console.log('pnpm lint')
   console.log('pnpm typecheck')
   console.log('pnpm test:architecture')
   console.log('pnpm test')
   console.log('pnpm build:desktop')
+
   console.log('')
-  console.log('回滚：')
   console.log(
-    'node tooling/script/refactor-ui-phase-2b.mjs --rollback --allow-dirty',
+    '放弃本阶段未提交修改：',
+  )
+
+  console.log(
+    'git restore -- ' +
+      changes
+        .map(
+          (change) =>
+            change.relativePath,
+        )
+        .join(' '),
   )
 }
 

@@ -1,13 +1,12 @@
-import {
-  useSyncExternalStore,
-} from 'react'
+import { useSyncExternalStore } from 'react'
 
 export type WorkspaceLayoutMode =
   | 'wide'
   | 'compact'
   | 'narrow'
 
-function getSnapshot(): WorkspaceLayoutMode {
+function getSnapshot():
+  WorkspaceLayoutMode {
   if (window.innerWidth >= 1280) {
     return 'wide'
   }
@@ -19,7 +18,8 @@ function getSnapshot(): WorkspaceLayoutMode {
   return 'narrow'
 }
 
-function getServerSnapshot(): WorkspaceLayoutMode {
+function getServerSnapshot():
+  WorkspaceLayoutMode {
   return 'wide'
 }
 
