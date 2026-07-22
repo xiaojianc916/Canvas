@@ -138,6 +138,9 @@ importers:
       '@hybrid-canvas/platforms-desktop-runtime':
         specifier: workspace:*
         version: link:../../platforms/desktop-runtime
+      '@hybrid-canvas/scientific-plot':
+        specifier: workspace:*
+        version: link:../../features/scientific-plot
       '@hybrid-canvas/settings':
         specifier: workspace:*
         version: link:../../features/settings
@@ -408,12 +411,21 @@ importers:
       '@hybrid-canvas/asset':
         specifier: workspace:*
         version: link:../../editor/assets
+      '@hybrid-canvas/canvas':
+        specifier: workspace:*
+        version: link:../../editor/core
       '@hybrid-canvas/foundations-geometry':
         specifier: workspace:*
         version: link:../../foundations/geometry
       '@hybrid-canvas/foundations-kernel':
         specifier: workspace:*
         version: link:../../foundations/kernel
+      '@tldraw/tlschema':
+        specifier: 'catalog:'
+        version: 5.2.5(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@tldraw/validate':
+        specifier: 'catalog:'
+        version: 5.2.5
       apache-arrow:
         specifier: 'catalog:'
         version: 21.1.0
@@ -423,6 +435,15 @@ importers:
       d3-scale:
         specifier: 'catalog:'
         version: 4.0.2
+      react:
+        specifier: 'catalog:'
+        version: 19.2.7
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.7(react@19.2.7)
+      tldraw:
+        specifier: 'catalog:'
+        version: 5.2.5(@floating-ui/dom@1.8.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       uplot:
         specifier: 'catalog:'
         version: 1.6.32
@@ -433,6 +454,12 @@ importers:
       '@hybrid-canvas/foundations-test-kit':
         specifier: workspace:*
         version: link:../../foundations/test-kit
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.3(@types/react@19.2.17)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
