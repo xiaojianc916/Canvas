@@ -32,7 +32,6 @@ export function DesktopTitleBar({
   onStartDragging,
   onSidebarToggle,
   isSidebarOpen,
-  sidebarWidth,
 }: DesktopTitleBarProps) {
   function handleDragMouseDown(event: React.MouseEvent<HTMLElement>) {
     if (event.button !== 0) {
@@ -41,10 +40,7 @@ export function DesktopTitleBar({
 
     const target = event.target
 
-    if (
-      !(target instanceof Element) ||
-      target.closest(WINDOW_DRAG_EXCLUSION_SELECTOR)
-    ) {
+    if (!(target instanceof Element) || target.closest(WINDOW_DRAG_EXCLUSION_SELECTOR)) {
       return
     }
 
@@ -72,10 +68,7 @@ export function DesktopTitleBar({
         onMouseDownCapture={handleDragMouseDown}
         role="toolbar"
       >
-        <div
-          className="flex w-(--activity-rail-width) shrink-0 items-center justify-center border-b border-divider"
-         
-        >
+        <div className="flex w-(--activity-rail-width) shrink-0 items-center justify-center border-b border-divider">
           <button
             aria-label={isSidebarOpen ? '收起侧边栏' : '展开侧边栏'}
             className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
@@ -91,12 +84,11 @@ export function DesktopTitleBar({
         </div>
         <div
           className="shrink-0 border-b border-r border-divider"
-         
-          style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
+          style={{
+            width: 'var(--workspace-sidebar-column-width, 0px)',
+          }}
         />
-        <div className="flex min-w-0 flex-1 items-stretch">
-          {children}
-        </div>
+        <div className="flex min-w-0 flex-1 items-stretch">{children}</div>
         <div className="flex shrink-0 items-stretch border-b border-divider">
           <button
             aria-label="最小化"

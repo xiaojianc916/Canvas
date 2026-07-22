@@ -13,6 +13,7 @@ export interface WorkspaceFrameProps {
   readonly gridTemplateColumns: string
   readonly gridTemplateRows: string
   readonly sidebarColumnWidth: number
+  readonly inspectorColumnWidth: number
   readonly disableLayoutAnimation?: boolean
 }
 
@@ -28,23 +29,29 @@ export function WorkspaceFrame({
   gridTemplateColumns,
   gridTemplateRows,
   sidebarColumnWidth,
+  inspectorColumnWidth,
   disableLayoutAnimation = false,
 }: WorkspaceFrameProps) {
   const shouldReduceMotion = useReducedMotion()
 
+  /*
+   * 左侧侧边栏和右侧属性栏共用一个动画所有者、
+   * 一个 transition 和一条动画时间轴。
+   */
   const transition =
     disableLayoutAnimation || shouldReduceMotion
       ? { duration: 0 }
       : {
           type: 'tween' as const,
-          duration: 0.5,
-          ease: [0.65, 0, 0.35, 1] as const,
+          duration: 0.22,
+          ease: [0.2, 0, 0, 1] as const,
         }
 
   return (
     <motion.div
       animate={{
         '--workspace-sidebar-column-width': sidebarColumnWidth + 'px',
+        '--workspace-inspector-column-width': inspectorColumnWidth + 'px',
       }}
       className="workspace-shell relative grid h-dvh w-full min-h-0 overflow-hidden bg-background text-foreground"
       initial={false}

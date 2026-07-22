@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 
 /**
- * 修复左侧侧边栏覆盖动画：
+ * 修复右侧属性栏关闭按钮被裁剪的问题。
  *
- * 1. 删除主界面与左侧侧边栏之间擅自添加的阴影
- * 2. 不再直接动画包含 fr/minmax() 的 gridTemplateColumns
- * 3. 改为动画纯 px CSS 变量，确保真正逐渐覆盖
- * 4. 使用 0.5 秒 ease-in-out，不使用弹簧动画
+ * 原因：
+ * 关闭按钮使用 -left-8 放置在属性栏左边界外，
+ * 但父容器被错误设置为 overflow-hidden。
  *
  * 运行：
  * node tooling/script/refactor.mjs --apply
@@ -43,197 +42,50 @@ function findRepositoryRoot(startDirectory) {
 
 const ROOT = findRepositoryRoot(SCRIPT_DIRECTORY)
 
-const WORKSPACE_FRAME_PATH = path.join(
-  ROOT,
-  'features/workspace/src/presentation/shell/WorkspaceFrame.tsx',
-)
-
 const WORKSPACE_SHELL_PATH = path.join(
   ROOT,
   'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
 )
 
-function readFile(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`文件不存在：${path.relative(ROOT, filePath)}`)
-  }
-
-  return fs.readFileSync(filePath, 'utf8')
-}
-
-function writeFile(filePath, content) {
-  fs.writeFileSync(filePath, content, 'utf8')
-  console.log(`已修改：${path.relative(ROOT, filePath)}`)
-}
-
-function updateWorkspaceFrame() {
-  const content = `import { motion, useReducedMotion } from 'motion/react'
-import type { ReactNode, Ref } from 'react'
-
-export interface WorkspaceFrameProps {
-  readonly rootRef?: Ref<HTMLDivElement>
-  readonly chrome: ReactNode
-  readonly rail: ReactNode
-  readonly sidebar: ReactNode
-  readonly canvas: ReactNode
-  readonly inspector: ReactNode
-  readonly statusBar: ReactNode
-  readonly overlays?: ReactNode
-  readonly gridTemplateColumns: string
-  readonly gridTemplateRows: string
-  readonly sidebarColumnWidth: number
-  readonly disableLayoutAnimation?: boolean
-}
-
-export function WorkspaceFrame({
-  rootRef,
-  chrome,
-  rail,
-  sidebar,
-  canvas,
-  inspector,
-  statusBar,
-  overlays,
-  gridTemplateColumns,
-  gridTemplateRows,
-  sidebarColumnWidth,
-  disableLayoutAnimation = false,
-}: WorkspaceFrameProps) {
-  const shouldReduceMotion = useReducedMotion()
-
-  const transition =
-    disableLayoutAnimation || shouldReduceMotion
-      ? { duration: 0 }
-      : {
-          type: 'tween' as const,
-          duration: 0.5,
-          ease: [0.65, 0, 0.35, 1] as const,
-        }
-
-  return (
-    <motion.div
-      animate={{
-        '--workspace-sidebar-column-width': sidebarColumnWidth + 'px',
-      }}
-      className="workspace-shell relative grid h-dvh w-full min-h-0 overflow-hidden bg-background text-foreground"
-      initial={false}
-      ref={rootRef}
-      style={{
-        gridTemplateColumns,
-        gridTemplateRows,
-        willChange: disableLayoutAnimation ? 'auto' : 'grid-template-columns',
-      }}
-      transition={transition}
-    >
-      {/* Layout ownership lives here so borders stay single-source and predictable. */}
-      {chrome}
-      {rail}
-      {sidebar}
-      {canvas}
-      {inspector}
-      {statusBar}
-      {overlays}
-    </motion.div>
-  )
-}
-`
-
-  writeFile(WORKSPACE_FRAME_PATH, content)
-}
-
 function updateWorkspaceShell() {
-  let content = readFile(WORKSPACE_SHELL_PATH)
-
-  /*
-   * 精确删除之前擅自加在主内容区左边界上的阴影。
-   */
-  content = content.replace(
-    /\s+shadow-\[-12px_0_28px_-22px_rgba\(0,0,0,0\.45\)\]/g,
-    '',
-  )
-
-  /*
-   * 防止之前的阴影参数发生格式化差异。
-   * 只处理包含“内容区”的 section，不影响其他组件原有样式。
-   */
-  content = content.replace(
-    /(<section[\s\S]*?aria-label="内容区"[\s\S]*?className=")([^"]*)("[\s\S]*?>)/,
-    (_, prefix, className, suffix) => {
-      const cleanedClassName = className
-        .split(/\s+/)
-        .filter(Boolean)
-        .filter(
-          (classToken) =>
-            !classToken.startsWith(
-              'shadow-[-12px_0_28px_-22px_rgba(0,0,0,0.45)]',
-            ),
-        )
-        .join(' ')
-
-      return prefix + cleanedClassName + suffix
-    },
-  )
-
-  /*
-   * 原实现直接动画整个 gridTemplateColumns：
-   *
-   * 48px 280px minmax(0, 1fr) 0px
-   *
-   * 这种复合字符串不能保证连续插值。
-   * 现在只动画 --workspace-sidebar-column-width 这个纯 px 变量。
-   */
-  const columnsPattern =
-    /  const columns = useMemo\([\s\S]*?\n\n  const rows =/
-
-  if (!columnsPattern.test(content)) {
+  if (!fs.existsSync(WORKSPACE_SHELL_PATH)) {
     throw new Error(
-      '无法找到 WorkspaceShell.tsx 中的 columns 布局计算代码。',
+      `文件不存在：${path.relative(ROOT, WORKSPACE_SHELL_PATH)}`,
     )
   }
 
-  content = content.replace(
-    columnsPattern,
-    `  const sidebarColumnWidth = dockSidebar ? sidebarWidth : 0
+  let content = fs.readFileSync(WORKSPACE_SHELL_PATH, 'utf8')
 
-  const columns = useMemo(
-    () =>
-      [
-        'var(--activity-rail-width)',
-        'var(--workspace-sidebar-column-width, 0px)',
-        'minmax(0, 1fr)',
-        dockInspector ? 'var(--inspector-width)' : '0px',
-      ].join(' '),
-    [dockInspector],
+  const incorrectClass =
+    'className="absolute inset-y-0 right-0 overflow-hidden"'
+
+  const correctedClass =
+    'className="absolute inset-y-0 right-0 overflow-visible"'
+
+  if (content.includes(incorrectClass)) {
+    content = content.replace(incorrectClass, correctedClass)
+  } else if (!content.includes(correctedClass)) {
+    throw new Error(
+      '找不到右侧属性栏动画容器，请检查 WorkspaceShell.tsx 当前代码。',
+    )
+  }
+
+  /*
+   * 确认关闭按钮仍然存在，避免只修复裁剪但按钮已经被删掉。
+   */
+  if (!content.includes('aria-label="收起属性面板"')) {
+    throw new Error('右侧属性栏的关闭按钮已经丢失，无法只通过解除裁剪恢复。')
+  }
+
+  if (!content.includes('className="absolute -left-8 top-3 z-30')) {
+    throw new Error('右侧属性栏关闭按钮的位置代码与预期不一致。')
+  }
+
+  fs.writeFileSync(WORKSPACE_SHELL_PATH, content, 'utf8')
+
+  console.log(
+    `已修复：${path.relative(ROOT, WORKSPACE_SHELL_PATH)}`,
   )
-
-  const rows =`,
-  )
-
-  if (!content.includes('sidebarColumnWidth={sidebarColumnWidth}')) {
-    const target = '        gridTemplateRows={rows}'
-
-    if (!content.includes(target)) {
-      throw new Error(
-        '无法找到 WorkspaceFrame 的 gridTemplateRows 属性。',
-      )
-    }
-
-    content = content.replace(
-      target,
-      `${target}
-        sidebarColumnWidth={sidebarColumnWidth}`,
-    )
-  }
-
-  if (
-    content.includes(
-      'shadow-[-12px_0_28px_-22px_rgba(0,0,0,0.45)]',
-    )
-  ) {
-    throw new Error('主内容区阴影删除失败。')
-  }
-
-  writeFile(WORKSPACE_SHELL_PATH, content)
 }
 
 function run(command, args) {
@@ -266,7 +118,6 @@ function main() {
 
   console.log(`仓库目录：${ROOT}\n`)
 
-  updateWorkspaceFrame()
   updateWorkspaceShell()
 
   run('pnpm', [
@@ -274,7 +125,6 @@ function main() {
     'biome',
     'format',
     '--write',
-    'features/workspace/src/presentation/shell/WorkspaceFrame.tsx',
     'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
   ])
 
@@ -284,17 +134,16 @@ function main() {
     'typecheck',
   ])
 
-  console.log('\n修改完成：')
-  console.log('- 已删除侧边栏与主界面之间添加的阴影')
-  console.log('- 已改为真正连续插值的 px 动画')
-  console.log('- 动画时长为 0.5 秒')
-  console.log('- 使用对称 Ease In Out 缓动')
+  console.log('\n修复完成：')
+  console.log('- 右侧属性栏关闭按钮不再被裁剪')
+  console.log('- 打开右侧属性栏后可以正常关闭')
+  console.log('- 左右侧栏共用的 220ms 动画保持不变')
 }
 
 try {
   main()
 } catch (error) {
-  console.error('\n修改失败：')
+  console.error('\n修复失败：')
   console.error(error instanceof Error ? error.message : error)
   process.exitCode = 1
 }

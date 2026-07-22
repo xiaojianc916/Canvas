@@ -15,6 +15,7 @@ import { WorkspaceSidebar } from './WorkspaceSidebar'
 const SIDEBAR_MIN = 220
 const SIDEBAR_MAX = 420
 const SIDEBAR_DEFAULT = 280
+const INSPECTOR_WIDTH = 276
 
 const SURFACE_TITLES: Record<WorkspaceSurfaceId, string> = {
   pages: '画布',
@@ -141,6 +142,7 @@ export function WorkspaceShell({
   }
 
   const sidebarColumnWidth = dockSidebar ? sidebarWidth : 0
+  const inspectorColumnWidth = dockInspector ? INSPECTOR_WIDTH : 0
 
   const columns = useMemo(
     () =>
@@ -148,9 +150,9 @@ export function WorkspaceShell({
         'var(--activity-rail-width)',
         'var(--workspace-sidebar-column-width, 0px)',
         'minmax(0, 1fr)',
-        dockInspector ? 'var(--inspector-width)' : '0px',
+        'var(--workspace-inspector-column-width, 0px)',
       ].join(' '),
-    [dockInspector],
+    [],
   )
 
   const rows = hasCanvas
@@ -287,28 +289,39 @@ export function WorkspaceShell({
   const inspectorRegion = hasCanvas ? (
     <>
       <aside
+        aria-hidden={!dockInspector}
         aria-label="属性检查器"
         className={
-          dockInspector
-            ? 'row-[2/-1] min-h-0 min-w-0 border-l border-divider'
+          mode === 'wide'
+            ? 'relative row-[2/-1] min-h-0 min-w-0 overflow-visible border-l border-divider'
             : 'pointer-events-none'
         }
-        style={{ gridColumn: 4 }}
+        style={{
+          gridColumn: 4,
+          pointerEvents: dockInspector ? 'auto' : 'none',
+        }}
       >
-        {dockInspector ? (
-          <div className="relative h-full">
-            <Button
-              aria-label="收起属性面板"
-              className="absolute -left-8 top-3 z-30 size-7 rounded-r-none"
-              onClick={() => setInspectorOpen(false)}
-              size="icon"
-              type="button"
-              variant="outline"
-            >
-              <PanelRightClose aria-hidden="true" className="size-3.5" />
-            </Button>
+        {mode === 'wide' ? (
+          <div
+            className="absolute inset-y-0 right-0 overflow-visible"
+            style={{ width: INSPECTOR_WIDTH }}
+          >
+            <div className="relative h-full">
+              {dockInspector ? (
+                <Button
+                  aria-label="收起属性面板"
+                  className="absolute -left-8 top-3 z-30 size-7 rounded-r-none"
+                  onClick={() => setInspectorOpen(false)}
+                  size="icon"
+                  type="button"
+                  variant="outline"
+                >
+                  <PanelRightClose aria-hidden="true" className="size-3.5" />
+                </Button>
+              ) : null}
 
-            {inspectorContent}
+              {inspectorContent}
+            </div>
           </div>
         ) : null}
       </aside>
@@ -370,6 +383,7 @@ export function WorkspaceShell({
         disableLayoutAnimation={isResizing}
         gridTemplateColumns={columns}
         gridTemplateRows={rows}
+        inspectorColumnWidth={inspectorColumnWidth}
         sidebarColumnWidth={sidebarColumnWidth}
         inspector={inspectorRegion}
         overlays={
