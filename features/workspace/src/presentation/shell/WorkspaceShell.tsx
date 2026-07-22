@@ -157,6 +157,7 @@ export function WorkspaceShell({
         },
         onActivateTab: actions.activateTab,
         onCloseTab: actions.closeTab,
+        onMoveTab: actions.moveTab,
         onCreateCanvas: actions.createCanvas,
       })}
     </header>

@@ -1,13 +1,28 @@
-import { Button, cn } from '@hybrid-canvas/design-system'
-import { Boxes, FilePlus2, FileText, Image, Network, Plus, Search, Workflow, X } from 'lucide-react'
-import { type ComponentType, type KeyboardEvent, useEffect, useRef } from 'react'
+import {
+  Boxes,
+  ChartNoAxesCombined,
+  FilePlus2,
+  FileText,
+  Files,
+  Grid2X2,
+  Image,
+  Layers3,
+  Network,
+  Plus,
+  Search,
+  X,
+} from 'lucide-react'
+import { type ComponentType, type DragEvent, type KeyboardEvent, useEffect, useRef } from 'react'
 
 import type { WorkbenchTabId, WorkbenchTabViewModel } from '../../contracts/workbench-contract'
+
+import './chrome-workbench-tabs.css'
 
 export interface WorkbenchTabsProps {
   readonly tabs: readonly WorkbenchTabViewModel[]
   readonly onActivate: (tabId: WorkbenchTabId) => void
   readonly onClose: (tabId: WorkbenchTabId) => void
+  readonly onMove: (tabId: WorkbenchTabId, targetIndex: number) => void
   readonly onCreate: () => void
 }
 
@@ -16,176 +31,310 @@ type TabIcon = ComponentType<{
   readonly 'aria-hidden'?: boolean | 'true' | 'false'
 }>
 
-export function WorkbenchTabs({ tabs, onActivate, onClose, onCreate }: WorkbenchTabsProps) {
+export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: WorkbenchTabsProps) {
+  const scrollerRef = useRef<HTMLDivElement | null>(null)
+
   const tabRefs = useRef(new Map<WorkbenchTabId, HTMLButtonElement>())
 
+  const draggedTabIdRef = useRef<WorkbenchTabId | null>(null)
+
   const activeTabId = tabs.find((tab) => tab.isActive)?.id
+
+  useEffect(() => {
+    const scroller = scrollerRef.current
+
+    if (!scroller) {
+      return
+    }
+
+    const updateDensity = () => {
+      for (const tab of tabs) {
+        const element = tabRefs.current.get(tab.id)
+
+        if (!element) {
+          continue
+        }
+
+        const root = element.closest<HTMLElement>('.chrome-workbench-tab')
+
+        if (!root) {
+          continue
+        }
+
+        const width = root.getBoundingClientRect().width
+
+        root.dataset.size =
+          width < 58 ? 'mini' : width < 78 ? 'smaller' : width < 104 ? 'small' : 'normal'
+      }
+    }
+
+    updateDensity()
+
+    const observer = new ResizeObserver(updateDensity)
+
+    observer.observe(scroller)
+
+    return () => observer.disconnect()
+  }, [tabs])
 
   useEffect(() => {
     if (!activeTabId) {
       return
     }
 
-    tabRefs.current.get(activeTabId)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    tabRefs.current.get(activeTabId)?.scrollIntoView({
+      block: 'nearest',
+      inline: 'nearest',
+    })
   }, [activeTabId])
 
-  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, tabId: WorkbenchTabId): void {
+  function handleKeyboard(event: KeyboardEvent<HTMLButtonElement>, tabId: WorkbenchTabId): void {
     const currentIndex = tabs.findIndex((tab) => tab.id === tabId)
 
     if (currentIndex < 0) {
       return
     }
 
-    let nextIndex = currentIndex
+    let targetIndex: number | null = null
 
     switch (event.key) {
       case 'ArrowLeft':
-        nextIndex = (currentIndex - 1 + tabs.length) % tabs.length
+        targetIndex = (currentIndex - 1 + tabs.length) % tabs.length
         break
+
       case 'ArrowRight':
-        nextIndex = (currentIndex + 1) % tabs.length
+        targetIndex = (currentIndex + 1) % tabs.length
         break
+
       case 'Home':
-        nextIndex = 0
+        targetIndex = 0
         break
+
       case 'End':
-        nextIndex = tabs.length - 1
+        targetIndex = tabs.length - 1
         break
+
       case 'Delete': {
         const tab = tabs[currentIndex]
+
         if (tab?.canClose) {
           event.preventDefault()
           onClose(tab.id)
         }
+
         return
       }
+
       default:
         return
     }
 
-    const nextTab = tabs[nextIndex]
+    const target = tabs[targetIndex]
 
-    if (!nextTab) {
+    if (!target) {
       return
     }
 
     event.preventDefault()
-    onActivate(nextTab.id)
-    tabRefs.current.get(nextTab.id)?.focus()
+    onActivate(target.id)
+
+    requestAnimationFrame(() => {
+      tabRefs.current.get(target.id)?.focus()
+    })
+  }
+
+  function handleDragStart(event: DragEvent<HTMLElement>, tab: WorkbenchTabViewModel): void {
+    if (!tab.canClose) {
+      event.preventDefault()
+      return
+    }
+
+    draggedTabIdRef.current = tab.id
+
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('application/x-hybrid-canvas-workbench-tab', tab.id)
+  }
+
+  function handleDrop(event: DragEvent<HTMLElement>, targetIndex: number): void {
+    event.preventDefault()
+
+    const draggedTabId =
+      draggedTabIdRef.current ??
+      event.dataTransfer.getData('application/x-hybrid-canvas-workbench-tab')
+
+    draggedTabIdRef.current = null
+
+    if (draggedTabId) {
+      onMove(draggedTabId, targetIndex)
+    }
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-1 bg-chrome">
+    <div className="chrome-workbench-tabs">
       <div
         aria-label="工作台标签页"
-        className="flex h-full min-w-0 flex-1 items-end overflow-x-auto overflow-y-hidden px-3"
+        className="chrome-workbench-tabs__scroller"
+        onWheel={(event) => {
+          const scroller = scrollerRef.current
+
+          if (!scroller || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+            return
+          }
+
+          scroller.scrollLeft += event.deltaY
+        }}
+        ref={scrollerRef}
         role="tablist"
       >
-        {tabs.map((tab) => {
+        {tabs.map((tab, index) => {
           const Icon = resolveTabIcon(tab)
 
           return (
-            <div
-              className={cn(
-                'group relative flex h-[calc(100%-5px)] w-52 shrink-0 items-center',
-                'border-r border-divider/70',
-                tab.isActive
-                  ? 'rounded-t-lg border-x border-t border-divider bg-background'
-                  : 'bg-transparent hover:bg-foreground/5',
-              )}
+            <article
+              className="chrome-workbench-tab"
+              data-active={tab.isActive ? 'true' : 'false'}
+              data-size="normal"
+              draggable={tab.canClose}
               key={tab.id}
+              onDragEnd={() => {
+                draggedTabIdRef.current = null
+              }}
+              onDragOver={(event) => {
+                if (draggedTabIdRef.current) {
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                }
+              }}
+              onDragStart={(event) => handleDragStart(event, tab)}
+              onDrop={(event) => handleDrop(event, index)}
+              onMouseDown={(event) => {
+                if (event.button === 1 && tab.canClose) {
+                  event.preventDefault()
+                  onClose(tab.id)
+                }
+              }}
             >
-              <button
-                aria-controls={'workbench-panel-' + encodeDomId(tab.id)}
-                aria-selected={tab.isActive}
-                className={cn(
-                  'flex h-full min-w-0 flex-1 items-center gap-2 px-3 text-left text-xs',
-                  'outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset',
-                  tab.isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-                )}
-                id={'workbench-tab-' + encodeDomId(tab.id)}
-                onClick={() => onActivate(tab.id)}
-                onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
-                ref={(node) => {
-                  if (node) {
-                    tabRefs.current.set(tab.id, node)
-                  } else {
-                    tabRefs.current.delete(tab.id)
-                  }
-                }}
-                role="tab"
-                tabIndex={tab.isActive ? 0 : -1}
-                type="button"
-              >
-                <Icon aria-hidden="true" className="size-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{tab.title}</span>
-                <TabStatus model={tab} />
-              </button>
+              <ChromeTabBackground />
 
-              {tab.canClose ? (
-                <Button
-                  aria-label={'关闭 ' + tab.title}
-                  className={cn(
-                    'mr-1 size-7 shrink-0 rounded-md',
-                    'text-muted-foreground opacity-0',
-                    'hover:bg-foreground/10 hover:text-foreground',
-                    'focus-visible:opacity-100 group-hover:opacity-100',
-                    tab.isActive && 'opacity-100',
-                  )}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onClose(tab.id)
+              <span
+                aria-hidden="true"
+                className="chrome-workbench-tab__divider chrome-workbench-tab__divider--leading"
+              />
+
+              <span
+                aria-hidden="true"
+                className="chrome-workbench-tab__divider chrome-workbench-tab__divider--trailing"
+              />
+
+              <div className="chrome-workbench-tab__content">
+                <button
+                  aria-controls={'workbench-panel-' + encodeDomId(tab.id)}
+                  aria-selected={tab.isActive}
+                  className="chrome-workbench-tab__activation"
+                  id={'workbench-tab-' + encodeDomId(tab.id)}
+                  onClick={() => onActivate(tab.id)}
+                  onKeyDown={(event) => handleKeyboard(event, tab.id)}
+                  ref={(node) => {
+                    if (node) {
+                      tabRefs.current.set(tab.id, node)
+                    } else {
+                      tabRefs.current.delete(tab.id)
+                    }
                   }}
-                  size="icon"
-                  tabIndex={-1}
+                  role="tab"
+                  tabIndex={tab.isActive ? 0 : -1}
+                  title={tab.title}
                   type="button"
-                  variant="ghost"
                 >
-                  <X aria-hidden="true" className="size-3.5" />
-                </Button>
-              ) : null}
-            </div>
+                  <Icon aria-hidden="true" className="chrome-workbench-tab__icon" />
+
+                  <span className="chrome-workbench-tab__title">{tab.title}</span>
+                </button>
+
+                <TabEndAction model={tab} onClose={onClose} />
+              </div>
+            </article>
           )
         })}
 
-        <div className="flex h-full shrink-0 items-center px-2">
-          <Button
-            aria-label="新建画板"
-            className="size-8 rounded-full"
-            onClick={onCreate}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <Plus aria-hidden="true" className="size-4" />
-          </Button>
-        </div>
+        <button
+          aria-label="新建画板"
+          className="chrome-workbench-tabs__new-tab"
+          onClick={onCreate}
+          type="button"
+        >
+          <Plus aria-hidden="true" className="size-5" />
+        </button>
+
+        <div
+          aria-hidden="true"
+          className="chrome-workbench-tabs__drag-region"
+          data-tauri-drag-region
+        />
       </div>
+
+      <div aria-hidden="true" className="chrome-workbench-tabs__bottom-bar" />
     </div>
   )
 }
 
-function TabStatus({ model }: { readonly model: WorkbenchTabViewModel }) {
-  if (model.kind !== 'canvas' || !model.status || model.status === 'clean') {
+function ChromeTabBackground() {
+  return (
+    <div aria-hidden="true" className="chrome-workbench-tab__background">
+      <svg
+        className="chrome-workbench-tab__background-left"
+        preserveAspectRatio="none"
+        viewBox="0 0 214 36"
+      >
+        <path d="M17 0h197v36H0v-2c4.5 0 9-3.5 9-8V8c0-4.5 3.5-8 8-8z" />
+      </svg>
+
+      <svg
+        className="chrome-workbench-tab__background-right"
+        preserveAspectRatio="none"
+        viewBox="0 0 214 36"
+      >
+        <path d="M17 0h197v36H0v-2c4.5 0 9-3.5 9-8V8c0-4.5 3.5-8 8-8z" />
+      </svg>
+    </div>
+  )
+}
+
+function TabEndAction({
+  model,
+  onClose,
+}: {
+  readonly model: WorkbenchTabViewModel
+  readonly onClose: (tabId: WorkbenchTabId) => void
+}) {
+  if (!model.canClose) {
     return null
   }
 
-  const label = {
-    dirty: '未保存',
-    saving: '正在保存',
-    failed: '保存失败',
-  }[model.status]
+  const status = model.kind === 'canvas' ? model.status : undefined
 
   return (
-    <span
-      aria-label={label}
-      className={cn(
-        'size-2 shrink-0 rounded-full',
-        model.status === 'dirty' && 'bg-amber-500',
-        model.status === 'saving' && 'animate-pulse bg-sky-500',
-        model.status === 'failed' && 'bg-destructive',
-      )}
-    />
+    <div className="chrome-workbench-tab__end">
+      {status && status !== 'clean' ? (
+        <span
+          aria-label={status === 'dirty' ? '未保存' : status === 'saving' ? '正在保存' : '保存失败'}
+          className={'chrome-workbench-tab__status ' + 'chrome-workbench-tab__status--' + status}
+        />
+      ) : null}
+
+      <button
+        aria-label={'关闭 ' + model.title}
+        className="chrome-workbench-tab__close"
+        onClick={(event) => {
+          event.stopPropagation()
+          onClose(model.id)
+        }}
+        tabIndex={-1}
+        type="button"
+      >
+        <X aria-hidden="true" className="size-3.5" />
+      </button>
+    </div>
   )
 }
 
@@ -199,18 +348,22 @@ function resolveTabIcon(model: WorkbenchTabViewModel): TabIcon {
   }
 
   switch (model.surfaceId) {
-    case 'assets':
-      return Image
-    case 'relations':
-      return Network
+    case 'pages':
+      return Grid2X2
+    case 'documents':
+      return Files
     case 'search':
       return Search
+    case 'layers':
+      return Layers3
+    case 'relations':
+      return Network
+    case 'data':
+      return ChartNoAxesCombined
+    case 'assets':
+      return Image
     case 'extensions':
       return Boxes
-    case 'data':
-      return Workflow
-    default:
-      return FileText
   }
 }
 

@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 
 import type {
-  CanvasSessionId,
   WorkbenchTabId,
   WorkbenchTabViewModel,
   WorkbenchViewModel,
@@ -19,6 +18,7 @@ export interface WorkspaceShellActions {
   readonly openCanvas: () => void
   readonly activateTab: (tabId: WorkbenchTabId) => void
   readonly closeTab: (tabId: WorkbenchTabId) => void
+  readonly moveTab: (tabId: WorkbenchTabId, targetIndex: number) => void
   readonly openWorkspaceSurface: (surfaceId: WorkspaceSurfaceId, title: string) => void
   readonly activatePage: (pageId: string) => void
   readonly createPage: () => void
@@ -33,6 +33,7 @@ export interface WorkspaceChromeRenderProps {
   readonly onSidebarToggle: () => void
   readonly onActivateTab: (tabId: WorkbenchTabId) => void
   readonly onCloseTab: (tabId: WorkbenchTabId) => void
+  readonly onMoveTab: (tabId: WorkbenchTabId, targetIndex: number) => void
   readonly onCreateCanvas: () => void
 }
 
@@ -48,9 +49,3 @@ export interface WorkspaceShellProps {
   readonly assistantOverlay?: ReactNode
   readonly overlays?: ReactNode
 }
-
-/**
- * Kept here because the canvas/document boundary still uses session IDs.
- * Workbench chrome must use WorkbenchTabId instead.
- */
-export type WorkspaceCanvasSessionId = CanvasSessionId

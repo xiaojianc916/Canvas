@@ -293,10 +293,29 @@ function validateExtensionImport(rel, text) {
     return
   }
 
-  const invalidExtensionImport = /from\s+['"]@hybrid-canvas\/canvas\/(?!extensions['"])[^'"]+['"]/
+  const namedImportPattern = /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+['"]([^'"]+)['"]/g
 
-  if (invalidExtensionImport.test(text)) {
-    addViolation(`${rel}: HybridCanvasExtension 必须从 @hybrid-canvas/canvas/extensions 导入`)
+  let foundExtensionImport = false
+
+  for (const match of text.matchAll(namedImportPattern)) {
+    const bindings = match[1] ?? ''
+    const source = match[2] ?? ''
+
+    if (!/\bHybridCanvasExtension\b/.test(bindings)) {
+      continue
+    }
+
+    foundExtensionImport = true
+
+    if (source !== '@hybrid-canvas/canvas/extensions') {
+      addViolation(
+        rel + ': HybridCanvasExtension 必须从 ' + '@hybrid-canvas/canvas/extensions 导入',
+      )
+    }
+  }
+
+  if (!foundExtensionImport) {
+    addViolation(rel + ': 无法确定 HybridCanvasExtension 的导入来源')
   }
 }
 

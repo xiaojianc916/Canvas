@@ -4,6 +4,8 @@ import type {
   CanvasTabViewModel,
   CreateCanvasRequest,
   OpenWorkspaceSurfaceRequest,
+  StartSurfaceViewModel,
+  StartTabViewModel,
   WorkbenchSessionStore,
   WorkbenchSurfaceViewModel,
   WorkbenchTabId,
@@ -12,166 +14,193 @@ import type {
   WorkspaceSurfaceViewModel,
   WorkspaceTabViewModel,
 } from '../../contracts/public-api'
-import { EMPTY_WORKBENCH_VIEW_MODEL, START_TAB_ID } from '../../contracts/public-api'
+import { START_TAB_ID } from '../../contracts/public-api'
+
+type WorkbenchEntry = StartEntry | CanvasEntry | WorkspaceEntry
+
+interface EntryBase {
+  readonly id: WorkbenchTabId
+  readonly title: string
+  readonly canClose: boolean
+}
+
+interface StartEntry extends EntryBase {
+  readonly kind: 'start'
+}
+
+interface CanvasEntry extends EntryBase {
+  readonly kind: 'canvas'
+  readonly sessionId: CanvasSessionId
+  readonly canvasId: string
+}
+
+interface WorkspaceEntry extends EntryBase {
+  readonly kind: 'workspace'
+  readonly surfaceId: import('../../contracts/public-api').WorkspaceSurfaceId
+}
+
+const START_ENTRY: StartEntry = Object.freeze({
+  id: START_TAB_ID,
+  kind: 'start',
+  title: '新标签页',
+  canClose: false,
+})
 
 export function createWorkbenchSessionController(): WorkbenchSessionStore {
-  let snapshot = EMPTY_WORKBENCH_VIEW_MODEL
+  let entries: readonly WorkbenchEntry[] = [START_ENTRY]
+  let activeTabId = START_TAB_ID
   const listeners = new Set<() => void>()
-  const surfaces = new Map<WorkbenchTabId, WorkbenchSurfaceViewModel>([
-    [START_TAB_ID, EMPTY_WORKBENCH_VIEW_MODEL.activeSurface],
-  ])
 
-  function publish(tabs: readonly WorkbenchTabViewModel[], activeTabId: WorkbenchTabId): void {
-    const activeSurface = surfaces.get(activeTabId)
+  let snapshot = projectSnapshot(entries, activeTabId)
 
-    if (!activeSurface) {
-      throw new Error('WORKBENCH_SURFACE_NOT_FOUND')
-    }
-
-    const normalizedTabs = tabs.map((tab) => ({
-      ...tab,
-      isActive: tab.id === activeTabId,
-    }))
-
-    const activeCanvas = activeSurface.kind === 'canvas' ? activeSurface : null
-
-    const nextSnapshot: WorkbenchViewModel = {
-      activeTabId,
-      activeSessionId: activeCanvas?.sessionId ?? null,
-      tabs: normalizedTabs,
-      activeSurface,
-      activeCanvas,
-    }
-
-    assertWorkbenchInvariants(nextSnapshot)
-    snapshot = nextSnapshot
+  function emit(): void {
+    snapshot = projectSnapshot(entries, activeTabId)
+    assertInvariants(snapshot)
 
     for (const listener of listeners) {
       listener()
     }
   }
 
+  function insertToActiveRight(entry: WorkbenchEntry): void {
+    const activeIndex = entries.findIndex((candidate) => candidate.id === activeTabId)
+
+    const insertionIndex = activeIndex < 0 ? entries.length : activeIndex + 1
+
+    entries = [...entries.slice(0, insertionIndex), entry, ...entries.slice(insertionIndex)]
+
+    activeTabId = entry.id
+    emit()
+  }
+
   function createCanvas(request: CreateCanvasRequest): void {
     const canvasId = request.canvasId ?? crypto.randomUUID()
+
     const sessionId = request.sessionId ?? crypto.randomUUID()
-    const existing = findCanvasTabBySessionId(snapshot.tabs, sessionId)
+
+    const existing = entries.find(
+      (entry) => entry.kind === 'canvas' && entry.sessionId === sessionId,
+    )
 
     if (existing) {
       activateTab(existing.id)
       return
     }
 
-    const tabId = 'canvas:' + sessionId
-
-    const surface: ActiveCanvasViewModel = {
+    insertToActiveRight({
+      id: 'canvas:' + sessionId,
       kind: 'canvas',
-      tabId,
-      sessionId,
-      canvasId,
       title: request.title,
-    }
-
-    const tab: CanvasTabViewModel = {
-      id: tabId,
-      kind: 'canvas',
-      sessionId,
-      canvasId,
-      title: request.title,
-      isActive: true,
       canClose: true,
-    }
-
-    surfaces.set(tabId, surface)
-    publish([...snapshot.tabs, tab], tabId)
+      sessionId,
+      canvasId,
+    })
   }
 
   function openWorkspaceSurface(request: OpenWorkspaceSurfaceRequest): void {
     const tabId = 'workspace:' + request.surfaceId
-    const existing = snapshot.tabs.find((tab) => tab.id === tabId)
+
+    const existing = entries.find((entry) => entry.id === tabId)
 
     if (existing) {
       activateTab(existing.id)
       return
     }
 
-    const surface: WorkspaceSurfaceViewModel = {
-      kind: 'workspace',
-      tabId,
-      surfaceId: request.surfaceId,
-      title: request.title,
-    }
-
-    const tab: WorkspaceTabViewModel = {
+    insertToActiveRight({
       id: tabId,
       kind: 'workspace',
-      surfaceId: request.surfaceId,
       title: request.title,
-      isActive: true,
       canClose: true,
-    }
-
-    surfaces.set(tabId, surface)
-    publish([...snapshot.tabs, tab], tabId)
+      surfaceId: request.surfaceId,
+    })
   }
 
   function activateTab(tabId: WorkbenchTabId): void {
-    if (tabId === snapshot.activeTabId) {
+    if (tabId === activeTabId || !entries.some((entry) => entry.id === tabId)) {
       return
     }
 
-    if (!snapshot.tabs.some((tab) => tab.id === tabId)) {
-      return
-    }
-
-    publish(snapshot.tabs, tabId)
+    activeTabId = tabId
+    emit()
   }
 
   function closeTab(tabId: WorkbenchTabId): void {
-    const closingIndex = snapshot.tabs.findIndex((tab) => tab.id === tabId)
+    const closingIndex = entries.findIndex((entry) => entry.id === tabId)
 
     if (closingIndex < 0) {
       return
     }
 
-    const closingTab = snapshot.tabs[closingIndex]
+    const closingEntry = entries[closingIndex]
 
-    if (!closingTab?.canClose) {
+    if (!closingEntry?.canClose) {
       return
     }
 
-    const remainingTabs = snapshot.tabs.filter((tab) => tab.id !== tabId)
-    surfaces.delete(tabId)
+    const wasActive = tabId === activeTabId
 
-    if (snapshot.activeTabId !== tabId) {
-      publish(remainingTabs, snapshot.activeTabId)
+    entries = entries.filter((entry) => entry.id !== tabId)
+
+    if (wasActive) {
+      const nextEntry = entries[closingIndex] ?? entries[closingIndex - 1] ?? entries[0]
+
+      if (!nextEntry) {
+        entries = [START_ENTRY]
+        activeTabId = START_TAB_ID
+      } else {
+        activeTabId = nextEntry.id
+      }
+    }
+
+    emit()
+  }
+
+  function moveTab(tabId: WorkbenchTabId, targetIndex: number): void {
+    const sourceIndex = entries.findIndex((entry) => entry.id === tabId)
+
+    if (sourceIndex < 0) {
       return
     }
 
-    const adjacentIndex = Math.min(closingIndex, remainingTabs.length - 1)
+    const source = entries[sourceIndex]
 
-    const nextTab =
-      remainingTabs[adjacentIndex] ?? remainingTabs[adjacentIndex - 1] ?? remainingTabs[0]
-
-    if (!nextTab) {
-      throw new Error('WORKBENCH_PERMANENT_TAB_MISSING')
+    if (!source || source.kind === 'start') {
+      return
     }
 
-    publish(remainingTabs, nextTab.id)
+    const minimumIndex = 1
+    const maximumIndex = entries.length - 1
+    const boundedTarget = Math.max(minimumIndex, Math.min(maximumIndex, targetIndex))
+
+    if (sourceIndex === boundedTarget) {
+      return
+    }
+
+    const mutableEntries = [...entries]
+    mutableEntries.splice(sourceIndex, 1)
+
+    const adjustedTarget = sourceIndex < boundedTarget ? boundedTarget - 1 : boundedTarget
+
+    mutableEntries.splice(Math.max(minimumIndex, adjustedTarget), 0, source)
+
+    entries = mutableEntries
+    emit()
   }
 
   function activateCanvas(sessionId: CanvasSessionId): void {
-    const tab = findCanvasTabBySessionId(snapshot.tabs, sessionId)
+    const entry = findCanvasEntry(entries, sessionId)
 
-    if (tab) {
-      activateTab(tab.id)
+    if (entry) {
+      activateTab(entry.id)
     }
   }
 
   function closeCanvas(sessionId: CanvasSessionId): void {
-    const tab = findCanvasTabBySessionId(snapshot.tabs, sessionId)
+    const entry = findCanvasEntry(entries, sessionId)
 
-    if (tab) {
-      closeTab(tab.id)
+    if (entry) {
+      closeTab(entry.id)
     }
   }
 
@@ -187,23 +216,124 @@ export function createWorkbenchSessionController(): WorkbenchSessionStore {
     openWorkspaceSurface,
     activateTab,
     closeTab,
+    moveTab,
     activateCanvas,
     closeCanvas,
   }
 }
 
-function findCanvasTabBySessionId(
-  tabs: readonly WorkbenchTabViewModel[],
+function projectSnapshot(
+  entries: readonly WorkbenchEntry[],
+  activeTabId: WorkbenchTabId,
+): WorkbenchViewModel {
+  const activeEntry = entries.find((entry) => entry.id === activeTabId)
+
+  if (!activeEntry) {
+    throw new Error('WORKBENCH_ACTIVE_ENTRY_NOT_FOUND')
+  }
+
+  const activeSurface = projectSurface(activeEntry)
+
+  const activeCanvas = activeSurface.kind === 'canvas' ? activeSurface : null
+
+  return {
+    activeTabId,
+    activeSessionId: activeCanvas?.sessionId ?? null,
+    tabs: entries.map((entry) => projectTab(entry, activeTabId)),
+    activeSurface,
+    activeCanvas,
+  }
+}
+
+function projectTab(entry: WorkbenchEntry, activeTabId: WorkbenchTabId): WorkbenchTabViewModel {
+  const common = {
+    id: entry.id,
+    title: entry.title,
+    canClose: entry.canClose,
+    isActive: entry.id === activeTabId,
+  }
+
+  switch (entry.kind) {
+    case 'start': {
+      const tab: StartTabViewModel = {
+        ...common,
+        kind: 'start',
+      }
+
+      return tab
+    }
+
+    case 'canvas': {
+      const tab: CanvasTabViewModel = {
+        ...common,
+        kind: 'canvas',
+        sessionId: entry.sessionId,
+        canvasId: entry.canvasId,
+      }
+
+      return tab
+    }
+
+    case 'workspace': {
+      const tab: WorkspaceTabViewModel = {
+        ...common,
+        kind: 'workspace',
+        surfaceId: entry.surfaceId,
+      }
+
+      return tab
+    }
+  }
+}
+
+function projectSurface(entry: WorkbenchEntry): WorkbenchSurfaceViewModel {
+  switch (entry.kind) {
+    case 'start': {
+      const surface: StartSurfaceViewModel = {
+        kind: 'start',
+        tabId: entry.id,
+      }
+
+      return surface
+    }
+
+    case 'canvas': {
+      const surface: ActiveCanvasViewModel = {
+        kind: 'canvas',
+        tabId: entry.id,
+        sessionId: entry.sessionId,
+        canvasId: entry.canvasId,
+        title: entry.title,
+      }
+
+      return surface
+    }
+
+    case 'workspace': {
+      const surface: WorkspaceSurfaceViewModel = {
+        kind: 'workspace',
+        tabId: entry.id,
+        surfaceId: entry.surfaceId,
+        title: entry.title,
+      }
+
+      return surface
+    }
+  }
+}
+
+function findCanvasEntry(
+  entries: readonly WorkbenchEntry[],
   sessionId: CanvasSessionId,
-): CanvasTabViewModel | undefined {
-  return tabs.find(
-    (tab): tab is CanvasTabViewModel => tab.kind === 'canvas' && tab.sessionId === sessionId,
+): CanvasEntry | undefined {
+  return entries.find(
+    (entry): entry is CanvasEntry => entry.kind === 'canvas' && entry.sessionId === sessionId,
   )
 }
 
-function assertWorkbenchInvariants(snapshot: WorkbenchViewModel): void {
+function assertInvariants(snapshot: WorkbenchViewModel): void {
   if (snapshot.tabs.length === 0) {
-    throw new Error('WORKBENCH_REQUIRES_PERMANENT_TAB')
+    throw new Error('WORKBENCH_REQUIRES_START_TAB')
   }
 
   const ids = new Set(snapshot.tabs.map((tab) => tab.id))
@@ -240,6 +370,6 @@ function assertWorkbenchInvariants(snapshot: WorkbenchViewModel): void {
   }
 
   if (snapshot.activeCanvas !== null || snapshot.activeSessionId !== null) {
-    throw new Error('WORKBENCH_NON_CANVAS_SESSION_INCONSISTENT')
+    throw new Error('WORKBENCH_NON_CANVAS_STATE_INCONSISTENT')
   }
 }

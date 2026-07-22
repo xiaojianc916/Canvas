@@ -88,11 +88,13 @@ export interface WorkbenchSessionCommands {
   readonly openWorkspaceSurface: (request: OpenWorkspaceSurfaceRequest) => void
   readonly activateTab: (tabId: WorkbenchTabId) => void
   readonly closeTab: (tabId: WorkbenchTabId) => void
+  readonly moveTab: (tabId: WorkbenchTabId, targetIndex: number) => void
 
   /**
-   * Canvas workflow compatibility boundary.
-   * Document services identify sessions by CanvasSessionId, while the
-   * workbench itself is driven exclusively by WorkbenchTabId.
+   * Document-boundary adapters.
+   *
+   * CanvasDocumentService continues to identify documents by session ID.
+   * Workbench chrome must otherwise operate on WorkbenchTabId.
    */
   readonly activateCanvas: (sessionId: CanvasSessionId) => void
   readonly closeCanvas: (sessionId: CanvasSessionId) => void

@@ -4,59 +4,54 @@ import { createWorkbenchSessionController } from './workbench-session-controller
 
 beforeEach(() => {
   let id = 0
+
   vi.stubGlobal('crypto', {
     randomUUID: () => 'generated-' + String(++id),
   })
 })
 
 describe('workbench session controller', () => {
-  it('starts with a permanent 新标签页 surface', () => {
+  it('starts with a tab-driven new-tab surface', () => {
     const store = createWorkbenchSessionController()
-    const snapshot = store.getSnapshot()
 
-    expect(snapshot.activeSurface).toEqual({
-      kind: 'start',
-      tabId: 'workbench:start',
-    })
-
-    expect(snapshot.tabs).toEqual([
-      {
-        id: 'workbench:start',
+    expect(store.getSnapshot()).toMatchObject({
+      activeTabId: 'workbench:start',
+      activeSurface: {
         kind: 'start',
-        title: '新标签页',
-        isActive: true,
-        canClose: false,
+        tabId: 'workbench:start',
       },
-    ])
+      tabs: [
+        {
+          id: 'workbench:start',
+          kind: 'start',
+          title: '新标签页',
+          canClose: false,
+          isActive: true,
+        },
+      ],
+    })
   })
 
-  it('drives canvas and workspace surfaces through one tab model', () => {
+  it('opens new tabs immediately right of active tab', () => {
     const store = createWorkbenchSessionController()
 
     store.createCanvas({
       canvasId: 'canvas-1',
       sessionId: 'session-1',
-      title: 'One.draw',
+      title: 'One',
     })
+
+    store.activateTab('workbench:start')
 
     store.openWorkspaceSurface({
       surfaceId: 'assets',
       title: '素材',
     })
 
-    expect(store.getSnapshot().tabs).toMatchObject([
-      { id: 'workbench:start', kind: 'start' },
-      {
-        id: 'canvas:session-1',
-        kind: 'canvas',
-        sessionId: 'session-1',
-      },
-      {
-        id: 'workspace:assets',
-        kind: 'workspace',
-        surfaceId: 'assets',
-        isActive: true,
-      },
+    expect(store.getSnapshot().tabs.map((tab) => tab.id)).toEqual([
+      'workbench:start',
+      'workspace:assets',
+      'canvas:session-1',
     ])
   })
 
@@ -78,7 +73,7 @@ describe('workbench session controller', () => {
     )
   })
 
-  it('activates the adjacent tab after closing the active tab', () => {
+  it('selects the right adjacent tab after closing active', () => {
     const store = createWorkbenchSessionController()
 
     store.openWorkspaceSurface({
@@ -91,21 +86,52 @@ describe('workbench session controller', () => {
       title: '关系',
     })
 
-    store.closeTab('workspace:relations')
+    store.activateTab('workspace:assets')
+    store.closeTab('workspace:assets')
 
-    expect(store.getSnapshot().activeTabId).toBe('workspace:assets')
+    expect(store.getSnapshot().activeTabId).toBe('workspace:relations')
   })
 
-  it('does not close the permanent start tab', () => {
+  it('selects the left adjacent tab when closing the last tab', () => {
     const store = createWorkbenchSessionController()
 
-    store.closeTab('workbench:start')
+    store.openWorkspaceSurface({
+      surfaceId: 'assets',
+      title: '素材',
+    })
 
-    expect(store.getSnapshot().tabs).toHaveLength(1)
+    store.closeTab('workspace:assets')
+
     expect(store.getSnapshot().activeTabId).toBe('workbench:start')
   })
 
-  it('keeps canvas compatibility commands at the document boundary', () => {
+  it('moves tabs without moving the permanent new-tab entry', () => {
+    const store = createWorkbenchSessionController()
+
+    store.openWorkspaceSurface({
+      surfaceId: 'assets',
+      title: '素材',
+    })
+
+    store.openWorkspaceSurface({
+      surfaceId: 'relations',
+      title: '关系',
+    })
+
+    store.moveTab('workspace:relations', 1)
+
+    expect(store.getSnapshot().tabs.map((tab) => tab.id)).toEqual([
+      'workbench:start',
+      'workspace:relations',
+      'workspace:assets',
+    ])
+
+    store.moveTab('workbench:start', 2)
+
+    expect(store.getSnapshot().tabs[0]?.id).toBe('workbench:start')
+  })
+
+  it('keeps canvas document commands at the boundary', () => {
     const store = createWorkbenchSessionController()
 
     store.createCanvas({

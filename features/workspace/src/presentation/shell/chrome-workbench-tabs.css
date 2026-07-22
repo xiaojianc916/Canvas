@@ -1,0 +1,357 @@
+/*
+ * Chrome-style workbench tabs.
+ *
+ * Geometry adapted from adamschwartz/chrome-tabs (MIT):
+ * https://github.com/adamschwartz/chrome-tabs
+ *
+ * Interaction/state remains owned by WorkbenchSessionStore.
+ */
+
+.chrome-workbench-tabs,
+.chrome-workbench-tabs * {
+  box-sizing: border-box;
+}
+
+.chrome-workbench-tabs {
+  --chrome-tab-height: 36px;
+  --chrome-tab-margin: 9px;
+  --chrome-tab-max-width: 240px;
+  --chrome-tab-min-width: 48px;
+  --chrome-tab-strip: var(--color-chrome);
+  --chrome-tab-active: var(--color-background);
+  --chrome-tab-hover: color-mix(in srgb, var(--color-background) 54%, transparent);
+  --chrome-tab-divider: color-mix(in srgb, var(--color-foreground) 22%, transparent);
+
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--chrome-tab-strip);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+}
+
+.chrome-workbench-tabs__scroller {
+  position: relative;
+  display: flex;
+  align-items: end;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 5px 3px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.chrome-workbench-tabs__scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.chrome-workbench-tabs__drag-region {
+  min-width: 24px;
+  height: 100%;
+  flex: 1 1 auto;
+}
+
+.chrome-workbench-tab {
+  position: relative;
+  z-index: 1;
+  height: var(--chrome-tab-height);
+  min-width: var(--chrome-tab-min-width);
+  max-width: var(--chrome-tab-max-width);
+  flex: 1 1 var(--chrome-tab-max-width);
+  margin-left: -1px;
+  user-select: none;
+  isolation: isolate;
+}
+
+.chrome-workbench-tab:first-child {
+  margin-left: 0;
+}
+
+.chrome-workbench-tab[data-active="true"] {
+  z-index: 5;
+}
+
+.chrome-workbench-tab:hover:not([data-active="true"]) {
+  z-index: 2;
+}
+
+.chrome-workbench-tab__background {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__background,
+.chrome-workbench-tab:hover .chrome-workbench-tab__background {
+  opacity: 1;
+}
+
+.chrome-workbench-tab__background-left,
+.chrome-workbench-tab__background-right {
+  position: absolute;
+  top: 0;
+  width: 52%;
+  height: 100%;
+  fill: var(--chrome-tab-hover);
+}
+
+.chrome-workbench-tab__background-left {
+  left: 0;
+}
+
+.chrome-workbench-tab__background-right {
+  right: 0;
+  transform: scaleX(-1);
+}
+
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__background-left,
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__background-right {
+  fill: var(--chrome-tab-active);
+}
+
+.chrome-workbench-tab__content {
+  position: absolute;
+  inset: 0 var(--chrome-tab-margin);
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  border-radius: 8px 8px 0 0;
+}
+
+.chrome-workbench-tab__activation {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: var(--color-muted-foreground);
+  background: transparent;
+  text-align: left;
+  cursor: default;
+}
+
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__activation {
+  color: var(--color-foreground);
+}
+
+.chrome-workbench-tab__activation:focus-visible {
+  border-radius: 7px;
+  outline: 2px solid var(--color-primary);
+  outline-offset: -3px;
+}
+
+.chrome-workbench-tab__icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  stroke-width: 1.7;
+}
+
+.chrome-workbench-tab__title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 16px;
+  mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 16px), transparent);
+}
+
+.chrome-workbench-tab__end {
+  position: relative;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  place-items: center;
+}
+
+.chrome-workbench-tab__close {
+  position: absolute;
+  inset: 2px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: currentColor;
+  background: transparent;
+  opacity: 0.8;
+}
+
+.chrome-workbench-tab__close:hover {
+  background: color-mix(in srgb, var(--color-foreground) 12%, transparent);
+  opacity: 1;
+}
+
+.chrome-workbench-tab__close:active {
+  background: color-mix(in srgb, var(--color-foreground) 20%, transparent);
+}
+
+.chrome-workbench-tab__close:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.chrome-workbench-tab__status {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.chrome-workbench-tab__status--dirty {
+  background: #d5803b;
+}
+
+.chrome-workbench-tab__status--saving {
+  background: #2783de;
+  animation: chrome-workbench-saving 900ms ease-in-out infinite alternate;
+}
+
+.chrome-workbench-tab__status--failed {
+  background: #e56458;
+}
+
+.chrome-workbench-tab__status + .chrome-workbench-tab__close {
+  opacity: 0;
+}
+
+.chrome-workbench-tab:hover .chrome-workbench-tab__status,
+.chrome-workbench-tab[data-active="true"]:hover .chrome-workbench-tab__status {
+  opacity: 0;
+}
+
+.chrome-workbench-tab:hover .chrome-workbench-tab__status + .chrome-workbench-tab__close,
+.chrome-workbench-tab[data-active="true"]:hover
+  .chrome-workbench-tab__status
+  + .chrome-workbench-tab__close {
+  opacity: 1;
+}
+
+.chrome-workbench-tab__divider {
+  position: absolute;
+  z-index: -1;
+  top: 9px;
+  bottom: 9px;
+  width: 1px;
+  background: var(--chrome-tab-divider);
+  transition: opacity 120ms ease-out;
+}
+
+.chrome-workbench-tab__divider--leading {
+  left: var(--chrome-tab-margin);
+}
+
+.chrome-workbench-tab__divider--trailing {
+  right: var(--chrome-tab-margin);
+}
+
+.chrome-workbench-tab:first-child .chrome-workbench-tab__divider--leading,
+.chrome-workbench-tab:last-of-type .chrome-workbench-tab__divider--trailing,
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__divider,
+.chrome-workbench-tab:hover .chrome-workbench-tab__divider,
+.chrome-workbench-tab:has(+ .chrome-workbench-tab[data-active="true"])
+  .chrome-workbench-tab__divider--trailing,
+.chrome-workbench-tab:has(+ .chrome-workbench-tab:hover) .chrome-workbench-tab__divider--trailing {
+  opacity: 0;
+}
+
+.chrome-workbench-tab[data-size="small"] .chrome-workbench-tab__content {
+  padding-inline: 5px;
+}
+
+.chrome-workbench-tab[data-size="small"] .chrome-workbench-tab__activation {
+  gap: 5px;
+}
+
+.chrome-workbench-tab[data-size="smaller"] .chrome-workbench-tab__title,
+.chrome-workbench-tab[data-size="mini"] .chrome-workbench-tab__title {
+  display: none;
+}
+
+.chrome-workbench-tab[data-size="smaller"] .chrome-workbench-tab__activation {
+  justify-content: center;
+}
+
+.chrome-workbench-tab[data-size="mini"] .chrome-workbench-tab__icon {
+  display: none;
+}
+
+.chrome-workbench-tab[data-size="mini"] .chrome-workbench-tab__end {
+  margin: auto;
+}
+
+.chrome-workbench-tab[data-size="mini"]:not([data-active="true"]) .chrome-workbench-tab__close {
+  display: none;
+}
+
+.chrome-workbench-tabs__new-tab {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  margin-left: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--color-muted-foreground);
+  background: transparent;
+}
+
+.chrome-workbench-tabs__new-tab:hover {
+  color: var(--color-foreground);
+  background: color-mix(in srgb, var(--color-foreground) 9%, transparent);
+}
+
+.chrome-workbench-tabs__new-tab:active {
+  background: color-mix(in srgb, var(--color-foreground) 15%, transparent);
+}
+
+.chrome-workbench-tabs__new-tab:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -3px;
+}
+
+.chrome-workbench-tabs__bottom-bar {
+  position: absolute;
+  z-index: 10;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1px;
+  background: var(--chrome-tab-active);
+  pointer-events: none;
+}
+
+@keyframes chrome-workbench-saving {
+  from {
+    opacity: 0.4;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome-workbench-tab__background,
+  .chrome-workbench-tab__divider,
+  .chrome-workbench-tab__status {
+    transition: none;
+    animation: none;
+  }
+}

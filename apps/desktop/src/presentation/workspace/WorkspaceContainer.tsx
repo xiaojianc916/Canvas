@@ -174,6 +174,10 @@ export function WorkspaceContainer({
 
       closeTab: handleCloseTab,
 
+      moveTab(tabId, targetIndex) {
+        port.workspace.moveTab(tabId, targetIndex)
+      },
+
       openWorkspaceSurface(surfaceId, title) {
         port.workspace.openWorkspaceSurface({
           surfaceId,
@@ -286,6 +290,7 @@ export function WorkspaceContainer({
         onSidebarToggle,
         onActivateTab,
         onCloseTab,
+        onMoveTab,
         onCreateCanvas,
       }) => (
         <DesktopTitleBar
@@ -300,6 +305,7 @@ export function WorkspaceContainer({
           <WorkbenchTabs
             onActivate={onActivateTab}
             onClose={onCloseTab}
+            onMove={onMoveTab}
             onCreate={onCreateCanvas}
             tabs={chromeTabs}
           />
