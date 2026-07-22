@@ -42,7 +42,6 @@ export function WorkspaceShell({
   overlays,
 }: WorkspaceShellProps) {
   const mode = useWorkspaceLayoutMode()
-  const rootRef = useRef<HTMLDivElement | null>(null)
   const previousModeRef = useRef(mode)
   const previousInspectorSelectionKeyRef = useRef(inspectorSelectionKey ?? '')
 
@@ -97,41 +96,6 @@ export function WorkspaceShell({
 
     setInspectorOpen(true)
   }, [inspectorSelectionKey, mode])
-
-  useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {
-      if (!isResizing || !rootRef.current) {
-        return
-      }
-
-      const rectangle = rootRef.current.getBoundingClientRect()
-      const style = window.getComputedStyle(rootRef.current)
-      const railWidth = Number.parseFloat(style.getPropertyValue('--activity-rail-width')) || 48
-
-      const width = event.clientX - rectangle.left - railWidth
-
-      setSidebarWidth(Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, width)))
-    }
-
-    const stopResize = () => {
-      setResizing(false)
-      document.body.style.removeProperty('cursor')
-      document.body.style.removeProperty('user-select')
-    }
-
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', stopResize)
-    window.addEventListener('pointercancel', stopResize)
-    window.addEventListener('blur', stopResize)
-
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', stopResize)
-      window.removeEventListener('pointercancel', stopResize)
-      window.removeEventListener('blur', stopResize)
-      stopResize()
-    }
-  }, [isResizing])
 
   const openSidebar = () => {
     if (mode === 'narrow') {
@@ -210,7 +174,7 @@ export function WorkspaceShell({
     <>
       <div
         aria-hidden={!dockSidebar}
-        className="relative row-[2/-1] min-h-0 min-w-0 overflow-visible border-r border-divider bg-sidebar"
+        className="relative z-20 row-[2/-1] min-h-0 min-w-0 overflow-visible border-r border-divider bg-sidebar"
         style={{
           gridColumn: 2,
           pointerEvents: dockSidebar ? 'auto' : 'none',
@@ -228,6 +192,7 @@ export function WorkspaceShell({
             min={SIDEBAR_MIN}
             onCollapse={() => setSidebarOpen(false)}
             onResize={setSidebarWidth}
+            onResizeEnd={() => setResizing(false)}
             onResizeStart={() => setResizing(true)}
             width={sidebarWidth}
           />
@@ -392,7 +357,6 @@ export function WorkspaceShell({
           </>
         }
         rail={rail}
-        rootRef={rootRef}
         sidebar={sidebar}
         sidebarColumnWidth={sidebarColumnWidth}
         statusBar={status}
