@@ -54,16 +54,30 @@ export interface EditorSession {
 export function createEditorSession(options: CreateEditorSessionOptions): EditorSession {
   const registration = buildExtensionRegistration(options.extensions)
   const store = createTLStore({
-    shapeUtils: [
-      ...defaultShapeUtils,
-      ...registration.shapeUtils,
-    ] as unknown as readonly TLAnyShapeUtilConstructor[],
-    bindingUtils: [...defaultBindingUtils, ...registration.bindingUtils],
-  })
-  if (options.initialSnapshot) {
-    loadSnapshot(store, options.initialSnapshot)
-  }
-  let attachedEditor: Editor | null = null
+  shapeUtils: [
+    ...defaultShapeUtils,
+    ...registration.shapeUtils,
+  ] as unknown as readonly TLAnyShapeUtilConstructor[],
+  bindingUtils: [
+    ...defaultBindingUtils,
+    ...registration.bindingUtils,
+  ],
+})
+
+if (options.initialSnapshot) {
+  loadSnapshot(store, options.initialSnapshot)
+}
+
+/*
+ * Establish the canonical tldraw document baseline before any
+ * persistence observer is registered.
+ *
+ * Otherwise tldraw may create the default document/page records
+ * during editor mounting and those bootstrap records can be
+ * misclassified as user edits.
+ */
+
+let attachedEditor: Editor | null = null
   let state: EditorSessionState = 'created'
   const listeners = new Set<() => void>()
 
