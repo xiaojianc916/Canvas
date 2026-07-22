@@ -319,7 +319,14 @@ export function WorkspaceContainer({
           />
         </DesktopTitleBar>
       )}
-      statusLeft={<CanvasStatusLeftContent hasActiveCanvas={workbench.activeCanvas !== null} />}
+      statusLeft={
+        <>
+          <CanvasStatusLeftContent
+            hasActiveCanvas={workbench.activeCanvas !== null}
+          />
+          <CanvasSelectionGeometryStatus />
+        </>
+      }
       statusRight={<CanvasStatusRightContent pageCount={pages.length} />}
     />
   )
@@ -554,55 +561,6 @@ function CanvasInspectorContent({ hasActiveCanvas }: { readonly hasActiveCanvas:
         }
         title={selectedShapes.length === 1 ? selection.type : '多个对象'}
       />
-
-      <InspectorSection title="几何">
-        <div className="grid grid-cols-2 gap-2">
-          <InspectorNumberField
-            label="X"
-            mixed={selection.x === null}
-            onCommit={(value) => updateTopLevelNumber('x', value)}
-            value={selection.x}
-          />
-          <InspectorNumberField
-            label="Y"
-            mixed={selection.y === null}
-            onCommit={(value) => updateTopLevelNumber('y', value)}
-            value={selection.y}
-          />
-          <InspectorNumberField
-            disabled={selectedShapes.length !== 1}
-            label="宽"
-            min={1}
-            mixed={selection.width === null}
-            onCommit={(value) => updateSize('w', value)}
-            value={selection.width}
-          />
-          <InspectorNumberField
-            disabled={selectedShapes.length !== 1}
-            label="高"
-            min={1}
-            mixed={selection.height === null}
-            onCommit={(value) => updateSize('h', value)}
-            value={selection.height}
-          />
-          <InspectorNumberField
-            label="旋转"
-            mixed={selection.rotation === null}
-            onCommit={(value) => updateTopLevelNumber('rotation', value)}
-            suffix="°"
-            value={selection.rotation}
-          />
-          <InspectorNumberField
-            label="透明度"
-            max={100}
-            min={0}
-            mixed={selection.opacity === null}
-            onCommit={(value) => updateTopLevelNumber('opacity', value)}
-            suffix="%"
-            value={selection.opacity}
-          />
-        </div>
-      </InspectorSection>
 
       <InspectorSection title="外观">
         <div className="space-y-3">
@@ -992,6 +950,142 @@ function clampOptional(
   }
 
   return result
+}
+
+function CanvasSelectionGeometryStatus() {
+  const editor = useEditor()
+
+  const geometry = useValue(
+    'canvas status selection geometry',
+    () => {
+      if (!editor) {
+        return null
+      }
+
+      const selectedShapes = editor.getSelectedShapes()
+
+      if (selectedShapes.length === 0) {
+        return null
+      }
+
+      const bounds = editor.getSelectionPageBounds()
+
+      if (!bounds) {
+        return null
+      }
+
+      const firstShape = selectedShapes[0]
+
+      const sharedRotation =
+        firstShape &&
+        selectedShapes.every(
+          (shape) =>
+            Math.abs(shape.rotation - firstShape.rotation) < 0.0001,
+        )
+          ? radiansToStatusDegrees(firstShape.rotation)
+          : null
+
+      return {
+        count: selectedShapes.length,
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        rotation: sharedRotation,
+      }
+    },
+    [editor],
+  )
+
+  if (!geometry) {
+    return null
+  }
+
+  return (
+    <>
+      <StatusDivider />
+
+      <span className="shrink-0 font-medium text-foreground/80">
+        {geometry.count === 1
+          ? '已选择 1 个对象'
+          : '已选择 ' + String(geometry.count) + ' 个对象'}
+      </span>
+
+      <StatusGeometryValue
+        label="X"
+        value={formatStatusNumber(geometry.x)}
+      />
+
+      <StatusGeometryValue
+        label="Y"
+        value={formatStatusNumber(geometry.y)}
+      />
+
+      <StatusGeometryValue
+        label="W"
+        value={formatStatusNumber(geometry.width)}
+      />
+
+      <StatusGeometryValue
+        label="H"
+        value={formatStatusNumber(geometry.height)}
+      />
+
+      {geometry.rotation !== null ? (
+        <StatusGeometryValue
+          label="R"
+          suffix="°"
+          value={formatStatusNumber(geometry.rotation)}
+        />
+      ) : null}
+    </>
+  )
+}
+
+interface StatusGeometryValueProps {
+  readonly label: string
+  readonly value: string
+  readonly suffix?: string
+}
+
+function StatusGeometryValue({
+  label,
+  value,
+  suffix,
+}: StatusGeometryValueProps) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1"
+      title={label + ': ' + value + (suffix ?? '')}
+    >
+      <span className="text-muted-foreground/70">{label}</span>
+      <span className="min-w-8 rounded bg-background/70 px-1.5 py-0.5 text-right font-mono tabular-nums text-foreground/80">
+        {value}
+        {suffix}
+      </span>
+    </span>
+  )
+}
+
+function StatusDivider() {
+  return (
+    <span
+      aria-hidden="true"
+      className="h-3 w-px shrink-0 bg-divider"
+    />
+  )
+}
+
+function radiansToStatusDegrees(value: number): number {
+  return (value * 180) / Math.PI
+}
+
+function formatStatusNumber(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '0'
+  }
+
+  return String(Math.round(value * 10) / 10)
 }
 
 function CanvasStatusLeftContent({ hasActiveCanvas }: { readonly hasActiveCanvas: boolean }) {
