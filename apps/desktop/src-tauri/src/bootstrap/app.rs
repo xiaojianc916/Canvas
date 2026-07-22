@@ -30,8 +30,6 @@ pub fn build() -> tauri::Builder<Wry> {
             commands::window::window_focus,
             commands::window::window_close,
             commands::window::window_destroy,
-            commands::window::window_minimize,
-            commands::window::window_maximize,
             commands::window::window_set_title,
             commands::window::window_save_state,
             commands::opener::opener_show_in_folder,

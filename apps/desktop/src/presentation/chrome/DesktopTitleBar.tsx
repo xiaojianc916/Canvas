@@ -1,5 +1,18 @@
 import { Minus, PanelLeftClose, PanelLeftOpen, Square, X } from 'lucide-react'
 
+const WINDOW_DRAG_EXCLUSION_SELECTOR = [
+  'button',
+  'a',
+  'input',
+  'textarea',
+  'select',
+  '[contenteditable="true"]',
+  '[role="button"]',
+  '[role="tab"]',
+  '[role="menuitem"]',
+  '[data-window-drag-exclude]',
+].join(',')
+
 export interface DesktopTitleBarProps {
   readonly children: React.ReactNode
   readonly onMinimize: () => void
@@ -22,28 +35,46 @@ export function DesktopTitleBar({
   sidebarWidth,
 }: DesktopTitleBarProps) {
   function handleDragMouseDown(event: React.MouseEvent<HTMLElement>) {
-    if (event.button !== 0 || (event.target as HTMLElement).closest('button')) {
+    if (event.button !== 0) {
       return
     }
+
+    const target = event.target
+
+    if (
+      !(target instanceof Element) ||
+      target.closest(WINDOW_DRAG_EXCLUSION_SELECTOR)
+    ) {
+      return
+    }
+
+    // Prevent text selection and drag-image behavior before transferring
+    // pointer ownership to the native window manager.
+    event.preventDefault()
+
     if (event.detail === 2) {
       onMaximize()
       return
     }
+
     onStartDragging()
   }
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 bg-chrome" data-tauri-drag-region>
-      {/* Chrome owns drag behavior; only button elements opt out. */}
+    <div className="flex h-full min-h-0 min-w-0 bg-chrome">
+      {/*
+          The titlebar owns one drag path through MainWindowController.
+          Interactive descendants explicitly opt out.
+        */}
       <div
         aria-label="窗口标题栏"
         className="flex h-full min-h-0 w-full items-stretch"
-        onMouseDown={handleDragMouseDown}
+        onMouseDownCapture={handleDragMouseDown}
         role="toolbar"
       >
         <div
           className="flex w-(--activity-rail-width) shrink-0 items-center justify-center border-b border-divider"
-          data-tauri-drag-region
+         
         >
           <button
             aria-label={isSidebarOpen ? '收起侧边栏' : '展开侧边栏'}
@@ -60,13 +91,13 @@ export function DesktopTitleBar({
         </div>
         <div
           className="shrink-0 border-b border-r border-divider"
-          data-tauri-drag-region
+         
           style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
         />
-        <div className="flex min-w-0 flex-1 items-stretch" data-tauri-drag-region>
+        <div className="flex min-w-0 flex-1 items-stretch">
           {children}
         </div>
-        <div className="flex shrink-0 items-stretch border-b border-divider" data-tauri-drag-region>
+        <div className="flex shrink-0 items-stretch border-b border-divider">
           <button
             aria-label="最小化"
             className="grid w-11 place-items-center text-muted-foreground hover:bg-black/5 hover:text-foreground"

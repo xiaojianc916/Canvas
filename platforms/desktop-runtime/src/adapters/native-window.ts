@@ -13,10 +13,29 @@ export interface MainWindowController {
 
 const MAIN_WINDOW_LABEL = 'main'
 
+async function getMainWindow() {
+  const { getCurrentWindow } = await import('@tauri-apps/api/window')
+  const window = getCurrentWindow()
+
+  if (window.label !== MAIN_WINDOW_LABEL) {
+    throw new Error(
+      `Expected window "${MAIN_WINDOW_LABEL}", received "${window.label}".`,
+    )
+  }
+
+  return window
+}
+
 export function createMainWindowController(): MainWindowController {
   return {
-    minimize: () => invoke('window_minimize', { label: MAIN_WINDOW_LABEL }),
-    toggleMaximize: () => invoke('window_maximize', { label: MAIN_WINDOW_LABEL }),
+    async minimize() {
+      const window = await getMainWindow()
+      await window.minimize()
+    },
+    async toggleMaximize() {
+      const window = await getMainWindow()
+      await window.toggleMaximize()
+    },
     close: () => invoke('window_close', { label: MAIN_WINDOW_LABEL }),
     forceClose() {
       // Application termination is intentionally fire-and-forget.
@@ -45,7 +64,10 @@ export function createMainWindowController(): MainWindowController {
         handler()
       })
     },
-    startDragging: () => invoke('window_start_dragging', { label: MAIN_WINDOW_LABEL }),
+    async startDragging() {
+      const window = await getMainWindow()
+      await window.startDragging()
+    },
     setTitle: (title) => invoke('window_set_title', { label: MAIN_WINDOW_LABEL, title }),
     saveState: () => invoke('window_save_state'),
   }

@@ -123,26 +123,6 @@ pub async fn window_destroy(app: AppHandle, label: String) -> Result<()> {
 }
 
 #[command]
-pub async fn window_minimize(app: AppHandle, label: String) -> Result<()> {
-    if let Some(window) = app.get_webview_window(&label) {
-        window.minimize()?;
-    }
-    Ok(())
-}
-
-#[command]
-pub async fn window_maximize(app: AppHandle, label: String) -> Result<()> {
-    if let Some(window) = app.get_webview_window(&label) {
-        if window.is_maximized()? {
-            window.unmaximize()?;
-        } else {
-            window.maximize()?;
-        }
-    }
-    Ok(())
-}
-
-#[command]
 pub async fn window_set_title(app: AppHandle, label: String, title: String) -> Result<()> {
     if let Some(window) = app.get_webview_window(&label) {
         window.set_title(&title)?;
