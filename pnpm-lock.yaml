@@ -661,18 +661,12 @@ importers:
 
   platforms/desktop-runtime:
     dependencies:
-      '@hybrid-canvas/asset':
-        specifier: workspace:*
-        version: link:../../editor/assets
       '@hybrid-canvas/desktop-ipc':
         specifier: workspace:*
         version: link:../desktop-ipc
       '@hybrid-canvas/file':
         specifier: workspace:*
         version: link:../../editor/persistence
-      '@hybrid-canvas/plugin':
-        specifier: workspace:*
-        version: link:../../editor/extensions
       '@hybrid-canvas/settings':
         specifier: workspace:*
         version: link:../../features/settings
