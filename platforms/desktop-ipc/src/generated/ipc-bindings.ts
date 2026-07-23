@@ -33,6 +33,15 @@ async documentSave(request: DocumentSaveRequest) : Promise<null> {
  */
 async documentClose(request: DocumentCloseRequest) : Promise<null> {
     return await TAURI_INVOKE("document_close", { request });
+},
+async settingsGet() : Promise<AppSettings> {
+    return await TAURI_INVOKE("settings_get");
+},
+async settingsSet(settings: AppSettings) : Promise<null> {
+    return await TAURI_INVOKE("settings_set", { settings });
+},
+async settingsReset() : Promise<AppSettings> {
+    return await TAURI_INVOKE("settings_reset");
 }
 }
 
@@ -46,6 +55,13 @@ async documentClose(request: DocumentCloseRequest) : Promise<null> {
 
 /** user-defined types **/
 
+export type AppSettings = { theme: string; language: string; auto_save: boolean; 
+/**
+ * Milliseconds. u32 is intentional: generated TypeScript IPC uses number,
+ * while u64 would require bigint and is rejected by tauri-specta.
+ */
+auto_save_interval: number; shortcuts: Partial<{ [key in string]: string }>; canvas: CanvasSettings; editor: EditorSettings; export: ExportSettings; privacy: PrivacySettings }
+export type CanvasSettings = { default_zoom: number; show_grid: boolean; snap_to_grid: boolean; grid_size: number; show_rulers: boolean; infinite_canvas: boolean }
 export type DocumentCloseRequest = { documentId: DocumentId }
 export type DocumentDescriptor = { documentId: DocumentId; displayName: string }
 /**
@@ -66,9 +82,12 @@ export type DocumentSaveAsRequest = {
 documentId: DocumentId | null; content: string; suggestedName: string | null }
 export type DocumentSaveAsResult = { document: DocumentDescriptor | null }
 export type DocumentSaveRequest = { documentId: DocumentId; content: string }
+export type EditorSettings = { font_family: string; font_size: number; line_height: number; tab_size: number; insert_spaces: boolean; word_wrap: boolean; minimap: boolean }
+export type ExportSettings = { default_format: string; png_dpi: number; pdf_quality: number; include_metadata: boolean }
 export type IpcError = { code: IpcErrorCode; message: string; operation: IpcOperation; recoverable: boolean }
 export type IpcErrorCode = "validation" | "not-found" | "permission-denied" | "persistence" | "plugin" | "asset" | "import-export" | "platform"
 export type IpcOperation = "file" | "plugin" | "asset" | "import-export" | "platform"
+export type PrivacySettings = { telemetry: boolean; crash_reporting: boolean; update_check: boolean }
 
 /** tauri-specta globals **/
 

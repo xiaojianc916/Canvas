@@ -7,10 +7,15 @@ use specta_typescript::Typescript;
 use tauri::Wry;
 use tauri_specta::{Builder, ErrorHandlingMode};
 
-use crate::commands::document::{
-    DocumentCloseRequest, DocumentDescriptor, DocumentId, DocumentOpenResponse,
-    DocumentOpenResult, DocumentSaveAsRequest, DocumentSaveAsResult,
-    DocumentSaveRequest,
+use crate::commands::{
+    document::{
+        DocumentCloseRequest, DocumentDescriptor, DocumentId, DocumentOpenResponse,
+        DocumentOpenResult, DocumentSaveAsRequest, DocumentSaveAsResult,
+        DocumentSaveRequest,
+    },
+    settings::{
+        AppSettings, CanvasSettings, EditorSettings, ExportSettings, PrivacySettings,
+    },
 };
 
 const OUTPUT_PATH: &str = concat!(
@@ -30,6 +35,9 @@ pub fn export_document_bindings() {
             crate::commands::document::document_save_as,
             crate::commands::document::document_save,
             crate::commands::document::document_close,
+            crate::commands::settings::settings_get,
+            crate::commands::settings::settings_set,
+            crate::commands::settings::settings_reset,
         ])
         .typ::<DocumentId>()
         .typ::<DocumentDescriptor>()
@@ -39,6 +47,11 @@ pub fn export_document_bindings() {
         .typ::<DocumentSaveAsRequest>()
         .typ::<DocumentSaveAsResult>()
         .typ::<DocumentCloseRequest>()
+        .typ::<AppSettings>()
+        .typ::<CanvasSettings>()
+        .typ::<EditorSettings>()
+        .typ::<ExportSettings>()
+        .typ::<PrivacySettings>()
         .export(Typescript::default(), OUTPUT_PATH)
         .expect("failed to export document IPC TypeScript bindings");
 }

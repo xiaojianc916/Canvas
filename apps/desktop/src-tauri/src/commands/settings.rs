@@ -1,16 +1,20 @@
-use crate::error::{Error, Result};
+use crate::error::{Error, IpcError, Result};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
 use tauri::{AppHandle, command};
 use tauri_plugin_store::StoreExt;
 
+type SettingsCommandResult<T> = std::result::Result<T, IpcError>;
+
 #[derive(Debug, Deserialize, Serialize, Type, Clone)]
 pub struct AppSettings {
     pub theme: String,
     pub language: String,
     pub auto_save: bool,
-    pub auto_save_interval: u64,
+    /// Milliseconds. u32 is intentional: generated TypeScript IPC uses number,
+    /// while u64 would require bigint and is rejected by tauri-specta.
+    pub auto_save_interval: u32,
     pub shortcuts: HashMap<String, String>,
     pub canvas: CanvasSettings,
     pub editor: EditorSettings,
@@ -119,29 +123,48 @@ impl Default for PrivacySettings {
 }
 
 #[command]
-pub async fn settings_get(app: AppHandle) -> Result<AppSettings> {
-    let store = app.store("settings.json")?;
+#[specta::specta]
+pub async fn settings_get(
+    app: AppHandle,
+) -> SettingsCommandResult<AppSettings> {
+    (|| -> Result<AppSettings> {
+        let store = app.store("settings.json")?;
 
-    match store.get("settings") {
-        None => Ok(AppSettings::default()),
-        Some(value) => serde_json::from_value(value)
-            .map_err(|error| Error::Validation(format!("invalid settings: {error}"))),
-    }
+        match store.get("settings") {
+            None => Ok(AppSettings::default()),
+            Some(value) => serde_json::from_value(value)
+                .map_err(|error| Error::Validation(format!("invalid settings: {error}"))),
+        }
+    })()
+    .map_err(IpcError::from)
 }
 
 #[command]
-pub async fn settings_set(app: AppHandle, settings: AppSettings) -> Result<()> {
-    let store = app.store("settings.json")?;
-    store.set("settings", serde_json::to_value(&settings)?);
-    store.save()?;
-    Ok(())
+#[specta::specta]
+pub async fn settings_set(
+    app: AppHandle,
+    settings: AppSettings,
+) -> SettingsCommandResult<()> {
+    (|| -> Result<()> {
+        let store = app.store("settings.json")?;
+        store.set("settings", serde_json::to_value(&settings)?);
+        store.save()?;
+        Ok(())
+    })()
+    .map_err(IpcError::from)
 }
 
 #[command]
-pub async fn settings_reset(app: AppHandle) -> Result<AppSettings> {
-    let defaults = AppSettings::default();
-    let store = app.store("settings.json")?;
-    store.set("settings", serde_json::to_value(&defaults)?);
-    store.save()?;
-    Ok(defaults)
+#[specta::specta]
+pub async fn settings_reset(
+    app: AppHandle,
+) -> SettingsCommandResult<AppSettings> {
+    (|| -> Result<AppSettings> {
+        let defaults = AppSettings::default();
+        let store = app.store("settings.json")?;
+        store.set("settings", serde_json::to_value(&defaults)?);
+        store.save()?;
+        Ok(defaults)
+    })()
+    .map_err(IpcError::from)
 }

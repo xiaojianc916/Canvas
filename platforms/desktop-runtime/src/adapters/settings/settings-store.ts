@@ -1,58 +1,23 @@
-import { invoke } from '@hybrid-canvas/desktop-ipc'
+import {
+  commands,
+  type AppSettings as AppSettingsDto,
+} from '@hybrid-canvas/desktop-ipc/generated/ipc-bindings'
 import type { AppSettings, SettingsStore, ThemeMode } from '@hybrid-canvas/settings'
-
-interface AppSettingsDto {
-  readonly theme: string
-  readonly language: string
-  readonly auto_save: boolean
-  readonly auto_save_interval: number
-  readonly shortcuts: Record<string, string>
-  readonly canvas: {
-    readonly default_zoom: number
-    readonly show_grid: boolean
-    readonly snap_to_grid: boolean
-    readonly grid_size: number
-    readonly show_rulers: boolean
-    readonly infinite_canvas: boolean
-  }
-  readonly editor: {
-    readonly font_family: string
-    readonly font_size: number
-    readonly line_height: number
-    readonly tab_size: number
-    readonly insert_spaces: boolean
-    readonly word_wrap: boolean
-    readonly minimap: boolean
-  }
-  readonly export: {
-    readonly default_format: string
-    readonly png_dpi: number
-    readonly pdf_quality: number
-    readonly include_metadata: boolean
-  }
-  readonly privacy: {
-    readonly telemetry: boolean
-    readonly crash_reporting: boolean
-    readonly update_check: boolean
-  }
-}
 
 export function createDesktopSettingsStore(): SettingsStore {
   return {
     async load() {
-      const dto = await invoke<AppSettingsDto>('settings_get')
+      const dto = await commands.settingsGet()
 
       return fromDto(dto)
     },
 
-    save(settings) {
-      return invoke<void>('settings_set', {
-        settings: toDto(settings),
-      })
+    async save(settings) {
+      await commands.settingsSet(toDto(settings))
     },
 
     async reset() {
-      const dto = await invoke<AppSettingsDto>('settings_reset')
+      const dto = await commands.settingsReset()
 
       return fromDto(dto)
     },
