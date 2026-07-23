@@ -128,7 +128,7 @@ export interface CanvasToolbarProps {
   readonly onSave?: () => void
 }
 
-export function CanvasToolbar() {
+export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
   const editor = useEditor()
   const actions = useActions()
   const tools = useTools()
@@ -203,6 +203,14 @@ export function CanvasToolbar() {
 
   const saveAction =
     actions['hybrid-canvas.save']
+
+  const handleSave =
+    onSave ??
+    (saveAction
+      ? () => {
+          void saveAction.onSelect('toolbar')
+        }
+      : null)
 
   return (
     <div
@@ -378,23 +386,21 @@ export function CanvasToolbar() {
         ) : null}
       </div>
 
-      {saveAction ? (
-  <>
-    <Separator
-      className="mx-1 h-5 shrink-0"
-      orientation="vertical"
-    />
+      {handleSave ? (
+        <>
+          <Separator
+            className="mx-1 h-5 shrink-0"
+            orientation="vertical"
+          />
 
-    <ToolbarButton
-      icon={Save}
-      label="保存"
-      onClick={() =>
-        void saveAction.onSelect('toolbar')
-      }
-      shortcut="Ctrl+S"
-    />
-  </>
-) : null}
+          <ToolbarButton
+            icon={Save}
+            label="保存"
+            onClick={handleSave}
+            shortcut="Ctrl+S"
+          />
+        </>
+      ) : null}
     </div>
   )
 }
