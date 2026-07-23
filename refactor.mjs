@@ -2,279 +2,176 @@
 
 import { readFile, writeFile } from 'node:fs/promises'
 
-const documentServicePath =
-  'editor/document/src/application/canvas-document-service.ts'
+const sessionPath = 'editor/document/src/domain/document-session.ts'
 
-const documentPublicApiPath =
-  'editor/document/src/public-api.ts'
-
-const workflowPath =
-  'apps/desktop/src/application/canvas/canvas-workflow.ts'
-
-const workspacePath =
-  'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx'
-
-const lifecycleTestPath =
-  'tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts'
-
-const workflowTestPath =
-  'apps/desktop/src/application/canvas/canvas-workflow.test.ts'
+const sessionTestPath =
+  'tests/cross-domain-contract/document-lifecycle/document-session.test.ts'
 
 const architectureCheckPath =
   'tests/architecture/check-canvas-lifecycle.mjs'
 
-let documentService = await readFile(documentServicePath, 'utf8')
+let session = await readFile(sessionPath, 'utf8')
 
-documentService = documentService.replace(
-  `export type CanvasCloseIntent = 'normal' | 'discard'
+session = session.replace(
+  `export type DocumentPersistenceState = 'clean' | 'dirty' | 'saving' | 'failed'`,
+  `export type DocumentPersistenceState = 'clean' | 'dirty' | 'saving' | 'failed'
 
-export type CanvasReleaseResult =
-  | { readonly kind: 'released' }
-  | { readonly kind: 'confirmation-required' }
-  | {
-      readonly kind: 'wait-for-save'
-      readonly operation: Promise<void>
-    }
-  | { readonly kind: 'release-failed' }
-  | { readonly kind: 'not-found' }`,
-  `export type CanvasCloseIntent = 'normal' | 'discard'
-
-export type CanvasReleaseFailureCode =
-  | 'permission-denied'
-  | 'persistence'
-  | 'not-found'
-  | 'platform'
-
-export interface CanvasReleaseFailure {
-  readonly code: CanvasReleaseFailureCode
-  readonly recoverable: boolean
-}
-
-export type CanvasReleaseResult =
-  | { readonly kind: 'released' }
-  | { readonly kind: 'confirmation-required' }
-  | {
-      readonly kind: 'wait-for-save'
-      readonly operation: Promise<void>
-    }
-  | {
-      readonly kind: 'release-failed'
-      readonly failure: CanvasReleaseFailure
-    }
-  | { readonly kind: 'not-found' }`,
+type ReopenableDocumentSessionPhase = Exclude<
+  DocumentSessionPhase,
+  'closing' | 'closed'
+>`,
 )
 
-documentService = documentService.replace(
-  `    } catch {
-      owned.document.cancelClosing()
-      emit()
+session = session.replace(
+  `  let activeSave: DocumentSaveTicket | null = null
+  let nextSaveId = 1`,
+  `  let activeSave: DocumentSaveTicket | null = null
+  let phaseBeforeClosing: ReopenableDocumentSessionPhase | null = null
+  let nextSaveId = 1`,
+)
 
-      return { kind: 'release-failed' }
-    }`,
-  `    } catch (error) {
-      owned.document.cancelClosing()
-      emit()
+session = session.replace(
+  `    beginClosing() {
+      assertNotClosed()
 
-      return {
-        kind: 'release-failed',
-        failure: toCanvasReleaseFailure(error),
+      if (phase === 'saving') {
+        throw new Error('DOCUMENT_SESSION_SAVE_IN_PROGRESS')
       }
-    }`,
-)
 
-documentService = documentService.replace(
-  `  function planApplicationClose(): ApplicationClosePlan {`,
-  `  function toCanvasReleaseFailure(error: unknown): CanvasReleaseFailure {
-    if (
-      typeof error === 'object' &&
-      error !== null &&
-      'details' in error &&
-      typeof error.details === 'object' &&
-      error.details !== null
-    ) {
-      const details = error.details as Record<string, unknown>
-      const code = details['code']
-      const recoverable = details['recoverable']
+      phase = 'closing'
+    },
 
-      if (
-        (code === 'permission-denied' ||
-          code === 'persistence' ||
-          code === 'not-found' ||
-          code === 'platform') &&
-        typeof recoverable === 'boolean'
-      ) {
-        return {
-          code,
-          recoverable,
-        }
+    cancelClosing() {
+      if (phase !== 'closing') {
+        throw new Error('DOCUMENT_SESSION_NOT_CLOSING')
       }
-    }
 
-    return {
-      code: 'platform',
-      recoverable: false,
-    }
-  }
+      phase = 'ready'
+    },
 
-  function planApplicationClose(): ApplicationClosePlan {`,
-)
-
-await writeFile(documentServicePath, documentService, 'utf8')
-
-let documentPublicApi = await readFile(documentPublicApiPath, 'utf8')
-
-documentPublicApi = documentPublicApi.replace(
-  `  type CanvasCloseIntent,
-  type CanvasReleaseResult,`,
-  `  type CanvasCloseIntent,
-  type CanvasReleaseFailure,
-  type CanvasReleaseFailureCode,
-  type CanvasReleaseResult,`,
-)
-
-await writeFile(documentPublicApiPath, documentPublicApi, 'utf8')
-
-let workflow = await readFile(workflowPath, 'utf8')
-
-workflow = workflow.replace(
-  `  CanvasCloseIntent,
-  CanvasDocumentService,`,
-  `  CanvasCloseIntent,
-  CanvasDocumentService,
-  CanvasReleaseFailure,`,
-)
-
-workflow = workflow.replace(
-  `  | {
-      readonly state: 'release-failed'
-      readonly intent: CanvasCloseIntent
-    }`,
-  `  | {
-      readonly state: 'release-failed'
-      readonly intent: CanvasCloseIntent
-      readonly failure: CanvasReleaseFailure
-    }`,
-)
-
-workflow = workflow.replace(
-  `      case 'release-failed':
-        setCloseState(sessionId, {
-          state: 'release-failed',
-          intent,
-        })
-        return`,
-  `      case 'release-failed':
-        setCloseState(sessionId, {
-          state: 'release-failed',
-          intent,
-          failure: result.failure,
-        })
-        return`,
-)
-
-workflow = workflow.replace(
-  `      case 'wait-for-save':
-        setCloseState(sessionId, {
-          state: 'release-failed',
-          intent,
-        })`,
-  `      case 'wait-for-save':
-        setCloseState(sessionId, {
-          state: 'release-failed',
-          intent,
-          failure: {
-            code: 'platform',
-            recoverable: false,
-          },
-        })`,
-)
-
-await writeFile(workflowPath, workflow, 'utf8')
-
-let workspace = await readFile(workspacePath, 'utf8')
-
-workspace = workspace.replace(
-  `  | {
-      readonly state: 'release-failed'
-      readonly intent: 'normal' | 'discard'
-    }`,
-  `  | {
-      readonly state: 'release-failed'
-      readonly intent: 'normal' | 'discard'
-      readonly failure: {
-        readonly code:
-          | 'permission-denied'
-          | 'persistence'
-          | 'not-found'
-          | 'platform'
-        readonly recoverable: boolean
+    completeClosing() {
+      if (phase !== 'closing') {
+        throw new Error('DOCUMENT_SESSION_NOT_CLOSING')
       }
-    }`,
+
+      phase = 'closed'
+    },`,
+  `    beginClosing() {
+      assertNotClosed()
+
+      if (phase === 'saving') {
+        throw new Error('DOCUMENT_SESSION_SAVE_IN_PROGRESS')
+      }
+
+      phaseBeforeClosing = phase
+      phase = 'closing'
+    },
+
+    cancelClosing() {
+      if (phase !== 'closing' || !phaseBeforeClosing) {
+        throw new Error('DOCUMENT_SESSION_NOT_CLOSING')
+      }
+
+      phase = phaseBeforeClosing
+      phaseBeforeClosing = null
+    },
+
+    completeClosing() {
+      if (phase !== 'closing') {
+        throw new Error('DOCUMENT_SESSION_NOT_CLOSING')
+      }
+
+      phaseBeforeClosing = null
+      phase = 'closed'
+    },`,
 )
 
-await writeFile(workspacePath, workspace, 'utf8')
+await writeFile(sessionPath, session, 'utf8')
 
-let lifecycleTest = await readFile(lifecycleTestPath, 'utf8')
+let sessionTest = await readFile(sessionTestPath, 'utf8')
 
-lifecycleTest = lifecycleTest.replace(
-  `    harness.persistence.close.mockRejectedValue(
-      new Error('native document_close rejected'),
-    )
+sessionTest = sessionTest.replace(
+  `  it('enters failed state after a native save failure', () => {`,
+  `  it('restores the exact pre-close phase after native release cancellation', () => {
+    const session = createDocumentSession('document-native-1')
 
-    await expect(
-      harness.service.releaseCanvas(opened.sessionId, 'normal'),
-    ).resolves.toEqual({
-      kind: 'release-failed',
-    })`,
-  `    harness.persistence.close.mockRejectedValue(
-      Object.assign(new Error('native document_close rejected'), {
-        details: {
-          code: 'permission-denied',
-          recoverable: true,
-        },
-      }),
-    )
+    const current = snapshot({
+      shapes: [{ id: 'shape:1' }],
+    })
 
-    await expect(
-      harness.service.releaseCanvas(opened.sessionId, 'normal'),
-    ).resolves.toEqual({
-      kind: 'release-failed',
-      failure: {
-        code: 'permission-denied',
-        recoverable: true,
-      },
-    })`,
+    session.initialize(snapshot({ shapes: [] }))
+
+    const ticket = session.beginSave(current)
+    session.failSave(ticket)
+
+    expect(session.getSnapshot()).toEqual({
+      phase: 'save-failed',
+      persistence: 'failed',
+      documentId: 'document-native-1',
+    })
+
+    session.beginClosing()
+
+    expect(session.getSnapshot()).toEqual({
+      phase: 'closing',
+      persistence: 'dirty',
+      documentId: 'document-native-1',
+    })
+
+    session.cancelClosing()
+
+    expect(session.getSnapshot()).toEqual({
+      phase: 'save-failed',
+      persistence: 'failed',
+      documentId: 'document-native-1',
+    })
+  })
+
+  it('restores ready state after a clean close cancellation', () => {
+    const session = createDocumentSession('document-native-1')
+
+    session.initialize(snapshot({ shapes: [] }))
+    session.beginClosing()
+    session.cancelClosing()
+
+    expect(session.getSnapshot()).toEqual({
+      phase: 'ready',
+      persistence: 'clean',
+      documentId: 'document-native-1',
+    })
+  })
+
+  it('enters failed state after a native save failure', () => {`,
 )
 
-await writeFile(lifecycleTestPath, lifecycleTest, 'utf8')
-
-let workflowTest = await readFile(workflowTestPath, 'utf8')
-
-workflowTest = workflowTest.replaceAll(
-  `{ kind: 'release-failed' }`,
-  `{
-        kind: 'release-failed',
-        failure: {
-          code: 'persistence',
-          recoverable: true,
-        },
-      }`,
-)
-
-workflowTest = workflowTest.replaceAll(
-  `          intent: 'discard',
-        },`,
-  `          intent: 'discard',
-          failure: {
-            code: 'persistence',
-            recoverable: true,
-          },
-        },`,
-)
-
-await writeFile(workflowTestPath, workflowTest, 'utf8')
+await writeFile(sessionTestPath, sessionTest, 'utf8')
 
 let architectureCheck = await readFile(architectureCheckPath, 'utf8')
+
+architectureCheck = architectureCheck.replace(
+  `const files = [`,
+  `const documentSessionPath =
+  'editor/document/src/domain/document-session.ts'
+
+const files = [`,
+)
+
+architectureCheck = architectureCheck.replace(
+  `const sources = await Promise.all(
+  files.map(async (path) => ({
+    path,
+    source: await readFile(path, 'utf8'),
+  })),
+)`,
+  `const sources = await Promise.all(
+  files.map(async (path) => ({
+    path,
+    source: await readFile(path, 'utf8'),
+  })),
+)
+
+const documentSession = await readFile(documentSessionPath, 'utf8')`,
+)
 
 architectureCheck = architectureCheck.replace(
   `if (!workflow?.includes('CanvasCloseSnapshot')) {
@@ -284,30 +181,25 @@ architectureCheck = architectureCheck.replace(
   violations.push('Canvas lifecycle coordinator snapshot is missing')
 }
 
-const documentService = sources.find(
-  ({ path }) =>
-    path === 'editor/document/src/application/canvas-document-service.ts',
-)?.source
-
-if (!documentService?.includes('CanvasReleaseFailureCode')) {
+if (!documentSession.includes('phaseBeforeClosing')) {
   violations.push(
-    'Document release failures must expose a stable, sanitized error code',
+    'DocumentSession must retain the phase that existed before closing',
   )
 }
 
-if (!documentService?.includes('toCanvasReleaseFailure')) {
+if (!documentSession.includes('phase = phaseBeforeClosing')) {
   violations.push(
-    'Document release failures must classify IPC errors without exposing raw messages',
+    'DocumentSession close cancellation must restore the exact prior phase',
   )
 }
 
-if (!workflow?.includes('failure: result.failure')) {
+if (documentSession.includes("phase = 'ready'\\n    },\\n\\n    completeClosing")) {
   violations.push(
-    'Canvas close state must preserve the classified release failure',
+    'DocumentSession close cancellation must not unconditionally restore ready',
   )
 }`,
 )
 
 await writeFile(architectureCheckPath, architectureCheck, 'utf8')
 
-console.log('Canvas native-release failure classification refactor written.')
+console.log('DocumentSession close cancellation state restoration refactor written.')

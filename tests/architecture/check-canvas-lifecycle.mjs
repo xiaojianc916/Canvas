@@ -3,6 +3,9 @@
 import { readFile } from 'node:fs/promises'
 import process from 'node:process'
 
+const documentSessionPath =
+  'editor/document/src/domain/document-session.ts'
+
 const files = [
   'platforms/desktop-runtime/src/public-api.ts',
   'platforms/desktop-runtime/src/adapters/file/file-system.ts',
@@ -35,6 +38,8 @@ const sources = await Promise.all(
   })),
 )
 
+const documentSession = await readFile(documentSessionPath, 'utf8')
+
 const violations = []
 
 for (const { path, source } of sources) {
@@ -52,6 +57,24 @@ const workflow = sources.find(
 
 if (!workflow?.includes('CanvasCloseSnapshot')) {
   violations.push('Canvas lifecycle coordinator snapshot is missing')
+}
+
+if (!documentSession.includes('phaseBeforeClosing')) {
+  violations.push(
+    'DocumentSession must retain the phase that existed before closing',
+  )
+}
+
+if (!documentSession.includes('phase = phaseBeforeClosing')) {
+  violations.push(
+    'DocumentSession close cancellation must restore the exact prior phase',
+  )
+}
+
+if (documentSession.includes("phase = 'ready'\n    },\n\n    completeClosing")) {
+  violations.push(
+    'DocumentSession close cancellation must not unconditionally restore ready',
+  )
 }
 
 const documentService = sources.find(

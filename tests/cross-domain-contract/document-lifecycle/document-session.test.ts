@@ -148,6 +148,55 @@ describe('DocumentSession', () => {
     })
   })
 
+  it('restores the exact pre-close phase after native release cancellation', () => {
+    const session = createDocumentSession('document-native-1')
+
+    const current = snapshot({
+      shapes: [{ id: 'shape:1' }],
+    })
+
+    session.initialize(snapshot({ shapes: [] }))
+
+    const ticket = session.beginSave(current)
+    session.failSave(ticket)
+
+    expect(session.getSnapshot()).toEqual({
+      phase: 'save-failed',
+      persistence: 'failed',
+      documentId: 'document-native-1',
+    })
+
+    session.beginClosing()
+
+    expect(session.getSnapshot()).toEqual({
+      phase: 'closing',
+      persistence: 'dirty',
+      documentId: 'document-native-1',
+    })
+
+    session.cancelClosing()
+
+    expect(session.getSnapshot()).toEqual({
+      phase: 'save-failed',
+      persistence: 'failed',
+      documentId: 'document-native-1',
+    })
+  })
+
+  it('restores ready state after a clean close cancellation', () => {
+    const session = createDocumentSession('document-native-1')
+
+    session.initialize(snapshot({ shapes: [] }))
+    session.beginClosing()
+    session.cancelClosing()
+
+    expect(session.getSnapshot()).toEqual({
+      phase: 'ready',
+      persistence: 'clean',
+      documentId: 'document-native-1',
+    })
+  })
+
   it('enters failed state after a native save failure', () => {
     const session = createDocumentSession('document-native-1')
 

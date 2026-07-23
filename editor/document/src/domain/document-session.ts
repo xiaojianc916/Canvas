@@ -16,6 +16,11 @@ export type DocumentSessionPhase =
 
 export type DocumentPersistenceState = 'clean' | 'dirty' | 'saving' | 'failed'
 
+type ReopenableDocumentSessionPhase = Exclude<
+  DocumentSessionPhase,
+  'closing' | 'closed'
+>
+
 export interface DocumentSaveTicket {
   readonly id: number
   readonly checkpoint: DocumentCheckpoint
@@ -54,6 +59,7 @@ export function createDocumentSession(
   let savedCheckpoint: DocumentCheckpoint | null = null
   let documentId = initialDocumentId
   let activeSave: DocumentSaveTicket | null = null
+  let phaseBeforeClosing: ReopenableDocumentSessionPhase | null = null
   let nextSaveId = 1
 
   function assertNotClosed() {
@@ -160,15 +166,17 @@ export function createDocumentSession(
         throw new Error('DOCUMENT_SESSION_SAVE_IN_PROGRESS')
       }
 
+      phaseBeforeClosing = phase
       phase = 'closing'
     },
 
     cancelClosing() {
-      if (phase !== 'closing') {
+      if (phase !== 'closing' || !phaseBeforeClosing) {
         throw new Error('DOCUMENT_SESSION_NOT_CLOSING')
       }
 
-      phase = 'ready'
+      phase = phaseBeforeClosing
+      phaseBeforeClosing = null
     },
 
     completeClosing() {
@@ -176,6 +184,7 @@ export function createDocumentSession(
         throw new Error('DOCUMENT_SESSION_NOT_CLOSING')
       }
 
+      phaseBeforeClosing = null
       phase = 'closed'
     },
 
