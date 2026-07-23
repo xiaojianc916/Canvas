@@ -9,7 +9,6 @@ describe('ApplicationTerminationCoordinator', () => {
     const coordinator = createApplicationTerminationCoordinator(
       {
         planApplicationClose: () => ({ kind: 'close-now' }),
-        discardAllAndClose: vi.fn(),
       },
       { terminate },
     )
@@ -30,7 +29,6 @@ describe('ApplicationTerminationCoordinator', () => {
     const coordinator = createApplicationTerminationCoordinator(
       {
         planApplicationClose: () => ({ kind: 'close-now' }),
-        discardAllAndClose: vi.fn(),
       },
       { terminate },
     )
@@ -52,7 +50,6 @@ describe('ApplicationTerminationCoordinator', () => {
     const coordinator = createApplicationTerminationCoordinator(
       {
         planApplicationClose: () => ({ kind: 'close-now' }),
-        discardAllAndClose: vi.fn(),
       },
       { terminate },
     )

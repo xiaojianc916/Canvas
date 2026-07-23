@@ -13,7 +13,7 @@ import {
   WorkspaceShell,
   WorkspaceSurface,
 } from '@hybrid-canvas/workspace/react'
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { useValue } from 'tldraw'
 
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
@@ -30,20 +30,16 @@ const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({
 const EMPTY_SUBSCRIBE = () => () => {}
 const EMPTY_EDITOR_SNAPSHOT = () => EMPTY_EDITOR_SESSION_SNAPSHOT
 
-export type WorkspaceCanvasCloseResult =
-  | { readonly kind: 'closed' }
-  | {
-      readonly kind: 'confirmation-required'
-      readonly sessionId: CanvasSessionId
-    }
-  | { readonly kind: 'not-found' }
-
 export interface WorkspaceCanvasUIPort {
   readonly create: (title: string) => void
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
-  readonly requestClose: (sessionId: CanvasSessionId) => Promise<WorkspaceCanvasCloseResult>
-  readonly discardAndClose: (sessionId: CanvasSessionId) => Promise<void>
+  readonly closeCanvas: (
+    sessionId: CanvasSessionId,
+    intent: 'normal' | 'discard',
+  ) => Promise<void>
+  readonly cancelCanvasClose: () => void
+  readonly getCloseSnapshot: () => import('../../application/canvas/canvas-workflow').CanvasCloseSnapshot
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (
     sessionId: CanvasSessionId,
@@ -80,8 +76,6 @@ export function WorkspaceContainer({
   onWindowClose,
   onWindowStartDragging,
 }: WorkspaceContainerProps) {
-  const [pendingCloseSessionId, setPendingCloseSessionId] = useState<CanvasSessionId | null>(null)
-
   const editor = useEditor()
 
   const inspectorSelectionKey = useValue('workspace inspector selection key', () => {
@@ -111,6 +105,12 @@ export function WorkspaceContainer({
   )
 
   useSyncExternalStore(port.canvases.subscribe, port.canvases.getVersion, port.canvases.getVersion)
+
+  const closeSnapshot = useSyncExternalStore(
+    port.canvases.subscribe,
+    port.canvases.getCloseSnapshot,
+    port.canvases.getCloseSnapshot,
+  )
 
   const activeSessionId =
     workbench.activeSurface.kind === 'canvas' ? workbench.activeSurface.sessionId : null
@@ -148,22 +148,15 @@ export function WorkspaceContainer({
   )
 
   const handleCloseCanvas = useCallback(
-    (sessionId: CanvasSessionId) => {
-      void port.canvases
-        .requestClose(sessionId)
-        .then((result) => {
-          if (result.kind === 'confirmation-required') {
-            setPendingCloseSessionId(result.sessionId)
-          }
+    (sessionId: CanvasSessionId, intent: 'normal' | 'discard' = 'normal') => {
+      void port.canvases.closeCanvas(sessionId, intent).catch((cause: unknown) => {
+        reportError('canvas close transaction failed', {
+          scope: 'workspace',
+          operation: 'close-canvas',
+          sessionId,
+          cause,
         })
-        .catch((cause: unknown) => {
-          reportError('canvas close request failed', {
-            scope: 'workspace',
-            operation: 'request-close-canvas',
-            sessionId,
-            cause,
-          })
-        })
+      })
     },
     [port.canvases],
   )
@@ -308,35 +301,35 @@ export function WorkspaceContainer({
       mainContent={mainContent}
       model={model}
       overlays={
-        <ConfirmationDialog
-          confirmLabel="放弃并关闭"
-          description="关闭画布会丢失自上次保存后的更改，此操作无法撤销。"
-          destructive
-          onCancel={() => setPendingCloseSessionId(null)}
-          onConfirm={() => {
-            if (!pendingCloseSessionId) {
-              return
-            }
+        <>
+          <ConfirmationDialog
+            confirmLabel="放弃并关闭"
+            description="关闭画布会丢失自上次保存后的更改，此操作无法撤销。"
+            destructive
+            onCancel={port.canvases.cancelCanvasClose}
+            onConfirm={() => {
+              if (closeSnapshot.state === 'confirmation-required') {
+                handleCloseCanvas(closeSnapshot.sessionId, 'discard')
+              }
+            }}
+            open={closeSnapshot.state === 'confirmation-required'}
+            title="放弃未保存的更改？"
+          />
 
-            const sessionId = pendingCloseSessionId
-
-            void port.canvases.discardAndClose(sessionId).then(
-              () => {
-                setPendingCloseSessionId(null)
-              },
-              (cause: unknown) => {
-                reportError('discard and close canvas failed', {
-                  scope: 'workspace',
-                  operation: 'discard-and-close-canvas',
-                  sessionId,
-                  cause,
-                })
-              },
-            )
-          }}
-          open={pendingCloseSessionId !== null}
-          title="放弃未保存的更改？"
-        />
+          <ConfirmationDialog
+            cancelLabel="保留画布"
+            confirmLabel="重试关闭"
+            description="无法释放本地文档会话。画布仍保持打开状态，您可以重试关闭。"
+            onCancel={port.canvases.cancelCanvasClose}
+            onConfirm={() => {
+              if (closeSnapshot.state === 'release-failed') {
+                handleCloseCanvas(closeSnapshot.sessionId, 'normal')
+              }
+            }}
+            open={closeSnapshot.state === 'release-failed'}
+            title="关闭画布失败"
+          />
+        </>
       }
       pages={pages}
       renderChrome={({

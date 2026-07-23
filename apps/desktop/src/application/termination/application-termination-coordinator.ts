@@ -1,6 +1,9 @@
 import type { ApplicationClosePlan, CanvasSessionId } from '@hybrid-canvas/document'
 
-export type ApplicationTerminationIntent = 'window-close' | 'update-restart' | 'application-exit'
+export type ApplicationTerminationIntent =
+  | 'window-close'
+  | 'update-restart'
+  | 'application-exit'
 
 export type ApplicationTerminationSnapshot =
   | {
@@ -21,31 +24,19 @@ export type ApplicationTerminationSnapshot =
     }
 
 export interface ApplicationTerminator {
-  /**
-   * Dispatches a one-way native termination command.
-   *
-   * The renderer cannot reliably await an acknowledgement because the
-   * renderer itself is destroyed by a successful termination.
-   */
   readonly terminate: (intent: ApplicationTerminationIntent) => void
 }
 
 export interface ApplicationClosePort {
   readonly planApplicationClose: () => ApplicationClosePlan
-
-  readonly discardAllAndClose: (sessionIds: readonly CanvasSessionId[]) => void
 }
 
 export interface ApplicationTerminationCoordinator {
   readonly request: (intent: ApplicationTerminationIntent) => void
-
   readonly cancel: () => void
   readonly confirmDiscard: () => void
-
   readonly getSnapshot: () => ApplicationTerminationSnapshot
-
   readonly subscribe: (listener: () => void) => () => void
-
   readonly dispose: () => void
 }
 
@@ -53,10 +44,7 @@ export function createApplicationTerminationCoordinator(
   canvases: ApplicationClosePort,
   terminator: ApplicationTerminator,
 ): ApplicationTerminationCoordinator {
-  let snapshot: ApplicationTerminationSnapshot = {
-    state: 'idle',
-  }
-
+  let snapshot: ApplicationTerminationSnapshot = { state: 'idle' }
   let generation = 0
   let disposed = false
 
@@ -80,19 +68,24 @@ export function createApplicationTerminationCoordinator(
 
   function beginTermination(intent: ApplicationTerminationIntent): void {
     generation += 1
-
     emit({
       state: 'terminating',
       intent,
     })
 
-    // A successful native termination destroys this JavaScript context.
-    // Therefore this operation must not be modeled as a Promise whose
-    // rejection controls user-facing state.
+    /*
+     * forceClose 会终止 native process；DocumentRegistry 与其私有路径映射
+     * 在同一进程生命周期内一起释放。这里不能建立第二套逐 document_close
+     * 协议，否则会出现部分 native session 已释放、另一个失败、退出却中止的
+     * 不可恢复半关闭状态。
+     */
     terminator.terminate(intent)
   }
 
-  function evaluate(intent: ApplicationTerminationIntent, plan: ApplicationClosePlan): void {
+  function evaluate(
+    intent: ApplicationTerminationIntent,
+    plan: ApplicationClosePlan,
+  ): void {
     if (plan.kind === 'close-now') {
       beginTermination(intent)
       return
@@ -104,7 +97,6 @@ export function createApplicationTerminationCoordinator(
         intent,
         sessionIds: plan.sessionIds,
       })
-
       return
     }
 
@@ -139,11 +131,7 @@ export function createApplicationTerminationCoordinator(
         return
       }
 
-      const { intent, sessionIds } = snapshot
-
-      canvases.discardAllAndClose(sessionIds)
-
-      beginTermination(intent)
+      beginTermination(snapshot.intent)
     },
 
     getSnapshot: () => snapshot,

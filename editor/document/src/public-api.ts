@@ -1,6 +1,7 @@
 export {
   type ApplicationClosePlan,
-  type CanvasCloseDecision,
+  type CanvasCloseIntent,
+  type CanvasReleaseResult,
   type CanvasDocumentService,
   type CanvasEditorSessionRegistryPort,
   type CanvasId,

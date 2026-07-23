@@ -32,16 +32,16 @@ export interface CanvasSessionSnapshot {
   readonly persistence: CanvasPersistenceState
 }
 
-export type CanvasCloseDecision =
-  | { readonly kind: 'close-now' }
-  | {
-      readonly kind: 'confirm-discard'
-      readonly persistence: 'dirty' | 'failed'
-    }
+export type CanvasCloseIntent = 'normal' | 'discard'
+
+export type CanvasReleaseResult =
+  | { readonly kind: 'released' }
+  | { readonly kind: 'confirmation-required' }
   | {
       readonly kind: 'wait-for-save'
       readonly operation: Promise<void>
     }
+  | { readonly kind: 'release-failed' }
   | { readonly kind: 'not-found' }
 
 export type ApplicationClosePlan =
@@ -59,9 +59,10 @@ export interface CanvasDocumentService {
   readonly create: (title: string) => OpenedCanvasSession
   readonly open: () => Promise<OpenedCanvasSession | null>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
-  readonly requestClose: (sessionId: CanvasSessionId) => CanvasCloseDecision
-  readonly close: (sessionId: CanvasSessionId) => Promise<void>
-  readonly discardAndClose: (sessionId: CanvasSessionId) => Promise<void>
+  readonly releaseCanvas: (
+    sessionId: CanvasSessionId,
+    intent: CanvasCloseIntent,
+  ) => Promise<CanvasReleaseResult>
   readonly planApplicationClose: () => ApplicationClosePlan
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (
@@ -274,7 +275,10 @@ export function createCanvasDocumentService({
     }
   }
 
-  function requestClose(sessionId: CanvasSessionId): CanvasCloseDecision {
+  async function releaseCanvas(
+    sessionId: CanvasSessionId,
+    intent: CanvasCloseIntent,
+  ): Promise<CanvasReleaseResult> {
     const owned = sessions.get(sessionId)
 
     if (!owned) {
@@ -288,48 +292,15 @@ export function createCanvasDocumentService({
       }
     }
 
-    const state = owned.document.getSnapshot().persistence
+    const persistenceState = owned.document.getSnapshot().persistence
 
-    if (state === 'dirty' || state === 'failed') {
-      return {
-        kind: 'confirm-discard',
-        persistence: state,
-      }
+    if (
+      intent === 'normal' &&
+      (persistenceState === 'dirty' || persistenceState === 'failed')
+    ) {
+      return { kind: 'confirmation-required' }
     }
 
-    return { kind: 'close-now' }
-  }
-
-  async function close(sessionId: CanvasSessionId): Promise<void> {
-    const owned = requireSession(sessionId)
-
-    if (owned.saveOperation) {
-      throw new Error('CANVAS_SESSION_SAVE_IN_PROGRESS')
-    }
-
-    const state = owned.document.getSnapshot().persistence
-
-    if (state === 'dirty' || state === 'failed') {
-      throw new Error('CANVAS_SESSION_DISCARD_CONFIRMATION_REQUIRED')
-    }
-
-    await closeNow(sessionId, owned)
-  }
-
-  async function discardAndClose(sessionId: CanvasSessionId): Promise<void> {
-    const owned = requireSession(sessionId)
-
-    if (owned.saveOperation) {
-      throw new Error('CANVAS_SESSION_SAVE_IN_PROGRESS')
-    }
-
-    await closeNow(sessionId, owned)
-  }
-
-  async function closeNow(
-    sessionId: CanvasSessionId,
-    owned: OwnedCanvasSession,
-  ): Promise<void> {
     owned.document.beginClosing()
     emit()
 
@@ -339,10 +310,11 @@ export function createCanvasDocumentService({
       if (documentId) {
         await persistence.close(documentId)
       }
-    } catch (error) {
+    } catch {
       owned.document.cancelClosing()
       emit()
-      throw error
+
+      return { kind: 'release-failed' }
     }
 
     owned.document.completeClosing()
@@ -350,6 +322,8 @@ export function createCanvasDocumentService({
     sessions.delete(sessionId)
     editorSessions.close(sessionId)
     emit()
+
+    return { kind: 'released' }
   }
 
   function planApplicationClose(): ApplicationClosePlan {
@@ -394,9 +368,7 @@ export function createCanvasDocumentService({
     create,
     open,
     save,
-    requestClose,
-    close,
-    discardAndClose,
+    releaseCanvas,
     planApplicationClose,
 
     getEditorSession(sessionId) {

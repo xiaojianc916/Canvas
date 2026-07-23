@@ -1,30 +1,53 @@
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
 import type {
   ApplicationClosePlan,
+  CanvasCloseIntent,
   CanvasDocumentService,
+  CanvasReleaseResult,
   CanvasSessionId,
   CanvasSessionSnapshot,
 } from '@hybrid-canvas/document'
 import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
 
-export type CanvasCloseRequestResult =
-  | { readonly kind: 'closed' }
+export type CanvasCloseSnapshot =
+  | { readonly state: 'idle' }
   | {
-      readonly kind: 'confirmation-required'
+      readonly state: 'confirmation-required'
       readonly sessionId: CanvasSessionId
     }
-  | { readonly kind: 'not-found' }
+  | {
+      readonly state: 'releasing'
+      readonly sessionId: CanvasSessionId
+    }
+  | {
+      readonly state: 'release-failed'
+      readonly sessionId: CanvasSessionId
+    }
 
 export interface CanvasWorkflow {
   readonly create: (title: string) => void
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
-  readonly requestClose: (sessionId: CanvasSessionId) => Promise<CanvasCloseRequestResult>
-  readonly discardAndClose: (sessionId: CanvasSessionId) => Promise<void>
+
+  /**
+   * 唯一的 canvas 关闭入口。
+   *
+   * normal：保留未保存内容，必要时进入确认状态。
+   * discard：明确放弃未保存内容后释放 native document session。
+   */
+  readonly closeCanvas: (
+    sessionId: CanvasSessionId,
+    intent: CanvasCloseIntent,
+  ) => Promise<void>
+
+  readonly cancelCanvasClose: () => void
+  readonly getCloseSnapshot: () => CanvasCloseSnapshot
+
   readonly planApplicationClose: () => ApplicationClosePlan
-  readonly discardAllAndClose: (sessionIds: readonly CanvasSessionId[]) => void
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
-  readonly getSessionSnapshot: (sessionId: CanvasSessionId) => CanvasSessionSnapshot | null
+  readonly getSessionSnapshot: (
+    sessionId: CanvasSessionId,
+  ) => CanvasSessionSnapshot | null
   readonly getVersion: () => number
   readonly subscribe: (listener: () => void) => () => void
   readonly dispose: () => void
@@ -34,13 +57,34 @@ export function createCanvasWorkflow(
   documents: CanvasDocumentService,
   workspace: WorkbenchSessionStore,
 ): CanvasWorkflow {
+  const listeners = new Set<() => void>()
+
+  let version = 0
+  let closeSnapshot: CanvasCloseSnapshot = { state: 'idle' }
+  let activeClose: Promise<void> | null = null
+
+  const stopDocumentSubscription = documents.subscribe(emit)
+
+  function emit(): void {
+    version += 1
+
+    for (const listener of listeners) {
+      listener()
+    }
+  }
+
+  function setCloseSnapshot(next: CanvasCloseSnapshot): void {
+    closeSnapshot = next
+    emit()
+  }
+
   function create(title: string): void {
     const opened = documents.create(title)
 
     try {
       workspace.createCanvas(opened)
     } catch (error) {
-      documents.discardAndClose(opened.sessionId)
+      void documents.releaseCanvas(opened.sessionId, 'discard')
       throw error
     }
   }
@@ -55,54 +99,78 @@ export function createCanvasWorkflow(
     try {
       workspace.createCanvas(opened)
     } catch (error) {
-      documents.discardAndClose(opened.sessionId)
+      await documents.releaseCanvas(opened.sessionId, 'discard')
       throw error
     }
   }
 
-  async function requestClose(sessionId: CanvasSessionId): Promise<CanvasCloseRequestResult> {
-    let decision = documents.requestClose(sessionId)
-
-    if (decision.kind === 'wait-for-save') {
-      // 保存失败时 CanvasDocumentService 会进入 failed 状态。
-      // 此处只等待状态稳定，随后重新计算关闭决策。
-      await decision.operation.catch(() => undefined)
-      decision = documents.requestClose(sessionId)
+  async function closeCanvas(
+    sessionId: CanvasSessionId,
+    intent: CanvasCloseIntent,
+  ): Promise<void> {
+    if (activeClose) {
+      return activeClose
     }
 
-    switch (decision.kind) {
-      case 'close-now':
-        await documents.close(sessionId)
-        workspace.closeCanvas(sessionId)
-        return { kind: 'closed' }
+    activeClose = performClose(sessionId, intent).finally(() => {
+      activeClose = null
+    })
 
-      case 'confirm-discard':
-        return {
-          kind: 'confirmation-required',
+    return activeClose
+  }
+
+  async function performClose(
+    sessionId: CanvasSessionId,
+    intent: CanvasCloseIntent,
+  ): Promise<void> {
+    setCloseSnapshot({
+      state: 'releasing',
+      sessionId,
+    })
+
+    let result = await documents.releaseCanvas(sessionId, intent)
+
+    if (result.kind === 'wait-for-save') {
+      await result.operation.catch(() => undefined)
+      result = await documents.releaseCanvas(sessionId, intent)
+    }
+
+    applyReleaseResult(sessionId, result)
+  }
+
+  function applyReleaseResult(
+    sessionId: CanvasSessionId,
+    result: CanvasReleaseResult,
+  ): void {
+    switch (result.kind) {
+      case 'released':
+        workspace.closeCanvas(sessionId)
+        setCloseSnapshot({ state: 'idle' })
+        return
+
+      case 'confirmation-required':
+        setCloseSnapshot({
+          state: 'confirmation-required',
           sessionId,
-        }
+        })
+        return
+
+      case 'release-failed':
+        setCloseSnapshot({
+          state: 'release-failed',
+          sessionId,
+        })
+        return
 
       case 'not-found':
-        return { kind: 'not-found' }
+        setCloseSnapshot({ state: 'idle' })
+        return
 
       case 'wait-for-save':
-        // 理论上不会进入：同一 saveOperation 已在上方等待。
-        // 保留防御性处理，避免未来文档实现改变后静默关闭。
-        return {
-          kind: 'confirmation-required',
+        setCloseSnapshot({
+          state: 'release-failed',
           sessionId,
-        }
-    }
-  }
-
-  async function discardAndClose(sessionId: CanvasSessionId): Promise<void> {
-    await documents.discardAndClose(sessionId)
-    workspace.closeCanvas(sessionId)
-  }
-
-  function discardAllAndClose(sessionIds: readonly CanvasSessionId[]): void {
-    for (const sessionId of sessionIds) {
-      void discardAndClose(sessionId)
+        })
     }
   }
 
@@ -110,14 +178,40 @@ export function createCanvasWorkflow(
     create,
     open,
     save: documents.save,
-    requestClose,
-    discardAndClose,
+    closeCanvas,
+
+    cancelCanvasClose() {
+      if (closeSnapshot.state === 'releasing') {
+        return
+      }
+
+      setCloseSnapshot({ state: 'idle' })
+    },
+
+    getCloseSnapshot() {
+      return closeSnapshot
+    },
+
     planApplicationClose: documents.planApplicationClose,
-    discardAllAndClose,
     getEditorSession: documents.getEditorSession,
     getSessionSnapshot: documents.getSessionSnapshot,
-    getVersion: documents.getVersion,
-    subscribe: documents.subscribe,
-    dispose: documents.dispose,
+
+    getVersion() {
+      return version
+    },
+
+    subscribe(listener) {
+      listeners.add(listener)
+
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+
+    dispose() {
+      stopDocumentSubscription()
+      listeners.clear()
+      documents.dispose()
+    },
   }
 }
