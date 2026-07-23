@@ -113,7 +113,7 @@ function persistedAssetToken(
   asset: TLAsset,
 ): string | null {
   const token =
-    asset.meta?.hybridCanvasAssetToken
+    asset.meta?.['hybridCanvasAssetToken']
 
   if (
     typeof token !== 'string' ||
@@ -123,7 +123,7 @@ function persistedAssetToken(
   }
 
   const contentHash =
-    asset.meta?.hybridCanvasContentHash
+    asset.meta?.['hybridCanvasContentHash']
 
   if (
     typeof contentHash !== 'string' ||
