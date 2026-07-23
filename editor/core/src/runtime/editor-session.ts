@@ -1,4 +1,4 @@
-import { createTLStore, getSnapshot as getStoreEditorSnapshot, loadSnapshot } from '@tldraw/editor'
+import { createTLStore, getSnapshot as getStoreEditorSnapshot } from '@tldraw/editor'
 import {
   defaultBindingUtils,
   defaultShapeUtils,
@@ -78,17 +78,23 @@ export interface EditorSession {
 export function createEditorSession(options: CreateEditorSessionOptions): EditorSession {
   const registration = buildExtensionRegistration(options.extensions)
 
+  /*
+   * Persisted documents enter through tldraw's canonical store-construction
+   * pipeline. The factory builds the complete schema from default and extension
+   * utilities, then migrates and loads the snapshot before a session exists.
+   *
+   * Do not reintroduce a post-construction loadSnapshot call here. That creates
+   * a second initialization path with subtly different migration and session
+   * state semantics.
+   */
   const store = createTLStore({
     shapeUtils: [
       ...defaultShapeUtils,
       ...registration.shapeUtils,
     ] as unknown as readonly TLAnyShapeUtilConstructor[],
     bindingUtils: [...defaultBindingUtils, ...registration.bindingUtils],
+    snapshot: options.initialSnapshot,
   })
-
-  if (options.initialSnapshot) {
-    loadSnapshot(store, options.initialSnapshot)
-  }
 
   let attachedEditor: Editor | null = null
   let state: EditorSessionState = 'created'
