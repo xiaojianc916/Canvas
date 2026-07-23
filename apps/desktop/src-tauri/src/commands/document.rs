@@ -1,5 +1,7 @@
 use crate::error::{Error, IpcError, Result};
-use hybrid_canvas_file_native::atomic_write;
+use hybrid_canvas_file_native::{
+    atomic_write, canonicalize_draw_document,
+};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
@@ -287,15 +289,20 @@ async fn read_document(path: PathBuf) -> Result<String> {
     let metadata = tokio::fs::metadata(&path).await?;
     ensure_document_size(metadata.len())?;
 
-    let content = tokio::fs::read_to_string(&path).await?;
-    ensure_document_size(content.len() as u64)?;
+    let bytes = tokio::fs::read(&path).await?;
+    ensure_document_size(bytes.len() as u64)?;
 
-    Ok(content)
+    tokio::task::spawn_blocking(move || canonicalize_draw_document(&bytes))
+        .await
+        .map_err(|_| Error::Internal("document decode task terminated unexpectedly".into()))?
+        .map_err(Error::from)
 }
 
 async fn write_document(path: PathBuf, content: String) -> Result<()> {
     tokio::task::spawn_blocking(move || {
-        atomic_write(path, content.as_bytes())
+        let canonical_content = canonicalize_draw_document(content.as_bytes())?;
+
+        atomic_write(path, canonical_content.as_bytes())
     })
     .await
     .map_err(|_| Error::Internal("document save task terminated unexpectedly".into()))?

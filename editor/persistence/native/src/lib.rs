@@ -10,7 +10,9 @@
 //! delivered as one complete, tested native DocumentCodec protocol.
 
 mod atomic_write;
+mod document_codec;
 mod error;
 
 pub use atomic_write::atomic_write;
+pub use document_codec::canonicalize_draw_document;
 pub use error::{Error, Result};
