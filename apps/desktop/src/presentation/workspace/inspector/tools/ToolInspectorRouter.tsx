@@ -1,24 +1,36 @@
+import { ArrowToolInspector } from './ArrowToolInspector'
 import { DrawToolInspector } from './DrawToolInspector'
-import {
-  ArrowToolInspector,
-  EraserToolInspector,
-  FrameToolInspector,
-  HandToolInspector,
-  NoteToolInspector,
-  SelectToolInspector,
-  TextToolInspector,
-} from './BasicToolInspectors'
+import { EraserToolInspector } from './EraserToolInspector'
+import { FrameToolInspector } from './FrameToolInspector'
+import { HandToolInspector } from './HandToolInspector'
+import { LineToolInspector } from './LineToolInspector'
+import { NoteToolInspector } from './NoteToolInspector'
 import { ScientificChartToolInspector } from './ScientificChartToolInspector'
+import { SelectToolInspector } from './SelectToolInspector'
 import { ShapeToolInspector } from './ShapeToolInspector'
+import { TextToolInspector } from './TextToolInspector'
 import type { ToolInspectorRouterProps } from './types'
+import { UnknownToolInspector } from './UnknownToolInspector'
 
 export function ToolInspectorRouter({
   editor,
   toolId,
 }: ToolInspectorRouterProps) {
   switch (toolId) {
+    case 'select':
+      return <SelectToolInspector editor={editor} />
+
+    case 'hand':
+      return <HandToolInspector editor={editor} />
+
     case 'geo':
       return <ShapeToolInspector editor={editor} />
+
+    case 'line':
+      return <LineToolInspector editor={editor} />
+
+    case 'arrow':
+      return <ArrowToolInspector editor={editor} />
 
     case 'draw':
       return (
@@ -36,11 +48,8 @@ export function ToolInspectorRouter({
         />
       )
 
-    case 'scientific-chart':
-      return <ScientificChartToolInspector editor={editor} />
-
-    case 'arrow':
-      return <ArrowToolInspector editor={editor} />
+    case 'eraser':
+      return <EraserToolInspector editor={editor} />
 
     case 'text':
       return <TextToolInspector editor={editor} />
@@ -51,14 +60,15 @@ export function ToolInspectorRouter({
     case 'frame':
       return <FrameToolInspector editor={editor} />
 
-    case 'eraser':
-      return <EraserToolInspector />
+    case 'scientific-chart':
+      return <ScientificChartToolInspector editor={editor} />
 
-    case 'hand':
-      return <HandToolInspector />
-
-    case 'select':
     default:
-      return <SelectToolInspector />
+      return (
+        <UnknownToolInspector
+          editor={editor}
+          toolId={toolId}
+        />
+      )
   }
 }
