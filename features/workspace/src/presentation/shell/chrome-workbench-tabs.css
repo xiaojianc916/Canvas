@@ -1,9 +1,12 @@
 /*
  * Canonical Chrome-style workbench tabs.
  *
- * A single boundary color is shared by the active-tab outline and the
- * workspace separator. Continuity is geometric; there are no outline
- * gradients, shadows or opacity-erased edges.
+ * Region divider ownership:
+ * - Left rail button zone owns its own bottom border.
+ * - Sidebar placeholder owns its own bottom border and optional right border.
+ * - Tab viewport owns the middle baseline.
+ * - Right window control zone owns its own bottom border.
+ * - The baseline under the active tab is intentionally not drawn.
  */
 
 .chrome-workbench-tabs,
@@ -13,19 +16,19 @@
 
 .chrome-workbench-tabs {
   --chrome-tab-height: 32px;
-  --chrome-tab-min-width: 120px;
-  --chrome-tab-preferred-width: 196px;
-  --chrome-tab-max-width: 228px;
+  --chrome-tab-min-width: 88px;
+  --chrome-tab-preferred-width: 168px;
+  --chrome-tab-max-width: 220px;
 
   --chrome-tab-strip: var(--color-chrome);
   --chrome-tab-surface: var(--color-background);
-
   --chrome-tab-boundary: var(--color-divider);
   --chrome-tab-divider: var(--color-divider);
-
   --chrome-tab-hover: color-mix(in srgb, var(--color-foreground) 4%, var(--chrome-tab-strip) 96%);
 
   position: relative;
+  display: flex;
+  align-items: stretch;
   width: 100%;
   min-width: 0;
   height: 100%;
@@ -36,6 +39,45 @@
   font-size: 12px;
 }
 
+.chrome-workbench-tabs__viewport {
+  --chrome-active-tab-left: 0px;
+  --chrome-active-tab-right: 0px;
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.chrome-workbench-tabs__viewport::before,
+.chrome-workbench-tabs__viewport::after {
+  position: absolute;
+  z-index: 2;
+  bottom: 0;
+  height: 1px;
+  background: var(--color-divider);
+  content: "";
+  pointer-events: none;
+}
+
+.chrome-workbench-tabs__viewport[data-has-active-tab="true"]::before {
+  left: 0;
+  right: calc(100% - var(--chrome-active-tab-left));
+}
+
+.chrome-workbench-tabs__viewport[data-has-active-tab="true"]::after {
+  left: var(--chrome-active-tab-right);
+  right: 0;
+}
+
+.chrome-workbench-tabs__viewport[data-has-active-tab="false"]::before {
+  display: none;
+}
+
+.chrome-workbench-tabs__viewport[data-has-active-tab="false"]::after {
+  left: 0;
+  right: 0;
+}
 
 .chrome-workbench-tabs__scroller {
   position: relative;
@@ -49,6 +91,9 @@
   overflow-y: hidden;
   scrollbar-width: none;
   overscroll-behavior-x: contain;
+  scroll-padding-inline: 4px 34px;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-inline: contain;
 }
 
 .chrome-workbench-tabs__scroller::-webkit-scrollbar {
@@ -72,6 +117,8 @@
   overflow: visible;
   isolation: isolate;
   user-select: none;
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
 }
 
 .chrome-workbench-tab:first-child {
@@ -160,41 +207,63 @@
   transition: color 80ms ease-out;
 }
 
-.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__content {
+.chrome-workbench-tab .chrome-workbench-tab__content,
+.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__content,
+.chrome-workbench-tab:not([data-active="true"]) .chrome-workbench-tab__content {
   inset: 2px 12px 0;
   padding: 0 8px;
   border: 0;
   border-radius: 0;
-  background: transparent;
-}
-
-.chrome-workbench-tab:not([data-active="true"]) .chrome-workbench-tab__content {
-  inset: 2px 3px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 8px;
   outline: 0;
+  background: transparent;
   box-shadow: none;
 }
 
+.chrome-workbench-tab:hover:not([data-active="true"]) .chrome-workbench-tab__content,
 .chrome-workbench-tab:hover:not([data-active="true"]):not([data-suppress-hover="true"])
   .chrome-workbench-tab__content {
   border: 0;
-  background: var(--chrome-tab-hover);
+  background: transparent;
   box-shadow: none;
 }
 
-.chrome-workbench-tab[data-suppress-hover="true"]:not([data-active="true"])
-  .chrome-workbench-tab__content {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
+.chrome-workbench-tab[data-suppress-hover="true"] .chrome-workbench-tab__content {
   transition: none;
 }
 
 .chrome-workbench-tab[data-suppress-hover="true"] .chrome-workbench-tab__separator {
   opacity: 0;
   transition: none;
+}
+
+.chrome-workbench-tab:not([data-active="true"])::before {
+  position: absolute;
+  z-index: 3;
+  inset: 2px 3px;
+  display: block;
+  border: 0;
+  border-radius: 8px;
+  outline: 0;
+  background: var(--chrome-tab-hover);
+  box-shadow: none;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 80ms ease-out;
+}
+
+.chrome-workbench-tab:hover:not([data-active="true"]):not([data-suppress-hover="true"])::before {
+  opacity: 1;
+}
+
+.chrome-workbench-tab[data-suppress-hover="true"]:not([data-active="true"])::before {
+  opacity: 0;
+  transition: none;
+}
+
+.chrome-workbench-tab[data-active="true"]::before {
+  display: none;
+  content: none;
 }
 
 .chrome-workbench-tab__activation {
@@ -246,7 +315,7 @@
 }
 
 .chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__title {
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .chrome-workbench-tab__end {
@@ -368,159 +437,6 @@
   outline-offset: -2px;
 }
 
-@keyframes chrome-workbench-saving {
-  from {
-    opacity: 0.4;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chrome-workbench-tab__content,
-  .chrome-workbench-tab__separator,
-  .chrome-workbench-tab__status {
-    transition: none;
-    animation: none;
-  }
-}
-
-/* BEGIN CANONICAL FIXED TAB CONTENT GEOMETRY */
-
-/*
- * State-invariant content geometry.
- *
- * Activation changes only the background shape. It must never alter
- * the content box occupied by icon, title, status and close button.
- */
-.chrome-workbench-tab .chrome-workbench-tab__content,
-.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__content,
-.chrome-workbench-tab:not([data-active="true"]) .chrome-workbench-tab__content {
-  inset: 2px 12px 0;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 0;
-  outline: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-/*
- * Keep text metrics identical across activation changes. Changing
- * font weight changes glyph widths and creates a second visible jump.
- */
-.chrome-workbench-tab .chrome-workbench-tab__title,
-.chrome-workbench-tab[data-active="true"] .chrome-workbench-tab__title {
-  font-weight: 400;
-}
-
-/*
- * Existing content-based hover paint is disabled. Hover is rendered
- * by the independent ::before paint layer below.
- */
-.chrome-workbench-tab:hover:not([data-active="true"]) .chrome-workbench-tab__content,
-.chrome-workbench-tab:hover:not([data-active="true"]):not([data-suppress-hover="true"])
-  .chrome-workbench-tab__content {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-/*
- * Paint-only hover surface.
- *
- * This layer can appear and disappear without changing the content
- * element's dimensions or position.
- */
-.chrome-workbench-tab:not([data-active="true"])::before {
-  position: absolute;
-  z-index: 3;
-  inset: 2px 3px;
-  display: block;
-  border: 0;
-  border-radius: 8px;
-  outline: 0;
-  background: var(--chrome-tab-hover);
-  box-shadow: none;
-  content: "";
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 80ms ease-out;
-}
-
-.chrome-workbench-tab:hover:not([data-active="true"]):not([data-suppress-hover="true"])::before {
-  opacity: 1;
-}
-
-.chrome-workbench-tab[data-suppress-hover="true"]:not([data-active="true"])::before {
-  opacity: 0;
-  transition: none;
-}
-
-/*
- * Active-tab geometry remains owned by ChromeActiveTabShape.
- */
-.chrome-workbench-tab[data-active="true"]::before {
-  display: none;
-  content: none;
-}
-
-/* END CANONICAL FIXED TAB CONTENT GEOMETRY */
-
-/* BEGIN FIXED WORKBENCH TAB VIEWPORT */
-
-/*
- * Tab density:
- *
- * Tabs shrink before overflow, but retain enough room for an icon
- * and a recognizable title.
- */
-.chrome-workbench-tabs {
-  --chrome-tab-min-width: 88px;
-  --chrome-tab-preferred-width: 168px;
-  --chrome-tab-max-width: 220px;
-
-  display: flex;
-  align-items: stretch;
-  min-width: 0;
-}
-
-/*
- * The viewport clips tabs at a real layout boundary.
- * Tabs cannot paint below the sidebar toggle or window controls.
- */
-.chrome-workbench-tabs__viewport {
-  position: relative;
-  min-width: 0;
-  height: 100%;
-  flex: 1 1 auto;
-  overflow: hidden;
-}
-
-.chrome-workbench-tabs__scroller {
-  position: relative;
-  width: 100%;
-  min-width: 0;
-  height: 100%;
-  scroll-padding-inline: 4px 34px;
-  scroll-snap-type: x proximity;
-  overscroll-behavior-inline: contain;
-}
-
-.chrome-workbench-tab {
-  min-width: var(--chrome-tab-min-width);
-  max-width: var(--chrome-tab-max-width);
-  flex: 0 1 var(--chrome-tab-preferred-width);
-  scroll-snap-align: start;
-  scroll-snap-stop: normal;
-}
-
-/*
- * Narrow inactive tabs reserve their available width for the title.
- * Their close button becomes available when hovered.
- */
 .chrome-workbench-tab:not([data-active="true"]):not(:hover) .chrome-workbench-tab__close {
   opacity: 0;
   pointer-events: none;
@@ -530,13 +446,6 @@
   pointer-events: auto;
 }
 
-/*
- * Inline-until-overflow:
- *
- * In normal layout, the button sits immediately after the final tab.
- * When tabs exceed the viewport, position: sticky keeps the button
- * visible at the right edge of the tab viewport.
- */
 .chrome-workbench-tabs__new-tab--sticky {
   position: sticky;
   z-index: 8;
@@ -559,20 +468,26 @@
   background: color-mix(in srgb, var(--color-foreground) 14%, var(--chrome-tab-strip));
 }
 
-/*
- * Empty space after the inline plus button remains draggable.
- * It grows only when the tab strip has unused space.
- */
-.chrome-workbench-tabs__drag-region {
-  height: 100%;
-  min-width: 24px;
-  flex: 1 0 24px;
+@keyframes chrome-workbench-saving {
+  from {
+    opacity: 0.4;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .chrome-workbench-tab__content,
+  .chrome-workbench-tab__separator,
+  .chrome-workbench-tab__status,
+  .chrome-workbench-tab::before {
+    transition: none;
+    animation: none;
+  }
+
   .chrome-workbench-tabs__scroller {
     scroll-behavior: auto;
   }
 }
-
-/* END FIXED WORKBENCH TAB VIEWPORT */

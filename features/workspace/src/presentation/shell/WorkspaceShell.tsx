@@ -76,10 +76,6 @@ export function WorkspaceShell({
     }
   }, [mode])
 
-  /*
-   * 选中新的形状时自动打开右侧属性面板。
-   * 选区标识只包含 shape id，不镜像 tldraw 文档数据。
-   */
   useEffect(() => {
     const previousKey = previousInspectorSelectionKeyRef.current
     const nextKey = inspectorSelectionKey ?? ''
@@ -134,7 +130,7 @@ export function WorkspaceShell({
   )
 
   const chrome = (
-    <header className="col-span-full row-1 min-h-0 min-w-0 border-b border-divider bg-chrome">
+    <header className="col-span-full row-1 min-h-0 min-w-0 bg-chrome">
       {renderChrome({
         isSidebarOpen,
         sidebarWidth: dockSidebar ? sidebarWidth : 0,

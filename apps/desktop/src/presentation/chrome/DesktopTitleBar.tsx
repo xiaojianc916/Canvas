@@ -46,8 +46,6 @@ export function DesktopTitleBar({
       return
     }
 
-    // Prevent text selection and drag-image behavior before transferring
-    // pointer ownership to the native window manager.
     event.preventDefault()
 
     if (event.detail === 2) {
@@ -60,17 +58,13 @@ export function DesktopTitleBar({
 
   return (
     <div className="flex h-full min-h-0 min-w-0 bg-chrome">
-      {/*
-          The titlebar owns one drag path through MainWindowController.
-          Interactive descendants explicitly opt out.
-        */}
       <div
         aria-label="窗口标题栏"
         className="flex h-full min-h-0 w-full items-stretch"
         onMouseDownCapture={handleDragMouseDown}
         role="toolbar"
       >
-        <div className="flex w-(--activity-rail-width) shrink-0 items-center justify-center">
+        <div className="flex w-(--activity-rail-width) shrink-0 items-center justify-center border-b border-divider">
           <button
             aria-label={isSidebarOpen ? '收起侧边栏' : '展开侧边栏'}
             className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
@@ -84,15 +78,19 @@ export function DesktopTitleBar({
             )}
           </button>
         </div>
+
         <div
-          className="shrink-0 border-r border-divider"
+          className="shrink-0 border-b border-divider"
           style={{
+            borderRightStyle: 'solid',
             borderRightWidth: isSidebarOpen ? 1 : 0,
             width: 'var(--workspace-sidebar-column-width, 0px)',
           }}
         />
+
         <div className="flex min-w-0 flex-1 items-stretch">{children}</div>
-        <div className="flex shrink-0 items-stretch">
+
+        <div className="flex shrink-0 items-stretch border-b border-divider">
           <button
             aria-label="最小化"
             className="grid w-11 place-items-center text-muted-foreground hover:bg-black/5 hover:text-foreground"
@@ -109,15 +107,9 @@ export function DesktopTitleBar({
             type="button"
           >
             {isMaximized ? (
-              <Copy
-                aria-hidden="true"
-                className="size-3.5"
-              />
+              <Copy aria-hidden="true" className="size-3.5" />
             ) : (
-              <Square
-                aria-hidden="true"
-                className="size-3"
-              />
+              <Square aria-hidden="true" className="size-3" />
             )}
           </button>
           <button

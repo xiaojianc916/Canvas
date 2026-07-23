@@ -12,7 +12,7 @@ import {
   Search,
   X,
 } from 'lucide-react'
-import { type ComponentType, type DragEvent, type KeyboardEvent, useEffect, useRef } from 'react'
+import { type ComponentType, type DragEvent, type KeyboardEvent, useEffect, useLayoutEffect, useRef } from 'react'
 
 import type { WorkbenchTabId, WorkbenchTabViewModel } from '../../contracts/workbench-contract'
 
@@ -34,6 +34,8 @@ type TabIcon = ComponentType<{
 export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: WorkbenchTabsProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
 
+  const viewportRef = useRef<HTMLDivElement | null>(null)
+
   const tabRefs = useRef(new Map<WorkbenchTabId, HTMLButtonElement>())
 
   const draggedTabIdRef = useRef<WorkbenchTabId | null>(null)
@@ -50,11 +52,6 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
 
       const previousTab = previousActivation?.closest<HTMLElement>('.chrome-workbench-tab')
 
-      /*
-       * A browser may retain :hover on the element that just lost its
-       * active appearance for one paint frame. Suppress that hover
-       * until the pointer genuinely leaves the old tab.
-       */
       if (previousTab?.matches(':hover')) {
         previousTab.setAttribute('data-suppress-hover', 'true')
       }
@@ -84,11 +81,6 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
       return
     }
 
-    /*
-     * 只移动标签视口自身，不使用 scrollIntoView。
-     * scrollIntoView 可能同时滚动祖先容器，导致标签看起来
-     * 延伸到顶部栏两侧的固定 UI 下方。
-     */
     const viewportPadding = 4
     const viewportStart = scroller.scrollLeft
     const viewportEnd = viewportStart + scroller.clientWidth
@@ -110,6 +102,54 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
       })
     }
   }, [activeTabId])
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current
+    const scroller = scrollerRef.current
+
+    if (!viewport || !scroller) {
+      return
+    }
+
+    const syncBaselineGap = () => {
+      if (!activeTabId) {
+        viewport.dataset.hasActiveTab = 'false'
+        viewport.style.removeProperty('--chrome-active-tab-left')
+        viewport.style.removeProperty('--chrome-active-tab-right')
+        return
+      }
+
+      const activation = tabRefs.current.get(activeTabId)
+      const activeTab = activation?.closest<HTMLElement>('.chrome-workbench-tab')
+
+      if (!activeTab) {
+        viewport.dataset.hasActiveTab = 'false'
+        viewport.style.removeProperty('--chrome-active-tab-left')
+        viewport.style.removeProperty('--chrome-active-tab-right')
+        return
+      }
+
+      const viewportRect = viewport.getBoundingClientRect()
+      const tabRect = activeTab.getBoundingClientRect()
+
+      const left = Math.max(0, tabRect.left - viewportRect.left)
+      const right = Math.min(viewportRect.width, tabRect.right - viewportRect.left)
+
+      viewport.dataset.hasActiveTab = 'true'
+      viewport.style.setProperty('--chrome-active-tab-left', `${left}px`)
+      viewport.style.setProperty('--chrome-active-tab-right', `${right}px`)
+    }
+
+    syncBaselineGap()
+
+    scroller.addEventListener('scroll', syncBaselineGap, { passive: true })
+    window.addEventListener('resize', syncBaselineGap)
+
+    return () => {
+      scroller.removeEventListener('scroll', syncBaselineGap)
+      window.removeEventListener('resize', syncBaselineGap)
+    }
+  }, [activeTabId, tabs])
 
   function handleKeyboard(event: KeyboardEvent<HTMLButtonElement>, tabId: WorkbenchTabId): void {
     const currentIndex = tabs.findIndex((tab) => tab.id === tabId)
@@ -194,7 +234,11 @@ export function WorkbenchTabs({ tabs, onActivate, onClose, onMove, onCreate }: W
 
   return (
     <div className="chrome-workbench-tabs">
-      <div className="chrome-workbench-tabs__viewport">
+      <div
+        className="chrome-workbench-tabs__viewport"
+        data-has-active-tab={activeTabId ? 'true' : 'false'}
+        ref={viewportRef}
+      >
         <div
           aria-label="工作台标签页"
           className="chrome-workbench-tabs__scroller"
