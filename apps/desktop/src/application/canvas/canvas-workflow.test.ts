@@ -86,10 +86,10 @@ describe('CanvasWorkflow per-session close transactions', () => {
   })
 
   it('runs different canvas releases concurrently', async () => {
-    let releaseA
+    let resolveReleaseA!: () => void
 
-    const releaseAPromise = new Promise((resolve) => {
-      releaseA = resolve
+    const releaseAPromise = new Promise<void>((resolve) => {
+      resolveReleaseA = resolve
     })
 
     const documents = createDocumentPort(async (sessionId) => {
@@ -115,7 +115,7 @@ describe('CanvasWorkflow per-session close transactions', () => {
     expect(workspace.closeCanvas).toHaveBeenCalledWith('session-b')
     expect(workspace.closeCanvas).not.toHaveBeenCalledWith('session-a')
 
-    releaseA()
+    resolveReleaseA()
 
     await closeA
 
@@ -123,10 +123,10 @@ describe('CanvasWorkflow per-session close transactions', () => {
   })
 
   it('deduplicates only repeated requests for the same canvas session', async () => {
-    let release
+    let resolvePendingRelease!: () => void
 
-    const pendingRelease = new Promise((resolve) => {
-      release = resolve
+    const pendingRelease = new Promise<void>((resolve) => {
+      resolvePendingRelease = resolve
     })
 
     const documents = createDocumentPort(async () => {
@@ -148,7 +148,7 @@ describe('CanvasWorkflow per-session close transactions', () => {
     expect(duplicate).toBe(first)
     expect(documents.releaseCanvas).toHaveBeenCalledTimes(1)
 
-    release()
+    resolvePendingRelease()
 
     await first
 
