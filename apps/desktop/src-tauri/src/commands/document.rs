@@ -1,6 +1,7 @@
 use crate::error::{Error, IpcError, Result};
 use hybrid_canvas_file_native::{
     atomic_write, canonicalize_draw_document, document_revision,
+    DocumentRevision,
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -38,7 +39,7 @@ impl DocumentId {
 #[derive(Clone, Debug)]
 struct DocumentHandle {
     path: PathBuf,
-    revision: String,
+    revision: DocumentRevision,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -47,7 +48,11 @@ pub struct DocumentRegistry {
 }
 
 impl DocumentRegistry {
-    fn insert(&self, path: PathBuf, revision: String) -> Result<DocumentId> {
+    fn insert(
+        &self,
+        path: PathBuf,
+        revision: DocumentRevision,
+    ) -> Result<DocumentId> {
         let document_id = DocumentId::new();
         let mut documents = self
             .documents
@@ -75,7 +80,7 @@ impl DocumentRegistry {
         document_id: DocumentId,
         path: PathBuf,
         content: &str,
-    ) -> Result<String> {
+    ) -> Result<DocumentRevision> {
         ensure_document_size(content.len() as u64)?;
         ensure_draw_document_path(&path)?;
 
@@ -119,8 +124,14 @@ impl DocumentRegistry {
         document_id: DocumentId,
         expected_revision: &str,
         content: &str,
-    ) -> Result<String> {
+    ) -> Result<DocumentRevision> {
         ensure_document_size(content.len() as u64)?;
+
+        let expected_revision =
+            DocumentRevision::parse(expected_revision)
+                .ok_or_else(|| Error::Validation(
+                    "expected revision must be canonical SHA-256".into(),
+                ))?;
 
         /*
          * Hold the registry write lock across verification and replacement.
@@ -291,7 +302,7 @@ pub async fn document_open(
             document_id,
             display_name: display_name(&path),
             content,
-            revision,
+            revision: revision.into_string(),
         }),
     })
 }
@@ -361,7 +372,7 @@ pub async fn document_save_as(
         document: Some(DocumentDescriptor {
             document_id,
             display_name: display_name(&path),
-            revision,
+            revision: revision.into_string(),
         }),
     })
 }
@@ -389,7 +400,9 @@ pub async fn document_save(
         "document CAS save task terminated unexpectedly".into(),
     ))??;
 
-    Ok(DocumentSaveResult { revision })
+    Ok(DocumentSaveResult {
+        revision: revision.into_string(),
+    })
 }
 
 /// Ends the native document session and releases its private file handle.
@@ -436,7 +449,9 @@ async fn select_save_document(
         .map_err(|_| Error::Internal("document save dialog callback was dropped".into()))
 }
 
-async fn read_document(path: PathBuf) -> Result<(String, String)> {
+async fn read_document(
+    path: PathBuf,
+) -> Result<(String, DocumentRevision)> {
     let metadata = tokio::fs::metadata(&path).await?;
     ensure_document_size(metadata.len())?;
 
@@ -458,7 +473,7 @@ async fn read_document(path: PathBuf) -> Result<(String, String)> {
 async fn write_document(
     path: PathBuf,
     content: String,
-) -> Result<String> {
+) -> Result<DocumentRevision> {
     tokio::task::spawn_blocking(move || {
         let canonical_content =
             canonicalize_draw_document(content.as_bytes())?;
@@ -565,7 +580,10 @@ mod tests {
         let registry = DocumentRegistry::default();
         let path = PathBuf::from("/private/example.draw");
 
-        let document_id = registry.insert(path.clone(), "revision".to_owned()).expect("document should register");
+        let document_id = registry.insert(
+                path.clone(),
+                document_revision(b"revision"),
+            ).expect("document should register");
 
         assert_eq!(registry.path(document_id).expect("path should resolve"), path);
     }
@@ -584,7 +602,7 @@ mod tests {
         let document_id = registry
             .insert(
                 PathBuf::from("/private/example.draw"),
-                "revision".to_owned(),
+                document_revision(b"revision"),
             )
             .expect("document should register");
 
@@ -615,7 +633,7 @@ mod tests {
 
         let result = registry.save_existing(
             document_id,
-            "stale-renderer-revision",
+            &"0".repeat(64),
             &replacement,
         );
 

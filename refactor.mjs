@@ -1,29 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * P0-D.2 — Make Save As a single native registry transaction.
+ * P0-D.3 — Replace raw native revision strings with DocumentRevision.
  *
- * Required base:
- *   - P0-D revision/CAS applied
- *   - P0-D.1 CAS hardening applied
- *
- * Replaces:
- *
- *   validate document ID
- *   -> write selected file
- *   -> update registry later
- *
- * With:
- *
- *   acquire registry write lock
- *   -> revalidate document ID
- *   -> canonicalize
- *   -> atomic_write selected file
- *   -> update path + revision
- *   -> release lock
- *
- * This prevents a failed Save As from writing a file after the native document
- * session has been concurrently closed.
+ * Corrected for:
+ *   ccec77c1e353606182ff3a2d593c1d0f0f158eb8
  *
  * Usage:
  *   node refactor.mjs --check
@@ -46,7 +27,7 @@ const root = resolve(rootArgument ?? process.cwd())
 
 if (apply && check) {
   console.error(
-    '\nP0-D.2 Save As transaction failed:\n' +
+    '\nP0-D.3 typed revision refactor failed:\n' +
       'Use either --check or --apply, not both.\n',
   )
   process.exit(1)
@@ -54,7 +35,7 @@ if (apply && check) {
 
 if (!apply && !check) {
   console.error(
-    '\nP0-D.2 Save As transaction failed:\n' +
+    '\nP0-D.3 typed revision refactor failed:\n' +
       'Missing mode. Use --check or --apply.\n',
   )
   process.exit(1)
@@ -63,15 +44,136 @@ if (!apply && !check) {
 const paths = {
   packageJson: join(root, 'package.json'),
 
+  revision: join(
+    root,
+    'editor/persistence/native/src/revision.rs',
+  ),
+
+  nativeLib: join(
+    root,
+    'editor/persistence/native/src/lib.rs',
+  ),
+
   documentCommand: join(
     root,
     'apps/desktop/src-tauri/src/commands/document.rs',
   ),
 }
 
+const finalRevisionSource = `//! Strong content identity for optimistic document concurrency.
+//!
+//! A revision is the lowercase SHA-256 identity of the exact bytes stored on
+//! disk. It is opaque outside Native and must never be interpreted as a
+//! timestamp, path or mutable sequence number.
+
+use sha2::{Digest, Sha256};
+
+const SHA256_BYTES: usize = 32;
+const SHA256_HEX_LENGTH: usize = SHA256_BYTES * 2;
+
+/// Native-only, validated identity of exact document bytes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentRevision(String);
+
+impl DocumentRevision {
+    /// Calculates the revision of an exact byte sequence.
+    pub fn from_bytes(content: &[u8]) -> Self {
+        let digest = Sha256::digest(content);
+        let revision = hex::encode(digest);
+
+        debug_assert_eq!(revision.len(), SHA256_HEX_LENGTH);
+
+        Self(revision)
+    }
+
+    /// Parses an opaque revision received through IPC.
+    ///
+    /// Only the canonical lowercase SHA-256 representation is accepted.
+    pub fn parse(value: &str) -> Option<Self> {
+        if value.len() != SHA256_HEX_LENGTH {
+            return None;
+        }
+
+        if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
+            return None;
+        }
+
+        let decoded = hex::decode(value).ok()?;
+
+        if decoded.len() != SHA256_BYTES {
+            return None;
+        }
+
+        Some(Self(value.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+/// Calculates the revision of an exact byte sequence.
+pub fn document_revision(content: &[u8]) -> DocumentRevision {
+    DocumentRevision::from_bytes(content)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn revision_is_stable_for_identical_bytes() {
+        let first = document_revision(b"canvas");
+        let second = document_revision(b"canvas");
+
+        assert_eq!(first, second);
+        assert_eq!(first.as_str().len(), SHA256_HEX_LENGTH);
+    }
+
+    #[test]
+    fn revision_changes_when_any_byte_changes() {
+        assert_ne!(
+            document_revision(b"canvas-a"),
+            document_revision(b"canvas-b"),
+        );
+    }
+
+    #[test]
+    fn revision_uses_exact_stored_bytes() {
+        assert_ne!(
+            document_revision(b"{\\"value\\":1}"),
+            document_revision(b"{ \\"value\\": 1 }"),
+        );
+    }
+
+    #[test]
+    fn parses_canonical_revision() {
+        let revision = document_revision(b"canvas");
+
+        let parsed = DocumentRevision::parse(revision.as_str())
+            .expect("canonical revision should parse");
+
+        assert_eq!(parsed, revision);
+    }
+
+    #[test]
+    fn rejects_malformed_revision() {
+        assert!(DocumentRevision::parse("revision").is_none());
+        assert!(DocumentRevision::parse(&"0".repeat(63)).is_none());
+        assert!(DocumentRevision::parse(&"0".repeat(65)).is_none());
+        assert!(DocumentRevision::parse(&"A".repeat(64)).is_none());
+        assert!(DocumentRevision::parse(&"z".repeat(64)).is_none());
+    }
+}
+`
+
 function fail(message) {
   console.error(
-    `\nP0-D.2 Save As transaction failed:\n${message}\n`,
+    `\nP0-D.3 typed revision refactor failed:\n${message}\n`,
   )
   process.exit(1)
 }
@@ -111,306 +213,304 @@ function replaceOnce(
   return source.replace(oldText, newText)
 }
 
-function insertBeforeOnce(
-  source,
-  marker,
-  content,
-  description,
-) {
+function updateNativeLib(source) {
+  const finalExport =
+    'pub use revision::{document_revision, DocumentRevision};'
+
+  if (source.includes(finalExport)) {
+    return source
+  }
+
   return replaceOnce(
     source,
-    marker,
-    `${content}${marker}`,
-    description,
+    'pub use revision::document_revision;',
+    finalExport,
+    'export DocumentRevision',
   )
 }
 
 function updateDocumentCommand(source) {
+  const finalImport = `use hybrid_canvas_file_native::{
+    atomic_write, canonicalize_draw_document, document_revision,
+    DocumentRevision,
+};`
+
   const alreadyApplied =
-    source.includes('fn save_as_existing(') &&
-    !source.includes('fn replace_path(') &&
+    source.includes(finalImport) &&
+    source.includes('revision: DocumentRevision,') &&
     source.includes(
-      '"document Save As task terminated unexpectedly"',
+      'DocumentRevision::parse(expected_revision)',
     ) &&
     source.includes(
-      'fn save_as_unknown_document_does_not_write_destination()',
+      'revision: revision.into_string(),',
     )
 
   if (alreadyApplied) {
-    return {
-      changed: false,
-      content: source,
-    }
+    return source
   }
 
   if (
     !source.includes('fn save_existing(') ||
-    !source.includes('expected_revision: &str') ||
-    !source.includes('fn valid_document(')
+    !source.includes('fn save_as_existing(') ||
+    !source.includes(
+      'document Save As task terminated unexpectedly',
+    )
   ) {
     throw new Error(
       [
         'Required CAS baseline was not found.',
-        'Apply P0-D and P0-D.1 before this script.',
+        'Expected P0-D, P0-D.1 and P0-D.2.',
       ].join('\n'),
     )
   }
 
   let next = source
 
-  const oldReplacePath = `    fn replace_path(
+  if (!next.includes(finalImport)) {
+    next = replaceOnce(
+      next,
+      `use hybrid_canvas_file_native::{
+    atomic_write, canonicalize_draw_document, document_revision,
+};`,
+      finalImport,
+      'import DocumentRevision',
+    )
+  }
+
+  next = replaceOnce(
+    next,
+    `struct DocumentHandle {
+    path: PathBuf,
+    revision: String,
+}`,
+    `struct DocumentHandle {
+    path: PathBuf,
+    revision: DocumentRevision,
+}`,
+    'type native handle revision',
+  )
+
+  next = replaceOnce(
+    next,
+    `    fn insert(&self, path: PathBuf, revision: String) -> Result<DocumentId> {`,
+    `    fn insert(
         &self,
-        document_id: DocumentId,
         path: PathBuf,
-        revision: String,
-    ) -> Result<()> {
-        let mut documents = self
-            .documents
-            .write()
-            .map_err(|_| Error::Internal("document registry write lock poisoned".into()))?;
+        revision: DocumentRevision,
+    ) -> Result<DocumentId> {`,
+    'type registry insertion revision',
+  )
 
-        let handle = documents
-            .get_mut(&document_id)
-            .ok_or_else(|| Error::NotFound("document session does not exist".into()))?;
-
-        handle.path = path;
-        handle.revision = revision;
-        Ok(())
-    }`
-
-  const newSaveAsTransaction = `    fn save_as_existing(
+  next = replaceOnce(
+    next,
+    `    fn save_as_existing(
         &self,
         document_id: DocumentId,
         path: PathBuf,
         content: &str,
+    ) -> Result<String> {`,
+    `    fn save_as_existing(
+        &self,
+        document_id: DocumentId,
+        path: PathBuf,
+        content: &str,
+    ) -> Result<DocumentRevision> {`,
+    'type Save As revision result',
+  )
+
+  next = replaceOnce(
+    next,
+    `    fn save_existing(
+        &self,
+        document_id: DocumentId,
+        expected_revision: &str,
+        content: &str,
     ) -> Result<String> {
+        ensure_document_size(content.len() as u64)?;`,
+    `    fn save_existing(
+        &self,
+        document_id: DocumentId,
+        expected_revision: &str,
+        content: &str,
+    ) -> Result<DocumentRevision> {
         ensure_document_size(content.len() as u64)?;
-        ensure_draw_document_path(&path)?;
 
-        /*
-         * Save As must revalidate and retain the native document handle while
-         * producing the new file. If the document was closed after the dialog
-         * opened, fail before touching the selected destination.
-         *
-         * Holding the same write lock used by ordinary CAS saves and close
-         * prevents Save, Save As and Close from interleaving for this registry.
-         */
-        let mut documents = self
-            .documents
-            .write()
-            .map_err(|_| Error::Internal(
-                "document registry write lock poisoned".into(),
-            ))?;
+        let expected_revision =
+            DocumentRevision::parse(expected_revision)
+                .ok_or_else(|| Error::Validation(
+                    "expected revision must be canonical SHA-256".into(),
+                ))?;`,
+    'parse and type expected revision',
+  )
 
-        let handle = documents
-            .get_mut(&document_id)
-            .ok_or_else(|| Error::NotFound(
-                "document session does not exist".into(),
-            ))?;
+  /*
+   * Open DTO conversion. Use the complete DocumentOpenResult block so it cannot
+   * collide with DocumentDescriptor.
+   */
+  next = replaceOnce(
+    next,
+    `        document: Some(DocumentOpenResult {
+            document_id,
+            display_name: display_name(&path),
+            content,
+            revision,
+        }),`,
+    `        document: Some(DocumentOpenResult {
+            document_id,
+            display_name: display_name(&path),
+            content,
+            revision: revision.into_string(),
+        }),`,
+    'convert open revision at IPC boundary',
+  )
 
-        let canonical_content =
-            canonicalize_draw_document(content.as_bytes())?;
-
-        atomic_write(&path, canonical_content.as_bytes())?;
-
-        let revision =
-            document_revision(canonical_content.as_bytes());
-
-        handle.path = path;
-        handle.revision.clone_from(&revision);
-
-        Ok(revision)
-    }`
+  /*
+   * Save As DTO conversion, independently anchored to DocumentDescriptor.
+   */
+  next = replaceOnce(
+    next,
+    `        document: Some(DocumentDescriptor {
+            document_id,
+            display_name: display_name(&path),
+            revision,
+        }),`,
+    `        document: Some(DocumentDescriptor {
+            document_id,
+            display_name: display_name(&path),
+            revision: revision.into_string(),
+        }),`,
+    'convert Save As revision at IPC boundary',
+  )
 
   next = replaceOnce(
     next,
-    oldReplacePath,
-    newSaveAsTransaction,
-    'replace non-transactional registry path update',
+    `    Ok(DocumentSaveResult { revision })`,
+    `    Ok(DocumentSaveResult {
+        revision: revision.into_string(),
+    })`,
+    'convert ordinary save revision at IPC boundary',
   )
-
-  const oldSaveAsWrite = `    let revision =
-        write_document(path.clone(), request.content).await?;
-
-    let document_id = match request.document_id {
-        Some(document_id) => {
-            documents.replace_path(
-                document_id,
-                path.clone(),
-                revision.clone(),
-            )?;
-            document_id
-        }
-        None => documents.insert(
-            path.clone(),
-            revision.clone(),
-        )?,
-    };`
-
-  const newSaveAsWrite = `    let (document_id, revision) = match request.document_id {
-        Some(document_id) => {
-            let registry = documents.inner().clone();
-            let save_path = path.clone();
-            let content = request.content;
-
-            let revision = tokio::task::spawn_blocking(move || {
-                registry.save_as_existing(
-                    document_id,
-                    save_path,
-                    &content,
-                )
-            })
-            .await
-            .map_err(|_| Error::Internal(
-                "document Save As task terminated unexpectedly".into(),
-            ))??;
-
-            (document_id, revision)
-        }
-        None => {
-            let revision =
-                write_document(path.clone(), request.content).await?;
-
-            let document_id = documents.insert(
-                path.clone(),
-                revision.clone(),
-            )?;
-
-            (document_id, revision)
-        }
-    };`
 
   next = replaceOnce(
     next,
-    oldSaveAsWrite,
-    newSaveAsWrite,
-    'make existing-document Save As transactional',
+    `async fn read_document(path: PathBuf) -> Result<(String, String)> {`,
+    `async fn read_document(
+    path: PathBuf,
+) -> Result<(String, DocumentRevision)> {`,
+    'type opened revision',
   )
+
+  next = replaceOnce(
+    next,
+    `async fn write_document(
+    path: PathBuf,
+    content: String,
+) -> Result<String> {`,
+    `async fn write_document(
+    path: PathBuf,
+    content: String,
+) -> Result<DocumentRevision> {`,
+    'type new-document revision',
+  )
+
+  /*
+   * Existing registry unit fixtures must now use a real typed revision.
+   */
+  next = next.replaceAll(
+    `.insert(path.clone(), "revision".to_owned())`,
+    `.insert(
+                path.clone(),
+                document_revision(b"revision"),
+            )`,
+  )
+
+  next = next.replaceAll(
+    `                "revision".to_owned(),`,
+    `                document_revision(b"revision"),`,
+  )
+
+  /*
+   * A stale revision should still be syntactically valid so the test reaches
+   * the CAS mismatch branch rather than the IPC validation branch.
+   */
+  next = replaceOnce(
+    next,
+    `            "stale-renderer-revision",
+            &replacement,`,
+    `            &"0".repeat(64),
+            &replacement,`,
+    'use canonical stale revision fixture',
+  )
+
+  if (!next.includes('revision: DocumentRevision,')) {
+    throw new Error(
+      'DocumentHandle revision is not strongly typed.',
+    )
+  }
 
   if (
     !next.includes(
-      'fn save_as_unknown_document_does_not_write_destination()',
+      'DocumentRevision::parse(expected_revision)',
     )
   ) {
-    next = insertBeforeOnce(
-      next,
-      `    #[test]
-    fn suggested_name_never_accepts_a_path() {`,
-      `    #[test]
-    fn save_as_unknown_document_does_not_write_destination() {
-        let directory =
-            tempfile::tempdir().expect("temporary directory");
-        let destination =
-            directory.path().join("must-not-exist.draw");
-        let content = valid_document("save-as");
-
-        let registry = DocumentRegistry::default();
-
-        let result = registry.save_as_existing(
-            DocumentId::new(),
-            destination.clone(),
-            &content,
-        );
-
-        assert!(matches!(result, Err(Error::NotFound(_))));
-        assert!(!destination.exists());
-    }
-
-    #[test]
-    fn save_as_updates_path_and_revision_together() {
-        let directory =
-            tempfile::tempdir().expect("temporary directory");
-
-        let original_path =
-            directory.path().join("original.draw");
-        let destination =
-            directory.path().join("renamed.draw");
-
-        let original = valid_document("original");
-
-        std::fs::write(&original_path, &original)
-            .expect("original document should be written");
-
-        let original_revision =
-            document_revision(original.as_bytes());
-
-        let registry = DocumentRegistry::default();
-        let document_id = registry
-            .insert(
-                original_path,
-                original_revision.clone(),
-            )
-            .expect("document should register");
-
-        let replacement = valid_document("replacement");
-
-        let next_revision = registry
-            .save_as_existing(
-                document_id,
-                destination.clone(),
-                &replacement,
-            )
-            .expect("Save As should succeed");
-
-        assert_ne!(next_revision, original_revision);
-
-        assert_eq!(
-            registry
-                .path(document_id)
-                .expect("updated path should resolve"),
-            destination,
-        );
-
-        let stored_bytes = std::fs::read(
-            registry
-                .path(document_id)
-                .expect("updated path should remain registered"),
-        )
-        .expect("saved document should be readable");
-
-        assert_eq!(
-            document_revision(&stored_bytes),
-            next_revision,
-        );
-    }
-
-`,
-      'add Save As transaction regression tests',
-    )
-  }
-
-  if (next.includes('fn replace_path(')) {
     throw new Error(
-      'The obsolete post-write replace_path operation still exists.',
+      'Expected revision is not validated at the Native boundary.',
     )
   }
 
-  if (!next.includes('fn save_as_existing(')) {
+  const rawHandlePattern = `struct DocumentHandle {
+    path: PathBuf,
+    revision: String,
+}`
+
+  if (next.includes(rawHandlePattern)) {
     throw new Error(
-      'Transactional Save As operation was not installed.',
+      'Raw String revision remains in DocumentHandle.',
     )
   }
 
-  if (
-    count(
-      next,
-      'document Save As task terminated unexpectedly',
-    ) !== 1
-  ) {
+  /*
+   * Exactly three public DTO fields intentionally remain strings:
+   * DocumentOpenResult, DocumentSaveResult and DocumentDescriptor.
+   */
+  const publicRevisionStrings = count(
+    next,
+    'pub revision: String,',
+  )
+
+  if (publicRevisionStrings !== 3) {
     throw new Error(
-      'Expected exactly one blocking Save As transaction.',
+      [
+        'Unexpected IPC revision field count.',
+        'Expected: 3',
+        `Actual: ${publicRevisionStrings}`,
+      ].join('\n'),
     )
   }
 
-  return {
-    changed: next !== source,
-    content: next,
+  const intoStringCount = count(
+    next,
+    'revision: revision.into_string(),',
+  )
+
+  if (intoStringCount !== 3) {
+    throw new Error(
+      [
+        'Unexpected typed-to-IPC revision conversion count.',
+        'Expected: 3',
+        `Actual: ${intoStringCount}`,
+      ].join('\n'),
+    )
   }
+
+  return next
 }
 
 async function main() {
   for (const path of [
     paths.packageJson,
+    paths.revision,
+    paths.nativeLib,
     paths.documentCommand,
   ]) {
     if (!(await exists(path))) {
@@ -428,40 +528,68 @@ async function main() {
     )
   }
 
-  const original = await readFile(
-    paths.documentCommand,
-    'utf8',
+  const [
+    revisionOriginal,
+    nativeLibOriginal,
+    documentCommandOriginal,
+  ] = await Promise.all([
+    readFile(paths.revision, 'utf8'),
+    readFile(paths.nativeLib, 'utf8'),
+    readFile(paths.documentCommand, 'utf8'),
+  ])
+
+  /*
+   * Prepare and validate every output before writing any file.
+   */
+  const outputs = new Map([
+    [paths.revision, finalRevisionSource],
+    [
+      paths.nativeLib,
+      updateNativeLib(nativeLibOriginal),
+    ],
+    [
+      paths.documentCommand,
+      updateDocumentCommand(documentCommandOriginal),
+    ],
+  ])
+
+  const originals = new Map([
+    [paths.revision, revisionOriginal],
+    [paths.nativeLib, nativeLibOriginal],
+    [paths.documentCommand, documentCommandOriginal],
+  ])
+
+  const changed = [...outputs].filter(
+    ([path, content]) => originals.get(path) !== content,
   )
 
-  const change = updateDocumentCommand(original)
-
-  if (!change.changed) {
+  if (changed.length === 0) {
     console.log(
-      'P0-D.2 transactional Save As is already applied.',
+      'P0-D.3 typed native revision is already applied.',
     )
     return
   }
 
+  console.log('P0-D.3 typed revision files:')
+
+  for (const [path] of changed) {
+    console.log(`- ${path.slice(root.length + 1)}`)
+  }
+
   if (check) {
-    console.log(
-      'P0-D.2 transactional Save As is safe to apply.',
-    )
     console.log('')
     console.log('It will:')
     console.log(
-      '- remove the post-write replace_path operation;',
+      '- replace raw Native revision strings with DocumentRevision;',
     )
     console.log(
-      '- serialize existing-document Save As with Save and Close;',
+      '- validate renderer revisions as canonical lowercase SHA-256;',
     )
     console.log(
-      '- revalidate the document before writing the destination;',
+      '- keep strings only at the generated IPC boundary;',
     )
     console.log(
-      '- update path and revision under the same registry lock;',
-    )
-    console.log(
-      '- prevent unknown or concurrently closed IDs from creating files;',
+      '- preserve exactly one CAS implementation;',
     )
     console.log('')
     console.log(
@@ -471,27 +599,19 @@ async function main() {
   }
 
   try {
-    await writeFile(
-      paths.documentCommand,
-      change.content,
-      'utf8',
-    )
+    for (const [path, content] of outputs) {
+      await writeFile(path, content, 'utf8')
+    }
   } catch (error) {
-    await writeFile(
-      paths.documentCommand,
-      original,
-      'utf8',
-    )
+    for (const [path, content] of originals) {
+      await writeFile(path, content, 'utf8')
+    }
 
     throw error
   }
 
-  console.log('Applied P0-D.2 transactional Save As.')
   console.log('')
-  console.log('Changed:')
-  console.log(
-    '- apps/desktop/src-tauri/src/commands/document.rs',
-  )
+  console.log('Applied P0-D.3 typed native revision.')
   console.log('')
   console.log('Required verification:')
   console.log('  cargo fmt --all')
