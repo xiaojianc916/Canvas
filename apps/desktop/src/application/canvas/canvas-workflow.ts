@@ -197,6 +197,7 @@ export function createCanvasWorkflow(
         setCloseSnapshot({
           state: 'release-failed',
           sessionId,
+          intent,
         })
     }
   }
