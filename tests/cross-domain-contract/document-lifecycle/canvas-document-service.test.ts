@@ -4,43 +4,30 @@ import type {
 } from '@hybrid-canvas/canvas/application'
 import { createCanvasDocumentService } from '@hybrid-canvas/document'
 import { serializeDrawDocument } from '@hybrid-canvas/file'
-import type { TLEditorSnapshot } from 'tldraw'
+import {
+  createTLStore,
+  getSnapshot,
+  type TLEditorSnapshot,
+} from 'tldraw'
 import { describe, expect, it, vi } from 'vitest'
 
-function validSnapshotWire(): TLEditorSnapshot {
+function validSnapshot(): TLEditorSnapshot {
   /*
-   * Lifecycle tests cross the actual file parser but use a mocked editor
-   * session. They must therefore provide a valid persisted snapshot envelope,
-   * without pretending to reimplement live tldraw record validation.
+   * Never handwrite a partial TLEditorSnapshot fixture. A snapshot includes
+   * serialized store schema and session state that are owned by tldraw.
    */
-  return {
-    document: {
-      schema: {
-        schemaVersion: 2,
-        sequences: {},
-      },
-      store: {
-        'document:document': {
-          id: 'document:document',
-          typeName: 'document',
-          name: 'Untitled',
-          meta: {},
-        },
-      },
-    },
-    session: {},
-  } as TLEditorSnapshot
+  return getSnapshot(createTLStore({}))
 }
 
 function snapshot(documentValue: unknown): TLEditorSnapshot {
   /*
-   * These lifecycle tests invoke change listeners explicitly. The snapshot
-   * contents are not interpreted by their mocked editor, so retain a valid
-   * parser fixture instead of injecting invalid pseudo tldraw records.
+   * Lifecycle tests trigger their mocked editor change notification explicitly.
+   * Keep their persisted value a real, tldraw-generated snapshot rather than
+   * manufacturing invalid pseudo-records.
    */
   void documentValue
 
-  return validSnapshotWire()
+  return validSnapshot()
 }
 
 function createHarness() {
