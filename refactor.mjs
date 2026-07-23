@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * P0-C.6.2 — Transactional Native asset-session restoration.
+ * P0-C.6.3 — Adopt restored Native asset sessions.
  *
  * Required base:
- *   c6d3c9b9452bfbcfeaeaa3d7ac158b0db12e9b48
+ *   5676ea3789b3a426204f40a122ac99d1dcb84d98
  *
  * Usage:
  *   node refactor.mjs --check
@@ -23,7 +23,7 @@ import { join, resolve } from 'node:path'
 import process from 'node:process'
 
 const STEP_NAME =
-  'P0-C.6.2 transactional Native asset restoration'
+  'P0-C.6.3 restored Native asset-session adoption'
 
 function fail(message) {
   console.error(`\n${STEP_NAME} failed:\n${message}\n`)
@@ -92,6 +92,24 @@ const { mode, root } = parseArguments(
 const paths = {
   packageJson: join(root, 'package.json'),
 
+  adapter: join(
+    root,
+    'platforms',
+    'desktop-runtime',
+    'src',
+    'adapters',
+    'assets',
+    'native-tl-asset-store.ts',
+  ),
+
+  publicApi: join(
+    root,
+    'platforms',
+    'desktop-runtime',
+    'src',
+    'public-api.ts',
+  ),
+
   assetProtocol: join(
     root,
     'apps',
@@ -99,15 +117,6 @@ const paths = {
     'src-tauri',
     'src',
     'asset_protocol.rs',
-  ),
-
-  codec: join(
-    root,
-    'editor',
-    'persistence',
-    'native',
-    'src',
-    'document_codec_v2.rs',
   ),
 }
 
@@ -174,306 +183,274 @@ function replaceExact(
   throw new Error(
     [
       `Unexpected source count: ${description}`,
-      'Expected either one audited baseline or one final implementation.',
       `Baseline count: ${baselineCount}`,
       `Final count: ${finalCount}`,
+      'Expected one audited baseline or one final implementation.',
       'Refusing an ambiguous or partial modification.',
     ].join('\n'),
   )
 }
 
-const importBaseline = `use std::collections::HashMap;
-use std::sync::{Arc, RwLock};`
+const interfaceBaseline = `export interface NativeTLAssetStoreSession {
+  readonly assets: TLAssetStore
+  readonly dispose: () => Promise<void>
+}`
 
-const importFinal = `use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};`
+const interfaceFinal = `export interface NativeAssetStoreSessionRestore {
+  /**
+   * Process-local capability returned by Native document restoration.
+   *
+   * This token is never persisted into the .draw container and must never be
+   * interpreted as a filesystem path or archive entry.
+   */
+  readonly persistenceToken: string
+}
 
-const snapshotMethodStart = `    pub fn snapshot_session(
-        &self,
-        session_token: &str,
-    ) -> Result<Vec<AssetSessionSnapshotEntry>, AssetProtocolError> {`
+export interface NativeTLAssetStoreSession {
+  readonly assets: TLAssetStore
 
-const restoreMethod = `    /// Restores one complete document-owned asset session atomically.
-    ///
-    /// Every asset is validated and materialized in private temporary state
-    /// before the registry write lock is acquired. The session becomes visible
-    /// only after the complete resource set and global byte budget have been
-    /// accepted.
-    ///
-    /// Failure never publishes an empty or partially restored session.
-    pub fn restore_session(
-        &self,
-        session_token: &str,
-        assets: Vec<AssetSessionSnapshotEntry>,
-    ) -> Result<(), AssetProtocolError> {
-        validate_token(session_token)?;
+  /**
+   * Returns the Native session capability after all queued asset operations
+   * have settled. A document with no Native resources returns null without
+   * opening an otherwise-unused session.
+   */
+  readonly getPersistenceToken: () => Promise<string | null>
 
-        let mut restored_assets =
-            HashMap::<String, RegisteredAsset>::new();
-        let mut restored_bytes = 0_usize;
+  readonly dispose: () => Promise<void>
+}`
 
-        for asset in assets {
-            validate_content_hash(&asset.content_hash)?;
-            validate_content_type(&asset.content_type)?;
+const helperAnchor = `function toWebviewAssetUrl(
+  sessionToken: string,
+  assetToken: string,
+): string {`
 
-            if asset.bytes.len() > MAX_ASSET_BYTES {
-                return Err(AssetProtocolError::AssetTooLarge);
-            }
+const helperFinal = `function validatePersistenceToken(
+  token: string,
+): void {
+  if (
+    token.length === 0 ||
+    token.length > 128 ||
+    !/^[A-Za-z0-9_-]+$/u.test(token)
+  ) {
+    throw new Error(
+      'NATIVE_ASSET_PERSISTENCE_TOKEN_INVALID',
+    )
+  }
+}
 
-            let actual_hash =
-                hex::encode(Sha256::digest(asset.bytes.as_ref()));
+function persistedAssetToken(
+  asset: TLAsset,
+): string | null {
+  const token =
+    asset.meta?.hybridCanvasAssetToken
 
-            if actual_hash != asset.content_hash {
-                return Err(AssetProtocolError::InvalidContentHash);
-            }
+  if (
+    typeof token !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(token)
+  ) {
+    return null
+  }
 
-            restored_bytes = restored_bytes
-                .checked_add(asset.bytes.len())
-                .ok_or(
-                    AssetProtocolError::RegistryBudgetExceeded,
-                )?;
+  const contentHash =
+    asset.meta?.hybridCanvasContentHash
 
-            if restored_bytes > MAX_REGISTRY_BYTES {
-                return Err(
-                    AssetProtocolError::RegistryBudgetExceeded,
-                );
-            }
+  if (
+    typeof contentHash !== 'string' ||
+    contentHash !== token
+  ) {
+    return null
+  }
 
-            let content_hash = asset.content_hash;
+  return token
+}
 
-            let registered = RegisteredAsset {
-                bytes: asset.bytes,
-                content_type: asset.content_type,
-                references: 1,
-            };
+${helperAnchor}`
 
-            if restored_assets
-                .insert(content_hash, registered)
-                .is_some()
-            {
-                return Err(AssetProtocolError::DuplicateAsset);
-            }
+const factoryBaseline = `export function createNativeTLAssetStoreSession(): NativeTLAssetStoreSession {
+  const assetTokens = new Map<TLAssetId, string>()
+
+  let openedSessionPromise:
+    | Promise<OpenedNativeAssetSession>
+    | null = null`
+
+const factoryFinal = `export function createNativeTLAssetStoreSession(
+  restore?: NativeAssetStoreSessionRestore,
+): NativeTLAssetStoreSession {
+  const assetTokens = new Map<TLAssetId, string>()
+
+  const restoredSessionToken =
+    restore?.persistenceToken ?? null
+
+  if (restoredSessionToken) {
+    validatePersistenceToken(
+      restoredSessionToken,
+    )
+  }
+
+  let openedSessionPromise:
+    | Promise<OpenedNativeAssetSession>
+    | null = restoredSessionToken
+      ? Promise.resolve({
+          sessionToken: restoredSessionToken,
+        })
+      : null`
+
+const resolveBaseline = `    resolve(asset) {
+      assertActive()
+
+      const source = asset.props.src
+
+      return typeof source === 'string' &&
+        source.length > 0
+        ? source
+        : null
+    },`
+
+const resolveFinal = `    resolve(asset) {
+      assertActive()
+
+      /*
+       * Persisted protocol URLs contain a process-local session token from the
+       * process that wrote the file. They are never trusted after reopening.
+       *
+       * A restored document resolves its content-addressed asset identity
+       * against the new Native session created by document_open.
+       */
+      if (restoredSessionToken) {
+        const assetToken =
+          persistedAssetToken(asset)
+
+        if (!assetToken) {
+          return null
         }
 
-        let mut state = self
-            .state
-            .write()
-            .map_err(|_| AssetProtocolError::Internal)?;
+        assetTokens.set(asset.id, assetToken)
 
-        if state.sessions.contains_key(session_token) {
-            return Err(AssetProtocolError::DuplicateAsset);
-        }
+        return toWebviewAssetUrl(
+          restoredSessionToken,
+          assetToken,
+        )
+      }
 
-        let next_total = state
-            .total_bytes
-            .checked_add(restored_bytes)
-            .ok_or(
-                AssetProtocolError::RegistryBudgetExceeded,
-            )?;
+      const source = asset.props.src
 
-        if next_total > MAX_REGISTRY_BYTES {
-            return Err(
-                AssetProtocolError::RegistryBudgetExceeded,
-            );
-        }
+      return typeof source === 'string' &&
+        source.length > 0
+        ? source
+        : null
+    },`
 
-        state
-            .sessions
-            .insert(session_token.to_owned(), restored_assets);
+const returnBaseline = `  return {
+    assets,
 
-        state.total_bytes = next_total;
+    dispose() {`
 
-        Ok(())
-    }
+const returnFinal = `  return {
+    assets,
 
-${snapshotMethodStart}`
+    async getPersistenceToken() {
+      assertActive()
 
-const testsAnchor = `    #[test]
-    fn rejects_active_or_unknown_content_types() {`
+      /*
+       * Wait for uploads and removals already accepted by this adapter. This
+       * gives the document writer a stable Native resource snapshot boundary.
+       */
+      await operationTail
 
-const restorationTests = `    #[test]
-    fn restores_complete_content_addressed_session() {
-        let registry = AssetProtocolRegistry::default();
+      assertActive()
 
-        let first_bytes =
-            Arc::<[u8]>::from(vec![1, 2, 3]);
-        let second_bytes =
-            Arc::<[u8]>::from(vec![4, 5, 6]);
+      if (!openedSessionPromise) {
+        return null
+      }
 
-        let first_hash = hash(first_bytes.as_ref());
-        let second_hash = hash(second_bytes.as_ref());
+      const { sessionToken } =
+        await openedSessionPromise
 
-        registry
-            .restore_session(
-                "restored-session",
-                vec![
-                    AssetSessionSnapshotEntry {
-                        content_hash: second_hash.clone(),
-                        content_type:
-                            "image/png".to_owned(),
-                        bytes: Arc::clone(&second_bytes),
-                    },
-                    AssetSessionSnapshotEntry {
-                        content_hash: first_hash.clone(),
-                        content_type:
-                            "image/png".to_owned(),
-                        bytes: Arc::clone(&first_bytes),
-                    },
-                ],
-            )
-            .expect("session should restore");
+      return sessionToken
+    },
 
-        assert!(
-            registry
-                .contains(
-                    "restored-session",
-                    &first_hash,
-                )
-                .expect("first asset should resolve")
-        );
+    dispose() {`
 
-        assert!(
-            registry
-                .contains(
-                    "restored-session",
-                    &second_hash,
-                )
-                .expect("second asset should resolve")
-        );
-
-        let snapshot = registry
-            .snapshot_session("restored-session")
-            .expect("restored session should snapshot");
-
-        assert_eq!(snapshot.len(), 2);
-
-        assert!(snapshot.windows(2).all(|pair| {
-            pair[0].content_hash < pair[1].content_hash
-        }));
-
-        let first_response =
-            registry.response(&request(&format!(
-                "hybrid-canvas-asset://asset/restored-session/{first_hash}"
-            )));
-
-        assert_eq!(
-            first_response.status(),
-            StatusCode::OK,
-        );
-
-        assert_eq!(
-            first_response.body(),
-            &first_bytes.as_ref().to_vec(),
-        );
-    }
-
-    #[test]
-    fn invalid_restore_does_not_publish_partial_session() {
-        let registry = AssetProtocolRegistry::default();
-
-        let valid_bytes =
-            Arc::<[u8]>::from(vec![1, 2, 3]);
-
-        let valid_hash = hash(valid_bytes.as_ref());
-
-        let result = registry.restore_session(
-            "failed-session",
-            vec![
-                AssetSessionSnapshotEntry {
-                    content_hash: valid_hash,
-                    content_type:
-                        "image/png".to_owned(),
-                    bytes: valid_bytes,
-                },
-                AssetSessionSnapshotEntry {
-                    content_hash: "0".repeat(64),
-                    content_type:
-                        "image/png".to_owned(),
-                    bytes: Arc::<[u8]>::from(
-                        vec![9, 9, 9],
-                    ),
-                },
-            ],
-        );
-
-        assert_eq!(
-            result,
-            Err(AssetProtocolError::InvalidContentHash),
-        );
-
-        assert!(matches!(
-            registry.snapshot_session("failed-session"),
-            Err(AssetProtocolError::NotFound),
-        ));
-    }
-
-    #[test]
-    fn duplicate_restore_hash_does_not_publish_session() {
-        let registry = AssetProtocolRegistry::default();
-
-        let bytes = Arc::<[u8]>::from(vec![1, 2, 3]);
-        let content_hash = hash(bytes.as_ref());
-
-        let result = registry.restore_session(
-            "duplicate-session",
-            vec![
-                AssetSessionSnapshotEntry {
-                    content_hash:
-                        content_hash.clone(),
-                    content_type:
-                        "image/png".to_owned(),
-                    bytes: Arc::clone(&bytes),
-                },
-                AssetSessionSnapshotEntry {
-                    content_hash,
-                    content_type:
-                        "image/png".to_owned(),
-                    bytes,
-                },
-            ],
-        );
-
-        assert_eq!(
-            result,
-            Err(AssetProtocolError::DuplicateAsset),
-        );
-
-        assert!(matches!(
-            registry.snapshot_session(
-                "duplicate-session",
-            ),
-            Err(AssetProtocolError::NotFound),
-        ));
-    }
-
-${testsAnchor}`
-
-function updateAssetProtocol(source) {
+function updateAdapter(source) {
   let result = source
 
   result = replaceExact(
     result,
-    importBaseline,
-    importFinal,
-    'add production SHA-256 validation import',
+    interfaceBaseline,
+    interfaceFinal,
+    'extend Native asset session contract',
   )
 
   result = replaceExact(
     result,
-    snapshotMethodStart,
-    restoreMethod,
-    'add transactional session restoration',
+    helperAnchor,
+    helperFinal,
+    'add persistence capability validation',
   )
 
   result = replaceExact(
     result,
-    testsAnchor,
-    restorationTests,
-    'add asset restoration transaction tests',
+    factoryBaseline,
+    factoryFinal,
+    'adopt an existing Native asset session',
+  )
+
+  result = replaceExact(
+    result,
+    resolveBaseline,
+    resolveFinal,
+    'resolve restored assets against the current session',
+  )
+
+  result = replaceExact(
+    result,
+    returnBaseline,
+    returnFinal,
+    'expose the Native persistence capability',
   )
 
   return result
+}
+
+function updatePublicApi(source) {
+  const baseline = `export {
+  createNativeTLAssetStoreSession,
+  type NativeTLAssetStoreSession,
+} from './adapters/assets/native-tl-asset-store'`
+
+  const final = `export {
+  createNativeTLAssetStoreSession,
+  type NativeAssetStoreSessionRestore,
+  type NativeTLAssetStoreSession,
+} from './adapters/assets/native-tl-asset-store'`
+
+  if (
+    source.includes(final)
+  ) {
+    return source
+  }
+
+  if (!source.includes(baseline)) {
+    /*
+     * The export may use a different multiline arrangement. Restrict the
+     * fallback to the exact existing type export instead of rewriting the
+     * complete public API.
+     */
+    const typeBaseline =
+      '  type NativeTLAssetStoreSession,'
+
+    const typeFinal = `  type NativeAssetStoreSessionRestore,
+  type NativeTLAssetStoreSession,`
+
+    return replaceExact(
+      source,
+      typeBaseline,
+      typeFinal,
+      'export Native asset restoration contract',
+    )
+  }
+
+  return source.replace(baseline, final)
 }
 
 function validateRepository(packageJson) {
@@ -481,7 +458,7 @@ function validateRepository(packageJson) {
 
   try {
     parsed = JSON.parse(
-      packageJson.replace(/^\uFEFF/, ''),
+      packageJson.replace(/^\uFEFF/u, ''),
     )
   } catch (error) {
     throw new Error(
@@ -500,181 +477,166 @@ function validateRepository(packageJson) {
   }
 }
 
-function validateCodec(codec) {
+function validateNativePrerequisite(source) {
   const required = [
-    'pub fn decode_draw_document_v2',
-    'pub struct DrawAssetOutput',
-    'pub bytes: Vec<u8>',
-    'bytes: content.to_vec(),',
-  ]
-
-  for (const fragment of required) {
-    if (!codec.includes(fragment)) {
-      throw new Error(
-        `Required v2 codec prerequisite is missing: ${fragment}`,
-      )
-    }
-  }
-}
-
-function validateAssetProtocolPrerequisites(
-  source,
-) {
-  const required = [
-    'pub struct AssetSessionSnapshotEntry',
-    'pub content_hash: String',
-    'pub content_type: String',
-    'pub bytes: Arc<[u8]>',
-    'references: u32',
-    'pub fn insert(',
-    'pub fn remove_session(',
-    'pub fn snapshot_session(',
-    'fn validate_content_hash(',
-    'fn validate_content_type(',
-    'const MAX_ASSET_BYTES: usize',
-    'const MAX_REGISTRY_BYTES: usize',
-  ]
-
-  for (const fragment of required) {
-    if (!source.includes(fragment)) {
-      throw new Error(
-        `Required asset registry prerequisite is missing: ${fragment}`,
-      )
-    }
-  }
-}
-
-function validateFinal(source) {
-  const required = [
-    'use sha2::{Digest, Sha256};',
     'pub fn restore_session(',
-    'HashMap::<String, RegisteredAsset>::new()',
+    'pub fn snapshot_session(',
     'Sha256::digest(asset.bytes.as_ref())',
-    'actual_hash != asset.content_hash',
-    '.insert(content_hash, registered)',
-    'state.sessions.contains_key(session_token)',
-    '.checked_add(restored_bytes)',
-    '.insert(session_token.to_owned(), restored_assets)',
-    'invalid_restore_does_not_publish_partial_session',
-    'duplicate_restore_hash_does_not_publish_session',
-    'restores_complete_content_addressed_session',
+    'Failure never publishes an empty or partially restored session.',
   ]
 
   for (const fragment of required) {
     if (!source.includes(fragment)) {
       throw new Error(
-        `Final asset restoration is missing: ${fragment}`,
+        `Native restore prerequisite is missing: ${fragment}`,
+      )
+    }
+  }
+}
+
+function validateAdapterPrerequisites(source) {
+  const required = [
+    'interface OpenedNativeAssetSession',
+    'readonly sessionToken: string',
+    'const assetTokens = new Map<TLAssetId, string>()',
+    'function requireOpenedSession()',
+    'commands.assetSessionOpen()',
+    'commands.assetSessionClose(request)',
+    'hybridCanvasAssetToken:',
+    'hybridCanvasContentHash:',
+    'function toWebviewAssetUrl(',
+  ]
+
+  for (const fragment of required) {
+    if (!source.includes(fragment)) {
+      throw new Error(
+        `Native TLAssetStore prerequisite is missing: ${fragment}`,
+      )
+    }
+  }
+}
+
+function validateFinal(
+  adapter,
+  publicApi,
+) {
+  const requiredAdapter = [
+    'export interface NativeAssetStoreSessionRestore',
+    'readonly persistenceToken: string',
+    'readonly getPersistenceToken: () => Promise<string | null>',
+    'restore?: NativeAssetStoreSessionRestore',
+    'validatePersistenceToken(',
+    'const restoredSessionToken =',
+    'Promise.resolve({',
+    'persistedAssetToken(asset)',
+    'contentHash !== token',
+    'assetTokens.set(asset.id, assetToken)',
+    'toWebviewAssetUrl(',
+    'async getPersistenceToken()',
+    'await operationTail',
+    'if (!openedSessionPromise)',
+  ]
+
+  for (const fragment of requiredAdapter) {
+    if (!adapter.includes(fragment)) {
+      throw new Error(
+        `Final Native TLAssetStore adapter is missing: ${fragment}`,
       )
     }
   }
 
   if (
     countOccurrences(
-      source,
-      'pub fn restore_session(',
+      adapter,
+      'async getPersistenceToken()',
     ) !== 1
   ) {
     throw new Error(
-      'Asset registry must contain exactly one restore_session implementation.',
-    )
-  }
-
-  const restoreStart = source.indexOf(
-    '    pub fn restore_session(',
-  )
-
-  const snapshotStart = source.indexOf(
-    '    pub fn snapshot_session(',
-    restoreStart,
-  )
-
-  if (
-    restoreStart < 0 ||
-    snapshotStart < 0 ||
-    snapshotStart <= restoreStart
-  ) {
-    throw new Error(
-      'Asset restoration method is not located at the audited registry boundary.',
-    )
-  }
-
-  const restoreBody = source.slice(
-    restoreStart,
-    snapshotStart,
-  )
-
-  const lockIndex = restoreBody.indexOf(
-    'let mut state = self',
-  )
-
-  const hashValidationIndex =
-    restoreBody.indexOf(
-      'actual_hash != asset.content_hash',
-    )
-
-  const temporaryMapIndex =
-    restoreBody.indexOf(
-      'HashMap::<String, RegisteredAsset>::new()',
-    )
-
-  if (
-    lockIndex < 0 ||
-    hashValidationIndex < 0 ||
-    temporaryMapIndex < 0
-  ) {
-    throw new Error(
-      'Transactional restoration ordering cannot be verified.',
+      'Expected exactly one getPersistenceToken implementation.',
     )
   }
 
   if (
-    temporaryMapIndex > lockIndex ||
-    hashValidationIndex > lockIndex
+    countOccurrences(
+      adapter,
+      'restore?: NativeAssetStoreSessionRestore',
+    ) !== 1
   ) {
     throw new Error(
-      'Asset validation must complete before the registry write lock is acquired.',
+      'Expected exactly one restored-session factory input.',
     )
   }
 
-  const publicationIndex =
-    restoreBody.indexOf(
-      '.insert(session_token.to_owned(), restored_assets)',
+  for (const fragment of [
+    'type NativeAssetStoreSessionRestore',
+    'type NativeTLAssetStoreSession',
+    'createNativeTLAssetStoreSession',
+  ]) {
+    if (!publicApi.includes(fragment)) {
+      throw new Error(
+        `Desktop runtime public API is missing: ${fragment}`,
+      )
+    }
+  }
+
+  const restoredResolveStart =
+    adapter.indexOf(
+      '      if (restoredSessionToken) {',
+    )
+
+  const sourceFallbackStart =
+    adapter.indexOf(
+      '      const source = asset.props.src',
+      restoredResolveStart,
     )
 
   if (
-    publicationIndex < lockIndex
+    restoredResolveStart < 0 ||
+    sourceFallbackStart <
+      restoredResolveStart
   ) {
     throw new Error(
-      'Restored session is published before registry validation.',
+      'Restored assets are not resolved before the ordinary runtime URL path.',
     )
   }
 
   for (const forbidden of [
-    'open_session(session_token)?',
-    'self.insert(',
-    'unwrap()',
-    'unsafe {',
-    'std::fs::',
-    'PathBuf',
+    'URL.createObjectURL',
+    'URL.revokeObjectURL',
+    'FileReader',
+    'data:',
+    'atob(',
+    'btoa(',
+    'crypto.randomUUID',
+    'window.__TAURI__',
   ]) {
-    if (restoreBody.includes(forbidden)) {
+    if (adapter.includes(forbidden)) {
       throw new Error(
-        `Transactional restore contains forbidden behavior: ${forbidden}`,
+        `Unsupported asset fallback remains: ${forbidden}`,
       )
     }
   }
 }
 
-async function restoreFile(
-  path,
-  original,
-) {
-  try {
-    await writeFile(path, original, 'utf8')
-  } catch (restoreError) {
+async function restoreFiles(originals) {
+  const results = await Promise.allSettled(
+    [...originals].map(
+      ([path, content]) =>
+        writeFile(path, content, 'utf8'),
+    ),
+  )
+
+  const failures = results.filter(
+    (result) =>
+      result.status === 'rejected',
+  )
+
+  if (failures.length > 0) {
     throw new AggregateError(
-      [restoreError],
-      'The asset protocol update failed and the original file could not be restored.',
+      failures.map(
+        (failure) => failure.reason,
+      ),
+      'Apply failed and one or more original files could not be restored.',
     )
   }
 }
@@ -690,62 +652,86 @@ async function main() {
 
   const [
     packageJson,
-    protocolOriginal,
-    codec,
+    adapterOriginal,
+    publicApiOriginal,
+    assetProtocol,
   ] = await Promise.all([
     readFile(paths.packageJson, 'utf8'),
+    readFile(paths.adapter, 'utf8'),
+    readFile(paths.publicApi, 'utf8'),
     readFile(paths.assetProtocol, 'utf8'),
-    readFile(paths.codec, 'utf8'),
   ])
 
   validateRepository(packageJson)
-  validateCodec(codec)
+  validateNativePrerequisite(assetProtocol)
 
-  validateAssetProtocolPrerequisites(
-    protocolOriginal,
+  validateAdapterPrerequisites(
+    adapterOriginal,
   )
 
-  const protocolFinal =
-    updateAssetProtocol(protocolOriginal)
+  const adapterFinal =
+    updateAdapter(adapterOriginal)
 
-  validateFinal(protocolFinal)
+  const publicApiFinal =
+    updatePublicApi(publicApiOriginal)
 
-  if (protocolFinal === protocolOriginal) {
+  validateFinal(
+    adapterFinal,
+    publicApiFinal,
+  )
+
+  const originals = new Map([
+    [paths.adapter, adapterOriginal],
+    [paths.publicApi, publicApiOriginal],
+  ])
+
+  const outputs = new Map([
+    [paths.adapter, adapterFinal],
+    [paths.publicApi, publicApiFinal],
+  ])
+
+  const changed = [...outputs].filter(
+    ([path, content]) =>
+      originals.get(path) !== content,
+  )
+
+  if (changed.length === 0) {
     console.log(
       `${STEP_NAME} is already applied.`,
     )
     return
   }
 
-  const relativeProtocol =
-    paths.assetProtocol.slice(
-      root.length + 1,
-    )
-
   console.log(`${STEP_NAME} will update:`)
-  console.log(`- ${relativeProtocol}`)
+
+  for (const [path] of changed) {
+    console.log(
+      `- ${path.slice(root.length + 1)}`,
+    )
+  }
+
   console.log('')
   console.log('It will:')
   console.log(
-    '- validate every restored asset before publishing a session;',
+    '- let the official TLAssetStore adopt a Native-restored session;',
   )
   console.log(
-    '- verify restored bytes against their SHA-256 identity;',
+    '- validate the opaque process-local persistence capability;',
   )
   console.log(
-    '- reject duplicate content hashes and unsupported MIME types;',
+    '- rebuild restored protocol URLs from the current session and SHA-256;',
   )
   console.log(
-    '- enforce per-asset and process-wide Native byte budgets;',
+    '- stop trusting stale session URLs stored by an earlier process;',
   )
   console.log(
-    '- restore the complete session through one atomic registry mutation;',
+    '- expose the settled Native persistence token to the document writer;',
   )
   console.log(
-    '- leave no partial Native session after validation failure;',
+    '- preserve lazy Native session creation for asset-free documents;',
   )
   console.log(
-    '- keep all binary resource transfer inside Native.',
+    '- keep binary resource bytes outside the Renderer.',
   )
 
   if (mode === '--check') {
@@ -760,34 +746,28 @@ async function main() {
   }
 
   try {
-    await writeFile(
-      paths.assetProtocol,
-      protocolFinal,
-      'utf8',
-    )
-
-    const written = await readFile(
-      paths.assetProtocol,
-      'utf8',
-    )
-
-    if (written !== protocolFinal) {
-      throw new Error(
-        'The written asset protocol does not match the validated output.',
-      )
+    for (const [path, content] of changed) {
+      await writeFile(path, content, 'utf8')
     }
 
-    validateFinal(written)
+    const [
+      writtenAdapter,
+      writtenPublicApi,
+    ] = await Promise.all([
+      readFile(paths.adapter, 'utf8'),
+      readFile(paths.publicApi, 'utf8'),
+    ])
+
+    validateFinal(
+      writtenAdapter,
+      writtenPublicApi,
+    )
   } catch (error) {
     console.error(
-      '\nApply failed. Restoring the original asset protocol...',
+      '\nApply failed. Restoring original files...',
     )
 
-    await restoreFile(
-      paths.assetProtocol,
-      protocolOriginal,
-    )
-
+    await restoreFiles(originals)
     throw error
   }
 
@@ -795,20 +775,16 @@ async function main() {
   console.log(`Applied ${STEP_NAME}.`)
   console.log('')
   console.log('Required verification:')
-  console.log(
-    '  cargo fmt --all -- --check',
-  )
+  console.log('  pnpm format')
+  console.log('  pnpm lint')
+  console.log('  pnpm typecheck')
+  console.log('  pnpm test')
   console.log(
     '  cargo check --workspace --all-targets',
   )
   console.log(
     '  cargo test --workspace --all-targets',
   )
-  console.log(
-    '  cargo clippy --workspace --all-targets -- -D warnings',
-  )
-  console.log('  pnpm typecheck')
-  console.log('  pnpm test')
   console.log('  pnpm tauri dev')
 }
 

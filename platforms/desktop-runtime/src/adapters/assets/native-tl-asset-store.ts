@@ -23,8 +23,26 @@ interface OpenedNativeAssetSession {
   readonly sessionToken: string
 }
 
+export interface NativeAssetStoreSessionRestore {
+  /**
+   * Process-local capability returned by Native document restoration.
+   *
+   * This token is never persisted into the .draw container and must never be
+   * interpreted as a filesystem path or archive entry.
+   */
+  readonly persistenceToken: string
+}
+
 export interface NativeTLAssetStoreSession {
   readonly assets: TLAssetStore
+
+  /**
+   * Returns the Native session capability after all queued asset operations
+   * have settled. A document with no Native resources returns null without
+   * opening an otherwise-unused session.
+   */
+  readonly getPersistenceToken: () => Promise<string | null>
+
   readonly dispose: () => Promise<void>
 }
 
@@ -77,6 +95,46 @@ function validateNativeSource(
   }
 }
 
+function validatePersistenceToken(
+  token: string,
+): void {
+  if (
+    token.length === 0 ||
+    token.length > 128 ||
+    !/^[A-Za-z0-9_-]+$/u.test(token)
+  ) {
+    throw new Error(
+      'NATIVE_ASSET_PERSISTENCE_TOKEN_INVALID',
+    )
+  }
+}
+
+function persistedAssetToken(
+  asset: TLAsset,
+): string | null {
+  const token =
+    asset.meta?.hybridCanvasAssetToken
+
+  if (
+    typeof token !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(token)
+  ) {
+    return null
+  }
+
+  const contentHash =
+    asset.meta?.hybridCanvasContentHash
+
+  if (
+    typeof contentHash !== 'string' ||
+    contentHash !== token
+  ) {
+    return null
+  }
+
+  return token
+}
+
 function toWebviewAssetUrl(
   sessionToken: string,
   assetToken: string,
@@ -108,12 +166,27 @@ async function removeUploadedAsset(
  * editor construction. This keeps createTLStore({ assets }) synchronous and
  * avoids creating unused Native sessions.
  */
-export function createNativeTLAssetStoreSession(): NativeTLAssetStoreSession {
+export function createNativeTLAssetStoreSession(
+  restore?: NativeAssetStoreSessionRestore,
+): NativeTLAssetStoreSession {
   const assetTokens = new Map<TLAssetId, string>()
+
+  const restoredSessionToken =
+    restore?.persistenceToken ?? null
+
+  if (restoredSessionToken) {
+    validatePersistenceToken(
+      restoredSessionToken,
+    )
+  }
 
   let openedSessionPromise:
     | Promise<OpenedNativeAssetSession>
-    | null = null
+    | null = restoredSessionToken
+      ? Promise.resolve({
+          sessionToken: restoredSessionToken,
+        })
+      : null
 
   let operationTail: Promise<void> = Promise.resolve()
   let disposePromise: Promise<void> | null = null
@@ -241,6 +314,29 @@ export function createNativeTLAssetStoreSession(): NativeTLAssetStoreSession {
     resolve(asset) {
       assertActive()
 
+      /*
+       * Persisted protocol URLs contain a process-local session token from the
+       * process that wrote the file. They are never trusted after reopening.
+       *
+       * A restored document resolves its content-addressed asset identity
+       * against the new Native session created by document_open.
+       */
+      if (restoredSessionToken) {
+        const assetToken =
+          persistedAssetToken(asset)
+
+        if (!assetToken) {
+          return null
+        }
+
+        assetTokens.set(asset.id, assetToken)
+
+        return toWebviewAssetUrl(
+          restoredSessionToken,
+          assetToken,
+        )
+      }
+
       const source = asset.props.src
 
       return typeof source === 'string' &&
@@ -294,6 +390,27 @@ export function createNativeTLAssetStoreSession(): NativeTLAssetStoreSession {
 
   return {
     assets,
+
+    async getPersistenceToken() {
+      assertActive()
+
+      /*
+       * Wait for uploads and removals already accepted by this adapter. This
+       * gives the document writer a stable Native resource snapshot boundary.
+       */
+      await operationTail
+
+      assertActive()
+
+      if (!openedSessionPromise) {
+        return null
+      }
+
+      const { sessionToken } =
+        await openedSessionPromise
+
+      return sessionToken
+    },
 
     dispose() {
       if (disposePromise) {

@@ -1,5 +1,6 @@
 export {
   createNativeTLAssetStoreSession,
+  type NativeAssetStoreSessionRestore,
   type NativeTLAssetStoreSession,
 } from './adapters/assets/native-tl-asset-store'
 
