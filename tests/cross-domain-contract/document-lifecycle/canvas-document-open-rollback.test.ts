@@ -1,19 +1,9 @@
 import { createCanvasDocumentService } from '@hybrid-canvas/document'
 import { describe, expect, it, vi } from 'vitest'
 
-const VALID_OUTER_CONTAINER = JSON.stringify({
-  header: {
-    format: 'hybrid-canvas/draw',
-    version: 1,
-    createdAt: '2026-07-23T00:00:00.000Z',
-  },
-  content: {
-    document: {
-      schema: {},
-      store: {},
-    },
-    session: {},
-  },
+const VALID_STORE_SNAPSHOT = JSON.stringify({
+  schema: {},
+  store: {},
 })
 
 interface HarnessOptions {
@@ -28,7 +18,7 @@ function createHarness({
   rollbackError,
 }: HarnessOptions) {
   const editorSessions = {
-    create: vi.fn(() => {
+    create: vi.fn(async () => {
       throw editorOpenError
     }),
     close: vi.fn(),
@@ -46,8 +36,12 @@ function createHarness({
       id: 'native-document-id',
       displayName: 'broken.draw',
       content,
+      revision: 'revision-current',
+      assetPersistenceToken: null,
     })),
-    save: vi.fn(async () => {}),
+    save: vi.fn(async () => ({
+      revision: 'revision-next',
+    })),
     saveAs: vi.fn(async () => null),
     close,
   }
@@ -81,7 +75,7 @@ describe('CanvasDocumentService open transaction', () => {
   it('closes the native document when tldraw snapshot loading fails', async () => {
     const snapshotError = new Error('DRAW_INVALID_SNAPSHOT')
     const { service, editorSessions, persistence } = createHarness({
-      content: VALID_OUTER_CONTAINER,
+      content: VALID_STORE_SNAPSHOT,
       editorOpenError: snapshotError,
     })
 
@@ -96,7 +90,7 @@ describe('CanvasDocumentService open transaction', () => {
     const snapshotError = new Error('DRAW_INVALID_SNAPSHOT')
     const rollbackError = new Error('NATIVE_DOCUMENT_CLOSE_FAILED')
     const { service, persistence } = createHarness({
-      content: VALID_OUTER_CONTAINER,
+      content: VALID_STORE_SNAPSHOT,
       editorOpenError: snapshotError,
       rollbackError,
     })

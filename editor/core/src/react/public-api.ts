@@ -4,7 +4,8 @@ export {
   HYBRID_CANVAS_EXTENSION_API_VERSION,
   type HybridCanvasExtension,
 } from '../contracts/public-api'
-export { CanvasToolbar, type CanvasToolbarProps } from './CanvasToolbar'
+export { CanvasToolbar } from './CanvasToolbar'
+export type { CanvasToolbarProps } from './CanvasToolbar'
 export { EditorCanvas, type EditorCanvasProps } from './EditorCanvas'
 export {
   EditorSessionHost,

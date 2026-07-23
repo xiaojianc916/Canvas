@@ -97,7 +97,7 @@ describe('EditorSessionRegistry persisted snapshot boundary', () => {
     )
     const dispose = vi.fn(async (): Promise<void> => {})
 
-    const factoryMock = vi.fn((_restore) => ({
+    const factoryMock = vi.fn((_restore?: unknown) => ({
       assets: {
         upload: vi.fn(),
       } as unknown as TLAssetStore,
@@ -133,11 +133,11 @@ describe('EditorSessionRegistry persisted snapshot boundary', () => {
   })
 
   it('waits for owned asset disposal before close settles', async () => {
-    let releaseAssetStore = () => {}
+    let releaseAssetStore: () => void = () => {}
 
     const dispose = vi.fn(
       () =>
-        new Promise((resolve) => {
+        new Promise<void>((resolve) => {
           releaseAssetStore = () => resolve()
         }),
     )
