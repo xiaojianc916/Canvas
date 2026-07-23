@@ -3,7 +3,6 @@
 import {
   existsSync,
   readFileSync,
-  renameSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -13,9 +12,9 @@ const root = process.cwd()
 
 const paths = {
   lib: 'editor/persistence/native/src/lib.rs',
-  documentCommands: 'apps/desktop/src-tauri/src/commands/document.rs',
-  oldCodec: 'editor/persistence/native/src/document_codec.rs',
-  newCodec: 'editor/persistence/native/src/legacy_document_codec_v1.rs',
+  documentRs: 'apps/desktop/src-tauri/src/commands/document.rs',
+  legacyCodec: 'editor/persistence/native/src/document_codec.rs',
+  legacyCodecRenamed: 'editor/persistence/native/src/legacy_document_codec_v1.rs',
 }
 
 function abs(path) {
@@ -30,96 +29,217 @@ function write(path, content) {
   writeFileSync(abs(path), content.replaceAll('\r\n', '\n'))
 }
 
-function replaceAllExact(source, from, to) {
-  return source.split(from).join(to)
+function removeIfExists(path) {
+  if (existsSync(abs(path))) {
+    unlinkSync(abs(path))
+  }
+}
+
+function replaceOnce(source, oldValue, newValue, label) {
+  const first = source.indexOf(oldValue)
+  if (first < 0) {
+    throw new Error(`Expected source fragment was not found: ${label}`)
+  }
+  if (source.indexOf(oldValue, first + oldValue.length) >= 0) {
+    throw new Error(`Unexpected source count: ${label}`)
+  }
+  return source.slice(0, first) + newValue + source.slice(first + oldValue.length)
 }
 
 function patchLibRs() {
   let source = read(paths.lib)
 
-  source = replaceAllExact(
-    source,
-    'mod document_codec;',
-    'mod legacy_document_codec_v1;',
+  source = source.replace("mod document_codec;\n", '')
+  source = source.replace("mod legacy_document_codec_v1;\n", '')
+
+  source = source.replace("pub use document_codec::canonicalize_draw_document;\n", '')
+  source = source.replace(
+    "pub use legacy_document_codec_v1::canonicalize_legacy_draw_document_v1;\n",
+    '',
   )
 
-  source = replaceAllExact(
-    source,
-    'pub use document_codec::canonicalize_draw_document;',
-    'pub use legacy_document_codec_v1::canonicalize_legacy_draw_document_v1;',
-  )
+  if (source.includes('canonicalize_draw_document')) {
+    throw new Error('lib.rs still references canonicalize_draw_document')
+  }
 
   write(paths.lib, source)
 }
 
 function patchDocumentRs() {
-  let source = read(paths.documentCommands)
+  let source = read(paths.documentRs)
 
-  source = replaceAllExact(
-    source,
-    'canonicalize_draw_document, decode_draw_document_v2',
-    'canonicalize_legacy_draw_document_v1, decode_draw_document_v2',
+  source = source.replace(
+    `use hybrid_canvas_file_native::{
+    DocumentRevision, DrawAssetInput, DrawDocumentV2Input, atomic_write,
+    canonicalize_draw_document, decode_draw_document_v2, document_revision,
+    encode_draw_document_v2,
+};`,
+    `use hybrid_canvas_file_native::{
+    DocumentRevision, DrawAssetInput, DrawDocumentV2Input, atomic_write,
+    decode_draw_document_v2, document_revision, encode_draw_document_v2,
+};`,
   )
 
-  source = replaceAllExact(
+  source = replaceOnce(
     source,
-    'let canonical = canonicalize_draw_document(bytes)?;',
-    'let canonical = canonicalize_legacy_draw_document_v1(bytes)?;',
+    `fn decode_document(bytes: &[u8]) -> Result<DecodedDocument> {
+    if bytes.starts_with(b"PK\\x03\\x04") {
+        let decoded = decode_draw_document_v2(bytes)?;
+
+        let assets = decoded
+            .assets
+            .into_iter()
+            .map(|asset| AssetSessionSnapshotEntry {
+                content_hash: asset.content_hash,
+                content_type: asset.content_type,
+                bytes: Arc::from(asset.bytes),
+            })
+            .collect::<Vec<_>>();
+
+        return Ok(DecodedDocument {
+            content: serde_json::to_string(&decoded.document)?,
+            created_at: decoded.created_at,
+            assets,
+        });
+    }
+
+    ensure_logical_document_size(bytes.len() as u64)?;
+
+    let canonical = canonicalize_draw_document(bytes)?;
+    let legacy: serde_json::Value = serde_json::from_str(&canonical)?;
+
+    let created_at = legacy
+        .get("header")
+        .and_then(|header| header.get("createdAt"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| Error::Validation("v1 document has no createdAt".into()))?
+        .to_owned();
+
+    let document = legacy
+        .get("content")
+        .and_then(|content| content.get("document"))
+        .filter(|value| value.is_object())
+        .ok_or_else(|| Error::Validation("v1 document has no store snapshot".into()))?;
+
+    Ok(DecodedDocument {
+        content: serde_json::to_string(document)?,
+        created_at,
+        assets: Vec::new(),
+    })
+}`,
+    `fn decode_document(bytes: &[u8]) -> Result<DecodedDocument> {
+    if !bytes.starts_with(b"PK\\x03\\x04") {
+        return Err(Error::Validation(
+            "selected .draw file is not a supported v2 document".into(),
+        ));
+    }
+
+    let decoded = decode_draw_document_v2(bytes)?;
+
+    let assets = decoded
+        .assets
+        .into_iter()
+        .map(|asset| AssetSessionSnapshotEntry {
+            content_hash: asset.content_hash,
+            content_type: asset.content_type,
+            bytes: Arc::from(asset.bytes),
+        })
+        .collect::<Vec<_>>();
+
+    Ok(DecodedDocument {
+        content: serde_json::to_string(&decoded.document)?,
+        created_at: decoded.created_at,
+        assets,
+    })
+}`,
+    'remove legacy decode fallback',
   )
 
-  write(paths.documentCommands, source)
+  source = source.replace(
+    `    fn legacy_v1(marker: &str) -> Vec<u8> {
+        serde_json::json!({
+            "header": {
+                "format": "hybrid-canvas/draw",
+                "version": 1,
+                "createdAt": "2026-07-23T00:00:00.000Z"
+            },
+            "content": {
+                "document": {
+                    "schema": {},
+                    "store": {
+                        "marker": marker
+                    }
+                },
+                "session": {}
+            }
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    #[test]
+    fn v1_reader_is_explicit_migration() {
+        let decoded = decode_document(&legacy_v1("legacy")).expect("v1 migration should succeed");
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&decoded.content).expect("logical snapshot"),
+            serde_json::json!({
+                "schema": {},
+                "store": {
+                    "marker": "legacy"
+                }
+            }),
+        );
+        assert!(decoded.assets.is_empty());
+    }
+
+`,
+    `    #[test]
+    fn rejects_legacy_non_zip_documents() {
+        let legacy = serde_json::json!({
+            "header": {
+                "format": "hybrid-canvas/draw",
+                "version": 1,
+                "createdAt": "2026-07-23T00:00:00.000Z"
+            },
+            "content": {
+                "document": {
+                    "schema": {},
+                    "store": {
+                        "marker": "legacy"
+                    }
+                },
+                "session": {}
+            }
+        })
+        .to_string()
+        .into_bytes();
+
+        let result = decode_document(&legacy);
+
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+`,
+  )
+
+  if (source.includes('canonicalize_draw_document')) {
+    throw new Error('document.rs still references canonicalize_draw_document')
+  }
+
+  write(paths.documentRs, source)
 }
 
-function patchLegacyCodecFile() {
-  const oldExists = existsSync(abs(paths.oldCodec))
-  const newExists = existsSync(abs(paths.newCodec))
-
-  if (oldExists && !newExists) {
-    renameSync(abs(paths.oldCodec), abs(paths.newCodec))
-  }
-
-  if (!existsSync(abs(paths.newCodec))) {
-    throw new Error('Missing codec file after rename')
-  }
-
-  let source = read(paths.newCodec)
-
-  source = source.replace(
-    '//! Native logical-document boundary.',
-    '//! Explicit legacy v1 logical-document migration boundary.',
-  )
-
-  source = source.replace(
-    'pub fn canonicalize_draw_document(input: &[u8]) -> Result<String> {',
-    'pub fn canonicalize_legacy_draw_document_v1(input: &[u8]) -> Result<String> {',
-  )
-
-  source = replaceAllExact(
-    source,
-    'canonicalize_draw_document(',
-    'canonicalize_legacy_draw_document_v1(',
-  )
-
-  source = replaceAllExact(
-    source,
-    'use super::canonicalize_draw_document;',
-    'use super::canonicalize_legacy_draw_document_v1;',
-  )
-
-  write(paths.newCodec, source)
-
-  if (existsSync(abs(paths.oldCodec))) {
-    unlinkSync(abs(paths.oldCodec))
-  }
+function deleteLegacyCodecFiles() {
+  removeIfExists(paths.legacyCodec)
+  removeIfExists(paths.legacyCodecRenamed)
 }
 
 function main() {
   patchLibRs()
   patchDocumentRs()
-  patchLegacyCodecFile()
-  console.log(
-    'Codec layout collapsed: v2 remains canonical, v1 file is now explicitly legacy-only.',
-  )
+  deleteLegacyCodecFiles()
+  console.log('Deleted legacy .draw compatibility. Only v2 documents are supported now.')
 }
 
 main()

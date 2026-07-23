@@ -18,13 +18,11 @@
 )]
 mod atomic_write;
 
-mod legacy_document_codec_v1;
 mod document_codec_v2;
 mod error;
 mod revision;
 
 pub use atomic_write::atomic_write;
-pub use legacy_document_codec_v1::canonicalize_legacy_draw_document_v1;
 pub use document_codec_v2::{
     decode_draw_document_v2, encode_draw_document_v2, DecodedDrawDocumentV2, DrawAssetInput,
     DrawAssetOutput, DrawDocumentV2Input,
