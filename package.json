@@ -23,14 +23,14 @@
     "build": "turbo run build",
     "build:desktop": "pnpm --filter @hybrid-canvas/desktop build",
     "build:native": "cargo build --workspace",
-    "check": "pnpm test:architecture && turbo run check && pnpm check:rust",
+    "check": "pnpm test:architecture && node scripts/quality/run.mjs check",
     "check:rust": "cargo check --workspace --all-targets --all-features",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "node scripts/quality/run.mjs typecheck",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "test": "turbo run test && cargo test --workspace --all-features",
+    "test": "node scripts/quality/run.mjs test",
     "test:rust": "cargo test --workspace --all-features",
     "clippy": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
     "audit": "pnpm audit --audit-level high",
@@ -52,4 +52,4 @@
     "turbo": "2.10.5",
     "typescript": "catalog:"
   }
-}
+}\n
