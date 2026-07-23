@@ -21,10 +21,18 @@ const MAX_ASSET_BYTES: usize = 32 * 1024 * 1024;
 const MAX_REGISTRY_BYTES: usize = 256 * 1024 * 1024;
 const MAX_TOKEN_BYTES: usize = 128;
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssetSessionSnapshotEntry {
+    pub content_hash: String,
+    pub content_type: String,
+    pub bytes: Arc<[u8]>,
+}
+
 #[derive(Clone, Debug)]
 struct RegisteredAsset {
     bytes: Arc<[u8]>,
     content_type: String,
+    references: u32,
 }
 
 #[derive(Debug, Default)]
@@ -45,10 +53,12 @@ pub struct AssetProtocolRegistry {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AssetProtocolError {
     InvalidToken,
+    InvalidContentHash,
     UnsupportedContentType,
     AssetTooLarge,
     RegistryBudgetExceeded,
     DuplicateAsset,
+    ReferenceOverflow,
     NotFound,
     Internal,
 }
@@ -80,12 +90,23 @@ impl AssetProtocolRegistry {
         &self,
         session_token: &str,
         asset_token: &str,
+        content_hash: &str,
         content_type: &str,
         bytes: Vec<u8>,
     ) -> Result<(), AssetProtocolError> {
         validate_token(session_token)?;
         validate_token(asset_token)?;
+        validate_content_hash(content_hash)?;
         validate_content_type(content_type)?;
+
+        /*
+         * Runtime asset identity is the canonical lowercase SHA-256 digest.
+         * Session tokens remain opaque, but asset tokens are deliberately
+         * content-addressed so the same binary has one Native identity.
+         */
+        if asset_token != content_hash {
+            return Err(AssetProtocolError::InvalidContentHash);
+        }
 
         if bytes.len() > MAX_ASSET_BYTES {
             return Err(AssetProtocolError::AssetTooLarge);
@@ -98,11 +119,26 @@ impl AssetProtocolRegistry {
 
         let session = state
             .sessions
-            .get(session_token)
+            .get_mut(session_token)
             .ok_or(AssetProtocolError::NotFound)?;
 
-        if session.contains_key(asset_token) {
-            return Err(AssetProtocolError::DuplicateAsset);
+        if let Some(existing) = session.get_mut(asset_token) {
+            if existing.content_type != content_type
+                || existing.bytes.as_ref() != bytes.as_slice()
+            {
+                /*
+                 * A SHA-256 identity must never resolve to different bytes or
+                 * metadata within one session.
+                 */
+                return Err(AssetProtocolError::DuplicateAsset);
+            }
+
+            existing.references = existing
+                .references
+                .checked_add(1)
+                .ok_or(AssetProtocolError::ReferenceOverflow)?;
+
+            return Ok(());
         }
 
         let next_total = state
@@ -117,6 +153,7 @@ impl AssetProtocolRegistry {
         let registered = RegisteredAsset {
             bytes: Arc::from(bytes),
             content_type: content_type.to_owned(),
+            references: 1,
         };
 
         state
@@ -147,17 +184,24 @@ impl AssetProtocolRegistry {
             return Ok(false);
         };
 
-        let removed = session.remove(asset_token);
+        let Some(asset) = session.get_mut(asset_token) else {
+            return Ok(false);
+        };
 
-        if let Some(removed) = removed {
-            state.total_bytes = state
-                .total_bytes
-                .saturating_sub(removed.bytes.len());
-
+        if asset.references > 1 {
+            asset.references -= 1;
             return Ok(true);
         }
 
-        Ok(false)
+        let removed = session
+            .remove(asset_token)
+            .ok_or(AssetProtocolError::Internal)?;
+
+        state.total_bytes = state
+            .total_bytes
+            .saturating_sub(removed.bytes.len());
+
+        Ok(true)
     }
 
     pub fn remove_session(
@@ -184,6 +228,44 @@ impl AssetProtocolRegistry {
             state.total_bytes.saturating_sub(removed_bytes);
 
         Ok(true)
+    }
+
+    pub fn snapshot_session(
+        &self,
+        session_token: &str,
+    ) -> Result<Vec<AssetSessionSnapshotEntry>, AssetProtocolError> {
+        validate_token(session_token)?;
+
+        let state = self
+            .state
+            .read()
+            .map_err(|_| AssetProtocolError::Internal)?;
+
+        let session = state
+            .sessions
+            .get(session_token)
+            .ok_or(AssetProtocolError::NotFound)?;
+
+        let mut snapshot = session
+            .iter()
+            .map(|(content_hash, asset)| {
+                AssetSessionSnapshotEntry {
+                    content_hash: content_hash.clone(),
+                    content_type: asset.content_type.clone(),
+                    bytes: Arc::clone(&asset.bytes),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        /*
+         * Hash ordering makes the handoff deterministic for the v2 ZIP writer
+         * regardless of HashMap iteration order.
+         */
+        snapshot.sort_unstable_by(|left, right| {
+            left.content_hash.cmp(&right.content_hash)
+        });
+
+        Ok(snapshot)
     }
 
     pub fn contains(
@@ -216,10 +298,12 @@ impl AssetProtocolRegistry {
             }
             Err(
                 AssetProtocolError::InvalidToken
+                | AssetProtocolError::InvalidContentHash
                 | AssetProtocolError::UnsupportedContentType
                 | AssetProtocolError::AssetTooLarge
                 | AssetProtocolError::RegistryBudgetExceeded
-                | AssetProtocolError::DuplicateAsset,
+                | AssetProtocolError::DuplicateAsset
+                | AssetProtocolError::ReferenceOverflow,
             ) => empty_response(StatusCode::BAD_REQUEST),
             Err(AssetProtocolError::Internal) => {
                 empty_response(StatusCode::INTERNAL_SERVER_ERROR)
@@ -310,6 +394,20 @@ fn validate_token(value: &str) -> Result<(), AssetProtocolError> {
     Ok(())
 }
 
+fn validate_content_hash(
+    content_hash: &str,
+) -> Result<(), AssetProtocolError> {
+    if content_hash.len() != 64
+        || !content_hash.bytes().all(|byte| {
+            byte.is_ascii_digit() || matches!(byte, b'a'..=b'f')
+        })
+    {
+        return Err(AssetProtocolError::InvalidContentHash);
+    }
+
+    Ok(())
+}
+
 fn validate_content_type(
     content_type: &str,
 ) -> Result<(), AssetProtocolError> {
@@ -360,6 +458,7 @@ fn empty_response(status: StatusCode) -> Response<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
 
     fn request(uri: &str) -> Request<()> {
         Request::builder()
@@ -368,26 +467,49 @@ mod tests {
             .expect("request should be valid")
     }
 
+    fn hash(bytes: &[u8]) -> String {
+        hex::encode(Sha256::digest(bytes))
+    }
+
+    fn insert(
+        registry: &AssetProtocolRegistry,
+        session: &str,
+        content_type: &str,
+        bytes: &[u8],
+    ) -> String {
+        let content_hash = hash(bytes);
+
+        registry
+            .insert(
+                session,
+                &content_hash,
+                &content_hash,
+                content_type,
+                bytes.to_vec(),
+            )
+            .expect("asset should register");
+
+        content_hash
+    }
+
     #[test]
-    fn serves_registered_asset_without_exposing_a_path() {
+    fn serves_content_addressed_asset_without_exposing_a_path() {
         let registry = AssetProtocolRegistry::default();
 
         registry
             .open_session("session-1")
             .expect("session should open");
 
-        registry
-            .insert(
-                "session-1",
-                "asset-1",
-                "image/png",
-                vec![1, 2, 3, 4],
-            )
-            .expect("asset should register");
+        let asset = insert(
+            &registry,
+            "session-1",
+            "image/png",
+            &[1, 2, 3, 4],
+        );
 
-        let response = registry.response(&request(
-            "hybrid-canvas-asset://asset/session-1/asset-1",
-        ));
+        let response = registry.response(&request(&format!(
+            "hybrid-canvas-asset://asset/session-1/{asset}"
+        )));
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
@@ -421,14 +543,12 @@ mod tests {
             .open_session("session-1")
             .expect("session should open");
 
-        registry
-            .insert(
-                "session-1",
-                "asset-1",
-                "image/png",
-                vec![1, 2, 3],
-            )
-            .expect("asset should register");
+        let asset = insert(
+            &registry,
+            "session-1",
+            "image/png",
+            &[1, 2, 3],
+        );
 
         assert!(
             registry
@@ -436,46 +556,142 @@ mod tests {
                 .expect("session should close")
         );
 
-        let response = registry.response(&request(
-            "hybrid-canvas-asset://asset/session-1/asset-1",
-        ));
+        let response = registry.response(&request(&format!(
+            "hybrid-canvas-asset://asset/session-1/{asset}"
+        )));
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[test]
-    fn refuses_duplicate_asset_identity() {
+    fn deduplicates_equal_content_and_tracks_references() {
         let registry = AssetProtocolRegistry::default();
 
         registry
             .open_session("session-1")
             .expect("session should open");
 
-        registry
-            .insert(
-                "session-1",
-                "asset-1",
-                "image/png",
-                vec![1],
-            )
-            .expect("first asset should register");
-
-        let duplicate = registry.insert(
+        let asset = insert(
+            &registry,
             "session-1",
-            "asset-1",
             "image/png",
-            vec![2],
+            &[1, 2, 3],
+        );
+
+        let duplicate = insert(
+            &registry,
+            "session-1",
+            "image/png",
+            &[1, 2, 3],
+        );
+
+        assert_eq!(asset, duplicate);
+
+        let snapshot = registry
+            .snapshot_session("session-1")
+            .expect("snapshot should succeed");
+
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].content_hash, asset);
+
+        assert!(
+            registry
+                .remove("session-1", &asset)
+                .expect("first reference should be removed")
+        );
+
+        assert!(
+            registry
+                .contains("session-1", &asset)
+                .expect("asset should remain")
+        );
+
+        assert!(
+            registry
+                .remove("session-1", &asset)
+                .expect("final reference should be removed")
+        );
+
+        assert!(
+            !registry
+                .contains("session-1", &asset)
+                .expect("asset should be gone")
+        );
+    }
+
+    #[test]
+    fn rejects_non_canonical_content_identity() {
+        let registry = AssetProtocolRegistry::default();
+
+        registry
+            .open_session("session-1")
+            .expect("session should open");
+
+        let bytes = vec![1, 2, 3];
+        let content_hash = hash(&bytes);
+
+        let result = registry.insert(
+            "session-1",
+            "different-token",
+            &content_hash,
+            "image/png",
+            bytes,
         );
 
         assert_eq!(
-            duplicate,
-            Err(AssetProtocolError::DuplicateAsset),
+            result,
+            Err(AssetProtocolError::InvalidContentHash),
         );
+    }
+
+    #[test]
+    fn snapshot_is_sorted_by_content_hash() {
+        let registry = AssetProtocolRegistry::default();
+
+        registry
+            .open_session("session-1")
+            .expect("session should open");
+
+        insert(
+            &registry,
+            "session-1",
+            "image/png",
+            &[3],
+        );
+        insert(
+            &registry,
+            "session-1",
+            "image/png",
+            &[1],
+        );
+        insert(
+            &registry,
+            "session-1",
+            "image/png",
+            &[2],
+        );
+
+        let snapshot = registry
+            .snapshot_session("session-1")
+            .expect("snapshot should succeed");
+
+        let hashes = snapshot
+            .iter()
+            .map(|asset| asset.content_hash.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(hashes.windows(2).all(|pair| {
+            pair[0] < pair[1]
+        }));
     }
 
     #[test]
     fn rejects_active_or_unknown_content_types() {
         let registry = AssetProtocolRegistry::default();
+
+        registry
+            .open_session("session")
+            .expect("session should open");
 
         for content_type in [
             "image/svg+xml",
@@ -483,11 +699,15 @@ mod tests {
             "application/javascript",
             "application/octet-stream",
         ] {
+            let bytes = vec![1];
+            let content_hash = hash(&bytes);
+
             let result = registry.insert(
                 "session",
-                "asset",
+                &content_hash,
+                &content_hash,
                 content_type,
-                vec![1],
+                bytes,
             );
 
             assert_eq!(

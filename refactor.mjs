@@ -1,16 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * P0-C.5 — Inject the official Native TLAssetStore into editor sessions.
- *
- * Corrected:
- *   - removes the invalid TLEdititorSnapshot baseline
- *   - matches the real TLEditorSnapshot signature directly
- *   - validates every output before writing
- *   - restores every modified file if writing fails
+ * P0-C.6.1 — Content-addressed Native asset registry.
  *
  * Required base:
- *   0a3715edcb86128b6730cbb062140d234e547d66
+ *   fffbbcc50d846d978f81a633ca622ef28e90214d
  *
  * Usage:
  *   node refactor.mjs --check
@@ -44,7 +38,7 @@ const rootArguments = argv.filter(
 
 function fail(message) {
   console.error(
-    `\nP0-C.5 Native TLAssetStore injection failed:\n${message}\n`,
+    `\nP0-C.6.1 content-addressed asset registry failed:\n${message}\n`,
   )
   process.exit(1)
 }
@@ -70,69 +64,19 @@ const root = resolve(rootArguments[0] ?? process.cwd())
 const paths = {
   packageJson: join(root, 'package.json'),
 
-  editorSession: join(
+  assetProtocol: join(
     root,
-    'editor/core/src/runtime/editor-session.ts',
+    'apps/desktop/src-tauri/src/asset_protocol.rs',
   ),
 
-  editorApplicationPublicApi: join(
+  assetCommands: join(
     root,
-    'editor/core/src/application/public-api.ts',
+    'apps/desktop/src-tauri/src/commands/asset.rs',
   ),
 
-  editorPublicApi: join(
-    root,
-    'editor/core/src/public-api.ts',
-  ),
-
-  documentService: join(
-    root,
-    'editor/document/src/application/canvas-document-service.ts',
-  ),
-
-  application: join(
-    root,
-    'apps/desktop/src/bootstrap/application.ts',
-  ),
-
-  canvasWorkflow: join(
-    root,
-    'apps/desktop/src/application/canvas/canvas-workflow.ts',
-  ),
-
-  reactRoot: join(
-    root,
-    'apps/desktop/src/bootstrap/react-root.tsx',
-  ),
-
-  applicationLifecycle: join(
-    root,
-    'apps/desktop/src/bootstrap/application-lifecycle.ts',
-  ),
-
-  editorRegistryTest: join(
-    root,
-    'tests/cross-domain-contract/document-lifecycle/editor-session-registry.test.ts',
-  ),
-
-  documentServiceTest: join(
-    root,
-    'tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts',
-  ),
-
-  nativeAssetStore: join(
+  nativeAssetAdapter: join(
     root,
     'platforms/desktop-runtime/src/adapters/assets/native-tl-asset-store.ts',
-  ),
-
-  desktopRuntimePackage: join(
-    root,
-    'platforms/desktop-runtime/package.json',
-  ),
-
-  desktopRuntimePublicApi: join(
-    root,
-    'platforms/desktop-runtime/src/public-api.ts',
   ),
 }
 
@@ -175,888 +119,824 @@ function replaceExact(
   return source.replace(baseline, final)
 }
 
-function replaceAllExact(
-  source,
-  baseline,
-  final,
-  expectedCount,
-  description,
-) {
-  const occurrences = count(source, baseline)
-
-  if (occurrences === 0 && source.includes(final)) {
+function updateAssetProtocol(source) {
+  if (
+    source.includes(
+      'pub fn snapshot_session(',
+    ) &&
+    source.includes(
+      'references: u32',
+    ) &&
+    source.includes(
+      'validate_content_hash(content_hash)?;',
+    )
+  ) {
     return source
   }
 
-  if (occurrences !== expectedCount) {
-    throw new Error(
-      [
-        `Unexpected source count: ${description}`,
-        `Expected: ${expectedCount}`,
-        `Actual: ${occurrences}`,
-        'Refusing an ambiguous or partial modification.',
-      ].join('\n'),
-    )
-  }
-
-  return source.split(baseline).join(final)
-}
-
-function updateEditorSession(source) {
   let result = source
 
   result = replaceExact(
     result,
-    `  type TLAnyShapeUtilConstructor,
-  type TLEditorSnapshot,`,
-    `  type TLAnyShapeUtilConstructor,
-  type TLAssetStore,
-  type TLEditorSnapshot,`,
-    'import TLAssetStore',
+    `#[derive(Clone, Debug)]
+struct RegisteredAsset {
+    bytes: Arc<[u8]>,
+    content_type: String,
+}
+
+#[derive(Debug, Default)]
+struct RegistryState {`,
+    `#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssetSessionSnapshotEntry {
+    pub content_hash: String,
+    pub content_type: String,
+    pub bytes: Arc<[u8]>,
+}
+
+#[derive(Clone, Debug)]
+struct RegisteredAsset {
+    bytes: Arc<[u8]>,
+    content_type: String,
+    references: u32,
+}
+
+#[derive(Debug, Default)]
+struct RegistryState {`,
+    'declare durable asset snapshot and reference count',
   )
 
   result = replaceExact(
     result,
-    `export interface CreateEditorSessionOptions {
-  readonly sessionId: string
-  readonly documentId: string
-  readonly initialSnapshot?: TLEditorSnapshot
-  readonly extensions?: readonly HybridCanvasExtension[]
+    `pub enum AssetProtocolError {
+    InvalidToken,
+    UnsupportedContentType,
+    AssetTooLarge,
+    RegistryBudgetExceeded,
+    DuplicateAsset,
+    NotFound,
+    Internal,
 }`,
-    `export interface EditorAssetStoreSession {
-  readonly assets: TLAssetStore
-  readonly dispose: () => Promise<void>
-}
-
-export type EditorAssetStoreSessionFactory =
-  () => EditorAssetStoreSession
-
-export interface CreateEditorSessionOptions {
-  readonly sessionId: string
-  readonly documentId: string
-  readonly initialSnapshot?: TLEditorSnapshot
-  readonly extensions?: readonly HybridCanvasExtension[]
+    `pub enum AssetProtocolError {
+    InvalidToken,
+    InvalidContentHash,
+    UnsupportedContentType,
+    AssetTooLarge,
+    RegistryBudgetExceeded,
+    DuplicateAsset,
+    ReferenceOverflow,
+    NotFound,
+    Internal,
 }`,
-    'declare editor asset-store ownership',
+    'extend asset registry errors',
   )
 
-  result = replaceExact(
-    result,
-    `export function createEditorSession(options: CreateEditorSessionOptions): EditorSession {
-  const registration = buildExtensionRegistration(options.extensions)`,
-    `export function createEditorSession(
-  options: CreateEditorSessionOptions,
-  assetStoreSession: EditorAssetStoreSession,
-): EditorSession {
-  const registration = buildExtensionRegistration(options.extensions)`,
-    'require asset store during editor creation',
-  )
+  const oldInsert = `    pub fn insert(
+        &self,
+        session_token: &str,
+        asset_token: &str,
+        content_type: &str,
+        bytes: Vec<u8>,
+    ) -> Result<(), AssetProtocolError> {
+        validate_token(session_token)?;
+        validate_token(asset_token)?;
+        validate_content_type(content_type)?;
 
-  result = replaceExact(
-    result,
-    `  const store = createValidatedEditorStore(
-    registration,
-    options.initialSnapshot,
-  )`,
-    `  const store = createValidatedEditorStore(
-    registration,
-    options.initialSnapshot,
-    assetStoreSession.assets,
-  )`,
-    'pass asset store to validated store',
-  )
-
-  result = replaceExact(
-    result,
-    `function createValidatedEditorStore(
-  registration: ExtensionRegistration,
-  initialSnapshot: TLEditorSnapshot | undefined,
-): TLStore {`,
-    `function createValidatedEditorStore(
-  registration: ExtensionRegistration,
-  initialSnapshot: TLEditorSnapshot | undefined,
-  assets: TLAssetStore,
-): TLStore {`,
-    'extend validated store signature with assets',
-  )
-
-  result = replaceExact(
-    result,
-    `    return createTLStore({
-      shapeUtils: [`,
-    `    return createTLStore({
-      assets,
-      shapeUtils: [`,
-    'inject assets into createTLStore',
-  )
-
-  const oldRegistry = `export interface EditorSessionRegistry {
-  readonly create: (options: CreateEditorSessionOptions) => EditorSession
-
-  readonly get: (sessionId: string) => EditorSession | null
-
-  readonly require: (sessionId: string) => EditorSession
-
-  readonly close: (sessionId: string) => void
-
-  readonly dispose: () => void
-}
-
-export function createEditorSessionRegistry(): EditorSessionRegistry {
-  const sessions = new Map<string, EditorSession>()
-
-  return {
-    create(options) {
-      if (sessions.has(options.sessionId)) {
-        throw new Error('EDITOR_SESSION_DUPLICATE_ID')
-      }
-
-      const session = createEditorSession(options)
-
-      sessions.set(options.sessionId, session)
-
-      return session
-    },
-
-    get(sessionId) {
-      return sessions.get(sessionId) ?? null
-    },
-
-    require(sessionId) {
-      const session = sessions.get(sessionId)
-
-      if (!session) {
-        throw new Error('EDITOR_SESSION_NOT_FOUND')
-      }
-
-      return session
-    },
-
-    close(sessionId) {
-      const session = sessions.get(sessionId)
-
-      if (!session) {
-        return
-      }
-
-      session.dispose()
-      sessions.delete(sessionId)
-    },
-
-    dispose() {
-      for (const session of sessions.values()) {
-        session.dispose()
-      }
-
-      sessions.clear()
-    },
-  }
-}`
-
-  const finalRegistry = `interface OwnedEditorSession {
-  readonly session: EditorSession
-  readonly assetStoreSession: EditorAssetStoreSession
-}
-
-export interface EditorSessionRegistry {
-  readonly create: (
-    options: CreateEditorSessionOptions,
-  ) => Promise<EditorSession>
-
-  readonly get: (sessionId: string) => EditorSession | null
-
-  readonly require: (sessionId: string) => EditorSession
-
-  readonly close: (sessionId: string) => Promise<void>
-
-  readonly dispose: () => Promise<void>
-}
-
-export function createEditorSessionRegistry(
-  assetStoreFactory: EditorAssetStoreSessionFactory,
-): EditorSessionRegistry {
-  const sessions = new Map<string, OwnedEditorSession>()
-
-  return {
-    async create(options) {
-      if (sessions.has(options.sessionId)) {
-        throw new Error('EDITOR_SESSION_DUPLICATE_ID')
-      }
-
-      const assetStoreSession = assetStoreFactory()
-
-      let session: EditorSession
-
-      try {
-        session = createEditorSession(
-          options,
-          assetStoreSession,
-        )
-      } catch (creationError) {
-        try {
-          await assetStoreSession.dispose()
-        } catch (cleanupError) {
-          throw new AggregateError(
-            [creationError, cleanupError],
-            'EDITOR_SESSION_CREATION_ROLLBACK_FAILED',
-          )
+        if bytes.len() > MAX_ASSET_BYTES {
+            return Err(AssetProtocolError::AssetTooLarge);
         }
 
-        throw creationError
-      }
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| AssetProtocolError::Internal)?;
 
-      sessions.set(options.sessionId, {
-        session,
-        assetStoreSession,
-      })
+        let session = state
+            .sessions
+            .get(session_token)
+            .ok_or(AssetProtocolError::NotFound)?;
 
-      return session
-    },
+        if session.contains_key(asset_token) {
+            return Err(AssetProtocolError::DuplicateAsset);
+        }
 
-    get(sessionId) {
-      return sessions.get(sessionId)?.session ?? null
-    },
+        let next_total = state
+            .total_bytes
+            .checked_add(bytes.len())
+            .ok_or(AssetProtocolError::RegistryBudgetExceeded)?;
 
-    require(sessionId) {
-      const owned = sessions.get(sessionId)
+        if next_total > MAX_REGISTRY_BYTES {
+            return Err(AssetProtocolError::RegistryBudgetExceeded);
+        }
 
-      if (!owned) {
-        throw new Error('EDITOR_SESSION_NOT_FOUND')
-      }
+        let registered = RegisteredAsset {
+            bytes: Arc::from(bytes),
+            content_type: content_type.to_owned(),
+        };
 
-      return owned.session
-    },
+        state
+            .sessions
+            .get_mut(session_token)
+            .ok_or(AssetProtocolError::NotFound)?
+            .insert(asset_token.to_owned(), registered);
 
-    async close(sessionId) {
-      const owned = sessions.get(sessionId)
+        state.total_bytes = next_total;
 
-      if (!owned) {
-        return
-      }
+        Ok(())
+    }`
 
-      /*
-       * Remove ownership before asynchronous disposal so callers cannot acquire
-       * a session that has already entered its closing lifecycle.
-       */
-      sessions.delete(sessionId)
-      owned.session.dispose()
+  const finalInsert = `    pub fn insert(
+        &self,
+        session_token: &str,
+        asset_token: &str,
+        content_hash: &str,
+        content_type: &str,
+        bytes: Vec<u8>,
+    ) -> Result<(), AssetProtocolError> {
+        validate_token(session_token)?;
+        validate_token(asset_token)?;
+        validate_content_hash(content_hash)?;
+        validate_content_type(content_type)?;
 
-      await owned.assetStoreSession.dispose()
-    },
-
-    async dispose() {
-      const ownedSessions = [...sessions.values()]
-
-      sessions.clear()
-
-      for (const owned of ownedSessions) {
-        owned.session.dispose()
-      }
-
-      await Promise.all(
-        ownedSessions.map((owned) =>
-          owned.assetStoreSession.dispose(),
-        ),
-      )
-    },
-  }
-}`
-
-  result = replaceExact(
-    result,
-    oldRegistry,
-    finalRegistry,
-    'replace registry with owned asset lifecycle',
-  )
-
-  return result
-}
-
-function updateEditorApplicationPublicApi(source) {
-  return replaceExact(
-    source,
-    `  type CreateEditorSessionOptions,
-  createEditorSession,`,
-    `  type CreateEditorSessionOptions,
-  createEditorSession,
-  type EditorAssetStoreSession,
-  type EditorAssetStoreSessionFactory,`,
-    'export editor asset-store ownership types',
-  )
-}
-
-function updateEditorPublicApi(source) {
-  return replaceExact(
-    source,
-    `  type CreateEditorSessionOptions,
-  createEditorSession,`,
-    `  type CreateEditorSessionOptions,
-  createEditorSession,
-  type EditorAssetStoreSession,
-  type EditorAssetStoreSessionFactory,`,
-    're-export editor asset-store ownership types',
-  )
-}
-
-function updateDocumentService(source) {
-  let result = source
-
-  result = replaceExact(
-    result,
-    `  readonly create: (title: string) => OpenedCanvasSession`,
-    `  readonly create: (
-    title: string,
-  ) => Promise<OpenedCanvasSession>`,
-    'make document creation asynchronous',
-  )
-
-  result = replaceExact(
-    result,
-    `  readonly dispose: () => void`,
-    `  readonly dispose: () => Promise<void>`,
-    'make document disposal asynchronous',
-  )
-
-  result = replaceExact(
-    result,
-    `  function create(title: string): OpenedCanvasSession {`,
-    `  async function create(
-    title: string,
-  ): Promise<OpenedCanvasSession> {`,
-    'make document create implementation asynchronous',
-  )
-
-  result = replaceAllExact(
-    result,
-    `    const editor = editorSessions.create({`,
-    `    const editor = await editorSessions.create({`,
-    2,
-    'await editor session creation',
-  )
-
-  result = replaceExact(
-    result,
-    `    editorSessions.close(sessionId)
-    emit()`,
-    `    await editorSessions.close(sessionId)
-    emit()`,
-    'await editor asset disposal during release',
-  )
-
-  result = replaceExact(
-    result,
-    `    dispose() {
-      for (const [sessionId, owned] of sessions) {
-        // dispose 只在应用运行时被销毁时执行。此时 native process 的退出会
-        // 统一释放 DocumentRegistry；不得在这里 fire-and-forget document_close。
-        owned.stopObservingDocument()
-        editorSessions.close(sessionId)
-      }
-
-      sessions.clear()
-      listeners.clear()
-      editorSessions.dispose()
-    },`,
-    `    async dispose() {
-      for (const owned of sessions.values()) {
         /*
-         * Native DocumentRegistry remains process-owned during application
-         * teardown. Renderer asset sessions are still explicitly settled.
+         * Runtime asset identity is the canonical lowercase SHA-256 digest.
+         * Session tokens remain opaque, but asset tokens are deliberately
+         * content-addressed so the same binary has one Native identity.
          */
-        owned.stopObservingDocument()
-      }
+        if asset_token != content_hash {
+            return Err(AssetProtocolError::InvalidContentHash);
+        }
 
-      sessions.clear()
-      listeners.clear()
+        if bytes.len() > MAX_ASSET_BYTES {
+            return Err(AssetProtocolError::AssetTooLarge);
+        }
 
-      await editorSessions.dispose()
-    },`,
-    'settle registry disposal',
-  )
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| AssetProtocolError::Internal)?;
 
-  return result
-}
+        let session = state
+            .sessions
+            .get_mut(session_token)
+            .ok_or(AssetProtocolError::NotFound)?;
 
-function updateApplication(source) {
-  let result = source
+        if let Some(existing) = session.get_mut(asset_token) {
+            if existing.content_type != content_type
+                || existing.bytes.as_ref() != bytes.as_slice()
+            {
+                /*
+                 * A SHA-256 identity must never resolve to different bytes or
+                 * metadata within one session.
+                 */
+                return Err(AssetProtocolError::DuplicateAsset);
+            }
 
-  result = replaceExact(
-    result,
-    `  createDesktopSettingsStore,
-  createDocumentFileCommands,`,
-    `  createDesktopSettingsStore,
-  createDocumentFileCommands,
-  createNativeTLAssetStoreSession,`,
-    'import Native TLAssetStore factory',
-  )
+            existing.references = existing
+                .references
+                .checked_add(1)
+                .ok_or(AssetProtocolError::ReferenceOverflow)?;
 
-  result = replaceExact(
-    result,
-    `  readonly dispose: () => void`,
-    `  readonly dispose: () => Promise<void>`,
-    'make application disposal asynchronous',
-  )
+            return Ok(());
+        }
 
-  result = replaceExact(
-    result,
-    `  const editorSessions = createEditorSessionRegistry()`,
-    `  const editorSessions = createEditorSessionRegistry(
-    createNativeTLAssetStoreSession,
-  )`,
-    'inject Native TLAssetStore factory',
-  )
+        let next_total = state
+            .total_bytes
+            .checked_add(bytes.len())
+            .ok_or(AssetProtocolError::RegistryBudgetExceeded)?;
 
-  result = replaceExact(
-    result,
-    `    dispose() {
-      termination.dispose()
-      canvases.dispose()
-    },`,
-    `    async dispose() {
-      termination.dispose()
-      await canvases.dispose()
-    },`,
-    'await canvas workflow disposal',
-  )
+        if next_total > MAX_REGISTRY_BYTES {
+            return Err(AssetProtocolError::RegistryBudgetExceeded);
+        }
 
-  return result
-}
+        let registered = RegisteredAsset {
+            bytes: Arc::from(bytes),
+            content_type: content_type.to_owned(),
+            references: 1,
+        };
 
-function updateCanvasWorkflow(source) {
-  let result = source
+        state
+            .sessions
+            .get_mut(session_token)
+            .ok_or(AssetProtocolError::NotFound)?
+            .insert(asset_token.to_owned(), registered);
 
-  result = replaceExact(
-    result,
-    `  readonly dispose: () => void`,
-    `  readonly dispose: () => Promise<void>`,
-    'make workflow disposal asynchronous',
-  )
+        state.total_bytes = next_total;
+
+        Ok(())
+    }`
 
   result = replaceExact(
     result,
-    `    const opened = documents.create(title)`,
-    `    const opened = await documents.create(title)`,
-    'await document creation',
+    oldInsert,
+    finalInsert,
+    'replace asset insertion with content addressing',
+  )
+
+  const oldRemove = `    pub fn remove(
+        &self,
+        session_token: &str,
+        asset_token: &str,
+    ) -> Result<bool, AssetProtocolError> {
+        validate_token(session_token)?;
+        validate_token(asset_token)?;
+
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| AssetProtocolError::Internal)?;
+
+        let Some(session) = state.sessions.get_mut(session_token) else {
+            return Ok(false);
+        };
+
+        let removed = session.remove(asset_token);
+
+        if let Some(removed) = removed {
+            state.total_bytes = state
+                .total_bytes
+                .saturating_sub(removed.bytes.len());
+
+            return Ok(true);
+        }
+
+        Ok(false)
+    }`
+
+  const finalRemove = `    pub fn remove(
+        &self,
+        session_token: &str,
+        asset_token: &str,
+    ) -> Result<bool, AssetProtocolError> {
+        validate_token(session_token)?;
+        validate_token(asset_token)?;
+
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| AssetProtocolError::Internal)?;
+
+        let Some(session) = state.sessions.get_mut(session_token) else {
+            return Ok(false);
+        };
+
+        let Some(asset) = session.get_mut(asset_token) else {
+            return Ok(false);
+        };
+
+        if asset.references > 1 {
+            asset.references -= 1;
+            return Ok(true);
+        }
+
+        let removed = session
+            .remove(asset_token)
+            .ok_or(AssetProtocolError::Internal)?;
+
+        state.total_bytes = state
+            .total_bytes
+            .saturating_sub(removed.bytes.len());
+
+        Ok(true)
+    }`
+
+  result = replaceExact(
+    result,
+    oldRemove,
+    finalRemove,
+    'make asset removal reference-counted',
   )
 
   result = replaceExact(
     result,
-    `    dispose() {
-      stopDocumentSubscription()
-      closeOperations.clear()
-      closeStates.clear()
-      closeSnapshot = EMPTY_CLOSE_SNAPSHOT
-      listeners.clear()
-      documents.dispose()
-    },`,
-    `    async dispose() {
-      stopDocumentSubscription()
-      closeOperations.clear()
-      closeStates.clear()
-      closeSnapshot = EMPTY_CLOSE_SNAPSHOT
-      listeners.clear()
+    `    pub fn contains(
+        &self,
+        session_token: &str,
+        asset_token: &str,
+    ) -> Result<bool, AssetProtocolError> {`,
+    `    pub fn snapshot_session(
+        &self,
+        session_token: &str,
+    ) -> Result<Vec<AssetSessionSnapshotEntry>, AssetProtocolError> {
+        validate_token(session_token)?;
 
-      await documents.dispose()
-    },`,
-    'await document service disposal',
-  )
+        let state = self
+            .state
+            .read()
+            .map_err(|_| AssetProtocolError::Internal)?;
 
-  return result
-}
+        let session = state
+            .sessions
+            .get(session_token)
+            .ok_or(AssetProtocolError::NotFound)?;
 
-function updateReactRoot(source) {
-  let result = source
+        let mut snapshot = session
+            .iter()
+            .map(|(content_hash, asset)| {
+                AssetSessionSnapshotEntry {
+                    content_hash: content_hash.clone(),
+                    content_type: asset.content_type.clone(),
+                    bytes: Arc::clone(&asset.bytes),
+                }
+            })
+            .collect::<Vec<_>>();
 
-  result = replaceExact(
-    result,
-    `  readonly unmount: () => void`,
-    `  readonly unmount: () => Promise<void>`,
-    'make mounted application unmount asynchronous',
-  )
+        /*
+         * Hash ordering makes the handoff deterministic for the v2 ZIP writer
+         * regardless of HashMap iteration order.
+         */
+        snapshot.sort_unstable_by(|left, right| {
+            left.content_hash.cmp(&right.content_hash)
+        });
 
-  result = replaceExact(
-    result,
-    `    unmount() {
-      root.unmount()
-      runtime.dispose()
-    },`,
-    `    async unmount() {
-      root.unmount()
-      await runtime.dispose()
-    },`,
-    'await runtime disposal',
-  )
-
-  return result
-}
-
-function updateApplicationLifecycle(source) {
-  let result = source
-
-  result = replaceExact(
-    result,
-    `export interface ApplicationLifecycle {
-  readonly dispose: () => void
-}`,
-    `export interface ApplicationLifecycle {
-  readonly dispose: () => Promise<void>
-}`,
-    'make application lifecycle disposal asynchronous',
-  )
-
-  result = replaceExact(
-    result,
-    `  const dispose = () => {
-    if (disposed) {
-      return
+        Ok(snapshot)
     }
-    disposed = true
-    window.removeEventListener('pagehide', dispose)
-    window.removeEventListener('beforeunload', handleBeforeUnload)
-    mounted.unmount()
-  }`,
-    `  const dispose = async (): Promise<void> => {
-    if (disposed) {
-      return
+
+    pub fn contains(
+        &self,
+        session_token: &str,
+        asset_token: &str,
+    ) -> Result<bool, AssetProtocolError> {`,
+    'add deterministic Native session snapshot',
+  )
+
+  result = replaceExact(
+    result,
+    `                AssetProtocolError::InvalidToken
+                | AssetProtocolError::UnsupportedContentType
+                | AssetProtocolError::AssetTooLarge
+                | AssetProtocolError::RegistryBudgetExceeded
+                | AssetProtocolError::DuplicateAsset,`,
+    `                AssetProtocolError::InvalidToken
+                | AssetProtocolError::InvalidContentHash
+                | AssetProtocolError::UnsupportedContentType
+                | AssetProtocolError::AssetTooLarge
+                | AssetProtocolError::RegistryBudgetExceeded
+                | AssetProtocolError::DuplicateAsset
+                | AssetProtocolError::ReferenceOverflow,`,
+    'map new registry errors to protocol response',
+  )
+
+  result = replaceExact(
+    result,
+    `fn validate_content_type(
+    content_type: &str,
+) -> Result<(), AssetProtocolError> {`,
+    `fn validate_content_hash(
+    content_hash: &str,
+) -> Result<(), AssetProtocolError> {
+    if content_hash.len() != 64
+        || !content_hash.bytes().all(|byte| {
+            byte.is_ascii_digit() || matches!(byte, b'a'..=b'f')
+        })
+    {
+        return Err(AssetProtocolError::InvalidContentHash);
     }
 
-    disposed = true
-    window.removeEventListener(
-      'pagehide',
-      handlePageHide,
-    )
-    window.removeEventListener(
-      'beforeunload',
-      handleBeforeUnload,
-    )
+    Ok(())
+}
 
-    await mounted.unmount()
+fn validate_content_type(
+    content_type: &str,
+) -> Result<(), AssetProtocolError> {`,
+    'validate canonical SHA-256 identity',
+  )
+
+  const testsStart = result.indexOf('#[cfg(test)]')
+
+  if (testsStart < 0) {
+    throw new Error(
+      'asset_protocol.rs test module was not found.',
+    )
   }
 
-  const handlePageHide = () => {
-    void dispose().catch((cause: unknown) => {
-      reportError(
-        'application disposal failed during pagehide',
-        {
-          scope: 'application-lifecycle',
-          operation: 'dispose',
-          cause,
-        },
-      )
-    })
-  }`,
-    'install asynchronous application disposal',
-  )
+  const finalTests = `#[cfg(test)]
+mod tests {
+    use super::*;
+    use sha2::{Digest, Sha256};
 
-  result = replaceExact(
-    result,
-    `  window.addEventListener('pagehide', dispose, { once: true })`,
-    `  window.addEventListener('pagehide', handlePageHide, {
-    once: true,
-  })`,
-    'install pagehide disposal adapter',
-  )
+    fn request(uri: &str) -> Request<()> {
+        Request::builder()
+            .uri(uri)
+            .body(())
+            .expect("request should be valid")
+    }
 
-  return result
+    fn hash(bytes: &[u8]) -> String {
+        hex::encode(Sha256::digest(bytes))
+    }
+
+    fn insert(
+        registry: &AssetProtocolRegistry,
+        session: &str,
+        content_type: &str,
+        bytes: &[u8],
+    ) -> String {
+        let content_hash = hash(bytes);
+
+        registry
+            .insert(
+                session,
+                &content_hash,
+                &content_hash,
+                content_type,
+                bytes.to_vec(),
+            )
+            .expect("asset should register");
+
+        content_hash
+    }
+
+    #[test]
+    fn serves_content_addressed_asset_without_exposing_a_path() {
+        let registry = AssetProtocolRegistry::default();
+
+        registry
+            .open_session("session-1")
+            .expect("session should open");
+
+        let asset = insert(
+            &registry,
+            "session-1",
+            "image/png",
+            &[1, 2, 3, 4],
+        );
+
+        let response = registry.response(&request(&format!(
+            "hybrid-canvas-asset://asset/session-1/{asset}"
+        )));
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(CONTENT_TYPE),
+            Some(&"image/png".parse().expect("header value")),
+        );
+        assert_eq!(response.body(), &vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn rejects_path_traversal_and_extra_components() {
+        let registry = AssetProtocolRegistry::default();
+
+        for uri in [
+            "hybrid-canvas-asset://asset/../asset",
+            "hybrid-canvas-asset://asset/session/asset/extra",
+            "hybrid-canvas-asset://asset/session\\\\escape/asset",
+            "hybrid-canvas-asset://asset/session/asset?path=secret",
+        ] {
+            let response = registry.response(&request(uri));
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+    }
+
+    #[test]
+    fn removing_session_invalidates_all_urls() {
+        let registry = AssetProtocolRegistry::default();
+
+        registry
+            .open_session("session-1")
+            .expect("session should open");
+
+        let asset = insert(
+            &registry,
+            "session-1",
+            "image/png",
+            &[1, 2, 3],
+        );
+
+        assert!(
+            registry
+                .remove_session("session-1")
+                .expect("session should close")
+        );
+
+        let response = registry.response(&request(&format!(
+            "hybrid-canvas-asset://asset/session-1/{asset}"
+        )));
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn deduplicates_equal_content_and_tracks_references() {
+        let registry = AssetProtocolRegistry::default();
+
+        registry
+            .open_session("session-1")
+            .expect("session should open");
+
+        let asset = insert(
+            &registry,
+            "session-1",
+            "image/png",
+            &[1, 2, 3],
+        );
+
+        let duplicate = insert(
+            &registry,
+            "session-1",
+            "image/png",
+            &[1, 2, 3],
+        );
+
+        assert_eq!(asset, duplicate);
+
+        let snapshot = registry
+            .snapshot_session("session-1")
+            .expect("snapshot should succeed");
+
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].content_hash, asset);
+
+        assert!(
+            registry
+                .remove("session-1", &asset)
+                .expect("first reference should be removed")
+        );
+
+        assert!(
+            registry
+                .contains("session-1", &asset)
+                .expect("asset should remain")
+        );
+
+        assert!(
+            registry
+                .remove("session-1", &asset)
+                .expect("final reference should be removed")
+        );
+
+        assert!(
+            !registry
+                .contains("session-1", &asset)
+                .expect("asset should be gone")
+        );
+    }
+
+    #[test]
+    fn rejects_non_canonical_content_identity() {
+        let registry = AssetProtocolRegistry::default();
+
+        registry
+            .open_session("session-1")
+            .expect("session should open");
+
+        let bytes = vec![1, 2, 3];
+        let content_hash = hash(&bytes);
+
+        let result = registry.insert(
+            "session-1",
+            "different-token",
+            &content_hash,
+            "image/png",
+            bytes,
+        );
+
+        assert_eq!(
+            result,
+            Err(AssetProtocolError::InvalidContentHash),
+        );
+    }
+
+    #[test]
+    fn snapshot_is_sorted_by_content_hash() {
+        let registry = AssetProtocolRegistry::default();
+
+        registry
+            .open_session("session-1")
+            .expect("session should open");
+
+        insert(
+            &registry,
+            "session-1",
+            "image/png",
+            &[3],
+        );
+        insert(
+            &registry,
+            "session-1",
+            "image/png",
+            &[1],
+        );
+        insert(
+            &registry,
+            "session-1",
+            "image/png",
+            &[2],
+        );
+
+        let snapshot = registry
+            .snapshot_session("session-1")
+            .expect("snapshot should succeed");
+
+        let hashes = snapshot
+            .iter()
+            .map(|asset| asset.content_hash.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(hashes.windows(2).all(|pair| {
+            pair[0] < pair[1]
+        }));
+    }
+
+    #[test]
+    fn rejects_active_or_unknown_content_types() {
+        let registry = AssetProtocolRegistry::default();
+
+        registry
+            .open_session("session")
+            .expect("session should open");
+
+        for content_type in [
+            "image/svg+xml",
+            "text/html",
+            "application/javascript",
+            "application/octet-stream",
+        ] {
+            let bytes = vec![1];
+            let content_hash = hash(&bytes);
+
+            let result = registry.insert(
+                "session",
+                &content_hash,
+                &content_hash,
+                content_type,
+                bytes,
+            );
+
+            assert_eq!(
+                result,
+                Err(AssetProtocolError::UnsupportedContentType),
+            );
+        }
+    }
 }
-
-const finalEditorRegistryTest = `import {
-  PersistedSnapshotLoadError,
-  createEditorSessionRegistry,
-  type EditorAssetStoreSessionFactory,
-} from '@hybrid-canvas/canvas/application'
-import type {
-  TLAssetStore,
-  TLEditorSnapshot,
-} from 'tldraw'
-import { describe, expect, it, vi } from 'vitest'
-
-function invalidPersistedSnapshot(): TLEditorSnapshot {
-  /*
-   * This crosses the real createTLStore({ snapshot }) path. It is deliberately
-   * malformed so tldraw migration/schema validation must reject it.
-   */
-  return {
-    document: {
-      schema: {},
-      store: {},
-    },
-    session: {
-      version: 0,
-    },
-  } as unknown as TLEditorSnapshot
-}
-
-function createAssetStoreHarness() {
-  const dispose = vi.fn().mockResolvedValue(undefined)
-
-  const factory: EditorAssetStoreSessionFactory = () => ({
-    assets: {
-      upload: vi.fn(),
-    } as unknown as TLAssetStore,
-    dispose,
-  })
-
-  return {
-    factory,
-    dispose,
-  }
-}
-
-describe('EditorSessionRegistry persisted snapshot boundary', () => {
-  it('does not register a session when tldraw rejects persisted data', async () => {
-    const assets = createAssetStoreHarness()
-    const registry = createEditorSessionRegistry(
-      assets.factory,
-    )
-    const sessionId = 'invalid-persisted-session'
-
-    await expect(
-      registry.create({
-        sessionId,
-        documentId: 'invalid-persisted-document',
-        initialSnapshot: invalidPersistedSnapshot(),
-        extensions: [],
-      }),
-    ).rejects.toThrow(PersistedSnapshotLoadError)
-
-    expect(registry.get(sessionId)).toBeNull()
-    expect(assets.dispose).toHaveBeenCalledTimes(1)
-  })
-
-  it('remains usable after a rejected persisted snapshot', async () => {
-    const assets = createAssetStoreHarness()
-    const registry = createEditorSessionRegistry(
-      assets.factory,
-    )
-
-    await expect(
-      registry.create({
-        sessionId: 'rejected-session',
-        documentId: 'rejected-document',
-        initialSnapshot: invalidPersistedSnapshot(),
-        extensions: [],
-      }),
-    ).rejects.toThrow('DRAW_INVALID_SNAPSHOT')
-
-    expect(registry.get('rejected-session')).toBeNull()
-
-    const valid = await registry.create({
-      sessionId: 'valid-session',
-      documentId: 'valid-document',
-      extensions: [],
-    })
-
-    expect(valid.sessionId).toBe('valid-session')
-    expect(registry.get('valid-session')).toBe(valid)
-
-    await registry.close('valid-session')
-
-    expect(registry.get('valid-session')).toBeNull()
-    expect(assets.dispose).toHaveBeenCalledTimes(2)
-  })
-
-  it('waits for owned asset disposal before close settles', async () => {
-    let releaseAssetStore = () => {}
-
-    const dispose = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          releaseAssetStore = resolve
-        }),
-    )
-
-    const registry = createEditorSessionRegistry(() => ({
-      assets: {
-        upload: vi.fn(),
-      } as unknown as TLAssetStore,
-      dispose,
-    }))
-
-    const session = await registry.create({
-      sessionId: 'asset-owned-session',
-      documentId: 'asset-owned-document',
-      extensions: [],
-    })
-
-    const closing = registry.close(session.sessionId)
-    let settled = false
-
-    void closing.then(() => {
-      settled = true
-    })
-
-    await Promise.resolve()
-
-    expect(registry.get(session.sessionId)).toBeNull()
-    expect(dispose).toHaveBeenCalledTimes(1)
-    expect(settled).toBe(false)
-
-    releaseAssetStore()
-    await closing
-
-    expect(settled).toBe(true)
-  })
-})
 `
 
-function updateDocumentServiceTest(source) {
+  result = `${result.slice(0, testsStart)}${finalTests}`
+
+  return result
+}
+
+function updateAssetCommands(source) {
+  if (
+    source.includes(
+      'let asset_token = content_hash.clone();',
+    ) &&
+    source.includes(
+      '&content_hash,\n            &request.content_type,',
+    )
+  ) {
+    return source
+  }
+
   let result = source
 
   result = replaceExact(
     result,
-    `  const closeEditorSession = vi.fn()`,
-    `  const closeEditorSession = vi
-    .fn()
-    .mockResolvedValue(undefined)`,
-    'make editor close mock asynchronous',
+    `) -> CommandResult<AssetUploadResult> {
+    let asset_token = Uuid::now_v7().simple().to_string();
+    let byte_length = u32::try_from(request.bytes.len())`,
+    `) -> CommandResult<AssetUploadResult> {
+    let byte_length = u32::try_from(request.bytes.len())`,
+    'remove random asset identity',
   )
 
   result = replaceExact(
     result,
-    `      dispose: vi.fn(),`,
-    `      dispose: vi.fn().mockResolvedValue(undefined),`,
-    'make registry dispose mock asynchronous',
+    `    let content_hash =
+        hex::encode(Sha256::digest(&request.bytes));
+
+    assets`,
+    `    let content_hash =
+        hex::encode(Sha256::digest(&request.bytes));
+    let asset_token = content_hash.clone();
+
+    assets`,
+    'derive asset token from SHA-256',
   )
 
-  result = replaceAllExact(
+  result = replaceExact(
     result,
-    `    const opened = harness.service.create('未命名画布')`,
-    `    const opened = await harness.service.create(
-      '未命名画布',
-    )`,
-    3,
-    'await canvas creation in document tests',
+    `            &request.session_token,
+            &asset_token,
+            &request.content_type,
+            request.bytes,`,
+    `            &request.session_token,
+            &asset_token,
+            &content_hash,
+            &request.content_type,
+            request.bytes,`,
+    'register content hash with Native asset',
+  )
+
+  result = replaceExact(
+    result,
+    `        AssetProtocolError::InvalidToken
+        | AssetProtocolError::UnsupportedContentType
+        | AssetProtocolError::AssetTooLarge => {`,
+    `        AssetProtocolError::InvalidToken
+        | AssetProtocolError::InvalidContentHash
+        | AssetProtocolError::UnsupportedContentType
+        | AssetProtocolError::AssetTooLarge => {`,
+    'map invalid content hash',
+  )
+
+  result = replaceExact(
+    result,
+    `        AssetProtocolError::RegistryBudgetExceeded
+        | AssetProtocolError::DuplicateAsset => {`,
+    `        AssetProtocolError::RegistryBudgetExceeded
+        | AssetProtocolError::DuplicateAsset
+        | AssetProtocolError::ReferenceOverflow => {`,
+    'map reference overflow',
   )
 
   return result
 }
 
-function validateNativePrerequisites(
-  source,
-  packageSource,
-  publicApiSource,
-) {
+function validateAdapter(source) {
   for (const fragment of [
-    'export function createNativeTLAssetStoreSession()',
-    'readonly assets: TLAssetStore',
-    'readonly dispose: () => Promise<void>',
-    'function requireOpenedSession()',
+    'uploaded.assetToken',
+    'uploaded.contentHash',
+    'assetTokens.set(',
+    'removeUploadedAsset(',
   ]) {
     if (!source.includes(fragment)) {
       throw new Error(
-        `Native TLAssetStore prerequisite is missing: ${fragment}`,
+        `Native TLAssetStore adapter prerequisite is missing: ${fragment}`,
       )
     }
   }
 
-  const packageJson = JSON.parse(
-    packageSource.replace(/^\uFEFF/, ''),
-  )
-
-  if (packageJson.dependencies?.tldraw !== 'catalog:') {
-    throw new Error(
-      'desktop-runtime must declare tldraw as a catalog dependency.',
-    )
-  }
-
   if (
-    !publicApiSource.includes(
-      'createNativeTLAssetStoreSession,',
+    source.includes(
+      'crypto.randomUUID',
+    ) ||
+    source.includes(
+      'URL.createObjectURL',
+    ) ||
+    source.includes(
+      'FileReader',
     )
   ) {
     throw new Error(
-      'desktop-runtime does not export the Native asset factory.',
+      'The asset adapter contains an unsupported fallback or renderer-generated identity.',
     )
   }
 }
 
-function validateFinal(outputs) {
-  const requirements = [
-    [
-      paths.editorSession,
-      'type TLAssetStore,',
-      'TLAssetStore type import',
-    ],
-    [
-      paths.editorSession,
-      'assets: TLAssetStore',
-      'asset-store ownership contract',
-    ],
-    [
-      paths.editorSession,
-      `return createTLStore({
-      assets,`,
-      'official createTLStore assets injection',
-    ],
-    [
-      paths.editorSession,
-      'assetStoreFactory: EditorAssetStoreSessionFactory',
-      'registry asset factory',
-    ],
-    [
-      paths.editorSession,
-      'await owned.assetStoreSession.dispose()',
-      'registry close disposal',
-    ],
-    [
-      paths.documentService,
-      'await editorSessions.close(sessionId)',
-      'document release disposal boundary',
-    ],
-    [
-      paths.application,
-      `createEditorSessionRegistry(
-    createNativeTLAssetStoreSession,
-  )`,
-      'desktop Native asset injection',
-    ],
-    [
-      paths.canvasWorkflow,
-      'const opened = await documents.create(title)',
-      'asynchronous create propagation',
-    ],
-    [
-      paths.reactRoot,
-      'await runtime.dispose()',
-      'runtime disposal propagation',
-    ],
+function validateFinal(protocol, commands) {
+  const protocolFragments = [
+    'pub struct AssetSessionSnapshotEntry',
+    'references: u32',
+    'pub fn snapshot_session(',
+    'validate_content_hash(content_hash)?;',
+    'if asset_token != content_hash',
+    'existing.references = existing',
+    'snapshot.sort_unstable_by',
   ]
 
-  for (const [path, fragment, description] of requirements) {
-    const source = outputs.get(path)
-
-    if (!source?.includes(fragment)) {
+  for (const fragment of protocolFragments) {
+    if (!protocol.includes(fragment)) {
       throw new Error(
-        `Final validation failed: ${description}`,
+        `Final asset registry is missing: ${fragment}`,
+      )
+    }
+  }
+
+  const commandFragments = [
+    'let asset_token = content_hash.clone();',
+    '&content_hash,\n            &request.content_type,',
+    'AssetProtocolError::InvalidContentHash',
+    'AssetProtocolError::ReferenceOverflow',
+  ]
+
+  for (const fragment of commandFragments) {
+    if (!commands.includes(fragment)) {
+      throw new Error(
+        `Final asset command is missing: ${fragment}`,
       )
     }
   }
 
   const forbidden = [
     [
-      paths.editorSession,
-      'createEditorSessionRegistry(): EditorSessionRegistry',
-      'registry without an asset factory',
+      commands,
+      'let asset_token = Uuid::now_v7().simple().to_string();',
+      'random asset token generation',
     ],
     [
-      paths.documentService,
-      '\n    editorSessions.close(sessionId)\n',
-      'unawaited editor session close',
-    ],
-    [
-      paths.application,
-      'const editorSessions = createEditorSessionRegistry()',
-      'desktop registry without Native assets',
+      protocol,
+      'if session.contains_key(asset_token) {\n            return Err(AssetProtocolError::DuplicateAsset);',
+      'non-deduplicating duplicate rejection',
     ],
   ]
 
-  for (const [path, fragment, description] of forbidden) {
-    const source = outputs.get(path)
-
-    if (source?.includes(fragment)) {
+  for (const [source, fragment, description] of forbidden) {
+    if (source.includes(fragment)) {
       throw new Error(
-        `Obsolete lifecycle remains: ${description}`,
+        `Obsolete asset behavior remains: ${description}`,
       )
     }
   }
@@ -1091,120 +971,49 @@ async function main() {
     }
   }
 
-  const rootPackage = JSON.parse(
+  const packageJson = JSON.parse(
     (
       await readFile(paths.packageJson, 'utf8')
     ).replace(/^\uFEFF/, ''),
   )
 
-  if (rootPackage.name !== 'hybrid-canvas') {
+  if (packageJson.name !== 'hybrid-canvas') {
     throw new Error(
       `Unexpected package name: ${String(
-        rootPackage.name,
+        packageJson.name,
       )}`,
     )
   }
 
   const [
-    nativeAssetStore,
-    desktopRuntimePackage,
-    desktopRuntimePublicApi,
+    protocolOriginal,
+    commandsOriginal,
+    adapter,
   ] = await Promise.all([
-    readFile(paths.nativeAssetStore, 'utf8'),
-    readFile(paths.desktopRuntimePackage, 'utf8'),
-    readFile(paths.desktopRuntimePublicApi, 'utf8'),
+    readFile(paths.assetProtocol, 'utf8'),
+    readFile(paths.assetCommands, 'utf8'),
+    readFile(paths.nativeAssetAdapter, 'utf8'),
   ])
 
-  validateNativePrerequisites(
-    nativeAssetStore,
-    desktopRuntimePackage,
-    desktopRuntimePublicApi,
-  )
+  validateAdapter(adapter)
 
-  const editablePaths = [
-    paths.editorSession,
-    paths.editorApplicationPublicApi,
-    paths.editorPublicApi,
-    paths.documentService,
-    paths.application,
-    paths.canvasWorkflow,
-    paths.reactRoot,
-    paths.applicationLifecycle,
-    paths.editorRegistryTest,
-    paths.documentServiceTest,
-  ]
+  const protocolFinal =
+    updateAssetProtocol(protocolOriginal)
 
-  const originals = new Map(
-    await Promise.all(
-      editablePaths.map(async (path) => [
-        path,
-        await readFile(path, 'utf8'),
-      ]),
-    ),
-  )
+  const commandsFinal =
+    updateAssetCommands(commandsOriginal)
+
+  validateFinal(protocolFinal, commandsFinal)
+
+  const originals = new Map([
+    [paths.assetProtocol, protocolOriginal],
+    [paths.assetCommands, commandsOriginal],
+  ])
 
   const outputs = new Map([
-    [
-      paths.editorSession,
-      updateEditorSession(
-        originals.get(paths.editorSession),
-      ),
-    ],
-    [
-      paths.editorApplicationPublicApi,
-      updateEditorApplicationPublicApi(
-        originals.get(paths.editorApplicationPublicApi),
-      ),
-    ],
-    [
-      paths.editorPublicApi,
-      updateEditorPublicApi(
-        originals.get(paths.editorPublicApi),
-      ),
-    ],
-    [
-      paths.documentService,
-      updateDocumentService(
-        originals.get(paths.documentService),
-      ),
-    ],
-    [
-      paths.application,
-      updateApplication(
-        originals.get(paths.application),
-      ),
-    ],
-    [
-      paths.canvasWorkflow,
-      updateCanvasWorkflow(
-        originals.get(paths.canvasWorkflow),
-      ),
-    ],
-    [
-      paths.reactRoot,
-      updateReactRoot(
-        originals.get(paths.reactRoot),
-      ),
-    ],
-    [
-      paths.applicationLifecycle,
-      updateApplicationLifecycle(
-        originals.get(paths.applicationLifecycle),
-      ),
-    ],
-    [
-      paths.editorRegistryTest,
-      finalEditorRegistryTest,
-    ],
-    [
-      paths.documentServiceTest,
-      updateDocumentServiceTest(
-        originals.get(paths.documentServiceTest),
-      ),
-    ],
+    [paths.assetProtocol, protocolFinal],
+    [paths.assetCommands, commandsFinal],
   ])
-
-  validateFinal(outputs)
 
   const changed = [...outputs].filter(
     ([path, content]) => originals.get(path) !== content,
@@ -1212,12 +1021,12 @@ async function main() {
 
   if (changed.length === 0) {
     console.log(
-      'P0-C.5 Native TLAssetStore injection is already applied.',
+      'P0-C.6.1 content-addressed Native asset registry is already applied.',
     )
     return
   }
 
-  console.log('P0-C.5 will update:')
+  console.log('P0-C.6.1 will update:')
 
   for (const [path] of changed) {
     console.log(`- ${path.slice(root.length + 1)}`)
@@ -1227,22 +1036,22 @@ async function main() {
     console.log('')
     console.log('It will:')
     console.log(
-      '- inject Native TLAssetStore into createTLStore;',
+      '- use canonical SHA-256 as the Native asset token;',
     )
     console.log(
-      '- give every editor session exclusive asset ownership;',
+      '- deduplicate identical binary resources per session;',
     )
     console.log(
-      '- make session creation and disposal transactional;',
+      '- maintain references for shared tldraw assets;',
     )
     console.log(
-      '- await asset cleanup during canvas release;',
+      '- release bytes only after the final reference is removed;',
     )
     console.log(
-      '- propagate asynchronous disposal through the runtime;',
+      '- expose a deterministic Native-only session snapshot;',
     )
     console.log(
-      '- update lifecycle contract tests;',
+      '- keep all binary persistence handoff outside the Renderer;',
     )
     console.log('')
     console.log(
@@ -1257,7 +1066,7 @@ async function main() {
     }
   } catch (error) {
     console.error(
-      '\nApply failed. Restoring all original files...',
+      '\nApply failed. Restoring original files...',
     )
 
     await restoreFiles(originals)
@@ -1266,18 +1075,21 @@ async function main() {
 
   console.log('')
   console.log(
-    'Applied P0-C.5 Native TLAssetStore editor lifecycle injection.',
+    'Applied P0-C.6.1 content-addressed Native asset registry.',
   )
   console.log('')
   console.log('Required verification:')
-  console.log('  pnpm install')
+  console.log('  cargo fmt --all')
+  console.log('  cargo check --workspace --all-targets')
+  console.log('  cargo test --workspace --all-targets')
+  console.log(
+    '  cargo clippy --workspace --all-targets -- -D warnings',
+  )
   console.log('  pnpm format')
   console.log('  pnpm lint')
   console.log('  pnpm typecheck')
   console.log('  pnpm test')
   console.log('  pnpm check:ipc')
-  console.log('  cargo fmt --all -- --check')
-  console.log('  cargo check --workspace --all-targets')
 }
 
 main().catch((error) => {

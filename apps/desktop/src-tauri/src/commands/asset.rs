@@ -73,17 +73,18 @@ pub async fn asset_upload(
     request: AssetUploadRequest,
     assets: State<'_, AssetProtocolRegistry>,
 ) -> CommandResult<AssetUploadResult> {
-    let asset_token = Uuid::now_v7().simple().to_string();
     let byte_length = u32::try_from(request.bytes.len())
         .map_err(|_| Error::Asset("asset length overflow".into()))?;
 
     let content_hash =
         hex::encode(Sha256::digest(&request.bytes));
+    let asset_token = content_hash.clone();
 
     assets
         .insert(
             &request.session_token,
             &asset_token,
+            &content_hash,
             &request.content_type,
             request.bytes,
         )
@@ -159,6 +160,7 @@ pub async fn asset_session_close(
 fn map_asset_error(error: AssetProtocolError) -> IpcError {
     let error = match error {
         AssetProtocolError::InvalidToken
+        | AssetProtocolError::InvalidContentHash
         | AssetProtocolError::UnsupportedContentType
         | AssetProtocolError::AssetTooLarge => {
             Error::Validation("invalid asset request".into())
@@ -169,7 +171,8 @@ fn map_asset_error(error: AssetProtocolError) -> IpcError {
         }
 
         AssetProtocolError::RegistryBudgetExceeded
-        | AssetProtocolError::DuplicateAsset => {
+        | AssetProtocolError::DuplicateAsset
+        | AssetProtocolError::ReferenceOverflow => {
             Error::Asset("asset registry rejected resource".into())
         }
 
