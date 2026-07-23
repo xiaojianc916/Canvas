@@ -30,6 +30,23 @@ const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({
 const EMPTY_SUBSCRIBE = () => () => {}
 const EMPTY_EDITOR_SNAPSHOT = () => EMPTY_EDITOR_SESSION_SNAPSHOT
 
+export type WorkspaceCanvasCloseState =
+  | { readonly state: 'confirmation-required' }
+  | {
+      readonly state: 'releasing'
+      readonly intent: 'normal' | 'discard'
+    }
+  | {
+      readonly state: 'release-failed'
+      readonly intent: 'normal' | 'discard'
+    }
+
+export interface WorkspaceCanvasCloseSnapshot {
+  readonly states: Readonly<
+    Record<CanvasSessionId, WorkspaceCanvasCloseState>
+  >
+}
+
 export interface WorkspaceCanvasUIPort {
   readonly create: (title: string) => Promise<void>
   readonly open: () => Promise<void>
@@ -39,7 +56,7 @@ export interface WorkspaceCanvasUIPort {
     intent: 'normal' | 'discard',
   ) => Promise<void>
   readonly cancelCanvasClose: (sessionId: CanvasSessionId) => void
-  readonly getCloseSnapshot: () => import('../../application/canvas/canvas-workflow').CanvasCloseSnapshot
+  readonly getCloseSnapshot: () => WorkspaceCanvasCloseSnapshot
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (
     sessionId: CanvasSessionId,

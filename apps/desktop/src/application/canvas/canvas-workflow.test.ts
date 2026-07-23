@@ -155,6 +155,34 @@ describe('CanvasWorkflow per-session close transactions', () => {
     expect(workspace.closeCanvas).toHaveBeenCalledWith('session-a')
   })
 
+  it('cancels only the selected canvas close state', async () => {
+    const documents = createDocumentPort(async () => ({
+      kind: 'confirmation-required',
+    }))
+
+    const workspace = createWorkspace()
+
+    const workflow = createCanvasWorkflow(
+      documents,
+      workspace as never,
+    )
+
+    await workflow.closeCanvas('session-a', 'normal')
+    await workflow.closeCanvas('session-b', 'normal')
+
+    workflow.cancelCanvasClose('session-a')
+
+    expect(workflow.getCloseSnapshot()).toEqual({
+      states: {
+        'session-b': {
+          state: 'confirmation-required',
+        },
+      },
+    })
+
+    expect(workspace.closeCanvas).not.toHaveBeenCalled()
+  })
+
   it('retains discard intent for a failed native release retry', async () => {
     let attempts = 0
 

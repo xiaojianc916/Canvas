@@ -62,6 +62,47 @@ if (!workflow?.includes('await documents.releaseCanvas')) {
   violations.push('Canvas lifecycle rollback must await native release')
 }
 
+if (!workflow?.includes('const closeOperations = new Map')) {
+  violations.push(
+    'Canvas lifecycle must store close operations per CanvasSessionId',
+  )
+}
+
+if (!workflow?.includes('const closeStates = new Map')) {
+  violations.push(
+    'Canvas lifecycle must store close state per CanvasSessionId',
+  )
+}
+
+if (workflow?.includes('let activeClose: Promise<void> | null')) {
+  violations.push(
+    'Global single canvas close transaction is forbidden',
+  )
+}
+
+if (!workflow?.includes('cancelCanvasClose(sessionId)')) {
+  violations.push(
+    'Canvas close cancellation must target one CanvasSessionId',
+  )
+}
+
+const workspace = sources.find(
+  ({ path }) =>
+    path === 'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+)?.source
+
+if (workspace?.includes('../../application/canvas/')) {
+  violations.push(
+    'Workspace presentation must not import canvas application implementation',
+  )
+}
+
+if (!workspace?.includes('WorkspaceCanvasCloseSnapshot')) {
+  violations.push(
+    'Workspace presentation must own a structural canvas close UI contract',
+  )
+}
+
 if (violations.length > 0) {
   console.error(
     'Canvas legacy protocol removal check failed:\n' +
