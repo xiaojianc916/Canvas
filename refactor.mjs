@@ -14,781 +14,403 @@ import { fileURLToPath } from 'node:url'
 const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url))
 const DRY_RUN = process.argv.includes('--dry-run')
 
-const WORKSPACE_DIRECTORY = path.join(
+const TOOLS_DIRECTORY = path.join(
   ROOT_DIR,
-  'apps/desktop/src/presentation/workspace',
-)
-
-const STATUS_DIRECTORY = path.join(
-  WORKSPACE_DIRECTORY,
-  'status',
+  'apps/desktop/src/presentation/workspace/inspector/tools',
 )
 
 const PATHS = {
   packageJson: path.join(ROOT_DIR, 'package.json'),
 
-  workspaceContainer: path.join(
-    WORKSPACE_DIRECTORY,
-    'WorkspaceContainer.tsx',
+  router: path.join(
+    TOOLS_DIRECTORY,
+    'ToolInspectorRouter.tsx',
   ),
 
-  selectionTransformStatus: path.join(
-    STATUS_DIRECTORY,
-    'SelectionTransformStatus.tsx',
+  registry: path.join(
+    TOOLS_DIRECTORY,
+    'ToolInspectorRegistry.tsx',
   ),
 
-  statusIndex: path.join(
-    STATUS_DIRECTORY,
+  index: path.join(
+    TOOLS_DIRECTORY,
     'index.ts',
   ),
 }
 
-const OLD_STATUS_START =
-  'function CanvasSelectionGeometryStatus()'
+const REGISTRY_SOURCE = `import type { ComponentType } from 'react'
+import { ArrowToolInspector } from './ArrowToolInspector'
+import { DrawToolInspector } from './DrawToolInspector'
+import { EraserToolInspector } from './EraserToolInspector'
+import { FrameToolInspector } from './FrameToolInspector'
+import { HandToolInspector } from './HandToolInspector'
+import { LineToolInspector } from './LineToolInspector'
+import { NoteToolInspector } from './NoteToolInspector'
+import { ScientificChartToolInspector } from './ScientificChartToolInspector'
+import { SelectToolInspector } from './SelectToolInspector'
+import { ShapeToolInspector } from './ShapeToolInspector'
+import { TextToolInspector } from './TextToolInspector'
+import type { ToolInspectorProps } from './types'
 
-const OLD_STATUS_END =
-  'function CanvasStatusRightContent('
+export interface ToolInspectorContribution {
+  /**
+   * The exact tldraw StateNode tool id.
+   */
+  readonly toolId: string
 
-const STATUS_COMPONENT_SOURCE = `import {
-  type FocusEvent,
-  type KeyboardEvent,
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
-import { useEditor } from '@hybrid-canvas/canvas/react'
-import { useValue } from 'tldraw'
+  /**
+   * Higher-priority contributions override lower-priority contributions
+   * for the same tool id.
+   *
+   * Core inspectors use priority 0. Feature-owned inspectors should
+   * normally use priority 100.
+   */
+  readonly priority?: number
 
-type TransformFieldId =
-  | 'x'
-  | 'y'
-  | 'width'
-  | 'height'
-  | 'rotation'
+  /**
+   * Stable owner identifier used for diagnostics.
+   *
+   * Examples:
+   * - core
+   * - freehand
+   * - flowchart
+   * - scientific-plot
+   */
+  readonly owner: string
 
-const TRANSFORM_FIELDS: readonly TransformFieldId[] = [
-  'x',
-  'y',
-  'width',
-  'height',
-  'rotation',
-]
-
-export interface SelectionTransformStatusProps {
-  readonly canvasTitle: string | null
+  readonly component: ComponentType<ToolInspectorProps>
 }
 
-interface SelectionGeometry {
-  readonly count: number
-  readonly x: number
-  readonly y: number
-  readonly width: number
-  readonly height: number
-  readonly rotation: number
-  readonly hasLockedShape: boolean
+export interface ToolInspectorResolution {
+  readonly toolId: string
+  readonly owner: string
+  readonly priority: number
+  readonly component: ComponentType<ToolInspectorProps>
 }
 
-export function SelectionTransformStatus({
-  canvasTitle,
-}: SelectionTransformStatusProps) {
-  const editor = useEditor()
-  const [activeField, setActiveField] =
-    useState<TransformFieldId | null>(null)
-  const [isAspectRatioLocked, setAspectRatioLocked] =
-    useState(false)
-
-  const geometry = useValue(
-    'canvas status editable selection geometry',
-    (): SelectionGeometry | null => {
-      if (!editor) {
-        return null
-      }
-
-      const selectedShapes = editor.getSelectedShapes()
-
-      if (selectedShapes.length === 0) {
-        return null
-      }
-
-      const bounds = editor.getSelectionPageBounds()
-
-      if (!bounds) {
-        return null
-      }
-
-      return {
-        count: selectedShapes.length,
-        x: bounds.x,
-        y: bounds.y,
-        width: bounds.w,
-        height: bounds.h,
-        rotation:
-          (editor.getSelectionRotation() * 180) /
-          Math.PI,
-        hasLockedShape: selectedShapes.some(
-          (shape) => shape.isLocked,
-        ),
-      }
-    },
-    [editor],
-  )
-
-  useEffect(() => {
-    setActiveField(null)
-  }, [geometry?.count])
-
-  if (!canvasTitle && !geometry) {
-    return null
-  }
-
-  const commitTransform = (
-    field: TransformFieldId,
-    value: number,
-  ) => {
-    if (
-      !editor ||
-      !geometry ||
-      geometry.hasLockedShape ||
-      !Number.isFinite(value)
-    ) {
-      return
-    }
-
-    const selectedShapeIds =
-      editor.getSelectedShapeIds()
-
-    if (selectedShapeIds.length === 0) {
-      return
-    }
-
-    if (field === 'rotation') {
-      const currentRadians =
-        editor.getSelectionRotation()
-
-      const targetRadians =
-        (value * Math.PI) / 180
-
-      const delta = normalizeRadians(
-        targetRadians - currentRadians,
-      )
-
-      if (Math.abs(delta) < 0.000001) {
-        return
-      }
-
-      editor.markHistoryStoppingPoint(
-        'edit selection rotation from status bar',
-      )
-
-      editor.rotateShapesBy(
-        selectedShapeIds,
-        delta,
-      )
-
-      return
-    }
-
-    const bounds = editor.getSelectionPageBounds()
-
-    if (!bounds) {
-      return
-    }
-
-    let nextX = bounds.x
-    let nextY = bounds.y
-    let nextWidth = bounds.w
-    let nextHeight = bounds.h
-
-    switch (field) {
-      case 'x':
-        nextX = value
-        break
-
-      case 'y':
-        nextY = value
-        break
-
-      case 'width': {
-        nextWidth = Math.max(value, 0.01)
-
-        if (
-          isAspectRatioLocked &&
-          bounds.w > 0
-        ) {
-          nextHeight = Math.max(
-            bounds.h *
-              (nextWidth / bounds.w),
-            0.01,
-          )
-        }
-
-        break
-      }
-
-      case 'height': {
-        nextHeight = Math.max(value, 0.01)
-
-        if (
-          isAspectRatioLocked &&
-          bounds.h > 0
-        ) {
-          nextWidth = Math.max(
-            bounds.w *
-              (nextHeight / bounds.h),
-            0.01,
-          )
-        }
-
-        break
-      }
-
-      case 'rotation':
-        return
-    }
-
-    if (
-      !Number.isFinite(nextX) ||
-      !Number.isFinite(nextY) ||
-      !Number.isFinite(nextWidth) ||
-      !Number.isFinite(nextHeight)
-    ) {
-      return
-    }
-
-    editor.markHistoryStoppingPoint(
-      'edit selection bounds from status bar',
-    )
-
-    editor.resizeToBounds(
-      selectedShapeIds,
-      {
-        x: nextX,
-        y: nextY,
-        w: nextWidth,
-        h: nextHeight,
-      },
-    )
-  }
-
-  const navigateField = (
-    currentField: TransformFieldId,
-    direction: 1 | -1,
-  ) => {
-    const currentIndex =
-      TRANSFORM_FIELDS.indexOf(currentField)
-
-    if (currentIndex === -1) {
-      return
-    }
-
-    const nextIndex =
-      (
-        currentIndex +
-        direction +
-        TRANSFORM_FIELDS.length
-      ) % TRANSFORM_FIELDS.length
-
-    setActiveField(
-      TRANSFORM_FIELDS[nextIndex] ?? null,
-    )
-  }
-
+function DrawInspector(
+  props: ToolInspectorProps,
+) {
   return (
-    <>
-      {canvasTitle ? (
-        <span
-          className="max-w-48 truncate font-medium text-foreground/80"
-          title={canvasTitle}
-        >
-          {canvasTitle}
-        </span>
-      ) : null}
-
-      {geometry ? (
-        <>
-          {canvasTitle ? <StatusDivider /> : null}
-
-          <span
-            className="shrink-0 text-foreground/70"
-            title={
-              geometry.count === 1
-                ? '已选择 1 个对象'
-                : '显示整个多选范围'
-            }
-          >
-            {geometry.count === 1
-              ? '已选择 1 个'
-              : '已选择 ' +
-                String(geometry.count) +
-                ' 个'}
-          </span>
-
-          <InlineTransformField
-            active={
-              activeField === 'x'
-            }
-            disabled={geometry.hasLockedShape}
-            field="x"
-            label="X"
-            onActivate={setActiveField}
-            onCommit={commitTransform}
-            onNavigate={navigateField}
-            value={geometry.x}
-          />
-
-          <InlineTransformField
-            active={
-              activeField === 'y'
-            }
-            disabled={geometry.hasLockedShape}
-            field="y"
-            label="Y"
-            onActivate={setActiveField}
-            onCommit={commitTransform}
-            onNavigate={navigateField}
-            value={geometry.y}
-          />
-
-          <StatusDivider />
-
-          <InlineTransformField
-            active={
-              activeField === 'width'
-            }
-            disabled={geometry.hasLockedShape}
-            field="width"
-            label="W"
-            minimum={0.01}
-            onActivate={setActiveField}
-            onCommit={commitTransform}
-            onNavigate={navigateField}
-            value={geometry.width}
-          />
-
-          <AspectRatioLockButton
-            disabled={geometry.hasLockedShape}
-            locked={isAspectRatioLocked}
-            onChange={setAspectRatioLocked}
-          />
-
-          <InlineTransformField
-            active={
-              activeField === 'height'
-            }
-            disabled={geometry.hasLockedShape}
-            field="height"
-            label="H"
-            minimum={0.01}
-            onActivate={setActiveField}
-            onCommit={commitTransform}
-            onNavigate={navigateField}
-            value={geometry.height}
-          />
-
-          <StatusDivider />
-
-          <InlineTransformField
-            active={
-              activeField === 'rotation'
-            }
-            disabled={geometry.hasLockedShape}
-            field="rotation"
-            label="R"
-            onActivate={setActiveField}
-            onCommit={commitTransform}
-            onNavigate={navigateField}
-            suffix="°"
-            value={geometry.rotation}
-          />
-
-          {geometry.hasLockedShape ? (
-            <span
-              className="shrink-0 text-[10px] text-muted-foreground"
-              title="选择中包含锁定对象，无法编辑变换"
-            >
-              已锁定
-            </span>
-          ) : null}
-        </>
-      ) : null}
-    </>
-  )
-}
-
-interface InlineTransformFieldProps {
-  readonly field: TransformFieldId
-  readonly label: string
-  readonly value: number
-  readonly suffix?: string
-  readonly minimum?: number
-  readonly active: boolean
-  readonly disabled: boolean
-  readonly onActivate: (
-    field: TransformFieldId | null,
-  ) => void
-  readonly onCommit: (
-    field: TransformFieldId,
-    value: number,
-  ) => void
-  readonly onNavigate: (
-    field: TransformFieldId,
-    direction: 1 | -1,
-  ) => void
-}
-
-function InlineTransformField({
-  field,
-  label,
-  value,
-  suffix,
-  minimum,
-  active,
-  disabled,
-  onActivate,
-  onCommit,
-  onNavigate,
-}: InlineTransformFieldProps) {
-  const [draft, setDraft] = useState(
-    formatStatusNumber(value),
-  )
-
-  const inputRef =
-    useRef<HTMLInputElement>(null)
-
-  const skipBlurCommitRef = useRef(false)
-
-  useEffect(() => {
-    if (!active) {
-      setDraft(formatStatusNumber(value))
-      return
-    }
-
-    setDraft(formatStatusNumber(value))
-
-    const frame = requestAnimationFrame(() => {
-      inputRef.current?.focus()
-      inputRef.current?.select()
-    })
-
-    return () => {
-      cancelAnimationFrame(frame)
-    }
-  }, [active, value])
-
-  const parseDraft = (): number | null => {
-    const parsed = Number(draft)
-
-    if (
-      !Number.isFinite(parsed) ||
-      (
-        minimum !== undefined &&
-        parsed < minimum
-      )
-    ) {
-      return null
-    }
-
-    return parsed
-  }
-
-  const commit = (): boolean => {
-    const parsed = parseDraft()
-
-    if (parsed === null) {
-      setDraft(formatStatusNumber(value))
-      return false
-    }
-
-    onCommit(field, parsed)
-    return true
-  }
-
-  const finish = () => {
-    commit()
-    onActivate(null)
-  }
-
-  const cancel = () => {
-    skipBlurCommitRef.current = true
-    setDraft(formatStatusNumber(value))
-    onActivate(null)
-  }
-
-  const handleBlur = (
-    _event: FocusEvent<HTMLInputElement>,
-  ) => {
-    if (skipBlurCommitRef.current) {
-      skipBlurCommitRef.current = false
-      return
-    }
-
-    finish()
-  }
-
-  const handleKeyDown = (
-    event: KeyboardEvent<HTMLInputElement>,
-  ) => {
-    if (event.key === 'Enter') {
-      event.preventDefault()
-      skipBlurCommitRef.current = true
-      commit()
-      onActivate(null)
-      return
-    }
-
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      cancel()
-      return
-    }
-
-    if (event.key === 'Tab') {
-      event.preventDefault()
-      skipBlurCommitRef.current = true
-      commit()
-
-      onNavigate(
-        field,
-        event.shiftKey ? -1 : 1,
-      )
-      return
-    }
-
-    if (
-      event.key === 'ArrowUp' ||
-      event.key === 'ArrowDown'
-    ) {
-      event.preventDefault()
-
-      const current =
-        parseDraft() ?? value
-
-      const direction =
-        event.key === 'ArrowUp' ? 1 : -1
-
-      const increment = event.shiftKey
-        ? 10
-        : event.altKey
-          ? 0.1
-          : 1
-
-      const nextValue =
-        current + direction * increment
-
-      if (
-        minimum !== undefined &&
-        nextValue < minimum
-      ) {
-        setDraft(
-          formatStatusNumber(minimum),
-        )
-        return
-      }
-
-      setDraft(
-        formatStatusNumber(nextValue),
-      )
-    }
-  }
-
-  if (active && !disabled) {
-    return (
-      <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded bg-background ring-1 ring-primary/60">
-        <span className="pl-1.5 text-[10px] text-muted-foreground">
-          {label}
-        </span>
-
-        <input
-          ref={inputRef}
-          aria-label={'编辑 ' + label}
-          className="h-6 w-16 border-0 bg-transparent px-1 text-right font-mono text-[11px] tabular-nums text-foreground outline-none"
-          inputMode="decimal"
-          onBlur={handleBlur}
-          onChange={(event) => {
-            setDraft(event.currentTarget.value)
-          }}
-          onKeyDown={handleKeyDown}
-          step="any"
-          type="number"
-          value={draft}
-        />
-
-        {suffix ? (
-          <span className="pr-1.5 text-[10px] text-muted-foreground">
-            {suffix}
-          </span>
-        ) : null}
-      </span>
-    )
-  }
-
-  return (
-    <button
-      aria-label={
-        disabled
-          ? label + '，对象已锁定'
-          : '双击编辑 ' + label
-      }
-      className={
-        'inline-flex h-6 shrink-0 items-center gap-1 rounded px-1.5 ' +
-        'font-mono text-[11px] tabular-nums transition-colors ' +
-        'focus-visible:outline-none focus-visible:ring-1 ' +
-        'focus-visible:ring-primary ' +
-        (
-          disabled
-            ? 'cursor-not-allowed opacity-55'
-            : 'hover:bg-background/80'
-        )
-      }
-      disabled={disabled}
-      onDoubleClick={() => {
-        onActivate(field)
-      }}
-      title={
-        disabled
-          ? '选择中包含锁定对象'
-          : '双击编辑 ' + label
-      }
-      type="button"
-    >
-      <span className="font-sans text-[10px] text-muted-foreground/70">
-        {label}
-      </span>
-
-      <span className="min-w-7 text-right text-foreground/80">
-        {formatStatusNumber(value)}
-        {suffix}
-      </span>
-    </button>
-  )
-}
-
-interface AspectRatioLockButtonProps {
-  readonly locked: boolean
-  readonly disabled: boolean
-  readonly onChange: (
-    locked: boolean,
-  ) => void
-}
-
-function AspectRatioLockButton({
-  locked,
-  disabled,
-  onChange,
-}: AspectRatioLockButtonProps) {
-  return (
-    <button
-      aria-label={
-        locked
-          ? '解除宽高比锁定'
-          : '锁定宽高比'
-      }
-      aria-pressed={locked}
-      className={
-        'inline-flex size-6 shrink-0 items-center justify-center rounded ' +
-        'text-[11px] transition-colors focus-visible:outline-none ' +
-        'focus-visible:ring-1 focus-visible:ring-primary ' +
-        (
-          locked
-            ? 'bg-primary/10 text-primary'
-            : 'text-muted-foreground hover:bg-background/80'
-        ) +
-        (
-          disabled
-            ? ' cursor-not-allowed opacity-50'
-            : ''
-        )
-      }
-      disabled={disabled}
-      onClick={() => {
-        onChange(!locked)
-      }}
-      title={
-        locked
-          ? '宽高比已锁定'
-          : '锁定宽高比'
-      }
-      type="button"
-    >
-      <span aria-hidden="true">
-        {locked ? '🔗' : '⛓'}
-      </span>
-    </button>
-  )
-}
-
-function StatusDivider() {
-  return (
-    <span
-      aria-hidden="true"
-      className="h-3 w-px shrink-0 bg-divider"
+    <DrawToolInspector
+      {...props}
+      variant="draw"
     />
   )
 }
 
-function formatStatusNumber(
-  value: number,
-): string {
-  if (!Number.isFinite(value)) {
-    return '0'
-  }
-
-  return String(
-    Math.round(value * 100) / 100,
+function HighlightInspector(
+  props: ToolInspectorProps,
+) {
+  return (
+    <DrawToolInspector
+      {...props}
+      variant="highlight"
+    />
   )
 }
 
-function normalizeRadians(
-  radians: number,
-): number {
-  const fullTurn = Math.PI * 2
+/**
+ * Temporary core contribution list.
+ *
+ * Domain-specific entries will move to their owning Feature packages:
+ *
+ * - draw/highlight -> @hybrid-canvas/freehand
+ * - arrow -> @hybrid-canvas/flowchart
+ * - scientific-chart -> @hybrid-canvas/scientific-plot
+ */
+export const CORE_TOOL_INSPECTOR_CONTRIBUTIONS:
+  readonly ToolInspectorContribution[] = [
+    {
+      toolId: 'select',
+      owner: 'core',
+      component: SelectToolInspector,
+    },
+    {
+      toolId: 'hand',
+      owner: 'core',
+      component: HandToolInspector,
+    },
+    {
+      toolId: 'geo',
+      owner: 'core',
+      component: ShapeToolInspector,
+    },
+    {
+      toolId: 'line',
+      owner: 'core',
+      component: LineToolInspector,
+    },
+    {
+      toolId: 'arrow',
+      owner: 'core',
+      component: ArrowToolInspector,
+    },
+    {
+      toolId: 'draw',
+      owner: 'core',
+      component: DrawInspector,
+    },
+    {
+      toolId: 'highlight',
+      owner: 'core',
+      component: HighlightInspector,
+    },
+    {
+      toolId: 'eraser',
+      owner: 'core',
+      component: EraserToolInspector,
+    },
+    {
+      toolId: 'text',
+      owner: 'core',
+      component: TextToolInspector,
+    },
+    {
+      toolId: 'note',
+      owner: 'core',
+      component: NoteToolInspector,
+    },
+    {
+      toolId: 'frame',
+      owner: 'core',
+      component: FrameToolInspector,
+    },
+    {
+      toolId: 'scientific-chart',
+      owner: 'core',
+      component: ScientificChartToolInspector,
+    },
+  ]
 
-  let normalized =
-    (
-      (
-        radians + Math.PI
-      ) % fullTurn +
-      fullTurn
-    ) % fullTurn -
-    Math.PI
+export class ToolInspectorRegistry {
+  readonly #resolutions: ReadonlyMap<
+    string,
+    ToolInspectorResolution
+  >
 
-  if (Object.is(normalized, -0)) {
-    normalized = 0
+  constructor(
+    contributions:
+      readonly ToolInspectorContribution[],
+  ) {
+    this.#resolutions =
+      buildResolutionMap(contributions)
   }
 
-  return normalized
+  resolve(
+    toolId: string,
+  ): ToolInspectorResolution | null {
+    return this.#resolutions.get(toolId) ?? null
+  }
+
+  has(toolId: string): boolean {
+    return this.#resolutions.has(toolId)
+  }
+
+  list(): readonly ToolInspectorResolution[] {
+    return Array.from(
+      this.#resolutions.values(),
+    ).sort((left, right) =>
+      left.toolId.localeCompare(right.toolId),
+    )
+  }
+}
+
+export function createToolInspectorRegistry(
+  contributions:
+    readonly ToolInspectorContribution[] = [],
+): ToolInspectorRegistry {
+  return new ToolInspectorRegistry([
+    ...CORE_TOOL_INSPECTOR_CONTRIBUTIONS,
+    ...contributions,
+  ])
+}
+
+export const defaultToolInspectorRegistry =
+  createToolInspectorRegistry()
+
+function buildResolutionMap(
+  contributions:
+    readonly ToolInspectorContribution[],
+): ReadonlyMap<
+  string,
+  ToolInspectorResolution
+> {
+  const resolutions = new Map<
+    string,
+    ToolInspectorResolution
+  >()
+
+  for (const contribution of contributions) {
+    validateContribution(contribution)
+
+    const priority =
+      contribution.priority ?? 0
+
+    const existing = resolutions.get(
+      contribution.toolId,
+    )
+
+    if (
+      existing &&
+      existing.priority === priority
+    ) {
+      throw new Error(
+        'Conflicting tool inspector contributions for "' +
+          contribution.toolId +
+          '" at priority ' +
+          String(priority) +
+          ': "' +
+          existing.owner +
+          '" and "' +
+          contribution.owner +
+          '".',
+      )
+    }
+
+    if (
+      !existing ||
+      priority > existing.priority
+    ) {
+      resolutions.set(
+        contribution.toolId,
+        {
+          toolId: contribution.toolId,
+          owner: contribution.owner,
+          priority,
+          component: contribution.component,
+        },
+      )
+    }
+  }
+
+  return resolutions
+}
+
+function validateContribution(
+  contribution:
+    ToolInspectorContribution,
+): void {
+  if (!contribution.toolId.trim()) {
+    throw new Error(
+      'Tool inspector contribution requires a toolId.',
+    )
+  }
+
+  if (!contribution.owner.trim()) {
+    throw new Error(
+      'Tool inspector contribution "' +
+        contribution.toolId +
+        '" requires an owner.',
+    )
+  }
+
+  if (
+    typeof contribution.component !==
+    'function'
+  ) {
+    throw new Error(
+      'Tool inspector contribution "' +
+        contribution.toolId +
+        '" requires a React component.',
+    )
+  }
+
+  if (
+    contribution.priority !== undefined &&
+    !Number.isFinite(
+      contribution.priority,
+    )
+  ) {
+    throw new Error(
+      'Tool inspector contribution "' +
+        contribution.toolId +
+        '" has an invalid priority.',
+    )
+  }
 }
 `
 
-const STATUS_INDEX_SOURCE = `export {
-  SelectionTransformStatus,
-  type SelectionTransformStatusProps,
-} from './SelectionTransformStatus'
+const ROUTER_SOURCE = `import {
+  defaultToolInspectorRegistry,
+  type ToolInspectorRegistry,
+} from './ToolInspectorRegistry'
+import type { ToolInspectorRouterProps } from './types'
+import { UnknownToolInspector } from './UnknownToolInspector'
+
+export interface RegisteredToolInspectorRouterProps
+  extends ToolInspectorRouterProps {
+  readonly registry?: ToolInspectorRegistry
+}
+
+export function ToolInspectorRouter({
+  editor,
+  toolId,
+  registry = defaultToolInspectorRegistry,
+}: RegisteredToolInspectorRouterProps) {
+  const resolution = registry.resolve(toolId)
+
+  if (!resolution) {
+    return (
+      <UnknownToolInspector
+        editor={editor}
+        toolId={toolId}
+      />
+    )
+  }
+
+  const Inspector = resolution.component
+
+  return <Inspector editor={editor} />
+}
 `
+
+function transformIndex(source) {
+  if (
+    source.includes(
+      "from './ToolInspectorRegistry'",
+    )
+  ) {
+    return source
+  }
+
+  return (
+    source.trimEnd() +
+    `
+
+export {
+  CORE_TOOL_INSPECTOR_CONTRIBUTIONS,
+  ToolInspectorRegistry,
+  createToolInspectorRegistry,
+  defaultToolInspectorRegistry,
+  type ToolInspectorContribution,
+  type ToolInspectorResolution,
+} from './ToolInspectorRegistry'
+`
+  )
+}
 
 async function main() {
   console.log('')
-  console.log('Hybrid Canvas — Editable Status Bar Refactor')
+  console.log('Hybrid Canvas — Tool Inspector Registry Refactor')
   console.log(`Repository: ${ROOT_DIR}`)
   console.log(`Mode: ${DRY_RUN ? 'dry-run' : 'write'}`)
   console.log('')
 
   await validateRepository()
 
-  const workspaceSource = await readUtf8(
-    PATHS.workspaceContainer,
+  const indexSource = await readUtf8(
+    PATHS.index,
   )
 
-  const transformedWorkspace =
-    transformWorkspaceContainer(
-      workspaceSource,
-    )
+  const transformedIndex =
+    transformIndex(indexSource)
 
   if (DRY_RUN) {
-    console.log('✓ Current WorkspaceContainer detected')
-    console.log('✓ Existing geometry status detected')
-    console.log('✓ Active canvas title can be derived')
-    console.log('✓ Editable status component can be generated')
+    console.log('✓ Current switch router detected')
+    console.log('✓ All current tool inspectors detected')
+    console.log('✓ Registry can be generated')
+    console.log('✓ Router can be replaced safely')
     console.log('✓ No files were changed')
     console.log('')
     return
@@ -798,223 +420,147 @@ async function main() {
     await createBackupDirectory()
 
   await backupFile(
-    PATHS.workspaceContainer,
+    PATHS.router,
     path.join(
       backupDirectory,
-      'WorkspaceContainer.tsx',
+      'ToolInspectorRouter.tsx',
     ),
   )
 
-  await mkdir(STATUS_DIRECTORY, {
-    recursive: true,
-  })
-
-  await writeUtf8(
-    PATHS.selectionTransformStatus,
-    STATUS_COMPONENT_SOURCE,
+  await backupFile(
+    PATHS.index,
+    path.join(
+      backupDirectory,
+      'index.ts',
+    ),
   )
 
   await writeUtf8(
-    PATHS.statusIndex,
-    STATUS_INDEX_SOURCE,
+    PATHS.registry,
+    REGISTRY_SOURCE,
   )
 
   await writeUtf8(
-    PATHS.workspaceContainer,
-    transformedWorkspace,
+    PATHS.router,
+    ROUTER_SOURCE,
+  )
+
+  await writeUtf8(
+    PATHS.index,
+    transformedIndex,
   )
 
   console.log('')
   console.log(`Backup: ${relative(backupDirectory)}`)
   console.log('')
-  console.log('Status bar refactor complete:')
-  console.log('  ✓ Canvas filename replaces 本地画布')
-  console.log('  ✓ Geometry status extracted')
-  console.log('  ✓ Double-click inline editing added')
-  console.log('  ✓ Enter and Escape supported')
-  console.log('  ✓ Tab and Shift+Tab navigation added')
-  console.log('  ✓ Arrow-key adjustment added')
-  console.log('  ✓ Aspect-ratio lock added')
-  console.log('  ✓ Multi-selection bounds supported')
-  console.log('  ✓ Locked selections protected')
-  console.log('  ✓ tldraw History preserved')
+  console.log('Registry refactor complete:')
+  console.log('  ✓ ToolInspectorRegistry created')
+  console.log('  ✓ ToolInspectorRouter switch removed')
+  console.log('  ✓ Unknown tool fallback preserved')
+  console.log('  ✓ Contribution priority supported')
+  console.log('  ✓ Duplicate priority conflicts detected')
+  console.log('  ✓ Feature override path prepared')
   console.log('')
   console.log('Run validation:')
   console.log(
-    '  pnpm exec biome check --write apps/desktop/src/presentation/workspace',
+    '  pnpm exec biome check --write apps/desktop/src/presentation/workspace/inspector/tools',
   )
   console.log('  pnpm typecheck')
   console.log('  pnpm test')
   console.log('')
 }
 
-function transformWorkspaceContainer(
-  source,
-) {
-  let next = source
-
-  next = addStatusImport(next)
-  next = addActiveCanvasTitle(next)
-  next = replaceStatusLeft(next)
-  next = removeLegacyStatusFunctions(next)
-
-  next = next.replace(/\n{3,}/g, '\n\n')
-
-  return next.trimEnd() + '\n'
-}
-
-function addStatusImport(source) {
-  const importLine =
-    "import { SelectionTransformStatus } from './status/SelectionTransformStatus'\n"
-
-  if (source.includes(importLine)) {
-    return source
-  }
-
-  const anchor =
-    "import { CanvasInspectorContent } from './inspector/CanvasInspectorContent'\n"
-
-  return replaceRequired(
-    source,
-    anchor,
-    anchor + importLine,
-    'status component import',
-  )
-}
-
-function addActiveCanvasTitle(source) {
-  if (
-    source.includes(
-      'const activeCanvasTitle =',
-    )
-  ) {
-    return source
-  }
-
-  const anchor = `  const model = {
-    ...workbench,
-    tabs,
-  }
-`
-
-  const replacement = `  const model = {
-    ...workbench,
-    tabs,
-  }
-
-  const activeCanvasTitle =
-    activeSessionId === null
-      ? null
-      : (tabs.find(
-          (tab) =>
-            tab.kind === 'canvas' &&
-            tab.sessionId === activeSessionId,
-        )?.title ?? null)
-`
-
-  return replaceRequired(
-    source,
-    anchor,
-    replacement,
-    'active canvas title derivation',
-  )
-}
-
-function replaceStatusLeft(source) {
-  const oldStatusLeft = `      statusLeft={
-        <>
-          <CanvasStatusLeftContent hasActiveCanvas={workbench.activeCanvas !== null} />
-          <CanvasSelectionGeometryStatus />
-        </>
-      }
-`
-
-  const newStatusLeft = `      statusLeft={
-        <SelectionTransformStatus
-          canvasTitle={activeCanvasTitle}
-        />
-      }
-`
-
-  return replaceRequired(
-    source,
-    oldStatusLeft,
-    newStatusLeft,
-    'WorkspaceShell statusLeft',
-  )
-}
-
-function removeLegacyStatusFunctions(
-  source,
-) {
-  const startIndex = source.indexOf(
-    OLD_STATUS_START,
-  )
-
-  const endIndex = source.indexOf(
-    OLD_STATUS_END,
-    startIndex,
-  )
-
-  if (
-    startIndex === -1 ||
-    endIndex === -1 ||
-    endIndex <= startIndex
-  ) {
-    throw new Error(
-      'Could not find the legacy status component block.',
-    )
-  }
-
-  return (
-    source.slice(0, startIndex) +
-    source.slice(endIndex)
-  )
-}
-
-function replaceRequired(
-  source,
-  oldValue,
-  newValue,
-  label,
-) {
-  if (!source.includes(oldValue)) {
-    throw new Error(
-      `Could not update ${label}.\n` +
-        'The source differs from the expected remote version. ' +
-        'Refusing an unsafe partial edit.',
-    )
-  }
-
-  return source.replace(
-    oldValue,
-    newValue,
-  )
-}
-
 async function validateRepository() {
-  await assertFile(PATHS.packageJson)
-  await assertFile(PATHS.workspaceContainer)
-
-  const source = await readUtf8(
-    PATHS.workspaceContainer,
-  )
-
-  const requiredMarkers = [
-    'function CanvasSelectionGeometryStatus()',
-    'function CanvasStatusLeftContent(',
-    "'本地画布'",
-    'statusLeft={',
-    'const tabs = workbench.tabs.map',
+  const requiredFiles = [
+    PATHS.packageJson,
+    PATHS.router,
+    PATHS.index,
+    path.join(
+      TOOLS_DIRECTORY,
+      'SelectToolInspector.tsx',
+    ),
+    path.join(
+      TOOLS_DIRECTORY,
+      'HandToolInspector.tsx',
+    ),
+    path.join(
+      TOOLS_DIRECTORY,
+      'ShapeToolInspector.tsx',
+    ),
+    path.join(
+      TOOLS_DIRECTORY,
+      'LineToolInspector.tsx',
+    ),
+    path.join(
+      TOOLS_DIRECTORY,
+      'ArrowToolInspector.tsx',
+    ),
+    path.join(
+      TOOLS_DIRECTORY,
+      'DrawToolInspector.tsx',
+    ),
+    path.join(
+      TOOLS_DIRECTORY,
+      'EraserToolInspector.tsx',
+    ),
+    path.join(
+      TOOLS_DIRECTORY,
+      'TextToolInspector.tsx',
+    ),
+    path.join(
+      TOOLS_DIRECTORY,
+      'NoteToolInspector.tsx',
+    ),
+    path.join(
+      TOOLS_DIRECTORY,
+      'FrameToolInspector.tsx',
+    ),
+    path.join(
+      TOOLS_DIRECTORY,
+      'ScientificChartToolInspector.tsx',
+    ),
+    path.join(
+      TOOLS_DIRECTORY,
+      'UnknownToolInspector.tsx',
+    ),
   ]
 
-  for (const marker of requiredMarkers) {
-    if (!source.includes(marker)) {
+  for (const filePath of requiredFiles) {
+    await assertFile(filePath)
+  }
+
+  const routerSource = await readUtf8(
+    PATHS.router,
+  )
+
+  if (
+    !routerSource.includes(
+      'switch (toolId)',
+    )
+  ) {
+    if (
+      routerSource.includes(
+        'defaultToolInspectorRegistry',
+      )
+    ) {
       throw new Error(
-        `Expected marker not found: ${marker}\n` +
-          'The repository may have changed or this refactor may already be applied.',
+        'Tool inspector registry refactor appears to be already applied.',
       )
     }
+
+    throw new Error(
+      'Expected ToolInspectorRouter switch was not found.',
+    )
+  }
+
+  if (
+    routerSource.includes(
+      "from './BasicToolInspectors'",
+    )
+  ) {
+    throw new Error(
+      'BasicToolInspectors is still in use. Run the per-tool split refactor first.',
+    )
   }
 }
 
@@ -1037,7 +583,7 @@ async function createBackupDirectory() {
   const backupDirectory = path.join(
     ROOT_DIR,
     '.refactor-backup',
-    `editable-status-${timestamp}`,
+    `tool-inspector-registry-${timestamp}`,
   )
 
   await mkdir(backupDirectory, {
@@ -1100,7 +646,7 @@ function relative(filePath) {
 main().catch((error) => {
   console.error('')
   console.error(
-    'Status bar refactor failed.',
+    'Tool inspector registry refactor failed.',
   )
   console.error(
     error instanceof Error

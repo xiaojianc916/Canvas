@@ -15,3 +15,12 @@ export type {
   ToolInspectorRouterProps,
 } from './types'
 export { UnknownToolInspector } from './UnknownToolInspector'
+
+export {
+  CORE_TOOL_INSPECTOR_CONTRIBUTIONS,
+  ToolInspectorRegistry,
+  createToolInspectorRegistry,
+  defaultToolInspectorRegistry,
+  type ToolInspectorContribution,
+  type ToolInspectorResolution,
+} from './ToolInspectorRegistry'
