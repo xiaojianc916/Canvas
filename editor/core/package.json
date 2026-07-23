@@ -32,8 +32,8 @@
   },
   "dependencies": {
     "@hybrid-canvas/design-system": "workspace:*",
-    "@tldraw/editor": "catalog:",
-    "lucide-react": "catalog:"
+    "@mynaui/icons-react": "catalog:",
+    "@tldraw/editor": "catalog:"
   },
   "devDependencies": {
     "@types/react": "catalog:",

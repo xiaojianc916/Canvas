@@ -27,7 +27,7 @@
     "@hybrid-canvas/scientific-plot": "workspace:*",
     "@hybrid-canvas/settings": "workspace:*",
     "@hybrid-canvas/workspace": "workspace:*",
-    "lucide-react": "catalog:",
+    "@mynaui/icons-react": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "tldraw": "catalog:"

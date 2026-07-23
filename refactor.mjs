@@ -1,1478 +1,933 @@
 #!/usr/bin/env node
 
 /**
- * P0-B.1 — Strict v2 ZIP DocumentCodec.
+ * 完全迁移 lucide-react -> @mynaui/icons-react
  *
- * Required base:
- *   cee2d49088ce2b05f9caa53528b8fc9eac71f5f1
+ * 用法：
+ *   将本文件保存为 scripts/migrate-icons-to-mynaui.mjs
+ *   在仓库根目录执行：
  *
- * Usage:
- *   node refactor.mjs --check
- *   node refactor.mjs --apply
- *   node refactor.mjs --check D:\path\to\hybrid-canvas
+ *   node scripts/migrate-icons-to-mynaui.mjs
+ *
+ * 可选：
+ *   node scripts/migrate-icons-to-mynaui.mjs --skip-checks
+ *   node scripts/migrate-icons-to-mynaui.mjs --dry-run
  */
 
+import { execFileSync } from 'node:child_process'
 import {
-  access,
-  mkdir,
-  readFile,
-  rm,
-  writeFile,
-} from 'node:fs/promises'
-import { constants } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import process from 'node:process'
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join, relative, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
-const argv = process.argv.slice(2)
-const apply = argv.includes('--apply')
-const check = argv.includes('--check')
+const ROOT = process.cwd()
+const TARGET_PACKAGE = '@mynaui/icons-react'
+const TARGET_VERSION = '0.4.11'
+const LEGACY_PACKAGE = 'lucide-react'
 
-const unknownOptions = argv.filter(
-  (argument) =>
-    argument.startsWith('--') &&
-    argument !== '--apply' &&
-    argument !== '--check',
-)
+const DRY_RUN = process.argv.includes('--dry-run')
+const SKIP_CHECKS = process.argv.includes('--skip-checks')
 
-const rootArguments = argv.filter(
-  (argument) => !argument.startsWith('--'),
-)
+const IGNORED_DIRECTORIES = new Set([
+  '.git',
+  '.turbo',
+  '.vite',
+  'coverage',
+  'dist',
+  'node_modules',
+  'target',
+])
 
-function fail(message) {
-  console.error(
-    `\nP0-B.1 v2 ZIP DocumentCodec failed:\n${message}\n`,
+const SOURCE_EXTENSIONS = new Set([
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.ts',
+  '.tsx',
+])
+
+/**
+ * 按优先级列出 Myna UI 中可能对应的正式名称。
+ *
+ * 脚本会读取实际安装的 @mynaui/icons-react 导出，只选择真实存在的名称。
+ * 如果没有可靠匹配，脚本会终止，而不是保留 Lucide 或生成兼容层。
+ */
+const SEMANTIC_ICON_CANDIDATES = {
+  BookOpen: ['BookOpen', 'Book', 'Books'],
+  Boxes: ['Boxes', 'BoxMultiple', 'Box'],
+  ChartNoAxesCombined: [
+    'ChartNoAxesCombined',
+    'ChartCombined',
+    'ChartBar',
+    'ChartLine',
+    'Chart',
+  ],
+  CheckIcon: ['Check', 'CheckCircle'],
+  ChevronsUpDownIcon: [
+    'ChevronsUpDown',
+    'ChevronUpDown',
+    'SelectorVertical',
+    'UnfoldVertical',
+  ],
+  CircleHelp: ['CircleHelp', 'CircleQuestion', 'HelpCircle', 'QuestionCircle'],
+  Code2: ['Code2', 'Code'],
+  Command: ['Command', 'Terminal'],
+  Copy: ['Copy', 'WindowRestore', 'Windows'],
+  ExternalLink: ['ExternalLink', 'ArrowUpRight', 'OpenExternal'],
+  FilePlus2: ['FilePlus2', 'FilePlus', 'DocumentPlus'],
+  Files: ['Files', 'FileMultiple', 'Documents'],
+  FileText: ['FileText', 'DocumentText', 'File'],
+  FolderOpen: ['FolderOpen', 'Folder'],
+  Grid2X2: ['Grid2X2', 'GridFour', 'Grid', 'Dashboard'],
+  Image: ['Image', 'ImageSquare', 'Picture'],
+  Layers3: ['Layers3', 'Layers', 'Layer'],
+  MessageCircle: ['MessageCircle', 'ChatCircle', 'Message'],
+  Network: ['Network', 'Nodes', 'ShareNetwork'],
+  PanelLeftClose: [
+    'PanelLeftClose',
+    'SidebarLeftClose',
+    'SidebarClose',
+    'PanelClose',
+  ],
+  PanelLeftOpen: [
+    'PanelLeftOpen',
+    'SidebarLeftOpen',
+    'SidebarOpen',
+    'PanelOpen',
+  ],
+  RefreshCcw: ['RefreshCcw', 'Refresh', 'ArrowClockwise'],
+  SearchIcon: ['Search', 'SearchIcon'],
+  Settings: ['Settings', 'Cog', 'Gear'],
+  Square: ['Square', 'WindowMaximize'],
+  X: ['X', 'Close'],
+}
+
+const changedFiles = new Set()
+
+main().catch((error) => {
+  console.error('\n迁移失败：')
+  console.error(error instanceof Error ? error.stack : error)
+  process.exitCode = 1
+})
+
+async function main() {
+  assertRepositoryRoot()
+
+  console.log(`迁移 ${LEGACY_PACKAGE} -> ${TARGET_PACKAGE}`)
+  console.log(DRY_RUN ? '模式：dry-run\n' : '')
+
+  updateWorkspaceCatalog()
+  updateWorkspacePackageJsonFiles()
+  removeShadcnLucideConfiguration()
+  addIconArchitectureGuard()
+
+  if (DRY_RUN) {
+    console.log('\nDry-run 完成，未写入文件，也未安装依赖。')
+    printChangedFiles()
+    return
+  }
+
+  console.log('\n安装新依赖并刷新 pnpm-lock.yaml...')
+  run('pnpm', ['install'])
+
+  const mynaExports = await loadMynaExports()
+
+  console.log(`检测到 ${mynaExports.size} 个 Myna UI React 导出。`)
+
+  migrateSourceImports(mynaExports)
+  assertNoLegacySourceImports()
+  assertNoLegacyDirectDependencies()
+
+  formatChangedFiles()
+
+  if (!SKIP_CHECKS) {
+    runChecks()
+  }
+
+  console.log('\n迁移完成。')
+  printChangedFiles()
+}
+
+function assertRepositoryRoot() {
+  const requiredFiles = [
+    'package.json',
+    'pnpm-lock.yaml',
+    'pnpm-workspace.yaml',
+  ]
+
+  for (const file of requiredFiles) {
+    if (!existsSync(join(ROOT, file))) {
+      throw new Error(
+        `请在 Canvas 仓库根目录运行脚本，缺少：${file}`,
+      )
+    }
+  }
+}
+
+function updateWorkspaceCatalog() {
+  const file = join(ROOT, 'pnpm-workspace.yaml')
+  let content = readText(file)
+
+  const legacyLinePattern =
+    /^([ \t]*)lucide-react:\s*["']?[^"'#\n]+["']?\s*(?:#.*)?$/m
+
+  const targetLinePattern =
+    /^([ \t]*)["']?@mynaui\/icons-react["']?:\s*["']?[^"'#\n]+["']?\s*(?:#.*)?$/m
+
+  if (targetLinePattern.test(content)) {
+    content = content.replace(
+      targetLinePattern,
+      `$1"${TARGET_PACKAGE}": "${TARGET_VERSION}"`,
+    )
+
+    content = content.replace(legacyLinePattern, '')
+  } else if (legacyLinePattern.test(content)) {
+    content = content.replace(
+      legacyLinePattern,
+      `$1"${TARGET_PACKAGE}": "${TARGET_VERSION}"`,
+    )
+  } else {
+    const catalogPattern = /^catalog:\s*$/m
+    const match = catalogPattern.exec(content)
+
+    if (!match) {
+      throw new Error('pnpm-workspace.yaml 中没有找到 catalog:')
+    }
+
+    const insertionPoint = match.index + match[0].length
+
+    content =
+      content.slice(0, insertionPoint) +
+      `\n  "${TARGET_PACKAGE}": "${TARGET_VERSION}"` +
+      content.slice(insertionPoint)
+  }
+
+  content = content.replace(/\n{3,}/g, '\n\n')
+
+  writeTextIfChanged(file, content)
+}
+
+function updateWorkspacePackageJsonFiles() {
+  const packageJsonFiles = findFiles(
+    ROOT,
+    (file) => file.endsWith('package.json'),
   )
+
+  for (const file of packageJsonFiles) {
+    const source = readText(file)
+    const json = JSON.parse(source)
+    let changed = false
+
+    for (const sectionName of [
+      'dependencies',
+      'devDependencies',
+      'optionalDependencies',
+      'peerDependencies',
+    ]) {
+      const section = json[sectionName]
+
+      if (!section || typeof section !== 'object') {
+        continue
+      }
+
+      if (!(LEGACY_PACKAGE in section)) {
+        continue
+      }
+
+      const legacySpecifier = section[LEGACY_PACKAGE]
+
+      delete section[LEGACY_PACKAGE]
+
+      if (!(TARGET_PACKAGE in section)) {
+        section[TARGET_PACKAGE] =
+          legacySpecifier === 'catalog:' ? 'catalog:' : 'catalog:'
+      }
+
+      json[sectionName] = sortObject(section)
+      changed = true
+    }
+
+    if (!changed) {
+      continue
+    }
+
+    writeTextIfChanged(file, `${JSON.stringify(json, null, 2)}\n`)
+  }
+}
+
+function removeShadcnLucideConfiguration() {
+  const file = join(
+    ROOT,
+    'foundations',
+    'design-system',
+    'components.json',
+  )
+
+  if (!existsSync(file)) {
+    return
+  }
+
+  const json = JSON.parse(readText(file))
+
+  if (json.iconLibrary !== 'lucide') {
+    return
+  }
+
+  /**
+   * shadcn 当前没有稳定的 mynaui iconLibrary 枚举值。
+   * 因此删除该字段，防止以后生成新的 lucide-react import。
+   */
+  delete json.iconLibrary
+
+  writeTextIfChanged(file, `${JSON.stringify(json, null, 2)}\n`)
+}
+
+function addIconArchitectureGuard() {
+  const guardFile = join(
+    ROOT,
+    'tests',
+    'architecture',
+    'check-icon-library.mjs',
+  )
+
+  const guardSource = `#!/usr/bin/env node
+
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { extname, join, relative, resolve } from 'node:path'
+
+const root = resolve(process.cwd())
+
+const forbiddenPackages = [
+  'lucide-react',
+  'react-icons',
+  '@heroicons/',
+  '@tabler/icons-react',
+]
+
+const ignoredDirectories = new Set([
+  '.git',
+  '.turbo',
+  '.vite',
+  'coverage',
+  'dist',
+  'node_modules',
+  'target',
+])
+
+const sourceExtensions = new Set([
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.ts',
+  '.tsx',
+])
+
+const violations = []
+
+walk(root)
+
+if (violations.length > 0) {
+  console.error('检测到被禁止的产品图标库：')
+  console.error('')
+
+  for (const violation of violations) {
+    console.error(
+      '- ' +
+        violation.file +
+        ':' +
+        String(violation.line) +
+        ' -> ' +
+        violation.packageName,
+    )
+  }
+
+  console.error('')
+  console.error('产品 UI 只能使用 @mynaui/icons-react。')
   process.exit(1)
 }
 
-if (unknownOptions.length > 0) {
-  fail(`Unknown option: ${unknownOptions.join(', ')}`)
-}
+console.log('Icon library architecture check passed.')
 
-if (rootArguments.length > 1) {
-  fail('Only one optional repository root is accepted.')
-}
+function walk(directory) {
+  for (const entry of readdirSync(directory)) {
+    if (ignoredDirectories.has(entry)) {
+      continue
+    }
 
-if (apply && check) {
-  fail('Use either --check or --apply, not both.')
-}
+    const absolutePath = join(directory, entry)
+    const stats = statSync(absolutePath)
 
-if (!apply && !check) {
-  fail('Missing mode. Use --check or --apply.')
-}
+    if (stats.isDirectory()) {
+      walk(absolutePath)
+      continue
+    }
 
-const root = resolve(rootArguments[0] ?? process.cwd())
-
-const paths = {
-  packageJson: join(root, 'package.json'),
-
-  cargoToml: join(
-    root,
-    'editor/persistence/native/Cargo.toml',
-  ),
-
-  lib: join(
-    root,
-    'editor/persistence/native/src/lib.rs',
-  ),
-
-  codec: join(
-    root,
-    'editor/persistence/native/src/document_codec_v2.rs',
-  ),
-
-  legacyCodec: join(
-    root,
-    'editor/persistence/native/src/document_codec.rs',
-  ),
-
-  workspaceCargo: join(root, 'Cargo.toml'),
-}
-
-async function exists(path) {
-  try {
-    await access(path, constants.F_OK)
-    return true
-  } catch {
-    return false
+    if (
+      entry === 'package.json' ||
+      sourceExtensions.has(extensionOf(entry))
+    ) {
+      inspectFile(absolutePath)
+    }
   }
 }
 
-function count(source, fragment) {
-  return source.split(fragment).length - 1
-}
-
-function replaceExact(
-  source,
-  baseline,
-  final,
-  description,
-) {
-  if (source.includes(final)) {
-    return source
+function inspectFile(file) {
+  if (file === new URL(import.meta.url).pathname) {
+    return
   }
 
-  const occurrences = count(source, baseline)
+  const lines = readFileSync(file, 'utf8').split(/\\r?\\n/)
 
-  if (occurrences !== 1) {
-    throw new Error(
-      [
-        `Unexpected source count: ${description}`,
-        'Expected: 1',
-        `Actual: ${occurrences}`,
-        'Refusing an ambiguous or partial modification.',
-      ].join('\n'),
-    )
+  for (const [index, line] of lines.entries()) {
+    for (const packageName of forbiddenPackages) {
+      if (line.includes(packageName)) {
+        violations.push({
+          file: relative(root, file),
+          line: index + 1,
+          packageName,
+        })
+      }
+    }
   }
-
-  return source.replace(baseline, final)
 }
 
-function updateCargoToml(source) {
-  let result = source
-
-  result = replaceExact(
-    result,
-    `[dependencies]
-serde_json.workspace = true`,
-    `[dependencies]
-serde.workspace = true
-serde_json.workspace = true`,
-    'add serde dependency',
-  )
-
-  result = replaceExact(
-    result,
-    `sha2.workspace = true
-
-[target.'cfg(windows)'.dependencies]`,
-    `sha2.workspace = true
-zip.workspace = true
-
-[target.'cfg(windows)'.dependencies]`,
-    'add ZIP dependency',
-  )
-
-  return result
-}
-
-function updateLib(source) {
-  let result = source
-
-  result = replaceExact(
-    result,
-    `//! Current responsibility:
-//! - atomic replacement of an already-validated logical .draw payload
-//!
-//! Archive containers, binary asset storage, advisory locking, external-change
-//! watching and recovery journals are intentionally absent until they can be
-//! delivered as one complete, tested native DocumentCodec protocol.`,
-    `//! Current responsibility:
-//! - strict v2 ZIP document encoding and decoding
-//! - content-addressed binary asset storage
-//! - atomic replacement of an already-validated document container
-//!
-//! Advisory locking, external-change watching and recovery journals remain
-//! separate native lifecycle concerns.`,
-    'update native persistence responsibilities',
-  )
-
-  result = replaceExact(
-    result,
-    `mod document_codec;
-mod error;`,
-    `mod document_codec;
-mod document_codec_v2;
-mod error;`,
-    'register v2 codec module',
-  )
-
-  result = replaceExact(
-    result,
-    `pub use document_codec::canonicalize_draw_document;
-pub use error::{Error, Result};`,
-    `pub use document_codec::canonicalize_draw_document;
-pub use document_codec_v2::{
-    decode_draw_document_v2, encode_draw_document_v2,
-    DecodedDrawDocumentV2, DrawAssetInput,
-    DrawAssetOutput, DrawDocumentV2Input,
-};
-pub use error::{Error, Result};`,
-    'export v2 codec API',
-  )
-
-  return result
-}
-
-const codecSource = `//! Strict v2 Hybrid Canvas ZIP DocumentCodec.
-//!
-//! This module owns only the physical document container. It treats the tldraw
-//! store snapshot as opaque JSON and never constructs, edits or interprets
-//! tldraw records.
-
-use crate::{Error, Result};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
-use std::io::{Cursor, Read, Write};
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipArchive, ZipWriter};
-
-const DRAW_FORMAT: &str = "hybrid-canvas/draw";
-const DRAW_VERSION: u32 = 2;
-
-const MANIFEST_PATH: &str = "manifest.json";
-const DOCUMENT_PATH: &str = "document.json";
-const ASSET_INDEX_PATH: &str = "assets/index.json";
-const APPLICATION_METADATA_PATH: &str =
-    "metadata/application.json";
-
-const MAX_CONTAINER_BYTES: usize = 320 * 1024 * 1024;
-const MAX_ENTRY_COUNT: usize = 1_024;
-const MAX_ENTRY_BYTES: u64 = 32 * 1024 * 1024;
-const MAX_TOTAL_UNCOMPRESSED_BYTES: u64 =
-    256 * 1024 * 1024;
-const MAX_COMPRESSION_RATIO: u64 = 200;
-
-#[derive(Clone, Copy, Debug)]
-pub struct DrawAssetInput<'a> {
-    pub content_hash: &'a str,
-    pub content_type: &'a str,
-    pub bytes: &'a [u8],
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct DrawDocumentV2Input<'a> {
-    pub created_at: &'a str,
-    pub saved_at: &'a str,
-    pub document_json: &'a [u8],
-    pub application_json: &'a [u8],
-    pub assets: &'a [DrawAssetInput<'a>],
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DrawAssetOutput {
-    pub content_hash: String,
-    pub content_type: String,
-    pub bytes: Vec<u8>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct DecodedDrawDocumentV2 {
-    pub created_at: String,
-    pub saved_at: String,
-    pub document: Value,
-    pub application: Value,
-    pub assets: Vec<DrawAssetOutput>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Manifest {
-    format: String,
-    version: u32,
-    created_at: String,
-    saved_at: String,
-    document: EntryDescriptor,
-    assets_index: EntryDescriptor,
-    application: EntryDescriptor,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct EntryDescriptor {
-    path: String,
-    byte_length: u64,
-    sha256: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AssetIndex {
-    assets: Vec<AssetDescriptor>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AssetDescriptor {
-    content_hash: String,
-    content_type: String,
-    byte_length: u64,
-    path: String,
-}
-
-pub fn encode_draw_document_v2(
-    input: DrawDocumentV2Input<'_>,
-) -> Result<Vec<u8>> {
-    validate_timestamp(input.created_at, "createdAt")?;
-    validate_timestamp(input.saved_at, "savedAt")?;
-
-    let document = canonical_object_json(
-        input.document_json,
-        "document",
-    )?;
-    let application = canonical_object_json(
-        input.application_json,
-        "application metadata",
-    )?;
-
-    ensure_entry_size(document.len(), DOCUMENT_PATH)?;
-    ensure_entry_size(
-        application.len(),
-        APPLICATION_METADATA_PATH,
-    )?;
-
-    let mut assets = input.assets.to_vec();
-
-    assets.sort_unstable_by(|left, right| {
-        left.content_hash.cmp(right.content_hash)
-    });
-
-    let mut asset_entries =
-        Vec::<(AssetDescriptor, &[u8])>::new();
-    let mut previous_hash: Option<&str> = None;
-
-    for asset in assets {
-        validate_sha256(asset.content_hash)?;
-        validate_content_type(asset.content_type)?;
-        ensure_entry_size(
-            asset.bytes.len(),
-            "content-addressed asset",
-        )?;
-
-        let actual_hash = sha256(asset.bytes);
-
-        if actual_hash != asset.content_hash {
-            return Err(corrupted(
-                "asset bytes do not match their SHA-256 identity",
-            ));
-        }
-
-        if previous_hash == Some(asset.content_hash) {
-            return Err(corrupted(
-                "asset input contains a duplicate content hash",
-            ));
-        }
-
-        previous_hash = Some(asset.content_hash);
-
-        let path = format!("assets/{}", asset.content_hash);
-
-        asset_entries.push((
-            AssetDescriptor {
-                content_hash: asset.content_hash.to_owned(),
-                content_type: asset.content_type.to_owned(),
-                byte_length: to_u64(
-                    asset.bytes.len(),
-                    "asset length",
-                )?,
-                path,
-            },
-            asset.bytes,
-        ));
-    }
-
-    let asset_index = canonical_json(&AssetIndex {
-        assets: asset_entries
-            .iter()
-            .map(|(descriptor, _)| AssetDescriptor {
-                content_hash: descriptor.content_hash.clone(),
-                content_type: descriptor.content_type.clone(),
-                byte_length: descriptor.byte_length,
-                path: descriptor.path.clone(),
-            })
-            .collect(),
-    })?;
-
-    let manifest = canonical_json(&Manifest {
-        format: DRAW_FORMAT.to_owned(),
-        version: DRAW_VERSION,
-        created_at: input.created_at.to_owned(),
-        saved_at: input.saved_at.to_owned(),
-        document: descriptor(DOCUMENT_PATH, &document)?,
-        assets_index: descriptor(
-            ASSET_INDEX_PATH,
-            &asset_index,
-        )?,
-        application: descriptor(
-            APPLICATION_METADATA_PATH,
-            &application,
-        )?,
-    })?;
-
-    let expected_entries = asset_entries
-        .len()
-        .checked_add(4)
-        .ok_or_else(|| corrupted("entry count overflow"))?;
-
-    if expected_entries > MAX_ENTRY_COUNT {
-        return Err(corrupted(
-            "document contains too many ZIP entries",
-        ));
-    }
-
-    let cursor = Cursor::new(Vec::new());
-    let mut writer = ZipWriter::new(cursor);
-
-    write_zip_entry(
-        &mut writer,
-        MANIFEST_PATH,
-        &manifest,
-    )?;
-    write_zip_entry(
-        &mut writer,
-        DOCUMENT_PATH,
-        &document,
-    )?;
-    write_zip_entry(
-        &mut writer,
-        ASSET_INDEX_PATH,
-        &asset_index,
-    )?;
-    write_zip_entry(
-        &mut writer,
-        APPLICATION_METADATA_PATH,
-        &application,
-    )?;
-
-    for (asset, bytes) in asset_entries {
-        write_zip_entry(&mut writer, &asset.path, bytes)?;
-    }
-
-    let bytes = writer
-        .finish()
-        .map_err(zip_error)?
-        .into_inner();
-
-    if bytes.len() > MAX_CONTAINER_BYTES {
-        return Err(corrupted(
-            "encoded container exceeds byte budget",
-        ));
-    }
-
-    Ok(bytes)
-}
-
-pub fn decode_draw_document_v2(
-    bytes: &[u8],
-) -> Result<DecodedDrawDocumentV2> {
-    if bytes.len() > MAX_CONTAINER_BYTES {
-        return Err(corrupted(
-            "container exceeds byte budget",
-        ));
-    }
-
-    let cursor = Cursor::new(bytes);
-    let mut archive =
-        ZipArchive::new(cursor).map_err(zip_error)?;
-
-    if archive.len() > MAX_ENTRY_COUNT {
-        return Err(corrupted(
-            "container has too many ZIP entries",
-        ));
-    }
-
-    let mut entries = BTreeMap::<String, Vec<u8>>::new();
-    let mut total_uncompressed = 0_u64;
-
-    for index in 0..archive.len() {
-        let mut entry =
-            archive.by_index(index).map_err(zip_error)?;
-
-        if entry.is_dir() {
-            return Err(corrupted(
-                "directory ZIP entries are not allowed",
-            ));
-        }
-
-        let path = entry
-            .enclosed_name()
-            .ok_or_else(|| {
-                corrupted("ZIP entry has an unsafe path")
-            })?
-            .to_str()
-            .ok_or_else(|| {
-                corrupted("ZIP entry path is not UTF-8")
-            })?
-            .to_owned();
-
-        validate_entry_path(&path)?;
-
-        if entries.contains_key(&path) {
-            return Err(corrupted(
-                "container has a duplicate ZIP entry",
-            ));
-        }
-
-        let uncompressed = entry.size();
-        let compressed = entry.compressed_size();
-
-        if uncompressed > MAX_ENTRY_BYTES {
-            return Err(corrupted(
-                "ZIP entry exceeds byte budget",
-            ));
-        }
-
-        total_uncompressed = total_uncompressed
-            .checked_add(uncompressed)
-            .ok_or_else(|| {
-                corrupted("uncompressed size overflow")
-            })?;
-
-        if total_uncompressed
-            > MAX_TOTAL_UNCOMPRESSED_BYTES
-        {
-            return Err(corrupted(
-                "container exceeds total uncompressed budget",
-            ));
-        }
-
-        if uncompressed > 0 {
-            if compressed == 0 {
-                return Err(corrupted(
-                    "ZIP entry has an invalid compressed size",
-                ));
-            }
-
-            let ratio = uncompressed
-                .checked_div(compressed)
-                .unwrap_or(u64::MAX);
-
-            if ratio > MAX_COMPRESSION_RATIO {
-                return Err(corrupted(
-                    "ZIP entry exceeds compression-ratio limit",
-                ));
-            }
-        }
-
-        let capacity = usize::try_from(uncompressed)
-            .map_err(|_| {
-                corrupted("ZIP entry size cannot be represented")
-            })?;
-
-        let mut content = Vec::with_capacity(capacity);
-
-        entry
-            .read_to_end(&mut content)
-            .map_err(Error::from)?;
-
-        if content.len() as u64 != uncompressed {
-            return Err(corrupted(
-                "ZIP entry length changed during extraction",
-            ));
-        }
-
-        entries.insert(path, content);
-    }
-
-    let manifest_bytes =
-        require_entry(&entries, MANIFEST_PATH)?;
-
-    let manifest: Manifest =
-        parse_json(manifest_bytes, "manifest")?;
-
-    if manifest.format != DRAW_FORMAT {
-        return Err(corrupted(
-            "manifest has an unsupported format",
-        ));
-    }
-
-    if manifest.version != DRAW_VERSION {
-        return Err(corrupted(
-            "manifest has an unsupported version",
-        ));
-    }
-
-    validate_timestamp(&manifest.created_at, "createdAt")?;
-    validate_timestamp(&manifest.saved_at, "savedAt")?;
-
-    validate_fixed_descriptor(
-        &manifest.document,
-        DOCUMENT_PATH,
-        &entries,
-    )?;
-    validate_fixed_descriptor(
-        &manifest.assets_index,
-        ASSET_INDEX_PATH,
-        &entries,
-    )?;
-    validate_fixed_descriptor(
-        &manifest.application,
-        APPLICATION_METADATA_PATH,
-        &entries,
-    )?;
-
-    let document_bytes =
-        require_entry(&entries, DOCUMENT_PATH)?;
-    let application_bytes = require_entry(
-        &entries,
-        APPLICATION_METADATA_PATH,
-    )?;
-    let asset_index_bytes =
-        require_entry(&entries, ASSET_INDEX_PATH)?;
-
-    let document = parse_object_json(
-        document_bytes,
-        "document",
-    )?;
-    let application = parse_object_json(
-        application_bytes,
-        "application metadata",
-    )?;
-
-    let asset_index: AssetIndex =
-        parse_json(asset_index_bytes, "asset index")?;
-
-    let mut expected_paths = BTreeSet::from([
-        MANIFEST_PATH.to_owned(),
-        DOCUMENT_PATH.to_owned(),
-        ASSET_INDEX_PATH.to_owned(),
-        APPLICATION_METADATA_PATH.to_owned(),
-    ]);
-
-    let mut decoded_assets = Vec::new();
-    let mut previous_hash: Option<&str> = None;
-
-    for asset in &asset_index.assets {
-        validate_sha256(&asset.content_hash)?;
-        validate_content_type(&asset.content_type)?;
-
-        if previous_hash == Some(asset.content_hash.as_str()) {
-            return Err(corrupted(
-                "asset index contains a duplicate hash",
-            ));
-        }
-
-        if previous_hash.is_some_and(|previous| {
-            previous > asset.content_hash.as_str()
-        }) {
-            return Err(corrupted(
-                "asset index is not sorted by content hash",
-            ));
-        }
-
-        previous_hash = Some(&asset.content_hash);
-
-        let expected_path =
-            format!("assets/{}", asset.content_hash);
-
-        if asset.path != expected_path {
-            return Err(corrupted(
-                "asset index has a non-canonical path",
-            ));
-        }
-
-        if !expected_paths.insert(asset.path.clone()) {
-            return Err(corrupted(
-                "asset index contains a duplicate path",
-            ));
-        }
-
-        let content = require_entry(&entries, &asset.path)?;
-
-        if content.len() as u64 != asset.byte_length {
-            return Err(corrupted(
-                "asset length does not match its index",
-            ));
-        }
-
-        if sha256(content) != asset.content_hash {
-            return Err(corrupted(
-                "asset digest does not match its index",
-            ));
-        }
-
-        decoded_assets.push(DrawAssetOutput {
-            content_hash: asset.content_hash.clone(),
-            content_type: asset.content_type.clone(),
-            bytes: content.clone(),
-        });
-    }
-
-    let actual_paths =
-        entries.keys().cloned().collect::<BTreeSet<_>>();
-
-    if actual_paths != expected_paths {
-        return Err(corrupted(
-            "container has missing or unknown ZIP entries",
-        ));
-    }
-
-    Ok(DecodedDrawDocumentV2 {
-        created_at: manifest.created_at,
-        saved_at: manifest.saved_at,
-        document,
-        application,
-        assets: decoded_assets,
-    })
-}
-
-fn write_zip_entry<W>(
-    writer: &mut ZipWriter<W>,
-    path: &str,
-    bytes: &[u8],
-) -> Result<()>
-where
-    W: Write + std::io::Seek,
-{
-    validate_entry_path(path)?;
-    ensure_entry_size(bytes.len(), path)?;
-
-    let options = SimpleFileOptions::default()
-        .compression_method(CompressionMethod::Deflated)
-        .unix_permissions(0o600);
-
-    writer
-        .start_file(path, options)
-        .map_err(zip_error)?;
-
-    writer.write_all(bytes)?;
-
-    Ok(())
-}
-
-fn canonical_object_json(
-    bytes: &[u8],
-    description: &str,
-) -> Result<Vec<u8>> {
-    let value = parse_object_json(bytes, description)?;
-    canonical_json(&value)
-}
-
-fn parse_object_json(
-    bytes: &[u8],
-    description: &str,
-) -> Result<Value> {
-    let value: Value = parse_json(bytes, description)?;
-
-    if !value.is_object() {
-        return Err(corrupted(&format!(
-            "{description} root must be an object"
-        )));
-    }
-
-    Ok(value)
-}
-
-fn parse_json<T>(
-    bytes: &[u8],
-    description: &str,
-) -> Result<T>
-where
-    T: for<'de> Deserialize<'de>,
-{
-    serde_json::from_slice(bytes).map_err(|error| {
-        corrupted(&format!(
-            "{description} is invalid JSON: {error}"
-        ))
-    })
-}
-
-fn canonical_json<T>(value: &T) -> Result<Vec<u8>>
-where
-    T: Serialize,
-{
-    serde_json::to_vec(value).map_err(|error| {
-        corrupted(&format!(
-            "JSON serialization failed: {error}"
-        ))
-    })
-}
-
-fn descriptor(
-    path: &str,
-    bytes: &[u8],
-) -> Result<EntryDescriptor> {
-    Ok(EntryDescriptor {
-        path: path.to_owned(),
-        byte_length: to_u64(
-            bytes.len(),
-            "entry length",
-        )?,
-        sha256: sha256(bytes),
-    })
-}
-
-fn validate_fixed_descriptor(
-    descriptor: &EntryDescriptor,
-    expected_path: &str,
-    entries: &BTreeMap<String, Vec<u8>>,
-) -> Result<()> {
-    if descriptor.path != expected_path {
-        return Err(corrupted(
-            "manifest contains a non-canonical entry path",
-        ));
-    }
-
-    validate_sha256(&descriptor.sha256)?;
-
-    let bytes = require_entry(entries, expected_path)?;
-
-    if bytes.len() as u64 != descriptor.byte_length {
-        return Err(corrupted(
-            "manifest entry length does not match ZIP data",
-        ));
-    }
-
-    if sha256(bytes) != descriptor.sha256 {
-        return Err(corrupted(
-            "manifest entry digest does not match ZIP data",
-        ));
-    }
-
-    Ok(())
-}
-
-fn require_entry<'a>(
-    entries: &'a BTreeMap<String, Vec<u8>>,
-    path: &str,
-) -> Result<&'a [u8]> {
-    entries
-        .get(path)
-        .map(Vec::as_slice)
-        .ok_or_else(|| {
-            corrupted(&format!(
-                "required ZIP entry is missing: {path}"
-            ))
-        })
-}
-
-fn validate_entry_path(path: &str) -> Result<()> {
-    if path.is_empty()
-        || path.starts_with('/')
-        || path.starts_with('\\')
-        || path.contains('\\')
-        || path.split('/').any(|component| {
-            component.is_empty()
-                || component == "."
-                || component == ".."
-        })
-        || !path.is_ascii()
-    {
-        return Err(corrupted(
-            "ZIP entry path is not canonical",
-        ));
-    }
-
-    Ok(())
-}
-
-fn validate_timestamp(
-    value: &str,
-    field: &str,
-) -> Result<()> {
-    if value.trim().is_empty() || value.len() > 64 {
-        return Err(corrupted(&format!(
-            "{field} is missing or invalid"
-        )));
-    }
-
-    Ok(())
-}
-
-fn validate_sha256(value: &str) -> Result<()> {
-    if value.len() != 64
-        || !value.bytes().all(|byte| {
-            byte.is_ascii_digit()
-                || matches!(byte, b'a'..=b'f')
-        })
-    {
-        return Err(corrupted(
-            "content hash is not canonical SHA-256",
-        ));
-    }
-
-    Ok(())
-}
-
-fn validate_content_type(value: &str) -> Result<()> {
-    match value {
-        "image/png"
-        | "image/jpeg"
-        | "image/webp"
-        | "image/gif"
-        | "application/pdf"
-        | "video/mp4"
-        | "video/webm"
-        | "audio/mpeg"
-        | "audio/mp4"
-        | "audio/ogg"
-        | "audio/wav" => Ok(()),
-        _ => Err(corrupted(
-            "asset has an unsupported content type",
-        )),
-    }
-}
-
-fn ensure_entry_size(
-    size: usize,
-    description: &str,
-) -> Result<()> {
-    if size as u64 > MAX_ENTRY_BYTES {
-        return Err(corrupted(&format!(
-            "{description} exceeds entry byte budget"
-        )));
-    }
-
-    Ok(())
-}
-
-fn to_u64(value: usize, description: &str) -> Result<u64> {
-    u64::try_from(value).map_err(|_| {
-        corrupted(&format!(
-            "{description} cannot be represented"
-        ))
-    })
-}
-
-fn sha256(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
-}
-
-fn corrupted(message: &str) -> Error {
-    Error::CorruptedContainer(message.to_owned())
-}
-
-fn zip_error(error: zip::result::ZipError) -> Error {
-    corrupted(&format!("invalid ZIP container: {error}"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn asset<'a>(
-        bytes: &'a [u8],
-    ) -> (String, DrawAssetInput<'a>) {
-        let hash = sha256(bytes);
-
-        (
-            hash.clone(),
-            DrawAssetInput {
-                content_hash: Box::leak(
-                    hash.into_boxed_str(),
-                ),
-                content_type: "image/png",
-                bytes,
-            },
-        )
-    }
-
-    fn encode_fixture() -> Vec<u8> {
-        let (_, first) = asset(&[1, 2, 3]);
-        let (_, second) = asset(&[4, 5, 6]);
-
-        encode_draw_document_v2(DrawDocumentV2Input {
-            created_at: "2026-07-23T00:00:00.000Z",
-            saved_at: "2026-07-23T01:00:00.000Z",
-            document_json: br#"{"schema":{},"store":{}}"#,
-            application_json: br#"{"title":"fixture"}"#,
-            assets: &[second, first],
-        })
-        .expect("v2 fixture should encode")
-    }
-
-    #[test]
-    fn round_trips_document_and_assets() {
-        let encoded = encode_fixture();
-
-        let decoded = decode_draw_document_v2(&encoded)
-            .expect("v2 fixture should decode");
-
-        assert_eq!(
-            decoded.document,
-            serde_json::json!({
-                "schema": {},
-                "store": {}
-            }),
-        );
-
-        assert_eq!(
-            decoded.application,
-            serde_json::json!({
-                "title": "fixture"
-            }),
-        );
-
-        assert_eq!(decoded.assets.len(), 2);
-        assert!(decoded.assets.windows(2).all(|pair| {
-            pair[0].content_hash < pair[1].content_hash
-        }));
-    }
-
-    #[test]
-    fn rejects_asset_with_false_digest() {
-        let result =
-            encode_draw_document_v2(DrawDocumentV2Input {
-                created_at: "2026-07-23T00:00:00.000Z",
-                saved_at: "2026-07-23T01:00:00.000Z",
-                document_json: br#"{"store":{}}"#,
-                application_json: br#"{}"#,
-                assets: &[DrawAssetInput {
-                    content_hash:
-                        "0".repeat(64).leak(),
-                    content_type: "image/png",
-                    bytes: &[1, 2, 3],
-                }],
-            });
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn rejects_raw_or_non_object_document_json() {
-        for document in [
-            b"not-json".as_slice(),
-            b"[]".as_slice(),
-            b"null".as_slice(),
-        ] {
-            let result =
-                encode_draw_document_v2(DrawDocumentV2Input {
-                    created_at:
-                        "2026-07-23T00:00:00.000Z",
-                    saved_at:
-                        "2026-07-23T01:00:00.000Z",
-                    document_json: document,
-                    application_json: br#"{}"#,
-                    assets: &[],
-                });
-
-            assert!(result.is_err());
-        }
-    }
-
-    #[test]
-    fn rejects_duplicate_zip_entry() {
-        let cursor = Cursor::new(Vec::new());
-        let mut writer = ZipWriter::new(cursor);
-
-        write_zip_entry(
-            &mut writer,
-            MANIFEST_PATH,
-            br#"{}"#,
-        )
-        .expect("first entry should write");
-
-        write_zip_entry(
-            &mut writer,
-            MANIFEST_PATH,
-            br#"{}"#,
-        )
-        .expect("ZIP permits duplicate names");
-
-        let bytes = writer
-            .finish()
-            .expect("ZIP should finish")
-            .into_inner();
-
-        assert!(decode_draw_document_v2(&bytes).is_err());
-    }
-
-    #[test]
-    fn rejects_unknown_zip_entry() {
-        let encoded = encode_fixture();
-        let cursor = Cursor::new(encoded);
-
-        let mut source =
-            ZipArchive::new(cursor).expect("fixture ZIP");
-
-        let output = Cursor::new(Vec::new());
-        let mut writer = ZipWriter::new(output);
-
-        for index in 0..source.len() {
-            let mut entry =
-                source.by_index(index).expect("entry");
-
-            let mut bytes = Vec::new();
-
-            entry
-                .read_to_end(&mut bytes)
-                .expect("entry bytes");
-
-            write_zip_entry(
-                &mut writer,
-                entry.name(),
-                &bytes,
-            )
-            .expect("copied entry");
-        }
-
-        write_zip_entry(
-            &mut writer,
-            "unknown.bin",
-            b"unexpected",
-        )
-        .expect("unknown entry");
-
-        let bytes = writer
-            .finish()
-            .expect("ZIP should finish")
-            .into_inner();
-
-        assert!(decode_draw_document_v2(&bytes).is_err());
-    }
-
-    #[test]
-    fn rejects_future_manifest_version() {
-        let manifest = canonical_json(&Manifest {
-            format: DRAW_FORMAT.to_owned(),
-            version: DRAW_VERSION + 1,
-            created_at:
-                "2026-07-23T00:00:00.000Z".to_owned(),
-            saved_at:
-                "2026-07-23T01:00:00.000Z".to_owned(),
-            document: descriptor(
-                DOCUMENT_PATH,
-                br#"{}"#,
-            )
-            .expect("descriptor"),
-            assets_index: descriptor(
-                ASSET_INDEX_PATH,
-                br#"{"assets":[]}"#,
-            )
-            .expect("descriptor"),
-            application: descriptor(
-                APPLICATION_METADATA_PATH,
-                br#"{}"#,
-            )
-            .expect("descriptor"),
-        })
-        .expect("manifest");
-
-        let cursor = Cursor::new(Vec::new());
-        let mut writer = ZipWriter::new(cursor);
-
-        write_zip_entry(
-            &mut writer,
-            MANIFEST_PATH,
-            &manifest,
-        )
-        .expect("manifest");
-        write_zip_entry(
-            &mut writer,
-            DOCUMENT_PATH,
-            br#"{}"#,
-        )
-        .expect("document");
-        write_zip_entry(
-            &mut writer,
-            ASSET_INDEX_PATH,
-            br#"{"assets":[]}"#,
-        )
-        .expect("index");
-        write_zip_entry(
-            &mut writer,
-            APPLICATION_METADATA_PATH,
-            br#"{}"#,
-        )
-        .expect("metadata");
-
-        let bytes = writer
-            .finish()
-            .expect("ZIP should finish")
-            .into_inner();
-
-        assert!(decode_draw_document_v2(&bytes).is_err());
-    }
+function extensionOf(file) {
+  const index = file.lastIndexOf('.')
+  return index >= 0 ? file.slice(index) : ''
 }
 `
 
-function validateWorkspaceCargo(source) {
-  if (
-    !source.includes(
-      'zip = { version = "4.0.0"',
+  writeTextIfChanged(guardFile, guardSource)
+
+  const rootPackageFile = join(ROOT, 'package.json')
+  const packageJson = JSON.parse(readText(rootPackageFile))
+  const currentScript = packageJson.scripts?.['test:architecture']
+
+  if (typeof currentScript !== 'string') {
+    throw new Error('根 package.json 缺少 scripts.test:architecture')
+  }
+
+  const guardCommand =
+    'node tests/architecture/check-icon-library.mjs'
+
+  if (!currentScript.includes(guardCommand)) {
+    packageJson.scripts['test:architecture'] =
+      `${currentScript} && ${guardCommand}`
+
+    writeTextIfChanged(
+      rootPackageFile,
+      `${JSON.stringify(packageJson, null, 2)}\n`,
     )
-  ) {
+  }
+}
+
+async function loadMynaExports() {
+  const candidatePackageDirectories = [
+    join(ROOT, 'foundations', 'design-system'),
+    join(ROOT, 'features', 'workspace'),
+    join(ROOT, 'apps', 'desktop'),
+  ]
+
+  let resolvedEntry = null
+
+  for (const packageDirectory of candidatePackageDirectories) {
+    const packageJsonFile = join(packageDirectory, 'package.json')
+
+    if (!existsSync(packageJsonFile)) {
+      continue
+    }
+
+    try {
+      const requireFromPackage = createRequire(packageJsonFile)
+      resolvedEntry = requireFromPackage.resolve(TARGET_PACKAGE)
+      break
+    } catch {
+      // 尝试下一个 workspace package。
+    }
+  }
+
+  if (!resolvedEntry) {
     throw new Error(
-      'Workspace Cargo.toml does not contain the audited ZIP dependency.',
+      `安装后仍无法解析 ${TARGET_PACKAGE}，请检查 pnpm install 输出。`,
     )
   }
-}
 
-function validateLegacyBoundary(source) {
-  for (const fragment of [
-    'const CURRENT_DRAW_VERSION: u64 = 1;',
-    'pub fn canonicalize_draw_document',
-  ]) {
-    if (!source.includes(fragment)) {
-      throw new Error(
-        `Expected v1 reader prerequisite is missing: ${fragment}`,
-      )
-    }
-  }
-}
+  const module = await import(pathToFileURL(resolvedEntry).href)
 
-function validateFinal(
-  cargo,
-  lib,
-  codec,
-) {
-  for (const fragment of [
-    'serde.workspace = true',
-    'zip.workspace = true',
-  ]) {
-    if (!cargo.includes(fragment)) {
-      throw new Error(
-        `Native persistence dependency is missing: ${fragment}`,
-      )
-    }
-  }
-
-  for (const fragment of [
-    'mod document_codec_v2;',
-    'decode_draw_document_v2',
-    'encode_draw_document_v2',
-  ]) {
-    if (!lib.includes(fragment)) {
-      throw new Error(
-        `Native persistence export is missing: ${fragment}`,
-      )
-    }
-  }
-
-  for (const fragment of [
-    'const DRAW_VERSION: u32 = 2;',
-    'const MANIFEST_PATH: &str = "manifest.json";',
-    'const ASSET_INDEX_PATH: &str = "assets/index.json";',
-    'pub fn encode_draw_document_v2',
-    'pub fn decode_draw_document_v2',
-    '.enclosed_name()',
-    'entries.contains_key(&path)',
-    'MAX_COMPRESSION_RATIO',
-    'actual_paths != expected_paths',
-    'sha256(content) != asset.content_hash',
-  ]) {
-    if (!codec.includes(fragment)) {
-      throw new Error(
-        `v2 codec is missing: ${fragment}`,
-      )
-    }
-  }
-
-  for (const forbidden of [
-    'PathBuf',
-    'std::fs::',
-    'unsafe {',
-    'TLEditorSnapshot',
-    'TLRecord',
-    'session.json',
-  ]) {
-    if (codec.includes(forbidden)) {
-      throw new Error(
-        `v2 codec contains forbidden responsibility: ${forbidden}`,
-      )
-    }
-  }
-}
-
-async function restoreFiles(
-  originals,
-  codecOriginallyExisted,
-) {
-  const restoreResults = await Promise.allSettled(
-    [...originals].map(([path, content]) =>
-      writeFile(path, content, 'utf8'),
+  return new Set(
+    Object.keys(module).filter(
+      (name) =>
+        name !== 'default' &&
+        /^[A-Z][A-Za-z0-9]*$/.test(name),
     ),
   )
+}
 
-  if (!codecOriginallyExisted) {
-    await rm(paths.codec, { force: true })
+function migrateSourceImports(mynaExports) {
+  const sourceFiles = findFiles(
+    ROOT,
+    (file) => SOURCE_EXTENSIONS.has(extensionOf(file)),
+  )
+
+  const unresolved = []
+
+  for (const file of sourceFiles) {
+    let content = readText(file)
+
+    if (!content.includes(LEGACY_PACKAGE)) {
+      continue
+    }
+
+    const originalContent = content
+
+    const namedImportPattern =
+      /import\s+(type\s+)?\{([\s\S]*?)\}\s+from\s+['"]lucide-react['"];?/g
+
+    content = content.replace(
+      namedImportPattern,
+      (fullMatch, typeKeyword, rawSpecifiers) => {
+        if (typeKeyword) {
+          throw new Error(
+            `${relative(ROOT, file)} 使用了 lucide-react 类型导入；` +
+              '请改为最小 React ComponentType 契约。',
+          )
+        }
+
+        const parsedSpecifiers =
+          parseNamedImportSpecifiers(rawSpecifiers)
+
+        const replacements = []
+        const targetNames = []
+
+        for (const specifier of parsedSpecifiers) {
+          const resolvedName = resolveMynaIconName(
+            specifier.imported,
+            mynaExports,
+          )
+
+          if (!resolvedName) {
+            unresolved.push({
+              file: relative(ROOT, file),
+              icon: specifier.imported,
+              suggestions: findClosestExports(
+                specifier.imported,
+                mynaExports,
+              ),
+            })
+
+            continue
+          }
+
+          targetNames.push(resolvedName)
+
+          if (specifier.local !== resolvedName) {
+            replacements.push({
+              from: specifier.local,
+              to: resolvedName,
+            })
+          }
+        }
+
+        if (
+          parsedSpecifiers.some(
+            (specifier) =>
+              !resolveMynaIconName(
+                specifier.imported,
+                mynaExports,
+              ),
+          )
+        ) {
+          return fullMatch
+        }
+
+        for (const replacement of replacements) {
+          content = replaceIdentifier(
+            content,
+            replacement.from,
+            replacement.to,
+          )
+        }
+
+        const uniqueTargetNames = [...new Set(targetNames)].sort()
+
+        if (uniqueTargetNames.length <= 3) {
+          return `import { ${uniqueTargetNames.join(', ')} } from '${TARGET_PACKAGE}'`
+        }
+
+        return [
+          'import {',
+          ...uniqueTargetNames.map((name) => `  ${name},`),
+          `} from '${TARGET_PACKAGE}'`,
+        ].join('\n')
+      },
+    )
+
+    if (content !== originalContent) {
+      writeTextIfChanged(file, content)
+    }
   }
 
-  if (
-    restoreResults.some(
-      (result) => result.status === 'rejected',
+  if (unresolved.length > 0) {
+    const lines = [
+      '以下 Lucide 图标没有可靠的 Myna UI 对应项：',
+      '',
+    ]
+
+    for (const item of unresolved) {
+      lines.push(
+        `- ${item.file}: ${item.icon}`,
+        `  候选：${item.suggestions.join(', ') || '无'}`,
+      )
+    }
+
+    lines.push(
+      '',
+      '脚本已拒绝猜测，因此没有创建兼容层。',
+      '请把对应关系加入 SEMANTIC_ICON_CANDIDATES 后重新执行。',
     )
+
+    throw new Error(lines.join('\n'))
+  }
+}
+
+function parseNamedImportSpecifiers(rawSpecifiers) {
+  return rawSpecifiers
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => {
+      const match =
+        /^([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/.exec(
+          value,
+        )
+
+      if (!match) {
+        throw new Error(
+          `无法解析图标 import specifier：${value}`,
+        )
+      }
+
+      return {
+        imported: match[1],
+        local: match[2] ?? match[1],
+      }
+    })
+}
+
+function resolveMynaIconName(legacyName, mynaExports) {
+  const directCandidates = [
+    legacyName,
+    stripIconSuffix(legacyName),
+    ...(SEMANTIC_ICON_CANDIDATES[legacyName] ?? []),
+  ]
+
+  for (const candidate of directCandidates) {
+    if (mynaExports.has(candidate)) {
+      return candidate
+    }
+  }
+
+  const normalizedLegacyName = normalizeIconName(legacyName)
+  const normalizedMatches = [...mynaExports].filter(
+    (candidate) =>
+      normalizeIconName(candidate) === normalizedLegacyName,
+  )
+
+  if (normalizedMatches.length === 1) {
+    return normalizedMatches[0]
+  }
+
+  const ranked = rankExports(legacyName, mynaExports)
+
+  if (ranked.length === 0) {
+    return null
+  }
+
+  const best = ranked[0]
+  const second = ranked[1]
+
+  /**
+   * 只有高置信度且与第二候选拉开差距时才自动采用。
+   */
+  if (
+    best.score >= 0.82 &&
+    (!second || best.score - second.score >= 0.18)
   ) {
+    return best.name
+  }
+
+  return null
+}
+
+function stripIconSuffix(name) {
+  return name.endsWith('Icon') ? name.slice(0, -4) : name
+}
+
+function normalizeIconName(name) {
+  return splitIdentifier(stripIconSuffix(name))
+    .filter(
+      (token) =>
+        !['icon', 'outline', 'regular'].includes(token),
+    )
+    .sort()
+    .join('')
+}
+
+function findClosestExports(legacyName, mynaExports) {
+  return rankExports(legacyName, mynaExports)
+    .slice(0, 8)
+    .map(({ name }) => name)
+}
+
+function rankExports(legacyName, mynaExports) {
+  const legacyTokens = new Set(
+    splitIdentifier(stripIconSuffix(legacyName)),
+  )
+
+  return [...mynaExports]
+    .map((name) => ({
+      name,
+      score: tokenSimilarity(
+        legacyTokens,
+        new Set(splitIdentifier(name)),
+      ),
+    }))
+    .filter(({ score }) => score > 0)
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        left.name.localeCompare(right.name),
+    )
+}
+
+function splitIdentifier(value) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/[^A-Za-z0-9]+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+}
+
+function tokenSimilarity(left, right) {
+  const intersection = [...left].filter((token) =>
+    right.has(token),
+  ).length
+
+  const union = new Set([...left, ...right]).size
+
+  return union === 0 ? 0 : intersection / union
+}
+
+function replaceIdentifier(content, from, to) {
+  if (from === to) {
+    return content
+  }
+
+  const pattern = new RegExp(
+    `(?<![\\w$])${escapeRegExp(from)}(?![\\w$])`,
+    'g',
+  )
+
+  return content.replace(pattern, to)
+}
+
+function assertNoLegacySourceImports() {
+  const sourceFiles = findFiles(
+    ROOT,
+    (file) => SOURCE_EXTENSIONS.has(extensionOf(file)),
+  )
+
+  const violations = sourceFiles.filter((file) =>
+    readText(file).includes(LEGACY_PACKAGE),
+  )
+
+  if (violations.length > 0) {
     throw new Error(
       [
-        'Rollback failed.',
-        'Inspect these files immediately:',
-        ...originals.keys(),
+        `仍然存在 ${LEGACY_PACKAGE} 引用：`,
+        ...violations.map(
+          (file) => `- ${relative(ROOT, file)}`,
+        ),
       ].join('\n'),
     )
   }
 }
 
-async function main() {
-  for (const path of [
-    paths.packageJson,
-    paths.cargoToml,
-    paths.lib,
-    paths.legacyCodec,
-    paths.workspaceCargo,
-  ]) {
-    if (!(await exists(path))) {
-      throw new Error(
-        `Required file was not found: ${path}`,
-      )
+function assertNoLegacyDirectDependencies() {
+  const packageJsonFiles = findFiles(
+    ROOT,
+    (file) => file.endsWith('package.json'),
+  )
+
+  const violations = []
+
+  for (const file of packageJsonFiles) {
+    const json = JSON.parse(readText(file))
+
+    for (const sectionName of [
+      'dependencies',
+      'devDependencies',
+      'optionalDependencies',
+      'peerDependencies',
+    ]) {
+      if (json[sectionName]?.[LEGACY_PACKAGE]) {
+        violations.push(
+          `${relative(ROOT, file)} -> ${sectionName}`,
+        )
+      }
     }
   }
 
-  const rootPackage = JSON.parse(
-    (
-      await readFile(paths.packageJson, 'utf8')
-    ).replace(/^\uFEFF/, ''),
-  )
-
-  if (rootPackage.name !== 'hybrid-canvas') {
+  if (violations.length > 0) {
     throw new Error(
-      `Unexpected package name: ${String(
-        rootPackage.name,
-      )}`,
+      [
+        `仍然存在 ${LEGACY_PACKAGE} 直接依赖：`,
+        ...violations.map((value) => `- ${value}`),
+      ].join('\n'),
     )
   }
-
-  const [
-    cargoOriginal,
-    libOriginal,
-    legacyCodec,
-    workspaceCargo,
-  ] = await Promise.all([
-    readFile(paths.cargoToml, 'utf8'),
-    readFile(paths.lib, 'utf8'),
-    readFile(paths.legacyCodec, 'utf8'),
-    readFile(paths.workspaceCargo, 'utf8'),
-  ])
-
-  validateWorkspaceCargo(workspaceCargo)
-  validateLegacyBoundary(legacyCodec)
-
-  const codecOriginallyExisted =
-    await exists(paths.codec)
-
-  let codecOriginal = null
-
-  if (codecOriginallyExisted) {
-    codecOriginal = await readFile(
-      paths.codec,
-      'utf8',
-    )
-
-    if (codecOriginal !== codecSource) {
-      throw new Error(
-        'document_codec_v2.rs already exists with different content.',
-      )
-    }
-  }
-
-  const cargoFinal = updateCargoToml(cargoOriginal)
-  const libFinal = updateLib(libOriginal)
-
-  validateFinal(
-    cargoFinal,
-    libFinal,
-    codecSource,
-  )
-
-  const originals = new Map([
-    [paths.cargoToml, cargoOriginal],
-    [paths.lib, libOriginal],
-  ])
-
-  if (codecOriginallyExisted) {
-    originals.set(paths.codec, codecOriginal)
-  }
-
-  const outputs = new Map([
-    [paths.cargoToml, cargoFinal],
-    [paths.lib, libFinal],
-    [paths.codec, codecSource],
-  ])
-
-  const changed = [...outputs].filter(
-    ([path, content]) =>
-      path === paths.codec
-        ? !codecOriginallyExisted ||
-          codecOriginal !== content
-        : originals.get(path) !== content,
-  )
-
-  if (changed.length === 0) {
-    console.log(
-      'P0-B.1 strict v2 ZIP DocumentCodec is already applied.',
-    )
-    return
-  }
-
-  console.log('P0-B.1 will update:')
-
-  for (const [path] of changed) {
-    console.log(`- ${path.slice(root.length + 1)}`)
-  }
-
-  if (check) {
-    console.log('')
-    console.log('It will:')
-    console.log(
-      '- add the strict v2 ZIP encoder and decoder;',
-    )
-    console.log(
-      '- store assets under canonical SHA-256 paths;',
-    )
-    console.log(
-      '- reject unsafe, duplicate and unknown ZIP entries;',
-    )
-    console.log(
-      '- enforce entry, total-size and compression-ratio limits;',
-    )
-    console.log(
-      '- verify every manifest and asset digest;',
-    )
-    console.log(
-      '- keep tldraw record interpretation outside Native;',
-    )
-    console.log('')
-    console.log(
-      'Run again with --apply to write the changes.',
-    )
-    return
-  }
-
-  try {
-    await mkdir(dirname(paths.codec), {
-      recursive: true,
-    })
-
-    for (const [path, content] of changed) {
-      await writeFile(path, content, 'utf8')
-    }
-  } catch (error) {
-    console.error(
-      '\nApply failed. Restoring original files...',
-    )
-
-    await restoreFiles(
-      originals,
-      codecOriginallyExisted,
-    )
-
-    throw error
-  }
-
-  console.log('')
-  console.log(
-    'Applied P0-B.1 strict v2 ZIP DocumentCodec.',
-  )
-  console.log('')
-  console.log('Required verification:')
-  console.log('  cargo fmt --all')
-  console.log('  cargo check --workspace --all-targets')
-  console.log('  cargo test --workspace --all-targets')
-  console.log(
-    '  cargo clippy --workspace --all-targets -- -D warnings',
-  )
-  console.log('  pnpm format')
-  console.log('  pnpm lint')
-  console.log('  pnpm typecheck')
-  console.log('  pnpm test')
 }
 
-main().catch((error) => {
-  fail(
-    error instanceof Error
-      ? error.stack ?? error.message
-      : String(error),
+function formatChangedFiles() {
+  const formattable = [...changedFiles].filter((file) => {
+    const extension = extensionOf(file)
+
+    return (
+      SOURCE_EXTENSIONS.has(extension) ||
+      extension === '.json'
+    )
+  })
+
+  if (formattable.length === 0) {
+    return
+  }
+
+  console.log('\n格式化变更文件...')
+
+  run('pnpm', [
+    'exec',
+    'biome',
+    'format',
+    '--write',
+    ...formattable.map((file) => relative(ROOT, file)),
+  ])
+}
+
+function runChecks() {
+  console.log('\n运行验证...')
+
+  run('node', [
+    'tests/architecture/check-icon-library.mjs',
+  ])
+
+  run('pnpm', ['format:check'])
+  run('pnpm', ['lint'])
+  run('pnpm', ['typecheck'])
+  run('pnpm', ['test'])
+  run('pnpm', ['test:architecture'])
+  run('pnpm', ['build:desktop'])
+  run('pnpm', ['analyze:bundle:check'])
+}
+
+function run(command, args) {
+  console.log(`\n> ${command} ${args.join(' ')}`)
+
+  execFileSync(command, args, {
+    cwd: ROOT,
+    env: process.env,
+    stdio: 'inherit',
+  })
+}
+
+function findFiles(directory, predicate) {
+  const files = []
+
+  walk(directory)
+
+  return files
+
+  function walk(currentDirectory) {
+    for (const entry of readdirSync(currentDirectory)) {
+      if (IGNORED_DIRECTORIES.has(entry)) {
+        continue
+      }
+
+      const absolutePath = join(currentDirectory, entry)
+      const stats = statSync(absolutePath)
+
+      if (stats.isDirectory()) {
+        walk(absolutePath)
+        continue
+      }
+
+      if (predicate(absolutePath)) {
+        files.push(absolutePath)
+      }
+    }
+  }
+}
+
+function readText(file) {
+  return readFileSync(file, 'utf8')
+}
+
+function writeTextIfChanged(file, content) {
+  const previous = existsSync(file) ? readText(file) : null
+
+  if (previous === content) {
+    return
+  }
+
+  changedFiles.add(resolve(file))
+
+  if (DRY_RUN) {
+    console.log(`[dry-run] 修改 ${relative(ROOT, file)}`)
+    return
+  }
+
+  writeFileSync(file, content, 'utf8')
+  console.log(`修改 ${relative(ROOT, file)}`)
+}
+
+function sortObject(object) {
+  return Object.fromEntries(
+    Object.entries(object).sort(([left], [right]) =>
+      left.localeCompare(right),
+    ),
   )
-})
+}
+
+function extensionOf(file) {
+  const name = file.slice(file.lastIndexOf('/') + 1)
+  const index = name.lastIndexOf('.')
+
+  return index >= 0 ? name.slice(index) : ''
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function printChangedFiles() {
+  if (changedFiles.size === 0) {
+    console.log('没有需要修改的文件。')
+    return
+  }
+
+  console.log('\n变更文件：')
+
+  for (const file of [...changedFiles].sort()) {
+    console.log(`- ${relative(ROOT, file)}`)
+  }
+}
