@@ -190,6 +190,53 @@ describe('Canvas document native-release contract', () => {
     )
   })
 
+  it('settles an active save inside the same release transaction', async () => {
+    const harness = createHarness()
+
+    harness.persistence.open.mockResolvedValue({
+      id: 'native-document-saving',
+      displayName: 'saving.draw',
+      content: serializeDrawDocument(snapshot({ shapes: [] })),
+    })
+
+    const opened = await harness.service.open()
+
+    if (!opened) {
+      throw new Error('expected native document')
+    }
+
+    harness.ready()
+    harness.change(snapshot({ shapes: [{ id: 'shape:1' }]}))
+
+    let resolveSave!: () => void
+
+    const pendingSave = new Promise<void>((resolve) => {
+      resolveSave = resolve
+    })
+
+    harness.persistence.save.mockImplementation(() => pendingSave)
+
+    const saving = harness.service.save(opened.sessionId)
+    const releasing = harness.service.releaseCanvas(
+      opened.sessionId,
+      'discard',
+    )
+
+    expect(harness.persistence.close).not.toHaveBeenCalled()
+
+    resolveSave()
+
+    await saving
+
+    await expect(releasing).resolves.toEqual({
+      kind: 'released',
+    })
+
+    expect(harness.persistence.close).toHaveBeenCalledWith(
+      'native-document-saving',
+    )
+  })
+
   it('keeps the editor and document session alive after native release failure', async () => {
     const harness = createHarness()
 

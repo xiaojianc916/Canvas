@@ -49,10 +49,6 @@ export type CanvasReleaseResult =
   | { readonly kind: 'released' }
   | { readonly kind: 'confirmation-required' }
   | {
-      readonly kind: 'wait-for-save'
-      readonly operation: Promise<void>
-    }
-  | {
       readonly kind: 'release-failed'
       readonly failure: CanvasReleaseFailure
     }
@@ -293,11 +289,8 @@ export function createCanvasDocumentService({
       return { kind: 'not-found' }
     }
 
-    if (owned.saveOperation) {
-      return {
-        kind: 'wait-for-save',
-        operation: owned.saveOperation,
-      }
+    while (owned.saveOperation) {
+      await owned.saveOperation.catch(() => undefined)
     }
 
     const persistenceState = owned.document.getSnapshot().persistence

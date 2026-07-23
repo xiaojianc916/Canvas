@@ -181,12 +181,7 @@ export function createCanvasWorkflow(
       intent,
     })
 
-    let result = await documents.releaseCanvas(sessionId, intent)
-
-    if (result.kind === 'wait-for-save') {
-      await result.operation.catch(() => undefined)
-      result = await documents.releaseCanvas(sessionId, intent)
-    }
+    const result = await documents.releaseCanvas(sessionId, intent)
 
     applyReleaseResult(sessionId, intent, result)
   }
@@ -219,9 +214,6 @@ export function createCanvasWorkflow(
       case 'not-found':
         clearCloseState(sessionId)
         return
-
-      case 'wait-for-save':
-        throw new Error('CANVAS_RELEASE_SETTLEMENT_INCOMPLETE')
     }
   }
 
