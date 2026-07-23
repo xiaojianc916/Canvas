@@ -1,15 +1,14 @@
 #!/usr/bin/env node
 
 /**
- * P0-C.3 — Add the official Native-backed TLAssetStore adapter.
+ * P0-C.4 — Make Native TLAssetStore synchronously constructible and lazily opened.
  *
  * Corrected:
- *   - creates the missing adapters/assets directory before writing
- *   - restores all files on failure
- *   - removes only an empty directory created by this script
+ *   - validates only the public NativeTLAssetStoreSession interface
+ *   - permits sessionToken inside private OpenedNativeAssetSession
  *
  * Required base:
- *   12c839f5a61fbfd86db92b12025e48b302db02a9
+ *   2a892ab9e0e10bc8584bd063530feff19a3ab254
  *
  * Usage:
  *   node refactor.mjs --check
@@ -19,14 +18,11 @@
 
 import {
   access,
-  mkdir,
   readFile,
-  rm,
-  rmdir,
   writeFile,
 } from 'node:fs/promises'
 import { constants } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import process from 'node:process'
 
 const argv = process.argv.slice(2)
@@ -46,7 +42,7 @@ const rootArguments = argv.filter(
 
 if (unknownOptions.length > 0) {
   console.error(
-    '\nP0-C.3 TLAssetStore adapter failed:\n' +
+    '\nP0-C.4 lazy TLAssetStore refactor failed:\n' +
       `Unknown option: ${unknownOptions.join(', ')}\n`,
   )
   process.exit(1)
@@ -54,7 +50,7 @@ if (unknownOptions.length > 0) {
 
 if (rootArguments.length > 1) {
   console.error(
-    '\nP0-C.3 TLAssetStore adapter failed:\n' +
+    '\nP0-C.4 lazy TLAssetStore refactor failed:\n' +
       'Only one optional repository root is accepted.\n',
   )
   process.exit(1)
@@ -62,7 +58,7 @@ if (rootArguments.length > 1) {
 
 if (apply && check) {
   console.error(
-    '\nP0-C.3 TLAssetStore adapter failed:\n' +
+    '\nP0-C.4 lazy TLAssetStore refactor failed:\n' +
       'Use either --check or --apply, not both.\n',
   )
   process.exit(1)
@@ -70,7 +66,7 @@ if (apply && check) {
 
 if (!apply && !check) {
   console.error(
-    '\nP0-C.3 TLAssetStore adapter failed:\n' +
+    '\nP0-C.4 lazy TLAssetStore refactor failed:\n' +
       'Missing mode. Use --check or --apply.\n',
   )
   process.exit(1)
@@ -81,24 +77,19 @@ const root = resolve(rootArguments[0] ?? process.cwd())
 const paths = {
   packageJson: join(root, 'package.json'),
 
-  desktopRuntimePackage: join(
-    root,
-    'platforms/desktop-runtime/package.json',
-  ),
-
-  desktopRuntimePublicApi: join(
-    root,
-    'platforms/desktop-runtime/src/public-api.ts',
-  ),
-
-  assetAdapter: join(
+  adapter: join(
     root,
     'platforms/desktop-runtime/src/adapters/assets/native-tl-asset-store.ts',
   ),
 
-  assetProtocol: join(
+  runtimePackage: join(
     root,
-    'apps/desktop/src-tauri/src/asset_protocol.rs',
+    'platforms/desktop-runtime/package.json',
+  ),
+
+  publicApi: join(
+    root,
+    'platforms/desktop-runtime/src/public-api.ts',
   ),
 
   generatedBindings: join(
@@ -107,9 +98,7 @@ const paths = {
   ),
 }
 
-const assetAdapterDirectory = dirname(paths.assetAdapter)
-
-const assetAdapterSource = `import {
+const finalAdapterSource = `import {
   IpcInvocationError,
   isIpcError,
 } from '@hybrid-canvas/desktop-ipc'
@@ -130,9 +119,12 @@ import type {
 const ASSET_PROTOCOL_SCHEME = 'hybrid-canvas-asset'
 const ASSET_PROTOCOL_HOST = 'asset'
 
+interface OpenedNativeAssetSession {
+  readonly sessionToken: string
+}
+
 export interface NativeTLAssetStoreSession {
   readonly assets: TLAssetStore
-  readonly sessionToken: string
   readonly dispose: () => Promise<void>
 }
 
@@ -189,15 +181,6 @@ function toWebviewAssetUrl(
   sessionToken: string,
   assetToken: string,
 ): string {
-  /*
-   * Tauri maps custom protocols differently across WebViews:
-   *
-   * Windows / Android:
-   *   http://hybrid-canvas-asset.localhost/asset/<session>/<asset>
-   *
-   * macOS / Linux:
-   *   hybrid-canvas-asset://localhost/asset/<session>/<asset>
-   */
   return convertFileSrc(
     \`/asset/\${sessionToken}/\${assetToken}\`,
     ASSET_PROTOCOL_SCHEME,
@@ -218,16 +201,23 @@ async function removeUploadedAsset(
   )
 }
 
-export async function createNativeTLAssetStoreSession(): Promise<NativeTLAssetStoreSession> {
-  const opened = await invokeAssetCommand(() =>
-    commands.assetSessionOpen(),
-  )
-
-  const sessionToken = opened.sessionToken
+/**
+ * Creates the official tldraw asset store synchronously.
+ *
+ * Native state is opened by the first upload rather than during application or
+ * editor construction. This keeps createTLStore({ assets }) synchronous and
+ * avoids creating unused Native sessions.
+ */
+export function createNativeTLAssetStoreSession(): NativeTLAssetStoreSession {
   const assetTokens = new Map<TLAssetId, string>()
 
-  let disposed = false
+  let openedSessionPromise:
+    | Promise<OpenedNativeAssetSession>
+    | null = null
+
+  let operationTail: Promise<void> = Promise.resolve()
   let disposePromise: Promise<void> | null = null
+  let disposed = false
 
   function assertActive(): void {
     if (disposed) {
@@ -235,75 +225,117 @@ export async function createNativeTLAssetStoreSession(): Promise<NativeTLAssetSt
     }
   }
 
+  function requireOpenedSession(): Promise<OpenedNativeAssetSession> {
+    if (openedSessionPromise) {
+      return openedSessionPromise
+    }
+
+    openedSessionPromise = invokeAssetCommand(async () => {
+      const opened = await commands.assetSessionOpen()
+
+      return {
+        sessionToken: opened.sessionToken,
+      }
+    })
+
+    return openedSessionPromise
+  }
+
+  function enqueue<T>(
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const result = operationTail.then(operation)
+
+    operationTail = result.then(
+      () => undefined,
+      () => undefined,
+    )
+
+    return result
+  }
+
   const assets: TLAssetStore = {
-    async upload(
+    upload(
       asset: TLAsset,
       file: File,
       abortSignal?: AbortSignal,
     ) {
       assertActive()
-      throwIfAborted(abortSignal)
 
-      const buffer = await file.arrayBuffer()
+      return enqueue(async () => {
+        assertActive()
+        throwIfAborted(abortSignal)
 
-      throwIfAborted(abortSignal)
-
-      const request: AssetUploadRequest = {
-        sessionToken,
-        contentType: file.type,
-        bytes: Array.from(new Uint8Array(buffer)),
-      }
-
-      const uploaded: AssetUploadResult =
-        await invokeAssetCommand(() =>
-          commands.assetUpload(request),
-        )
-
-      try {
-        validateNativeSource(
-          uploaded.source,
-          sessionToken,
-          uploaded.assetToken,
-        )
+        const buffer = await file.arrayBuffer()
 
         throwIfAborted(abortSignal)
-      } catch (error) {
-        await removeUploadedAsset(
-          sessionToken,
-          uploaded.assetToken,
-        ).catch(() => {
-          /*
-           * Session disposal remains the final bounded cleanup boundary.
-           * Preserve the original validation or abort error.
-           */
-        })
 
-        throw error
-      }
+        if (assetTokens.has(asset.id)) {
+          throw new Error(
+            'NATIVE_ASSET_ID_ALREADY_UPLOADED',
+          )
+        }
 
-      if (assetTokens.has(asset.id)) {
-        await removeUploadedAsset(
+        const { sessionToken } =
+          await requireOpenedSession()
+
+        throwIfAborted(abortSignal)
+
+        const request: AssetUploadRequest = {
           sessionToken,
+          contentType: file.type,
+          bytes: Array.from(new Uint8Array(buffer)),
+        }
+
+        const uploaded: AssetUploadResult =
+          await invokeAssetCommand(() =>
+            commands.assetUpload(request),
+          )
+
+        try {
+          validateNativeSource(
+            uploaded.source,
+            sessionToken,
+            uploaded.assetToken,
+          )
+
+          throwIfAborted(abortSignal)
+        } catch (error) {
+          await removeUploadedAsset(
+            sessionToken,
+            uploaded.assetToken,
+          ).catch(() => {
+            /*
+             * Preserve the original validation or abort failure. Session
+             * disposal remains the final bounded cleanup operation.
+             */
+          })
+
+          throw error
+        }
+
+        assetTokens.set(
+          asset.id,
           uploaded.assetToken,
         )
 
-        throw new Error('NATIVE_ASSET_ID_ALREADY_UPLOADED')
-      }
-
-      assetTokens.set(asset.id, uploaded.assetToken)
-
-      return {
-        src: toWebviewAssetUrl(
-          sessionToken,
-          uploaded.assetToken,
-        ),
-        meta: {
-          hybridCanvasAssetToken: uploaded.assetToken,
-          hybridCanvasContentHash: uploaded.contentHash,
-          hybridCanvasByteLength: uploaded.byteLength,
-          hybridCanvasContentType: uploaded.contentType,
-        },
-      }
+        return {
+          src: toWebviewAssetUrl(
+            sessionToken,
+            uploaded.assetToken,
+          ),
+          meta: {
+            hybridCanvasAssetToken:
+              uploaded.assetToken,
+            hybridCanvasContentHash:
+              uploaded.contentHash,
+            hybridCanvasByteLength:
+              uploaded.byteLength,
+            hybridCanvasContentType:
+              uploaded.contentType,
+          },
+        }
+      })
     },
 
     resolve(asset) {
@@ -311,38 +343,57 @@ export async function createNativeTLAssetStoreSession(): Promise<NativeTLAssetSt
 
       const source = asset.props.src
 
-      return typeof source === 'string' && source.length > 0
+      return typeof source === 'string' &&
+        source.length > 0
         ? source
         : null
     },
 
-    async remove(assetIds: TLAssetId[]) {
+    remove(assetIds: TLAssetId[]) {
       assertActive()
 
-      const removals = assetIds.flatMap((assetId) => {
-        const assetToken = assetTokens.get(assetId)
+      return enqueue(async () => {
+        assertActive()
 
-        if (!assetToken) {
-          return []
+        if (assetIds.length === 0) {
+          return
         }
 
-        return [
-          removeUploadedAsset(
+        const removals = assetIds.flatMap(
+          (assetId) => {
+            const assetToken =
+              assetTokens.get(assetId)
+
+            return assetToken
+              ? [{ assetId, assetToken }]
+              : []
+          },
+        )
+
+        if (removals.length === 0) {
+          return
+        }
+
+        const { sessionToken } =
+          await requireOpenedSession()
+
+        for (const {
+          assetId,
+          assetToken,
+        } of removals) {
+          await removeUploadedAsset(
             sessionToken,
             assetToken,
-          ).then(() => {
-            assetTokens.delete(assetId)
-          }),
-        ]
-      })
+          )
 
-      await Promise.all(removals)
+          assetTokens.delete(assetId)
+        }
+      })
     },
   }
 
   return {
     assets,
-    sessionToken,
 
     dispose() {
       if (disposePromise) {
@@ -350,15 +401,28 @@ export async function createNativeTLAssetStoreSession(): Promise<NativeTLAssetSt
       }
 
       disposed = true
-      assetTokens.clear()
 
-      const request: AssetSessionCloseRequest = {
-        sessionToken,
-      }
+      disposePromise = enqueue(async () => {
+        const sessionPromise =
+          openedSessionPromise
 
-      disposePromise = invokeAssetCommand(() =>
-        commands.assetSessionClose(request),
-      )
+        assetTokens.clear()
+
+        if (!sessionPromise) {
+          return
+        }
+
+        const { sessionToken } =
+          await sessionPromise
+
+        const request: AssetSessionCloseRequest = {
+          sessionToken,
+        }
+
+        await invokeAssetCommand(() =>
+          commands.assetSessionClose(request),
+        )
+      })
 
       return disposePromise
     },
@@ -368,7 +432,7 @@ export async function createNativeTLAssetStoreSession(): Promise<NativeTLAssetSt
 
 function fail(message) {
   console.error(
-    `\nP0-C.3 TLAssetStore adapter failed:\n${message}\n`,
+    `\nP0-C.4 lazy TLAssetStore refactor failed:\n${message}\n`,
   )
   process.exit(1)
 }
@@ -382,164 +446,184 @@ async function exists(path) {
   }
 }
 
-function count(source, fragment) {
-  return source.split(fragment).length - 1
-}
-
-function replaceOnce(
+function extractInterface(
   source,
-  oldText,
-  newText,
-  description,
+  interfaceName,
 ) {
-  const occurrences = count(source, oldText)
+  const marker = `export interface ${interfaceName} {`
+  const start = source.indexOf(marker)
 
-  if (occurrences !== 1) {
+  if (start < 0) {
     throw new Error(
-      [
-        `Unexpected source count: ${description}`,
-        'Expected: 1',
-        `Actual: ${occurrences}`,
-        'Refusing an ambiguous or partial modification.',
-      ].join('\n'),
+      `Exported interface was not found: ${interfaceName}`,
     )
   }
 
-  return source.replace(oldText, newText)
-}
+  const end = source.indexOf('\n}', start)
 
-function updateDesktopRuntimePackage(source) {
-  const parsed = JSON.parse(
-    source.replace(/^\uFEFF/, ''),
-  )
-
-  if (
-    parsed.name !==
-    '@hybrid-canvas/platforms-desktop-runtime'
-  ) {
+  if (end < 0) {
     throw new Error(
-      'Unexpected desktop-runtime package name.',
+      `Exported interface is not closed: ${interfaceName}`,
     )
   }
 
-  parsed.dependencies ??= {}
-
-  if (
-    parsed.dependencies.tldraw &&
-    parsed.dependencies.tldraw !== 'catalog:'
-  ) {
-    throw new Error(
-      'Unexpected existing desktop-runtime tldraw dependency.',
-    )
-  }
-
-  parsed.dependencies.tldraw = 'catalog:'
-
-  parsed.dependencies = Object.fromEntries(
-    Object.entries(parsed.dependencies).sort(
-      ([left], [right]) => left.localeCompare(right),
-    ),
-  )
-
-  return `${JSON.stringify(parsed, null, 2)}\n`
+  return source.slice(start, end + 2)
 }
 
-function updatePublicApi(source) {
-  const exportBlock = `export {
-  createNativeTLAssetStoreSession,
-  type NativeTLAssetStoreSession,
-} from './adapters/assets/native-tl-asset-store'`
-
-  if (source.includes(exportBlock)) {
-    return source
-  }
-
-  return `${exportBlock}\n\n${source}`
-}
-
-function updateAssetProtocol(source) {
-  const oldBranch = `        if host == "hybrid-canvas-asset.localhost" {
-            if components.next() != Some(ASSET_PROTOCOL_HOST) {
-                return Err(AssetProtocolError::InvalidToken);
-            }
-        } else if host != ASSET_PROTOCOL_HOST {
-            return Err(AssetProtocolError::InvalidToken);
-        }`
-
-  const finalBranch = `        if host == "hybrid-canvas-asset.localhost"
-            || host == "localhost"
-        {
-            if components.next() != Some(ASSET_PROTOCOL_HOST) {
-                return Err(AssetProtocolError::InvalidToken);
-            }
-        } else if host != ASSET_PROTOCOL_HOST {
-            return Err(AssetProtocolError::InvalidToken);
-        }`
-
-  if (source.includes(finalBranch)) {
-    return source
-  }
-
-  return replaceOnce(
-    source,
-    oldBranch,
-    finalBranch,
-    'support Tauri localhost custom protocol form',
-  )
-}
-
-function validateGeneratedBindings(source) {
-  const fragments = [
-    'async assetSessionOpen()',
-    'async assetUpload(request: AssetUploadRequest)',
-    'async assetRemove(request: AssetRemoveRequest)',
-    'async assetSessionClose(request: AssetSessionCloseRequest)',
-    'export type AssetRemoveRequest =',
-    'export type AssetSessionCloseRequest =',
-    'export type AssetSessionResult =',
-    'export type AssetUploadRequest =',
-    'export type AssetUploadResult =',
+function validateBaseline(source) {
+  const requiredFragments = [
+    'export async function createNativeTLAssetStoreSession()',
+    'export interface NativeTLAssetStoreSession {',
+    'readonly sessionToken: string',
+    'const opened = await invokeAssetCommand(() =>',
+    'commands.assetSessionOpen()',
+    'const assets: TLAssetStore = {',
   ]
 
-  for (const fragment of fragments) {
+  for (const fragment of requiredFragments) {
     if (!source.includes(fragment)) {
       throw new Error(
-        `Generated asset IPC binding is missing: ${fragment}`,
+        `Expected P0-C.3 adapter fragment was not found: ${fragment}`,
       )
     }
   }
 }
 
-async function restoreFiles(originals) {
-  const results = await Promise.allSettled(
-    [...originals].map(([path, content]) =>
-      writeFile(path, content, 'utf8'),
-    ),
+function validateFinal(source) {
+  const requiredFragments = [
+    'interface OpenedNativeAssetSession {',
+    'readonly sessionToken: string',
+    'export function createNativeTLAssetStoreSession()',
+    'function requireOpenedSession()',
+    'function enqueue<T>(',
+    'let operationTail: Promise<void>',
+    'if (!sessionPromise) {',
+    'commands.assetSessionClose(request)',
+  ]
+
+  for (const fragment of requiredFragments) {
+    if (!source.includes(fragment)) {
+      throw new Error(
+        `Final lazy adapter is missing: ${fragment}`,
+      )
+    }
+  }
+
+  if (
+    source.includes(
+      'export async function createNativeTLAssetStoreSession()',
+    )
+  ) {
+    throw new Error(
+      'The public TLAssetStore factory is still asynchronous.',
+    )
+  }
+
+  const publicSessionInterface = extractInterface(
+    source,
+    'NativeTLAssetStoreSession',
   )
 
   if (
-    results.some((result) => result.status === 'rejected')
+    publicSessionInterface.includes(
+      'readonly sessionToken:',
+    )
   ) {
     throw new Error(
-      [
-        'Rollback failed.',
-        'Inspect these files immediately:',
-        ...originals.keys(),
-      ].join('\n'),
+      'The public NativeTLAssetStoreSession still exposes sessionToken.',
+    )
+  }
+
+  if (
+    !publicSessionInterface.includes(
+      'readonly assets: TLAssetStore',
+    ) ||
+    !publicSessionInterface.includes(
+      'readonly dispose: () => Promise<void>',
+    )
+  ) {
+    throw new Error(
+      'The public NativeTLAssetStoreSession contract is incomplete.',
+    )
+  }
+
+  const privateSessionStart = source.indexOf(
+    'interface OpenedNativeAssetSession {',
+  )
+
+  if (privateSessionStart < 0) {
+    throw new Error(
+      'Private Native asset session type was not found.',
+    )
+  }
+
+  const privateSessionEnd = source.indexOf(
+    '\n}',
+    privateSessionStart,
+  )
+
+  const privateSessionInterface = source.slice(
+    privateSessionStart,
+    privateSessionEnd + 2,
+  )
+
+  if (
+    !privateSessionInterface.includes(
+      'readonly sessionToken: string',
+    )
+  ) {
+    throw new Error(
+      'Private Native session token ownership is missing.',
     )
   }
 }
 
-async function main() {
-  for (const path of [
-    paths.packageJson,
-    paths.desktopRuntimePackage,
-    paths.desktopRuntimePublicApi,
-    paths.assetProtocol,
-    paths.generatedBindings,
+function validateDependencies(
+  packageSource,
+  publicApiSource,
+  bindingsSource,
+) {
+  const runtimePackage = JSON.parse(packageSource)
+
+  if (
+    runtimePackage.dependencies?.tldraw !==
+    'catalog:'
+  ) {
+    throw new Error(
+      'desktop-runtime is missing its tldraw dependency.',
+    )
+  }
+
+  if (
+    !publicApiSource.includes(
+      'createNativeTLAssetStoreSession,',
+    )
+  ) {
+    throw new Error(
+      'desktop-runtime does not export the TLAssetStore factory.',
+    )
+  }
+
+  for (const fragment of [
+    'async assetSessionOpen()',
+    'async assetUpload(request: AssetUploadRequest)',
+    'async assetRemove(request: AssetRemoveRequest)',
+    'async assetSessionClose(request: AssetSessionCloseRequest)',
   ]) {
+    if (!bindingsSource.includes(fragment)) {
+      throw new Error(
+        `Generated asset binding is missing: ${fragment}`,
+      )
+    }
+  }
+}
+
+async function main() {
+  for (const path of Object.values(paths)) {
     if (!(await exists(path))) {
-      throw new Error(`Required file was not found: ${path}`)
+      throw new Error(
+        `Required file was not found: ${path}`,
+      )
     }
   }
 
@@ -549,156 +633,96 @@ async function main() {
 
   if (packageJson.name !== 'hybrid-canvas') {
     throw new Error(
-      `Unexpected package name: ${String(packageJson.name)}`,
+      `Unexpected package name: ${String(
+        packageJson.name,
+      )}`,
     )
-  }
-
-  validateGeneratedBindings(
-    await readFile(paths.generatedBindings, 'utf8'),
-  )
-
-  const adapterExisted = await exists(paths.assetAdapter)
-  const adapterDirectoryExisted =
-    await exists(assetAdapterDirectory)
-
-  if (adapterExisted) {
-    const existing = await readFile(
-      paths.assetAdapter,
-      'utf8',
-    )
-
-    if (existing !== assetAdapterSource) {
-      throw new Error(
-        'Native TLAssetStore adapter already exists with different content.',
-      )
-    }
   }
 
   const [
-    packageOriginal,
-    publicApiOriginal,
-    protocolOriginal,
+    adapterOriginal,
+    runtimePackage,
+    publicApi,
+    generatedBindings,
   ] = await Promise.all([
-    readFile(paths.desktopRuntimePackage, 'utf8'),
-    readFile(paths.desktopRuntimePublicApi, 'utf8'),
-    readFile(paths.assetProtocol, 'utf8'),
+    readFile(paths.adapter, 'utf8'),
+    readFile(paths.runtimePackage, 'utf8'),
+    readFile(paths.publicApi, 'utf8'),
+    readFile(paths.generatedBindings, 'utf8'),
   ])
 
-  const originals = new Map([
-    [paths.desktopRuntimePackage, packageOriginal],
-    [paths.desktopRuntimePublicApi, publicApiOriginal],
-    [paths.assetProtocol, protocolOriginal],
-  ])
-
-  const outputs = new Map([
-    [paths.assetAdapter, assetAdapterSource],
-    [
-      paths.desktopRuntimePackage,
-      updateDesktopRuntimePackage(packageOriginal),
-    ],
-    [
-      paths.desktopRuntimePublicApi,
-      updatePublicApi(publicApiOriginal),
-    ],
-    [
-      paths.assetProtocol,
-      updateAssetProtocol(protocolOriginal),
-    ],
-  ])
-
-  const changed = [...outputs].filter(
-    ([path, content]) =>
-      path === paths.assetAdapter
-        ? !adapterExisted
-        : originals.get(path) !== content,
+  validateDependencies(
+    runtimePackage,
+    publicApi,
+    generatedBindings,
   )
 
-  if (changed.length === 0) {
+  validateFinal(finalAdapterSource)
+
+  if (adapterOriginal === finalAdapterSource) {
     console.log(
-      'P0-C.3 Native TLAssetStore adapter is already applied.',
+      'P0-C.4 lazy Native TLAssetStore is already applied.',
     )
     return
   }
 
-  console.log('P0-C.3 TLAssetStore files:')
+  validateBaseline(adapterOriginal)
 
-  for (const [path] of changed) {
-    console.log(`- ${path.slice(root.length + 1)}`)
-  }
+  console.log('P0-C.4 will update:')
+  console.log(
+    '- platforms/desktop-runtime/src/adapters/assets/native-tl-asset-store.ts',
+  )
 
   if (check) {
     console.log('')
     console.log('It will:')
     console.log(
-      '- create the missing adapters/assets directory;',
+      '- make TLAssetStore construction synchronous;',
     )
     console.log(
-      '- implement the official TLAssetStore interface;',
+      '- open the Native session only on first upload;',
     )
     console.log(
-      '- upload and remove assets through Native IPC;',
+      '- serialize upload, remove and disposal;',
     )
     console.log(
-      '- resolve assets through the Tauri custom protocol;',
+      '- wait for active operations before closing;',
     )
     console.log(
-      '- support Windows, macOS and Linux protocol forms;',
+      '- expose no Native session token publicly;',
     )
     console.log(
-      '- add no Blob URL or Data URL fallback;',
+      '- preserve the custom protocol without fallback;',
     )
     console.log('')
     console.log(
-      'Run again with --apply to write the changes.',
+      'Run again with --apply to write the change.',
     )
     return
   }
 
   try {
-    await mkdir(assetAdapterDirectory, {
-      recursive: true,
-    })
-
-    /*
-     * Existing files are written only after every transformation has
-     * succeeded in memory.
-     */
-    for (const [path, content] of outputs) {
-      await writeFile(path, content, 'utf8')
-    }
-  } catch (error) {
-    console.error(
-      '\nApply failed. Restoring original files...',
+    await writeFile(
+      paths.adapter,
+      finalAdapterSource,
+      'utf8',
     )
-
-    await restoreFiles(originals)
-
-    if (!adapterExisted) {
-      await rm(paths.assetAdapter, {
-        force: true,
-      })
-    }
-
-    if (!adapterDirectoryExisted) {
-      /*
-       * rmdir succeeds only when the directory is empty. It will not delete
-       * unrelated files that may have appeared concurrently.
-       */
-      await rmdir(assetAdapterDirectory).catch(() => {
-        // Leave a non-empty directory intact.
-      })
-    }
+  } catch (error) {
+    await writeFile(
+      paths.adapter,
+      adapterOriginal,
+      'utf8',
+    )
 
     throw error
   }
 
   console.log('')
   console.log(
-    'Applied P0-C.3 Native TLAssetStore adapter.',
+    'Applied P0-C.4 lazy Native TLAssetStore lifecycle.',
   )
   console.log('')
   console.log('Required verification:')
-  console.log('  pnpm install --lockfile-only')
   console.log('  pnpm format')
   console.log('  pnpm lint')
   console.log('  pnpm typecheck')
