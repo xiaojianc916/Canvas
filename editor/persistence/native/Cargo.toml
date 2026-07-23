@@ -6,10 +6,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 hex.workspace = true
 sha2.workspace = true
+zip.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [
