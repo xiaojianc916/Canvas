@@ -12,7 +12,9 @@ use uuid::Uuid;
 use crate::asset_protocol::{
     asset_protocol_url, AssetProtocolError, AssetProtocolRegistry,
 };
-use crate::error::{Error, IpcError, Result};
+use crate::error::{Error, IpcError};
+
+type CommandResult<T> = Result<T, IpcError>;
 
 #[derive(Clone, Debug, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -34,7 +36,7 @@ pub struct AssetUploadResult {
     pub asset_token: String,
     pub content_hash: String,
     pub source: String,
-    pub byte_length: u64,
+    pub byte_length: u32,
     pub content_type: String,
 }
 
@@ -55,7 +57,7 @@ pub struct AssetSessionCloseRequest {
 #[specta::specta]
 pub async fn asset_session_open(
     assets: State<'_, AssetProtocolRegistry>,
-) -> std::result::Result<AssetSessionResult, IpcError> {
+) -> CommandResult<AssetSessionResult> {
     let session_token = Uuid::now_v7().simple().to_string();
 
     assets
@@ -70,9 +72,9 @@ pub async fn asset_session_open(
 pub async fn asset_upload(
     request: AssetUploadRequest,
     assets: State<'_, AssetProtocolRegistry>,
-) -> std::result::Result<AssetUploadResult, IpcError> {
+) -> CommandResult<AssetUploadResult> {
     let asset_token = Uuid::now_v7().simple().to_string();
-    let byte_length = u64::try_from(request.bytes.len())
+    let byte_length = u32::try_from(request.bytes.len())
         .map_err(|_| Error::Asset("asset length overflow".into()))?;
 
     let content_hash =
@@ -116,7 +118,7 @@ pub async fn asset_upload(
 pub async fn asset_remove(
     request: AssetRemoveRequest,
     assets: State<'_, AssetProtocolRegistry>,
-) -> std::result::Result<(), IpcError> {
+) -> CommandResult<()> {
     let removed = assets
         .remove(
             &request.session_token,
@@ -139,7 +141,7 @@ pub async fn asset_remove(
 pub async fn asset_session_close(
     request: AssetSessionCloseRequest,
     assets: State<'_, AssetProtocolRegistry>,
-) -> std::result::Result<(), IpcError> {
+) -> CommandResult<()> {
     let removed = assets
         .remove_session(&request.session_token)
         .map_err(map_asset_error)?;

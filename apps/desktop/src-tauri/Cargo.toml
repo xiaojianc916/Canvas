@@ -1,5 +1,6 @@
 [package]
 name = "hybrid-canvas-desktop"
+default-run = "hybrid-canvas-desktop"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

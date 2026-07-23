@@ -5,6 +5,18 @@
 
 
 export const commands = {
+async assetSessionOpen() : Promise<AssetSessionResult> {
+    return await TAURI_INVOKE("asset_session_open");
+},
+async assetUpload(request: AssetUploadRequest) : Promise<AssetUploadResult> {
+    return await TAURI_INVOKE("asset_upload", { request });
+},
+async assetRemove(request: AssetRemoveRequest) : Promise<null> {
+    return await TAURI_INVOKE("asset_remove", { request });
+},
+async assetSessionClose(request: AssetSessionCloseRequest) : Promise<null> {
+    return await TAURI_INVOKE("asset_session_close", { request });
+},
 /**
  * Opens one .draw file selected by the native file dialog.
  * 
@@ -61,6 +73,11 @@ export type AppSettings = { theme: string; language: string; auto_save: boolean;
  * while u64 would require bigint and is rejected by tauri-specta.
  */
 auto_save_interval: number; shortcuts: Partial<{ [key in string]: string }>; canvas: CanvasSettings; editor: EditorSettings; export: ExportSettings; privacy: PrivacySettings }
+export type AssetRemoveRequest = { sessionToken: string; assetToken: string }
+export type AssetSessionCloseRequest = { sessionToken: string }
+export type AssetSessionResult = { sessionToken: string }
+export type AssetUploadRequest = { sessionToken: string; contentType: string; bytes: number[] }
+export type AssetUploadResult = { assetToken: string; contentHash: string; source: string; byteLength: number; contentType: string }
 export type CanvasSettings = { default_zoom: number; show_grid: boolean; snap_to_grid: boolean; grid_size: number; show_rulers: boolean; infinite_canvas: boolean }
 export type DocumentCloseRequest = { documentId: DocumentId }
 export type DocumentDescriptor = { documentId: DocumentId; displayName: string; revision: string }
