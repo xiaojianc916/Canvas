@@ -96,34 +96,21 @@ const SEMANTIC_ICON_CANDIDATES = {
   ],
 
   ChartNoAxesCombined: [
-    'ChartNoAxesCombined',
-    'ChartCombined',
-    'ChartBar',
-    'ChartLine',
-    'Chart',
-  ],
+  'ChartNoAxesCombined',
+],
 
   CheckIcon: [
-    'Check',
-    'CheckCircle',
-  ],
+  'Check',
+],
 
   ChevronsUpDownIcon: [
-    'ChevronsUpDown',
-    'ChevronUpDown',
-    'SelectorVertical',
-    'UnfoldVertical',
-  ],
-
+  'ChevronsUpDown',
+],
   CircleHelp: [
-    'CircleHelp',
-    'CircleQuestion',
-    'HelpCircle',
-    'QuestionCircle',
-  ],
+  'QuestionCircle',
+],
 
   Code2: [
-    'Code2',
     'Code',
   ],
 
@@ -145,16 +132,12 @@ const SEMANTIC_ICON_CANDIDATES = {
   ],
 
   FilePlus2: [
-    'FilePlus2',
     'FilePlus',
-    'DocumentPlus',
   ],
 
   Files: [
-    'Files',
-    'FileMultiple',
-    'Documents',
-  ],
+  'FolderTwo',
+],
 
   FileText: [
     'FileText',
@@ -168,10 +151,7 @@ const SEMANTIC_ICON_CANDIDATES = {
   ],
 
   Grid2X2: [
-    'Grid2X2',
-    'GridFour',
     'Grid',
-    'Dashboard',
   ],
 
   Image: [
@@ -181,51 +161,36 @@ const SEMANTIC_ICON_CANDIDATES = {
   ],
 
   Layers3: [
-    'Layers3',
-    'Layers',
-    'Layer',
-  ],
+  'LayersThree',
+],
 
   MessageCircle: [
-    'MessageCircle',
-    'ChatCircle',
     'Message',
   ],
 
   Network: [
-    'Network',
-    'Nodes',
-    'ShareNetwork',
-  ],
+  'ChartNetwork',
+],
 
   PanelLeftClose: [
     'PanelLeftClose',
-    'SidebarLeftClose',
-    'SidebarClose',
-    'PanelClose',
   ],
 
   PanelLeftOpen: [
     'PanelLeftOpen',
-    'SidebarLeftOpen',
-    'SidebarOpen',
-    'PanelOpen',
+  
   ],
 
   RefreshCcw: [
-    'RefreshCcw',
-    'Refresh',
-    'ArrowClockwise',
-  ],
+  'RefreshAlt',
+],
 
   SearchIcon: [
     'Search',
   ],
 
   Settings: [
-    'Settings',
     'Cog',
-    'Gear',
   ],
 
   Square: [
@@ -780,7 +745,7 @@ function createSourceMigrationPlan(
   mynaExports,
 ) {
   const importPattern =
-    /import\s+(type\s+)?\{([\s\S]*?)\}\s+from\s+['"]lucide-react['"]\s*;?/g
+  /import\s+(type\s+)?\{([^}]*)\}\s+from\s+['"]lucide-react['"]\s*;?/g
 
   const matches = [
     ...originalContent.matchAll(importPattern),
@@ -1336,16 +1301,52 @@ function runChecks() {
 }
 
 function run(command, args) {
-  console.log(
-    `\n> ${command} ${args.join(' ')}`,
-  )
+  console.log(`\n> ${command} ${args.join(' ')}`)
 
-  execFileSync(command, args, {
+  const options = {
     cwd: ROOT,
     env: process.env,
     stdio: 'inherit',
-    shell: process.platform === 'win32',
-  })
+    shell: false,
+  }
+
+  if (process.platform === 'win32') {
+    const commandLine = [
+      quoteWindowsCommandArgument(command),
+      ...args.map(quoteWindowsCommandArgument),
+    ].join(' ')
+
+    execFileSync(
+      process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe',
+      [
+        '/d',
+        '/s',
+        '/c',
+        commandLine,
+      ],
+      options,
+    )
+
+    return
+  }
+
+  execFileSync(command, args, options)
+}
+
+function quoteWindowsCommandArgument(value) {
+  const stringValue = String(value)
+
+  if (stringValue.length === 0) {
+    return '""'
+  }
+
+  if (!/[\s"&|<>^()]/.test(stringValue)) {
+    return stringValue
+  }
+
+  return `"${stringValue
+    .replace(/"/g, '""')
+    .replace(/%/g, '%%')}"`
 }
 
 function findFiles(directory, predicate) {
