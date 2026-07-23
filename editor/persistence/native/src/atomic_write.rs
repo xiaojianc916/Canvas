@@ -90,6 +90,17 @@ fn replace_destination(source: &Path, destination: &Path) -> Result<()> {
     let source_wide = to_wide_path(source.as_os_str());
     let destination_wide = to_wide_path(destination.as_os_str());
 
+    /*
+     * SAFETY:
+     *
+     * - source_wide and destination_wide are NUL-terminated UTF-16 buffers;
+     * - both buffers remain alive for the complete FFI call;
+     * - source and destination are local paths selected or retained by Native;
+     * - the temporary source is created in the destination directory;
+     * - null backup/exclusion/reserved pointers are permitted by the APIs;
+     * - the return value is checked before reporting success;
+     * - no Rust reference aliases memory owned or mutated by Win32.
+     */
     let replaced = unsafe {
         if destination.exists() {
             ReplaceFileW(

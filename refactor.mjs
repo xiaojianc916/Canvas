@@ -1,42 +1,22 @@
 #!/usr/bin/env node
 
 /**
- * P0-B — Replace the existing native document replacement implementation with
- * platform-correct atomic replacement.
+ * P0-B.1 — Confine Windows atomic-replacement FFI to the atomic_write module.
  *
- * Based on repository state after:
- *   0e7174d3f3f82d0d46ab04b839e5b0e823afe179
- *   e7f61fe5ed75a4385def6421e6cd31e57c1f45e5
+ * Current repository state uses:
  *
- * This script does not add another writer and does not retain the previous
- * generic replacement implementation.
+ *   #![forbid(unsafe_code)]
  *
- * The one physical save algorithm remains:
+ * while atomic_write.rs calls ReplaceFileW / MoveFileExW through unsafe FFI.
+ * `forbid` cannot be lowered by a module-level allow, so Windows builds fail.
  *
- *   same-directory unique temp
- *     -> write complete content
- *     -> sync temp file
- *     -> platform atomic replacement
- *     -> sync containing directory where supported
+ * This refactor establishes:
  *
- * Platform implementation:
+ *   crate default: deny unsafe
+ *   atomic_write: explicitly allowed unsafe
+ *   every other module: unsafe remains denied
  *
- *   Unix/macOS:
- *     rename(temp, destination)
- *
- *   Windows, destination exists:
- *     ReplaceFileW(destination, temp)
- *
- *   Windows, destination does not exist:
- *     MoveFileExW(temp, destination, MOVEFILE_WRITE_THROUGH)
- *
- * Forbidden:
- *
- *   delete destination -> rename
- *   copy temp -> destination
- *   truncate destination in place
- *   retry through a non-atomic fallback
- *   retain the old cross-platform std::fs::rename implementation
+ * No compatibility path, fallback writer or second implementation is added.
  *
  * Usage:
  *   node refactor.mjs --check
@@ -65,9 +45,9 @@ if (!apply && !check) {
 
 const paths = {
   packageJson: join(root, 'package.json'),
-  nativeCargo: join(
+  nativeLib: join(
     root,
-    'editor/persistence/native/Cargo.toml',
+    'editor/persistence/native/src/lib.rs',
   ),
   atomicWrite: join(
     root,
@@ -77,7 +57,7 @@ const paths = {
 
 function fail(message) {
   console.error(
-    `\nP0-B platform atomic replacement refactor failed:\n${message}\n`,
+    `\nP0-B.1 scoped Windows FFI refactor failed:\n${message}\n`,
   )
   process.exitCode = 1
 }
@@ -103,7 +83,7 @@ function replaceExactlyOnce(
     throw new Error(
       [
         `Expected source fragment was not found: ${description}`,
-        'The repository may differ from the audited pushed state.',
+        'The repository may differ from commit 72144a1.',
         'Refusing fuzzy replacement.',
       ].join('\n'),
     )
@@ -127,166 +107,15 @@ function replaceExactlyOnce(
   )
 }
 
-const oldModuleDocumentation = `//! Crash-safe replacement of a document file.
-//!
-//! The persistence contract has one save path on every supported platform:
-//!
-//! 1. Create a uniquely named temporary file in the destination directory.
-//! 2. Write the complete document.
-//! 3. Synchronize the temporary file.
-//! 4. Rename the temporary file over the destination.
-//! 5. Synchronize the containing directory where the platform supports it.
-//!
-//! Keeping the temporary file in the destination directory guarantees that the
-//! replacement stays on one filesystem. If writing or replacement fails, the
-//! original destination is left untouched and NamedTempFile removes the
-//! temporary file during drop.`
+function updateNativeLib(source) {
+  const alreadyApplied =
+    source.startsWith('#![deny(unsafe_code)]') &&
+    source.includes(
+      '#[allow(unsafe_code)]\nmod atomic_write;',
+    ) &&
+    !source.includes('#![forbid(unsafe_code)]')
 
-const newModuleDocumentation = `//! Crash-safe replacement of a document file.
-//!
-//! The persistence contract has exactly one physical save algorithm:
-//!
-//! 1. Create a uniquely named temporary file in the destination directory.
-//! 2. Write the complete document.
-//! 3. Synchronize the temporary file.
-//! 4. Atomically replace the destination with the platform primitive.
-//! 5. Synchronize the containing directory where the platform supports it.
-//!
-//! Keeping the temporary file in the destination directory guarantees that the
-//! replacement remains on one filesystem.
-//!
-//! There is deliberately no delete, copy, truncate or non-atomic fallback. If
-//! the platform replacement fails, the existing destination remains untouched
-//! and the save operation fails.`
-
-const oldImports = `use crate::{Error, Result};
-use std::io::Write;
-use std::path::Path;`
-
-const newImports = `use crate::{Error, Result};
-use std::io::Write;
-use std::path::Path;
-
-#[cfg(windows)]
-use std::ffi::OsStr;
-#[cfg(windows)]
-use std::iter::once;
-#[cfg(windows)]
-use std::os::windows::ffi::OsStrExt;
-#[cfg(windows)]
-use std::ptr::{null, null_mut};
-#[cfg(windows)]
-use windows_sys::Win32::Storage::FileSystem::{
-    MoveFileExW, ReplaceFileW, MOVEFILE_REPLACE_EXISTING,
-    MOVEFILE_WRITE_THROUGH,
-};
-
-#[cfg(not(any(unix, windows)))]
-compile_error!(
-    "hybrid-canvas-file-native requires an audited atomic replacement \
-     implementation for this platform"
-);`
-
-const oldReplacementImplementation = `/// Replaces destination with source.
-///
-/// Both paths are in the same parent directory, therefore they are on the same
-/// filesystem. Rust's std::fs::rename is the single cross-platform replacement
-/// primitive used by this persistence backend.
-fn replace_destination(source: &Path, destination: &Path) -> Result<()> {
-    std::fs::rename(source, destination)?;
-    Ok(())
-}`
-
-const newReplacementImplementation = `/// Atomically replaces destination with source on Unix platforms.
-///
-/// The temporary file and destination are created in the same directory, so
-/// rename remains on one filesystem. POSIX rename replaces an existing regular
-/// destination atomically.
-#[cfg(unix)]
-fn replace_destination(source: &Path, destination: &Path) -> Result<()> {
-    std::fs::rename(source, destination)?;
-    Ok(())
-}
-
-/// Atomically installs or replaces destination on Windows.
-///
-/// ReplaceFileW is used when a destination already exists. It performs a
-/// filesystem replacement rather than a delete-then-move sequence.
-///
-/// MoveFileExW is used only when creating a new destination. REPLACE_EXISTING
-/// also closes the race where another process creates the destination after the
-/// existence check. WRITE_THROUGH requests that the move is flushed before the
-/// call returns.
-///
-/// No copy, delete, truncate or non-atomic fallback is allowed.
-#[cfg(windows)]
-fn replace_destination(source: &Path, destination: &Path) -> Result<()> {
-    let source_wide = to_wide_path(source.as_os_str());
-    let destination_wide = to_wide_path(destination.as_os_str());
-
-    let replaced = unsafe {
-        if destination.exists() {
-            ReplaceFileW(
-                destination_wide.as_ptr(),
-                source_wide.as_ptr(),
-                null(),
-                0,
-                null_mut(),
-                null_mut(),
-            )
-        } else {
-            MoveFileExW(
-                source_wide.as_ptr(),
-                destination_wide.as_ptr(),
-                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-            )
-        }
-    };
-
-    if replaced == 0 {
-        return Err(std::io::Error::last_os_error().into());
-    }
-
-    Ok(())
-}
-
-#[cfg(windows)]
-fn to_wide_path(value: &OsStr) -> Vec<u16> {
-    value.encode_wide().chain(once(0)).collect()
-}`
-
-const oldDirectoryDocumentation = `/// Synchronizes directory metadata after a successful rename where supported.
-///
-/// Windows does not provide a portable std::fs directory synchronization API.
-/// The file itself is already synchronized before replacement. The replacement
-/// remains a single operation; no backup/delete/copy fallback is used.`
-
-const newDirectoryDocumentation = `/// Synchronizes directory metadata after a successful replacement where
-/// supported.
-///
-/// Unix directory synchronization persists the renamed directory entry.
-///
-/// Windows does not expose a portable directory fsync through std. The temporary
-/// file is synchronized before replacement, ReplaceFileW is a single filesystem
-/// operation, and new-file MoveFileExW uses MOVEFILE_WRITE_THROUGH.`
-
-const windowsCargoSection = `
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = [
-  "Win32_Storage_FileSystem",
-] }
-`
-
-function updateAtomicWrite(source) {
-  if (
-    source.includes('#[cfg(windows)]') &&
-    source.includes('ReplaceFileW(') &&
-    source.includes('MoveFileExW(') &&
-    source.includes('MOVEFILE_WRITE_THROUGH') &&
-    !source.includes(
-      "Rust's std::fs::rename is the single cross-platform",
-    )
-  ) {
+  if (alreadyApplied) {
     return {
       changed: false,
       content: source,
@@ -295,49 +124,52 @@ function updateAtomicWrite(source) {
 
   let next = replaceExactlyOnce(
     source,
-    oldModuleDocumentation,
-    newModuleDocumentation,
-    'replace atomic-write module contract',
+    '#![forbid(unsafe_code)]',
+    '#![deny(unsafe_code)]',
+    'replace unscopable crate-level unsafe prohibition',
   )
 
   next = replaceExactlyOnce(
     next,
-    oldImports,
-    newImports,
-    'add platform atomic replacement imports',
+    `mod atomic_write;
+mod document_codec;
+mod error;`,
+    `// Windows atomic replacement requires direct calls to ReplaceFileW and
+// MoveFileExW. Keep that unsafe boundary confined to this module.
+#[allow(unsafe_code)]
+mod atomic_write;
+
+mod document_codec;
+mod error;`,
+    'confine unsafe FFI to atomic_write',
   )
 
-  next = replaceExactlyOnce(
-    next,
-    oldReplacementImplementation,
-    newReplacementImplementation,
-    'remove generic replacement and install platform implementations',
-  )
-
-  next = replaceExactlyOnce(
-    next,
-    oldDirectoryDocumentation,
-    newDirectoryDocumentation,
-    'update directory synchronization contract',
-  )
-
-  if (
-    next.includes(
-      "Rust's std::fs::rename is the single cross-platform",
-    )
-  ) {
+  if (next.includes('#![forbid(unsafe_code)]')) {
     throw new Error(
-      'The old generic replacement implementation was not fully removed.',
+      'The unscopable forbid(unsafe_code) attribute was not removed.',
     )
   }
 
+  const allowedModules = [
+    '#[allow(unsafe_code)]\nmod atomic_write;',
+  ]
+
+  for (const allowedModule of allowedModules) {
+    if (!next.includes(allowedModule)) {
+      throw new Error(
+        'The atomic_write unsafe boundary was not installed.',
+      )
+    }
+  }
+
   if (
-    next.includes('remove_file(destination)') ||
-    next.includes('copy(source, destination)') ||
-    next.includes('File::create(destination)')
+    next.includes(
+      '#[allow(unsafe_code)]\nmod document_codec;',
+    ) ||
+    next.includes('#[allow(unsafe_code)]\nmod error;')
   ) {
     throw new Error(
-      'A forbidden non-atomic replacement fallback was detected.',
+      'Unsafe permission escaped the atomic_write module.',
     )
   }
 
@@ -347,33 +179,76 @@ function updateAtomicWrite(source) {
   }
 }
 
-function updateNativeCargo(source) {
-  if (source.includes("[target.'cfg(windows)'.dependencies]")) {
-    if (
-      source.includes('windows-sys') &&
-      source.includes('"Win32_Storage_FileSystem"')
-    ) {
-      return {
-        changed: false,
-        content: source,
-      }
-    }
-
+function updateAtomicWrite(source) {
+  if (!source.includes('let replaced = unsafe {')) {
     throw new Error(
       [
-        'The native persistence crate already has a different Windows dependency section.',
-        'Refusing to merge dependency definitions automatically.',
+        'Expected Windows FFI unsafe block was not found.',
+        'Apply the platform atomic replacement refactor first.',
       ].join('\n'),
     )
   }
 
-  const normalized = source.endsWith('\n')
-    ? source
-    : `${source}\n`
+  if (
+    source.includes(
+      '// SAFETY: source_wide and destination_wide are NUL-terminated',
+    )
+  ) {
+    return {
+      changed: false,
+      content: source,
+    }
+  }
+
+  const oldUnsafeBoundary = `    let replaced = unsafe {
+        if destination.exists() {`
+
+  const newUnsafeBoundary = `    /*
+     * SAFETY:
+     *
+     * - source_wide and destination_wide are NUL-terminated UTF-16 buffers;
+     * - both buffers remain alive for the complete FFI call;
+     * - source and destination are local paths selected or retained by Native;
+     * - the temporary source is created in the destination directory;
+     * - null backup/exclusion/reserved pointers are permitted by the APIs;
+     * - the return value is checked before reporting success;
+     * - no Rust reference aliases memory owned or mutated by Win32.
+     */
+    let replaced = unsafe {
+        if destination.exists() {`
+
+  const next = replaceExactlyOnce(
+    source,
+    oldUnsafeBoundary,
+    newUnsafeBoundary,
+    'document Windows atomic-replacement safety invariants',
+  )
+
+  const unsafeCount =
+    next.split('unsafe {').length - 1
+
+  if (unsafeCount !== 1) {
+    throw new Error(
+      [
+        'Unexpected number of unsafe blocks in atomic_write.rs.',
+        `Expected: 1`,
+        `Actual: ${unsafeCount}`,
+      ].join('\n'),
+    )
+  }
+
+  if (
+    next.includes('std::fs::remove_file(destination)') ||
+    next.includes('std::fs::copy(source, destination)')
+  ) {
+    throw new Error(
+      'A forbidden non-atomic fallback was detected.',
+    )
+  }
 
   return {
     changed: true,
-    content: normalized + windowsCargoSection,
+    content: next,
   }
 }
 
@@ -398,7 +273,7 @@ async function main() {
   }
 
   for (const path of [
-    paths.nativeCargo,
+    paths.nativeLib,
     paths.atomicWrite,
   ]) {
     if (!(await exists(path))) {
@@ -406,60 +281,86 @@ async function main() {
     }
   }
 
-  const [cargoSource, atomicWriteSource] = await Promise.all([
-    readFile(paths.nativeCargo, 'utf8'),
-    readFile(paths.atomicWrite, 'utf8'),
-  ])
+  const [nativeLibSource, atomicWriteSource] =
+    await Promise.all([
+      readFile(paths.nativeLib, 'utf8'),
+      readFile(paths.atomicWrite, 'utf8'),
+    ])
+
+  if (
+    !atomicWriteSource.includes('ReplaceFileW(') ||
+    !atomicWriteSource.includes('MoveFileExW(')
+  ) {
+    throw new Error(
+      [
+        'Platform atomic replacement is not present.',
+        'This script expects repository state after commit 72144a1.',
+      ].join('\n'),
+    )
+  }
+
+  const nativeLibChange = updateNativeLib(
+    nativeLibSource,
+  )
 
   const atomicWriteChange = updateAtomicWrite(
     atomicWriteSource,
   )
 
-  const cargoChange = updateNativeCargo(cargoSource)
-
-  if (!atomicWriteChange.changed && !cargoChange.changed) {
+  if (
+    !nativeLibChange.changed &&
+    !atomicWriteChange.changed
+  ) {
     console.log(
-      'P0-B platform atomic replacement is already applied.',
+      'P0-B.1 scoped Windows FFI boundary is already applied.',
     )
     return
   }
 
   if (check) {
     console.log(
-      'P0-B platform atomic replacement is safe to apply.',
+      'P0-B.1 scoped Windows FFI boundary is safe to apply.',
     )
     console.log('')
     console.log('It will:')
     console.log(
-      '- remove the generic cross-platform std::fs::rename replacement;',
+      '- keep unsafe denied by default in the native persistence crate;',
     )
     console.log(
-      '- use POSIX rename on Unix and macOS;',
+      '- allow unsafe only inside atomic_write;',
     )
     console.log(
-      '- use ReplaceFileW for existing Windows documents;',
+      '- document all Win32 pointer and lifetime invariants;',
     )
     console.log(
-      '- use MoveFileExW with WRITE_THROUGH for new Windows documents;',
+      '- verify that atomic_write contains exactly one unsafe block;',
     )
     console.log(
-      '- reject unsupported platforms at compile time;',
-    )
-    console.log(
-      '- keep exactly one physical writer and no fallback path;',
+      '- reject delete/copy replacement fallbacks;',
     )
     console.log('')
     console.log('It will not:')
+    console.log('- add a writer;')
+    console.log('- add a compatibility path;')
     console.log('- change the .draw format;')
-    console.log('- add another writer;')
-    console.log('- add compatibility parsing;')
-    console.log('- add recovery, lock or watcher scaffolding;')
+    console.log('- change IPC contracts;')
+    console.log('- widen unsafe to DocumentCodec or errors;')
     console.log('')
-    console.log('Run again with --apply to write the changes.')
+    console.log(
+      'Run again with --apply to write the changes.',
+    )
     return
   }
 
   await Promise.all([
+    nativeLibChange.changed
+      ? writeFile(
+          paths.nativeLib,
+          nativeLibChange.content,
+          'utf8',
+        )
+      : Promise.resolve(),
+
     atomicWriteChange.changed
       ? writeFile(
           paths.atomicWrite,
@@ -467,26 +368,18 @@ async function main() {
           'utf8',
         )
       : Promise.resolve(),
-
-    cargoChange.changed
-      ? writeFile(
-          paths.nativeCargo,
-          cargoChange.content,
-          'utf8',
-        )
-      : Promise.resolve(),
   ])
 
   console.log(
-    'Applied the single platform-correct atomic replacement path.',
+    'Applied the scoped Windows FFI safety boundary.',
   )
   console.log('')
   console.log('Changed:')
   console.log(
-    '- editor/persistence/native/src/atomic_write.rs',
+    '- editor/persistence/native/src/lib.rs',
   )
   console.log(
-    '- editor/persistence/native/Cargo.toml',
+    '- editor/persistence/native/src/atomic_write.rs',
   )
   console.log('')
   console.log('Required verification:')
@@ -500,12 +393,9 @@ async function main() {
   console.log(
     '  cargo clippy -p hybrid-canvas-file-native --all-targets -- -D warnings',
   )
-  console.log('  pnpm typecheck')
-  console.log('  pnpm lint')
-  console.log('  pnpm test')
   console.log('')
   console.log(
-    'The Windows replacement path must also pass CI or verification on a real Windows runner.',
+    'Also run the same check, test and clippy commands on Windows.',
   )
 }
 

@@ -1,4 +1,4 @@
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 //! Native file capability.
 //!
@@ -9,7 +9,11 @@
 //! watching and recovery journals are intentionally absent until they can be
 //! delivered as one complete, tested native DocumentCodec protocol.
 
+// Windows atomic replacement requires direct calls to ReplaceFileW and
+// MoveFileExW. Keep that unsafe boundary confined to this module.
+#[allow(unsafe_code)]
 mod atomic_write;
+
 mod document_codec;
 mod error;
 
