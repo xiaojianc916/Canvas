@@ -1,8 +1,8 @@
 use crate::asset_protocol::{AssetProtocolError, AssetProtocolRegistry, AssetSessionSnapshotEntry};
 use crate::error::{Error, IpcError, Result};
 use hybrid_canvas_file_native::{
-    DocumentRevision, DrawAssetInput, DrawDocumentV2Input, atomic_write, decode_draw_document_v2, document_revision,
-    encode_draw_document_v2,
+    DocumentRevision, DrawAssetInput, DrawDocumentInput, atomic_write, decode_draw_document, document_revision,
+    encode_draw_document,
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -547,11 +547,11 @@ async fn write_document(
 fn decode_document(bytes: &[u8]) -> Result<DecodedDocument> {
     if !bytes.starts_with(b"PK\x03\x04") {
         return Err(Error::Validation(
-            "selected .draw file is not a supported v2 document".into(),
+            "selected .draw file uses an unsupported internal format".into(),
         ));
     }
 
-    let decoded = decode_draw_document_v2(bytes)?;
+    let decoded = decode_draw_document(bytes)?;
 
     let assets = decoded
         .assets
@@ -588,7 +588,7 @@ fn encode_document(
         })
         .collect::<Vec<_>>();
 
-    Ok(encode_draw_document_v2(DrawDocumentV2Input {
+    Ok(encode_draw_document(DrawDocumentInput {
         created_at,
         saved_at: &saved_at,
         document_json: content.as_bytes(),
@@ -724,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_legacy_non_zip_documents() {
+    fn rejects_non_container_documents() {
         let legacy = serde_json::json!({
             "header": {
                 "format": "hybrid-canvas/draw",
@@ -750,17 +750,17 @@ mod tests {
     }
 
     #[test]
-    fn v2_writer_always_emits_zip() {
+    fn writer_emits_draw_container() {
         let bytes = encode_document(
             &logical_store_snapshot("v2"),
             "2026-07-23T00:00:00.000Z",
             &[],
         )
-        .expect("v2 encode should succeed");
+        .expect("encode should succeed");
 
         assert!(bytes.starts_with(b"PK\x03\x04"));
 
-        let decoded = decode_draw_document_v2(&bytes).expect("written v2 should decode");
+        let decoded = decode_draw_document(&bytes).expect("written document should decode");
 
         assert_eq!(decoded.document["store"]["marker"], "v2");
     }

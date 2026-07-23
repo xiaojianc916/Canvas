@@ -1,4 +1,4 @@
-//! Strict v2 Hybrid Canvas ZIP DocumentCodec.
+//! Current Hybrid Canvas .draw container codec.
 //!
 //! This module owns only the physical document container. It treats the tldraw
 //! store snapshot as opaque JSON and never constructs, edits or interprets
@@ -35,7 +35,7 @@ pub struct DrawAssetInput<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct DrawDocumentV2Input<'a> {
+pub struct DrawDocumentInput<'a> {
     pub created_at: &'a str,
     pub saved_at: &'a str,
     pub document_json: &'a [u8],
@@ -51,7 +51,7 @@ pub struct DrawAssetOutput {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct DecodedDrawDocumentV2 {
+pub struct DecodedDrawDocument {
     pub created_at: String,
     pub saved_at: String,
     pub document: Value,
@@ -94,7 +94,7 @@ struct AssetDescriptor {
     path: String,
 }
 
-pub fn encode_draw_document_v2(input: DrawDocumentV2Input<'_>) -> Result<Vec<u8>> {
+pub fn encode_draw_document(input: DrawDocumentInput<'_>) -> Result<Vec<u8>> {
     validate_timestamp(input.created_at, "createdAt")?;
     validate_timestamp(input.saved_at, "savedAt")?;
 
@@ -193,7 +193,7 @@ pub fn encode_draw_document_v2(input: DrawDocumentV2Input<'_>) -> Result<Vec<u8>
     Ok(bytes)
 }
 
-pub fn decode_draw_document_v2(bytes: &[u8]) -> Result<DecodedDrawDocumentV2> {
+pub fn decode_draw_document(bytes: &[u8]) -> Result<DecodedDrawDocument> {
     if bytes.len() > MAX_CONTAINER_BYTES {
         return Err(corrupted("container exceeds byte budget"));
     }
@@ -354,7 +354,7 @@ pub fn decode_draw_document_v2(bytes: &[u8]) -> Result<DecodedDrawDocumentV2> {
         return Err(corrupted("container has missing or unknown ZIP entries"));
     }
 
-    Ok(DecodedDrawDocumentV2 {
+    Ok(DecodedDrawDocument {
         created_at: manifest.created_at,
         saved_at: manifest.saved_at,
         document,
@@ -540,11 +540,11 @@ mod tests {
         )
     }
 
-    fn encode_fixture() -> Vec<u8> {
+    fn encode_fixture_document() -> Vec<u8> {
         let (_, first) = asset(&[1, 2, 3]);
         let (_, second) = asset(&[4, 5, 6]);
 
-        encode_draw_document_v2(DrawDocumentV2Input {
+        encode_draw_document(DrawDocumentInput {
             created_at: "2026-07-23T00:00:00.000Z",
             saved_at: "2026-07-23T01:00:00.000Z",
             document_json: br#"{"schema":{},"store":{}}"#,
@@ -555,10 +555,10 @@ mod tests {
     }
 
     #[test]
-    fn round_trips_document_and_assets() {
-        let encoded = encode_fixture();
+    fn round_trips_draw_document_and_assets() {
+        let encoded = encode_fixture_document();
 
-        let decoded = decode_draw_document_v2(&encoded).expect("v2 fixture should decode");
+        let decoded = decode_draw_document(&encoded).expect("v2 fixture should decode");
 
         assert_eq!(
             decoded.document,
@@ -584,7 +584,7 @@ mod tests {
 
     #[test]
     fn rejects_asset_with_false_digest() {
-        let result = encode_draw_document_v2(DrawDocumentV2Input {
+        let result = encode_draw_document(DrawDocumentInput {
             created_at: "2026-07-23T00:00:00.000Z",
             saved_at: "2026-07-23T01:00:00.000Z",
             document_json: br#"{"store":{}}"#,
@@ -602,7 +602,7 @@ mod tests {
     #[test]
     fn rejects_raw_or_non_object_document_json() {
         for document in [b"not-json".as_slice(), b"[]".as_slice(), b"null".as_slice()] {
-            let result = encode_draw_document_v2(DrawDocumentV2Input {
+            let result = encode_draw_document(DrawDocumentInput {
                 created_at: "2026-07-23T00:00:00.000Z",
                 saved_at: "2026-07-23T01:00:00.000Z",
                 document_json: document,
@@ -625,12 +625,12 @@ mod tests {
 
         let bytes = writer.finish().expect("ZIP should finish").into_inner();
 
-        assert!(decode_draw_document_v2(&bytes).is_err());
+        assert!(decode_draw_document(&bytes).is_err());
     }
 
     #[test]
     fn rejects_unknown_zip_entry() {
-        let encoded = encode_fixture();
+        let encoded = encode_fixture_document();
         let cursor = Cursor::new(encoded);
 
         let mut source = ZipArchive::new(cursor).expect("fixture ZIP");
@@ -652,11 +652,11 @@ mod tests {
 
         let bytes = writer.finish().expect("ZIP should finish").into_inner();
 
-        assert!(decode_draw_document_v2(&bytes).is_err());
+        assert!(decode_draw_document(&bytes).is_err());
     }
 
     #[test]
-    fn rejects_future_manifest_version() {
+    fn rejects_future_container_manifest_version() {
         let manifest = canonical_json(&Manifest {
             format: DRAW_FORMAT.to_owned(),
             version: DRAW_VERSION + 1,
@@ -678,6 +678,6 @@ mod tests {
 
         let bytes = writer.finish().expect("ZIP should finish").into_inner();
 
-        assert!(decode_draw_document_v2(&bytes).is_err());
+        assert!(decode_draw_document(&bytes).is_err());
     }
 }

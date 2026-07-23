@@ -2,19 +2,23 @@
 
 import {
   existsSync,
+  mkdirSync,
   readFileSync,
+  renameSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 
 const root = process.cwd()
 
 const paths = {
   lib: 'editor/persistence/native/src/lib.rs',
+  oldCodec: 'editor/persistence/native/src/document_codec_v2.rs',
+  newCodec: 'editor/persistence/native/src/draw_document_codec.rs',
+  removeCodec: 'editor/persistence/native/src/document_codec.rs',
   documentRs: 'apps/desktop/src-tauri/src/commands/document.rs',
-  legacyCodec: 'editor/persistence/native/src/document_codec.rs',
-  legacyCodecRenamed: 'editor/persistence/native/src/legacy_document_codec_v1.rs',
+  toolbar: 'editor/core/src/react/CanvasToolbar.tsx',
 }
 
 function abs(path) {
@@ -26,7 +30,9 @@ function read(path) {
 }
 
 function write(path, content) {
-  writeFileSync(abs(path), content.replaceAll('\r\n', '\n'))
+  const full = abs(path)
+  mkdirSync(dirname(full), { recursive: true })
+  writeFileSync(full, content.replaceAll('\r\n', '\n'))
 }
 
 function removeIfExists(path) {
@@ -35,36 +41,102 @@ function removeIfExists(path) {
   }
 }
 
-function replaceBetween(source, startMarker, endMarker, replacement, label) {
-  const start = source.indexOf(startMarker)
-  if (start < 0) {
-    throw new Error(`Start marker not found: ${label}`)
+function replaceAllExact(source, from, to) {
+  return source.split(from).join(to)
+}
+
+function renameCodecFile() {
+  const oldExists = existsSync(abs(paths.oldCodec))
+  const newExists = existsSync(abs(paths.newCodec))
+
+  if (oldExists && !newExists) {
+    renameSync(abs(paths.oldCodec), abs(paths.newCodec))
   }
 
-  const end = source.indexOf(endMarker, start)
-  if (end < 0) {
-    throw new Error(`End marker not found: ${label}`)
+  if (!existsSync(abs(paths.newCodec))) {
+    throw new Error('Could not find current codec file to rename/use')
   }
-
-  return source.slice(0, start) + replacement + source.slice(end)
 }
 
 function patchLibRs() {
   let source = read(paths.lib)
 
   source = source.replace(/^mod document_codec;\n/m, '')
-  source = source.replace(/^mod legacy_document_codec_v1;\n/m, '')
+  source = replaceAllExact(source, 'mod document_codec_v2;', 'mod draw_document_codec;')
 
-  source = source.replace(
-    /^pub use document_codec::canonicalize_draw_document;\n/m,
-    '',
+  source = source.replace(/^pub use document_codec::canonicalize_draw_document;\n/m, '')
+  source = replaceAllExact(
+    source,
+    'pub use document_codec_v2::{',
+    'pub use draw_document_codec::{',
   )
-  source = source.replace(
-    /^pub use legacy_document_codec_v1::canonicalize_legacy_draw_document_v1;\n/m,
-    '',
+
+  source = replaceAllExact(
+    source,
+    '//! - strict v2 ZIP document encoding and decoding',
+    '//! - current .draw container encoding and decoding',
   )
 
   write(paths.lib, source)
+}
+
+function patchCodecFile() {
+  let source = read(paths.newCodec)
+
+  source = replaceAllExact(
+    source,
+    '//! Strict v2 Hybrid Canvas ZIP DocumentCodec.',
+    '//! Current Hybrid Canvas .draw container codec.',
+  )
+
+  source = replaceAllExact(
+    source,
+    'pub struct DrawDocumentV2Input',
+    'pub struct DrawDocumentInput',
+  )
+
+  source = replaceAllExact(
+    source,
+    'pub struct DecodedDrawDocumentV2',
+    'pub struct DecodedDrawDocument',
+  )
+
+  source = replaceAllExact(
+    source,
+    'pub fn encode_draw_document_v2(input: DrawDocumentV2Input',
+    'pub fn encode_draw_document(input: DrawDocumentInput',
+  )
+
+  source = replaceAllExact(
+    source,
+    'pub fn decode_draw_document_v2(bytes: &[u8]) -> Result<DecodedDrawDocumentV2>',
+    'pub fn decode_draw_document(bytes: &[u8]) -> Result<DecodedDrawDocument>',
+  )
+
+  source = replaceAllExact(source, 'DecodedDrawDocumentV2 {', 'DecodedDrawDocument {')
+  source = replaceAllExact(source, 'DrawDocumentV2Input {', 'DrawDocumentInput {')
+  source = replaceAllExact(source, 'encode_draw_document_v2(', 'encode_draw_document(')
+  source = replaceAllExact(source, 'decode_draw_document_v2(', 'decode_draw_document(')
+
+  source = replaceAllExact(
+    source,
+    'fn encode_fixture() -> Vec<u8> {',
+    'fn encode_fixture_document() -> Vec<u8> {',
+  )
+  source = replaceAllExact(source, 'encode_fixture();', 'encode_fixture_document();')
+
+  source = replaceAllExact(
+    source,
+    'fn round_trips_document_and_assets() {',
+    'fn round_trips_draw_document_and_assets() {',
+  )
+  source = replaceAllExact(
+    source,
+    'fn rejects_future_manifest_version() {',
+    'fn rejects_future_container_manifest_version() {',
+  )
+
+  write(paths.newCodec, source)
 }
 
 function patchDocumentRs() {
@@ -72,135 +144,169 @@ function patchDocumentRs() {
 
   source = source.replace(/,\s*canonicalize_draw_document/g, '')
   source = source.replace(/canonicalize_draw_document,\s*/g, '')
-  source = source.replace(/,\s*canonicalize_legacy_draw_document_v1/g, '')
-  source = source.replace(/canonicalize_legacy_draw_document_v1,\s*/g, '')
 
-  if (!source.includes('selected .draw file is not a supported v2 document')) {
-    source = replaceBetween(
-      source,
-      'fn decode_document(bytes: &[u8]) -> Result<DecodedDocument> {',
-      '\nfn encode_document(',
-      `fn decode_document(bytes: &[u8]) -> Result<DecodedDocument> {
-    if !bytes.starts_with(b"PK\\x03\\x04") {
-        return Err(Error::Validation(
-            "selected .draw file is not a supported v2 document".into(),
-        ));
-    }
+  source = replaceAllExact(source, 'decode_draw_document_v2', 'decode_draw_document')
+  source = replaceAllExact(source, 'encode_draw_document_v2', 'encode_draw_document')
+  source = replaceAllExact(source, 'DrawDocumentV2Input', 'DrawDocumentInput')
 
-    let decoded = decode_draw_document_v2(bytes)?;
+  source = replaceAllExact(
+    source,
+    'selected .draw file is not a supported v2 document',
+    'selected .draw file uses an unsupported internal format',
+  )
 
-    let assets = decoded
-        .assets
-        .into_iter()
-        .map(|asset| AssetSessionSnapshotEntry {
-            content_hash: asset.content_hash,
-            content_type: asset.content_type,
-            bytes: Arc::from(asset.bytes),
-        })
-        .collect::<Vec<_>>();
+  source = replaceAllExact(
+    source,
+    'fn v2_writer_always_emits_zip() {',
+    'fn writer_emits_draw_container() {',
+  )
 
-    Ok(DecodedDocument {
-        content: serde_json::to_string(&decoded.document)?,
-        created_at: decoded.created_at,
-        assets,
-    })
-}
-`,
-      'remove legacy decode fallback',
-    )
-  }
+  source = replaceAllExact(
+    source,
+    'fn rejects_legacy_non_zip_documents() {',
+    'fn rejects_non_container_documents() {',
+  )
 
-  if (source.includes('fn legacy_v1(marker: &str) -> Vec<u8> {')) {
-    source = replaceBetween(
-      source,
-      '    fn legacy_v1(marker: &str) -> Vec<u8> {',
-      '\n    #[test]\n    fn v2_writer_always_emits_zip() {',
-      `    #[test]
-    fn rejects_legacy_non_zip_documents() {
-        let legacy = serde_json::json!({
-            "header": {
-                "format": "hybrid-canvas/draw",
-                "version": 1,
-                "createdAt": "2026-07-23T00:00:00.000Z"
-            },
-            "content": {
-                "document": {
-                    "schema": {},
-                    "store": {
-                        "marker": "legacy"
-                    }
-                },
-                "session": {}
-            }
-        })
-        .to_string()
-        .into_bytes();
+  source = replaceAllExact(
+    source,
+    'expect("v2 encode should succeed")',
+    'expect("encode should succeed")',
+  )
 
-        let result = decode_document(&legacy);
-
-        assert!(matches!(result, Err(Error::Validation(_))));
-    }
-`,
-      'replace legacy migration test',
-    )
-  }
+  source = replaceAllExact(
+    source,
+    'expect("written v2 should decode")',
+    'expect("written document should decode")',
+  )
 
   write(paths.documentRs, source)
 }
 
-function deleteLegacyCodecFiles() {
-  removeIfExists(paths.legacyCodec)
-  removeIfExists(paths.legacyCodecRenamed)
+function patchToolbar() {
+  let source = read(paths.toolbar)
+
+  if (source.includes('export function CanvasToolbar({ onSave }: CanvasToolbarProps)')) {
+    write(paths.toolbar, source)
+    return
+  }
+
+  if (!source.includes('export interface CanvasToolbarProps')) {
+    throw new Error('CanvasToolbarProps declaration is missing')
+  }
+
+  if (!source.includes('export function CanvasToolbar() {')) {
+    throw new Error('CanvasToolbar function signature was not found')
+  }
+
+  source = replaceAllExact(
+    source,
+    'export function CanvasToolbar() {',
+    'export function CanvasToolbar({ onSave }: CanvasToolbarProps) {',
+  )
+
+  if (!source.includes('const handleSave =')) {
+    source = replaceAllExact(
+      source,
+      `  const saveAction =
+    actions['hybrid-canvas.save']`,
+      `  const saveAction =
+    actions['hybrid-canvas.save']
+
+  const handleSave =
+    onSave ??
+    (saveAction
+      ? () => {
+          void saveAction.onSelect('toolbar')
+        }
+      : null)`,
+    )
+  }
+
+  const oldSaveBlock = `{saveAction ? (
+  <>
+    <Separator
+      className="mx-1 h-5 shrink-0"
+      orientation="vertical"
+    />
+
+    <ToolbarButton
+      icon={Save}
+      label="保存"
+      onClick={() =>
+        void saveAction.onSelect('toolbar')
+      }
+      shortcut="Ctrl+S"
+    />
+  </>
+) : null}`
+
+  const newSaveBlock = `{handleSave ? (
+  <>
+    <Separator
+      className="mx-1 h-5 shrink-0"
+      orientation="vertical"
+    />
+
+    <ToolbarButton
+      icon={Save}
+      label="保存"
+      onClick={handleSave}
+      shortcut="Ctrl+S"
+    />
+  </>
+) : null}`
+
+  if (source.includes(oldSaveBlock)) {
+    source = replaceAllExact(source, oldSaveBlock, newSaveBlock)
+  }
+
+  write(paths.toolbar, source)
 }
 
-function validateResult() {
+function deleteDeadCodec() {
+  removeIfExists(paths.removeCodec)
+}
+
+function validate() {
   const lib = read(paths.lib)
+  const codec = read(paths.newCodec)
   const documentRs = read(paths.documentRs)
+  const toolbar = read(paths.toolbar)
 
-  const forbiddenLibMarkers = [
-    'mod document_codec;\n',
-    'mod legacy_document_codec_v1;\n',
-    'pub use document_codec::canonicalize_draw_document;\n',
-    'pub use legacy_document_codec_v1::canonicalize_legacy_draw_document_v1;\n',
+  const forbidden = [
+    'document_codec_v2',
+    'encode_draw_document_v2',
+    'decode_draw_document_v2',
+    'DrawDocumentV2Input',
+    'DecodedDrawDocumentV2',
+    'supported v2 document',
   ]
 
-  for (const marker of forbiddenLibMarkers) {
-    if (lib.includes(marker)) {
-      throw new Error(`legacy codec references still remain in lib.rs: ${marker.trim()}`)
+  for (const marker of forbidden) {
+    if (lib.includes(marker) || codec.includes(marker) || documentRs.includes(marker)) {
+      throw new Error(`Outdated naming still remains: ${marker}`)
     }
   }
 
-  const forbiddenDocumentMarkers = [
-    'canonicalize_draw_document(',
-    'canonicalize_legacy_draw_document_v1(',
-    ' canonicalize_draw_document,',
-    ' canonicalize_legacy_draw_document_v1,',
-  ]
-
-  for (const marker of forbiddenDocumentMarkers) {
-    if (documentRs.includes(marker)) {
-      throw new Error(
-        `legacy codec references still remain in document.rs: ${marker.trim()}`,
-      )
-    }
+  if (existsSync(abs(paths.removeCodec))) {
+    throw new Error('Dead codec file still exists: document_codec.rs')
   }
 
-  if (!documentRs.includes('selected .draw file is not a supported v2 document')) {
-    throw new Error('document.rs did not switch to v2-only decode')
-  }
-
-  if (existsSync(abs(paths.legacyCodec)) || existsSync(abs(paths.legacyCodecRenamed))) {
-    throw new Error('legacy codec files still exist')
+  if (!toolbar.includes('export function CanvasToolbar({ onSave }: CanvasToolbarProps)')) {
+    throw new Error('CanvasToolbarProps is still a dead API')
   }
 }
 
 function main() {
+  renameCodecFile()
   patchLibRs()
+  patchCodecFile()
   patchDocumentRs()
-  deleteLegacyCodecFiles()
-  validateResult()
+  patchToolbar()
+  deleteDeadCodec()
+  validate()
 
-  console.log('Deleted legacy .draw compatibility. Only v2 documents are supported now.')
+  console.log('Final cleanup applied: canonical names restored and dead code removed.')
 }
 
 main()

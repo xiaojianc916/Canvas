@@ -3,7 +3,7 @@
 //! Native file capability.
 //!
 //! Current responsibility:
-//! - strict v2 ZIP document encoding and decoding
+//! - current .draw container encoding and decoding
 //! - content-addressed binary asset storage
 //! - atomic replacement of an already-validated document container
 //!
@@ -18,12 +18,12 @@
 )]
 mod atomic_write;
 
-mod document_codec_v2;
+mod draw_document_codec;
 mod error;
 mod revision;
 
 pub use atomic_write::atomic_write;
-pub use document_codec_v2::{
+pub use draw_document_codec::{
     decode_draw_document_v2, encode_draw_document_v2, DecodedDrawDocumentV2, DrawAssetInput,
     DrawAssetOutput, DrawDocumentV2Input,
 };
