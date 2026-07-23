@@ -3,36 +3,54 @@
 /**
  * 完全迁移 lucide-react -> @mynaui/icons-react
  *
- * 用法：
- *   将本文件保存为 scripts/migrate-icons-to-mynaui.mjs
- *   在仓库根目录执行：
+ * 执行：
+ *   node refactor.mjs --apply
  *
- *   node scripts/migrate-icons-to-mynaui.mjs
+ * 仅预览依赖和配置修改：
+ *   node refactor.mjs
  *
- * 可选：
- *   node scripts/migrate-icons-to-mynaui.mjs --skip-checks
- *   node scripts/migrate-icons-to-mynaui.mjs --dry-run
+ * 跳过验证：
+ *   node refactor.mjs --apply --skip-checks
  */
 
 import { execFileSync } from 'node:child_process'
 import {
   existsSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join, relative, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import {
+  dirname,
+  extname,
+  join,
+  relative,
+  resolve,
+} from 'node:path'
+import {
+  fileURLToPath,
+  pathToFileURL,
+} from 'node:url'
 
 const ROOT = process.cwd()
+const CURRENT_SCRIPT = resolve(fileURLToPath(import.meta.url))
+
+const APPLY = process.argv.includes('--apply')
+const SKIP_CHECKS = process.argv.includes('--skip-checks')
+
+const LEGACY_PACKAGE = 'lucide-react'
 const TARGET_PACKAGE = '@mynaui/icons-react'
 const TARGET_VERSION = '0.4.11'
-const LEGACY_PACKAGE = 'lucide-react'
 
-const DRY_RUN = process.argv.includes('--dry-run')
-const SKIP_CHECKS = process.argv.includes('--skip-checks')
+const ARCHITECTURE_GUARD_FILE = resolve(
+  ROOT,
+  'tests',
+  'architecture',
+  'check-icon-library.mjs',
+)
 
 const IGNORED_DIRECTORIES = new Set([
   '.git',
@@ -45,23 +63,38 @@ const IGNORED_DIRECTORIES = new Set([
 ])
 
 const SOURCE_EXTENSIONS = new Set([
+  '.cjs',
   '.js',
   '.jsx',
   '.mjs',
-  '.cjs',
   '.ts',
   '.tsx',
 ])
 
+const changedFiles = new Set()
+
 /**
- * 按优先级列出 Myna UI 中可能对应的正式名称。
+ * Lucide 名称到 Myna UI 正式名称的候选关系。
  *
- * 脚本会读取实际安装的 @mynaui/icons-react 导出，只选择真实存在的名称。
- * 如果没有可靠匹配，脚本会终止，而不是保留 Lucide 或生成兼容层。
+ * 脚本会读取实际安装的 @mynaui/icons-react 导出，
+ * 只采用真实存在的第一个候选名称。
+ *
+ * 如果找不到可靠对应项，脚本会终止并列出候选，
+ * 不会保留 Lucide、生成兼容层或复制旧 SVG。
  */
 const SEMANTIC_ICON_CANDIDATES = {
-  BookOpen: ['BookOpen', 'Book', 'Books'],
-  Boxes: ['Boxes', 'BoxMultiple', 'Box'],
+  BookOpen: [
+    'BookOpen',
+    'Book',
+    'Books',
+  ],
+
+  Boxes: [
+    'Boxes',
+    'BoxMultiple',
+    'Box',
+  ],
+
   ChartNoAxesCombined: [
     'ChartNoAxesCombined',
     'ChartCombined',
@@ -69,79 +102,191 @@ const SEMANTIC_ICON_CANDIDATES = {
     'ChartLine',
     'Chart',
   ],
-  CheckIcon: ['Check', 'CheckCircle'],
+
+  CheckIcon: [
+    'Check',
+    'CheckCircle',
+  ],
+
   ChevronsUpDownIcon: [
     'ChevronsUpDown',
     'ChevronUpDown',
     'SelectorVertical',
     'UnfoldVertical',
   ],
-  CircleHelp: ['CircleHelp', 'CircleQuestion', 'HelpCircle', 'QuestionCircle'],
-  Code2: ['Code2', 'Code'],
-  Command: ['Command', 'Terminal'],
-  Copy: ['Copy', 'WindowRestore', 'Windows'],
-  ExternalLink: ['ExternalLink', 'ArrowUpRight', 'OpenExternal'],
-  FilePlus2: ['FilePlus2', 'FilePlus', 'DocumentPlus'],
-  Files: ['Files', 'FileMultiple', 'Documents'],
-  FileText: ['FileText', 'DocumentText', 'File'],
-  FolderOpen: ['FolderOpen', 'Folder'],
-  Grid2X2: ['Grid2X2', 'GridFour', 'Grid', 'Dashboard'],
-  Image: ['Image', 'ImageSquare', 'Picture'],
-  Layers3: ['Layers3', 'Layers', 'Layer'],
-  MessageCircle: ['MessageCircle', 'ChatCircle', 'Message'],
-  Network: ['Network', 'Nodes', 'ShareNetwork'],
+
+  CircleHelp: [
+    'CircleHelp',
+    'CircleQuestion',
+    'HelpCircle',
+    'QuestionCircle',
+  ],
+
+  Code2: [
+    'Code2',
+    'Code',
+  ],
+
+  Command: [
+    'Command',
+    'Terminal',
+  ],
+
+  Copy: [
+    'Copy',
+    'WindowRestore',
+    'Windows',
+  ],
+
+  ExternalLink: [
+    'ExternalLink',
+    'ArrowUpRight',
+    'OpenExternal',
+  ],
+
+  FilePlus2: [
+    'FilePlus2',
+    'FilePlus',
+    'DocumentPlus',
+  ],
+
+  Files: [
+    'Files',
+    'FileMultiple',
+    'Documents',
+  ],
+
+  FileText: [
+    'FileText',
+    'DocumentText',
+    'File',
+  ],
+
+  FolderOpen: [
+    'FolderOpen',
+    'Folder',
+  ],
+
+  Grid2X2: [
+    'Grid2X2',
+    'GridFour',
+    'Grid',
+    'Dashboard',
+  ],
+
+  Image: [
+    'Image',
+    'ImageSquare',
+    'Picture',
+  ],
+
+  Layers3: [
+    'Layers3',
+    'Layers',
+    'Layer',
+  ],
+
+  MessageCircle: [
+    'MessageCircle',
+    'ChatCircle',
+    'Message',
+  ],
+
+  Network: [
+    'Network',
+    'Nodes',
+    'ShareNetwork',
+  ],
+
   PanelLeftClose: [
     'PanelLeftClose',
     'SidebarLeftClose',
     'SidebarClose',
     'PanelClose',
   ],
+
   PanelLeftOpen: [
     'PanelLeftOpen',
     'SidebarLeftOpen',
     'SidebarOpen',
     'PanelOpen',
   ],
-  RefreshCcw: ['RefreshCcw', 'Refresh', 'ArrowClockwise'],
-  SearchIcon: ['Search', 'SearchIcon'],
-  Settings: ['Settings', 'Cog', 'Gear'],
-  Square: ['Square', 'WindowMaximize'],
-  X: ['X', 'Close'],
-}
 
-const changedFiles = new Set()
+  RefreshCcw: [
+    'RefreshCcw',
+    'Refresh',
+    'ArrowClockwise',
+  ],
+
+  SearchIcon: [
+    'Search',
+  ],
+
+  Settings: [
+    'Settings',
+    'Cog',
+    'Gear',
+  ],
+
+  Square: [
+    'Square',
+    'WindowMaximize',
+  ],
+
+  X: [
+    'X',
+    'Close',
+  ],
+}
 
 main().catch((error) => {
   console.error('\n迁移失败：')
-  console.error(error instanceof Error ? error.stack : error)
+
+  if (error instanceof Error) {
+    console.error(error.stack ?? error.message)
+  } else {
+    console.error(String(error))
+  }
+
   process.exitCode = 1
 })
 
 async function main() {
   assertRepositoryRoot()
 
-  console.log(`迁移 ${LEGACY_PACKAGE} -> ${TARGET_PACKAGE}`)
-  console.log(DRY_RUN ? '模式：dry-run\n' : '')
+  console.log(
+    `迁移 ${LEGACY_PACKAGE} -> ${TARGET_PACKAGE}`,
+  )
+
+  if (!APPLY) {
+    console.log('\n当前为预览模式，不会写入文件。')
+    console.log('正式执行请运行：')
+    console.log('\n  node refactor.mjs --apply\n')
+  }
 
   updateWorkspaceCatalog()
   updateWorkspacePackageJsonFiles()
   removeShadcnLucideConfiguration()
   addIconArchitectureGuard()
 
-  if (DRY_RUN) {
-    console.log('\nDry-run 完成，未写入文件，也未安装依赖。')
+  if (!APPLY) {
+    console.log('\n预览完成。')
     printChangedFiles()
     return
   }
 
-  console.log('\n安装新依赖并刷新 pnpm-lock.yaml...')
+  console.log('\n安装 Myna UI Icons 并刷新锁文件...')
+
   run('pnpm', ['install'])
 
   const mynaExports = await loadMynaExports()
 
-  console.log(`检测到 ${mynaExports.size} 个 Myna UI React 导出。`)
+  console.log(
+    `\n检测到 ${mynaExports.size} 个 Myna UI React 导出。`,
+  )
 
   migrateSourceImports(mynaExports)
+
   assertNoLegacySourceImports()
   assertNoLegacyDirectDependencies()
 
@@ -163,9 +308,11 @@ function assertRepositoryRoot() {
   ]
 
   for (const file of requiredFiles) {
-    if (!existsSync(join(ROOT, file))) {
+    const absolutePath = join(ROOT, file)
+
+    if (!existsSync(absolutePath)) {
       throw new Error(
-        `请在 Canvas 仓库根目录运行脚本，缺少：${file}`,
+        `请在仓库根目录运行脚本，缺少：${file}`,
       )
     }
   }
@@ -176,10 +323,10 @@ function updateWorkspaceCatalog() {
   let content = readText(file)
 
   const legacyLinePattern =
-    /^([ \t]*)lucide-react:\s*["']?[^"'#\n]+["']?\s*(?:#.*)?$/m
+    /^([ \t]*)["']?lucide-react["']?\s*:\s*["']?[^"'#\n]+["']?\s*(?:#.*)?$/m
 
   const targetLinePattern =
-    /^([ \t]*)["']?@mynaui\/icons-react["']?:\s*["']?[^"'#\n]+["']?\s*(?:#.*)?$/m
+    /^([ \t]*)["']?@mynaui\/icons-react["']?\s*:\s*["']?[^"'#\n]+["']?\s*(?:#.*)?$/m
 
   if (targetLinePattern.test(content)) {
     content = content.replace(
@@ -198,10 +345,13 @@ function updateWorkspaceCatalog() {
     const match = catalogPattern.exec(content)
 
     if (!match) {
-      throw new Error('pnpm-workspace.yaml 中没有找到 catalog:')
+      throw new Error(
+        'pnpm-workspace.yaml 中没有找到 catalog:',
+      )
     }
 
-    const insertionPoint = match.index + match[0].length
+    const insertionPoint =
+      match.index + match[0].length
 
     content =
       content.slice(0, insertionPoint) +
@@ -209,7 +359,9 @@ function updateWorkspaceCatalog() {
       content.slice(insertionPoint)
   }
 
-  content = content.replace(/\n{3,}/g, '\n\n')
+  content = content
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
 
   writeTextIfChanged(file, content)
 }
@@ -221,8 +373,7 @@ function updateWorkspacePackageJsonFiles() {
   )
 
   for (const file of packageJsonFiles) {
-    const source = readText(file)
-    const json = JSON.parse(source)
+    const json = readJson(file)
     let changed = false
 
     for (const sectionName of [
@@ -233,7 +384,11 @@ function updateWorkspacePackageJsonFiles() {
     ]) {
       const section = json[sectionName]
 
-      if (!section || typeof section !== 'object') {
+      if (
+        !section ||
+        typeof section !== 'object' ||
+        Array.isArray(section)
+      ) {
         continue
       }
 
@@ -241,13 +396,10 @@ function updateWorkspacePackageJsonFiles() {
         continue
       }
 
-      const legacySpecifier = section[LEGACY_PACKAGE]
-
       delete section[LEGACY_PACKAGE]
 
       if (!(TARGET_PACKAGE in section)) {
-        section[TARGET_PACKAGE] =
-          legacySpecifier === 'catalog:' ? 'catalog:' : 'catalog:'
+        section[TARGET_PACKAGE] = 'catalog:'
       }
 
       json[sectionName] = sortObject(section)
@@ -258,7 +410,10 @@ function updateWorkspacePackageJsonFiles() {
       continue
     }
 
-    writeTextIfChanged(file, `${JSON.stringify(json, null, 2)}\n`)
+    writeTextIfChanged(
+      file,
+      `${JSON.stringify(json, null, 2)}\n`,
+    )
   }
 }
 
@@ -274,7 +429,11 @@ function removeShadcnLucideConfiguration() {
     return
   }
 
-  const json = JSON.parse(readText(file))
+  const json = readJson(file)
+
+  if (!('iconLibrary' in json)) {
+    return
+  }
 
   if (json.iconLibrary !== 'lucide') {
     return
@@ -282,33 +441,38 @@ function removeShadcnLucideConfiguration() {
 
   /**
    * shadcn 当前没有稳定的 mynaui iconLibrary 枚举值。
-   * 因此删除该字段，防止以后生成新的 lucide-react import。
+   * 删除该字段，避免以后自动生成 lucide-react import。
    */
   delete json.iconLibrary
 
-  writeTextIfChanged(file, `${JSON.stringify(json, null, 2)}\n`)
+  writeTextIfChanged(
+    file,
+    `${JSON.stringify(json, null, 2)}\n`,
+  )
 }
 
 function addIconArchitectureGuard() {
-  const guardFile = join(
-    ROOT,
-    'tests',
-    'architecture',
-    'check-icon-library.mjs',
-  )
+  const guardSource = String.raw`#!/usr/bin/env node
 
-  const guardSource = `#!/usr/bin/env node
-
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import {
+  readFileSync,
+  readdirSync,
+  statSync,
+} from 'node:fs'
 import { extname, join, relative, resolve } from 'node:path'
 
 const root = resolve(process.cwd())
 
-const forbiddenPackages = [
+const allowedIconPackage = '@mynaui/icons-react'
+
+const forbiddenExactPackages = new Set([
   'lucide-react',
   'react-icons',
-  '@heroicons/',
   '@tabler/icons-react',
+])
+
+const forbiddenPackagePrefixes = [
+  '@heroicons/',
 ]
 
 const ignoredDirectories = new Set([
@@ -322,10 +486,10 @@ const ignoredDirectories = new Set([
 ])
 
 const sourceExtensions = new Set([
+  '.cjs',
   '.js',
   '.jsx',
   '.mjs',
-  '.cjs',
   '.ts',
   '.tsx',
 ])
@@ -350,7 +514,10 @@ if (violations.length > 0) {
   }
 
   console.error('')
-  console.error('产品 UI 只能使用 @mynaui/icons-react。')
+  console.error(
+    '产品 UI 只能直接使用 ' + allowedIconPackage + '。',
+  )
+
   process.exit(1)
 }
 
@@ -370,28 +537,41 @@ function walk(directory) {
       continue
     }
 
-    if (
-      entry === 'package.json' ||
-      sourceExtensions.has(extensionOf(entry))
-    ) {
-      inspectFile(absolutePath)
+    if (entry === 'package.json') {
+      inspectPackageJson(absolutePath)
+      continue
+    }
+
+    if (sourceExtensions.has(extname(entry))) {
+      inspectSourceFile(absolutePath)
     }
   }
 }
 
-function inspectFile(file) {
-  if (file === new URL(import.meta.url).pathname) {
-    return
-  }
+function inspectPackageJson(file) {
+  const json = parseJson(file)
 
-  const lines = readFileSync(file, 'utf8').split(/\\r?\\n/)
+  for (const sectionName of [
+    'dependencies',
+    'devDependencies',
+    'optionalDependencies',
+    'peerDependencies',
+  ]) {
+    const section = json[sectionName]
 
-  for (const [index, line] of lines.entries()) {
-    for (const packageName of forbiddenPackages) {
-      if (line.includes(packageName)) {
+    if (
+      !section ||
+      typeof section !== 'object' ||
+      Array.isArray(section)
+    ) {
+      continue
+    }
+
+    for (const packageName of Object.keys(section)) {
+      if (isForbiddenPackage(packageName)) {
         violations.push({
           file: relative(root, file),
-          line: index + 1,
+          line: 1,
           packageName,
         })
       }
@@ -399,34 +579,103 @@ function inspectFile(file) {
   }
 }
 
-function extensionOf(file) {
-  const index = file.lastIndexOf('.')
-  return index >= 0 ? file.slice(index) : ''
+function inspectSourceFile(file) {
+  const content = readFileSync(file, 'utf8')
+  const lines = content.split(/\r?\n/)
+
+  const importPatterns = [
+    /\bfrom\s+['"]([^'"]+)['"]/g,
+    /\bimport\s+['"]([^'"]+)['"]/g,
+    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+    /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+  ]
+
+  for (const [lineIndex, line] of lines.entries()) {
+    for (const pattern of importPatterns) {
+      pattern.lastIndex = 0
+
+      for (
+        let match = pattern.exec(line);
+        match;
+        match = pattern.exec(line)
+      ) {
+        const packageName = match[1]
+
+        if (isForbiddenPackage(packageName)) {
+          violations.push({
+            file: relative(root, file),
+            line: lineIndex + 1,
+            packageName,
+          })
+        }
+      }
+    }
+  }
+}
+
+function isForbiddenPackage(packageName) {
+  if (forbiddenExactPackages.has(packageName)) {
+    return true
+  }
+
+  return forbiddenPackagePrefixes.some(
+    (prefix) =>
+      packageName === prefix.slice(0, -1) ||
+      packageName.startsWith(prefix),
+  )
+}
+
+function parseJson(file) {
+  const content = readFileSync(file, 'utf8')
+  const normalized =
+    content.charCodeAt(0) === 0xfeff
+      ? content.slice(1)
+      : content
+
+  try {
+    return JSON.parse(normalized)
+  } catch (error) {
+    throw new Error(
+      '无法解析 JSON：' +
+        relative(root, file) +
+        '\n' +
+        String(error),
+    )
+  }
 }
 `
 
-  writeTextIfChanged(guardFile, guardSource)
+  writeTextIfChanged(
+    ARCHITECTURE_GUARD_FILE,
+    guardSource,
+  )
 
   const rootPackageFile = join(ROOT, 'package.json')
-  const packageJson = JSON.parse(readText(rootPackageFile))
-  const currentScript = packageJson.scripts?.['test:architecture']
+  const packageJson = readJson(rootPackageFile)
+
+  const currentScript =
+    packageJson.scripts?.['test:architecture']
 
   if (typeof currentScript !== 'string') {
-    throw new Error('根 package.json 缺少 scripts.test:architecture')
+    throw new Error(
+      '根 package.json 缺少 scripts.test:architecture',
+    )
   }
 
   const guardCommand =
     'node tests/architecture/check-icon-library.mjs'
 
-  if (!currentScript.includes(guardCommand)) {
-    packageJson.scripts['test:architecture'] =
-      `${currentScript} && ${guardCommand}`
-
-    writeTextIfChanged(
-      rootPackageFile,
-      `${JSON.stringify(packageJson, null, 2)}\n`,
-    )
+  if (currentScript.includes(guardCommand)) {
+    return
   }
+
+  packageJson.scripts['test:architecture'] =
+    `${currentScript} && ${guardCommand}`
+
+  writeTextIfChanged(
+    rootPackageFile,
+    `${JSON.stringify(packageJson, null, 2)}\n`,
+  )
 }
 
 async function loadMynaExports() {
@@ -434,167 +683,230 @@ async function loadMynaExports() {
     join(ROOT, 'foundations', 'design-system'),
     join(ROOT, 'features', 'workspace'),
     join(ROOT, 'apps', 'desktop'),
+    ROOT,
   ]
 
   let resolvedEntry = null
 
   for (const packageDirectory of candidatePackageDirectories) {
-    const packageJsonFile = join(packageDirectory, 'package.json')
+    const packageJsonFile = join(
+      packageDirectory,
+      'package.json',
+    )
 
     if (!existsSync(packageJsonFile)) {
       continue
     }
 
     try {
-      const requireFromPackage = createRequire(packageJsonFile)
-      resolvedEntry = requireFromPackage.resolve(TARGET_PACKAGE)
+      const requireFromPackage =
+        createRequire(packageJsonFile)
+
+      resolvedEntry =
+        requireFromPackage.resolve(TARGET_PACKAGE)
+
       break
     } catch {
-      // 尝试下一个 workspace package。
+      // 继续尝试下一个 workspace package。
     }
   }
 
   if (!resolvedEntry) {
     throw new Error(
-      `安装后仍无法解析 ${TARGET_PACKAGE}，请检查 pnpm install 输出。`,
+      `安装后仍无法解析 ${TARGET_PACKAGE}。` +
+        '\n请检查 pnpm install 是否成功。',
     )
   }
 
-  const module = await import(pathToFileURL(resolvedEntry).href)
-
-  return new Set(
-    Object.keys(module).filter(
-      (name) =>
-        name !== 'default' &&
-        /^[A-Z][A-Za-z0-9]*$/.test(name),
-    ),
+  const module = await import(
+    pathToFileURL(resolvedEntry).href
   )
+
+  const exportedNames = Object.keys(module).filter(
+    (name) =>
+      name !== 'default' &&
+      /^[A-Z][A-Za-z0-9]*$/.test(name),
+  )
+
+  if (exportedNames.length === 0) {
+    throw new Error(
+      `${TARGET_PACKAGE} 没有检测到可用的 React 图标导出。`,
+    )
+  }
+
+  return new Set(exportedNames)
 }
 
 function migrateSourceImports(mynaExports) {
   const sourceFiles = findFiles(
     ROOT,
-    (file) => SOURCE_EXTENSIONS.has(extensionOf(file)),
+    (file) =>
+      SOURCE_EXTENSIONS.has(extname(file)) &&
+      !isMigrationInfrastructureFile(file),
   )
 
+  const plans = []
   const unresolved = []
 
   for (const file of sourceFiles) {
-    let content = readText(file)
+    const content = readText(file)
 
-    if (!content.includes(LEGACY_PACKAGE)) {
+    if (!hasLegacyImport(content)) {
       continue
     }
 
-    const originalContent = content
-
-    const namedImportPattern =
-      /import\s+(type\s+)?\{([\s\S]*?)\}\s+from\s+['"]lucide-react['"];?/g
-
-    content = content.replace(
-      namedImportPattern,
-      (fullMatch, typeKeyword, rawSpecifiers) => {
-        if (typeKeyword) {
-          throw new Error(
-            `${relative(ROOT, file)} 使用了 lucide-react 类型导入；` +
-              '请改为最小 React ComponentType 契约。',
-          )
-        }
-
-        const parsedSpecifiers =
-          parseNamedImportSpecifiers(rawSpecifiers)
-
-        const replacements = []
-        const targetNames = []
-
-        for (const specifier of parsedSpecifiers) {
-          const resolvedName = resolveMynaIconName(
-            specifier.imported,
-            mynaExports,
-          )
-
-          if (!resolvedName) {
-            unresolved.push({
-              file: relative(ROOT, file),
-              icon: specifier.imported,
-              suggestions: findClosestExports(
-                specifier.imported,
-                mynaExports,
-              ),
-            })
-
-            continue
-          }
-
-          targetNames.push(resolvedName)
-
-          if (specifier.local !== resolvedName) {
-            replacements.push({
-              from: specifier.local,
-              to: resolvedName,
-            })
-          }
-        }
-
-        if (
-          parsedSpecifiers.some(
-            (specifier) =>
-              !resolveMynaIconName(
-                specifier.imported,
-                mynaExports,
-              ),
-          )
-        ) {
-          return fullMatch
-        }
-
-        for (const replacement of replacements) {
-          content = replaceIdentifier(
-            content,
-            replacement.from,
-            replacement.to,
-          )
-        }
-
-        const uniqueTargetNames = [...new Set(targetNames)].sort()
-
-        if (uniqueTargetNames.length <= 3) {
-          return `import { ${uniqueTargetNames.join(', ')} } from '${TARGET_PACKAGE}'`
-        }
-
-        return [
-          'import {',
-          ...uniqueTargetNames.map((name) => `  ${name},`),
-          `} from '${TARGET_PACKAGE}'`,
-        ].join('\n')
-      },
+    const plan = createSourceMigrationPlan(
+      file,
+      content,
+      mynaExports,
     )
 
-    if (content !== originalContent) {
-      writeTextIfChanged(file, content)
-    }
+    plans.push(plan)
+    unresolved.push(...plan.unresolved)
   }
 
   if (unresolved.length > 0) {
-    const lines = [
-      '以下 Lucide 图标没有可靠的 Myna UI 对应项：',
-      '',
-    ]
+    throwUnresolvedIcons(unresolved)
+  }
 
-    for (const item of unresolved) {
-      lines.push(
-        `- ${item.file}: ${item.icon}`,
-        `  候选：${item.suggestions.join(', ') || '无'}`,
+  for (const plan of plans) {
+    writeTextIfChanged(plan.file, plan.content)
+  }
+}
+
+function createSourceMigrationPlan(
+  file,
+  originalContent,
+  mynaExports,
+) {
+  const importPattern =
+    /import\s+(type\s+)?\{([\s\S]*?)\}\s+from\s+['"]lucide-react['"]\s*;?/g
+
+  const matches = [
+    ...originalContent.matchAll(importPattern),
+  ]
+
+  const edits = []
+  const renameMap = new Map()
+  const unresolved = []
+
+  for (const match of matches) {
+    const fullMatch = match[0]
+    const typeKeyword = match[1]
+    const rawSpecifiers = match[2]
+    const matchIndex = match.index
+
+    if (matchIndex === undefined) {
+      continue
+    }
+
+    if (typeKeyword) {
+      throw new Error(
+        `${relative(ROOT, file)} 使用了 ${LEGACY_PACKAGE} 类型导入。` +
+          '\n请改为最小 React ComponentType 契约。',
       )
     }
 
-    lines.push(
-      '',
-      '脚本已拒绝猜测，因此没有创建兼容层。',
-      '请把对应关系加入 SEMANTIC_ICON_CANDIDATES 后重新执行。',
+    const parsedSpecifiers =
+      parseNamedImportSpecifiers(rawSpecifiers)
+
+    const resolvedSpecifiers = []
+
+    for (const specifier of parsedSpecifiers) {
+      const resolvedName = resolveMynaIconName(
+        specifier.imported,
+        mynaExports,
+      )
+
+      if (!resolvedName) {
+        unresolved.push({
+          file: relative(ROOT, file),
+          icon: specifier.imported,
+          suggestions: findClosestExports(
+            specifier.imported,
+            mynaExports,
+          ),
+        })
+
+        continue
+      }
+
+      resolvedSpecifiers.push({
+        imported: resolvedName,
+        previousLocal: specifier.local,
+      })
+
+      if (specifier.local !== resolvedName) {
+        const existingTarget =
+          renameMap.get(specifier.local)
+
+        if (
+          existingTarget &&
+          existingTarget !== resolvedName
+        ) {
+          throw new Error(
+            `${relative(ROOT, file)} 中的标识符 ` +
+              `${specifier.local} 出现冲突映射：` +
+              `${existingTarget} / ${resolvedName}`,
+          )
+        }
+
+        renameMap.set(
+          specifier.local,
+          resolvedName,
+        )
+      }
+    }
+
+    if (
+      resolvedSpecifiers.length !==
+      parsedSpecifiers.length
+    ) {
+      continue
+    }
+
+    const targetNames = [
+      ...new Set(
+        resolvedSpecifiers.map(
+          (specifier) => specifier.imported,
+        ),
+      ),
+    ].sort((left, right) =>
+      left.localeCompare(right),
     )
 
-    throw new Error(lines.join('\n'))
+    edits.push({
+      start: matchIndex,
+      end: matchIndex + fullMatch.length,
+      replacement: formatMynaImport(targetNames),
+    })
+  }
+
+  if (unresolved.length > 0) {
+    return {
+      file,
+      content: originalContent,
+      unresolved,
+    }
+  }
+
+  let content = applyTextEdits(
+    originalContent,
+    edits,
+  )
+
+  for (const [from, to] of renameMap) {
+    content = replaceIdentifierReferences(
+      content,
+      from,
+      to,
+    )
+  }
+
+  return {
+    file,
+    content,
+    unresolved,
   }
 }
 
@@ -622,11 +934,68 @@ function parseNamedImportSpecifiers(rawSpecifiers) {
     })
 }
 
-function resolveMynaIconName(legacyName, mynaExports) {
+function formatMynaImport(names) {
+  if (names.length === 0) {
+    throw new Error('不能生成空的 Myna UI import')
+  }
+
+  if (names.length <= 3) {
+    return (
+      `import { ${names.join(', ')} } ` +
+      `from '${TARGET_PACKAGE}'`
+    )
+  }
+
+  return [
+    'import {',
+    ...names.map((name) => `  ${name},`),
+    `} from '${TARGET_PACKAGE}'`,
+  ].join('\n')
+}
+
+function applyTextEdits(content, edits) {
+  const sortedEdits = [...edits].sort(
+    (left, right) => right.start - left.start,
+  )
+
+  let result = content
+
+  for (const edit of sortedEdits) {
+    result =
+      result.slice(0, edit.start) +
+      edit.replacement +
+      result.slice(edit.end)
+  }
+
+  return result
+}
+
+function replaceIdentifierReferences(
+  content,
+  from,
+  to,
+) {
+  if (from === to) {
+    return content
+  }
+
+  const pattern = new RegExp(
+    `(?<![\\w$])${escapeRegExp(from)}(?![\\w$])`,
+    'g',
+  )
+
+  return content.replace(pattern, to)
+}
+
+function resolveMynaIconName(
+  legacyName,
+  mynaExports,
+) {
   const directCandidates = [
     legacyName,
     stripIconSuffix(legacyName),
-    ...(SEMANTIC_ICON_CANDIDATES[legacyName] ?? []),
+    ...(SEMANTIC_ICON_CANDIDATES[legacyName] ??
+      []),
   ]
 
   for (const candidate of directCandidates) {
@@ -635,31 +1004,40 @@ function resolveMynaIconName(legacyName, mynaExports) {
     }
   }
 
-  const normalizedLegacyName = normalizeIconName(legacyName)
-  const normalizedMatches = [...mynaExports].filter(
+  const normalizedLegacyName =
+    normalizeIconName(legacyName)
+
+  const normalizedMatches = [
+    ...mynaExports,
+  ].filter(
     (candidate) =>
-      normalizeIconName(candidate) === normalizedLegacyName,
+      normalizeIconName(candidate) ===
+      normalizedLegacyName,
   )
 
   if (normalizedMatches.length === 1) {
     return normalizedMatches[0]
   }
 
-  const ranked = rankExports(legacyName, mynaExports)
-
-  if (ranked.length === 0) {
-    return null
-  }
+  const ranked = rankExports(
+    legacyName,
+    mynaExports,
+  )
 
   const best = ranked[0]
   const second = ranked[1]
 
+  if (!best) {
+    return null
+  }
+
   /**
-   * 只有高置信度且与第二候选拉开差距时才自动采用。
+   * 只有高置信度且明显优于第二候选时才自动采用。
    */
   if (
     best.score >= 0.82 &&
-    (!second || best.score - second.score >= 0.18)
+    (!second ||
+      best.score - second.score >= 0.18)
   ) {
     return best.name
   }
@@ -668,28 +1046,44 @@ function resolveMynaIconName(legacyName, mynaExports) {
 }
 
 function stripIconSuffix(name) {
-  return name.endsWith('Icon') ? name.slice(0, -4) : name
+  return name.endsWith('Icon')
+    ? name.slice(0, -4)
+    : name
 }
 
 function normalizeIconName(name) {
-  return splitIdentifier(stripIconSuffix(name))
+  return splitIdentifier(
+    stripIconSuffix(name),
+  )
     .filter(
       (token) =>
-        !['icon', 'outline', 'regular'].includes(token),
+        ![
+          'icon',
+          'outline',
+          'regular',
+        ].includes(token),
     )
     .sort()
     .join('')
 }
 
-function findClosestExports(legacyName, mynaExports) {
-  return rankExports(legacyName, mynaExports)
+function findClosestExports(
+  legacyName,
+  mynaExports,
+) {
+  return rankExports(
+    legacyName,
+    mynaExports,
+  )
     .slice(0, 8)
     .map(({ name }) => name)
 }
 
 function rankExports(legacyName, mynaExports) {
   const legacyTokens = new Set(
-    splitIdentifier(stripIconSuffix(legacyName)),
+    splitIdentifier(
+      stripIconSuffix(legacyName),
+    ),
   )
 
   return [...mynaExports]
@@ -711,7 +1105,10 @@ function rankExports(legacyName, mynaExports) {
 function splitIdentifier(value) {
   return value
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(
+      /([A-Z]+)([A-Z][a-z])/g,
+      '$1 $2',
+    )
     .replace(/[^A-Za-z0-9]+/g, ' ')
     .trim()
     .toLowerCase()
@@ -720,44 +1117,78 @@ function splitIdentifier(value) {
 }
 
 function tokenSimilarity(left, right) {
-  const intersection = [...left].filter((token) =>
-    right.has(token),
+  const intersection = [...left].filter(
+    (token) => right.has(token),
   ).length
 
-  const union = new Set([...left, ...right]).size
+  const union = new Set([
+    ...left,
+    ...right,
+  ]).size
 
-  return union === 0 ? 0 : intersection / union
+  return union === 0
+    ? 0
+    : intersection / union
 }
 
-function replaceIdentifier(content, from, to) {
-  if (from === to) {
-    return content
+function throwUnresolvedIcons(unresolved) {
+  const unique = new Map()
+
+  for (const item of unresolved) {
+    const key = `${item.file}:${item.icon}`
+
+    if (!unique.has(key)) {
+      unique.set(key, item)
+    }
   }
 
-  const pattern = new RegExp(
-    `(?<![\\w$])${escapeRegExp(from)}(?![\\w$])`,
-    'g',
+  const lines = [
+    '以下 Lucide 图标没有可靠的 Myna UI 对应项：',
+    '',
+  ]
+
+  for (const item of unique.values()) {
+    lines.push(
+      `- ${item.file}: ${item.icon}`,
+      `  候选：${
+        item.suggestions.join(', ') || '无'
+      }`,
+    )
+  }
+
+  lines.push(
+    '',
+    '脚本已拒绝猜测，因此没有生成兼容层。',
+    '请把对应关系加入 SEMANTIC_ICON_CANDIDATES 后重新执行。',
   )
 
-  return content.replace(pattern, to)
+  throw new Error(lines.join('\n'))
 }
 
 function assertNoLegacySourceImports() {
   const sourceFiles = findFiles(
     ROOT,
-    (file) => SOURCE_EXTENSIONS.has(extensionOf(file)),
+    (file) =>
+      SOURCE_EXTENSIONS.has(extname(file)) &&
+      !isMigrationInfrastructureFile(file),
   )
 
-  const violations = sourceFiles.filter((file) =>
-    readText(file).includes(LEGACY_PACKAGE),
-  )
+  const violations = []
+
+  for (const file of sourceFiles) {
+    const content = readText(file)
+
+    if (hasLegacyImport(content)) {
+      violations.push(relative(ROOT, file))
+    }
+  }
 
   if (violations.length > 0) {
     throw new Error(
       [
-        `仍然存在 ${LEGACY_PACKAGE} 引用：`,
+        `仍然存在 ${LEGACY_PACKAGE} import：`,
         ...violations.map(
-          (file) => `- ${relative(ROOT, file)}`,
+          (file) => `- ${file}`,
         ),
       ].join('\n'),
     )
@@ -773,7 +1204,7 @@ function assertNoLegacyDirectDependencies() {
   const violations = []
 
   for (const file of packageJsonFiles) {
-    const json = JSON.parse(readText(file))
+    const json = readJson(file)
 
     for (const sectionName of [
       'dependencies',
@@ -781,7 +1212,9 @@ function assertNoLegacyDirectDependencies() {
       'optionalDependencies',
       'peerDependencies',
     ]) {
-      if (json[sectionName]?.[LEGACY_PACKAGE]) {
+      if (
+        json[sectionName]?.[LEGACY_PACKAGE]
+      ) {
         violations.push(
           `${relative(ROOT, file)} -> ${sectionName}`,
         )
@@ -793,23 +1226,63 @@ function assertNoLegacyDirectDependencies() {
     throw new Error(
       [
         `仍然存在 ${LEGACY_PACKAGE} 直接依赖：`,
-        ...violations.map((value) => `- ${value}`),
+        ...violations.map(
+          (value) => `- ${value}`,
+        ),
       ].join('\n'),
     )
   }
 }
 
+function hasLegacyImport(content) {
+  const escapedPackage =
+    escapeRegExp(LEGACY_PACKAGE)
+
+  const patterns = [
+    new RegExp(
+      `\\bfrom\\s+['"]${escapedPackage}['"]`,
+    ),
+    new RegExp(
+      `\\bimport\\s+['"]${escapedPackage}['"]`,
+    ),
+    new RegExp(
+      `\\bimport\\s*\\(\\s*['"]${escapedPackage}['"]\\s*\\)`,
+    ),
+    new RegExp(
+      `\\brequire\\s*\\(\\s*['"]${escapedPackage}['"]\\s*\\)`,
+    ),
+  ]
+
+  return patterns.some(
+    (pattern) => pattern.test(content),
+  )
+}
+
+function isMigrationInfrastructureFile(file) {
+  const absolutePath = resolve(file)
+
+  return (
+    absolutePath === CURRENT_SCRIPT ||
+    absolutePath === ARCHITECTURE_GUARD_FILE
+  )
+}
+
 function formatChangedFiles() {
-  const formattable = [...changedFiles].filter((file) => {
-    const extension = extensionOf(file)
+  const formattable = new Set([
+    CURRENT_SCRIPT,
+    ...changedFiles,
+  ])
 
-    return (
-      SOURCE_EXTENSIONS.has(extension) ||
-      extension === '.json'
-    )
-  })
+  const files = [...formattable].filter(
+    (file) =>
+      existsSync(file) &&
+      (
+        SOURCE_EXTENSIONS.has(extname(file)) ||
+        extname(file) === '.json'
+      ),
+  )
 
-  if (formattable.length === 0) {
+  if (files.length === 0) {
     return
   }
 
@@ -820,33 +1293,58 @@ function formatChangedFiles() {
     'biome',
     'format',
     '--write',
-    ...formattable.map((file) => relative(ROOT, file)),
+    ...files.map(
+      (file) => relative(ROOT, file),
+    ),
   ])
 }
 
 function runChecks() {
-  console.log('\n运行验证...')
+  console.log('\n运行图标库架构检查...')
 
   run('node', [
     'tests/architecture/check-icon-library.mjs',
   ])
 
+  console.log('\n运行格式检查...')
+
   run('pnpm', ['format:check'])
+
+  console.log('\n运行 lint...')
+
   run('pnpm', ['lint'])
+
+  console.log('\n运行 TypeScript 类型检查...')
+
   run('pnpm', ['typecheck'])
+
+  console.log('\n运行测试...')
+
   run('pnpm', ['test'])
+
+  console.log('\n运行架构测试...')
+
   run('pnpm', ['test:architecture'])
+
+  console.log('\n构建桌面应用...')
+
   run('pnpm', ['build:desktop'])
+
+  console.log('\n检查 Bundle Budget...')
+
   run('pnpm', ['analyze:bundle:check'])
 }
 
 function run(command, args) {
-  console.log(`\n> ${command} ${args.join(' ')}`)
+  console.log(
+    `\n> ${command} ${args.join(' ')}`,
+  )
 
   execFileSync(command, args, {
     cwd: ROOT,
     env: process.env,
     stdio: 'inherit',
+    shell: process.platform === 'win32',
   })
 }
 
@@ -858,12 +1356,20 @@ function findFiles(directory, predicate) {
   return files
 
   function walk(currentDirectory) {
-    for (const entry of readdirSync(currentDirectory)) {
+    for (
+      const entry of readdirSync(
+        currentDirectory,
+      )
+    ) {
       if (IGNORED_DIRECTORIES.has(entry)) {
         continue
       }
 
-      const absolutePath = join(currentDirectory, entry)
+      const absolutePath = join(
+        currentDirectory,
+        entry,
+      )
+
       const stats = statSync(absolutePath)
 
       if (stats.isDirectory()) {
@@ -879,44 +1385,88 @@ function findFiles(directory, predicate) {
 }
 
 function readText(file) {
-  return readFileSync(file, 'utf8')
+  const content = readFileSync(file, 'utf8')
+
+  /**
+   * Windows 环境中的部分 JSON 文件可能带 UTF-8 BOM。
+   * JSON.parse 不接受 BOM，所以读取时统一去掉。
+   */
+  return content.charCodeAt(0) === 0xfeff
+    ? content.slice(1)
+    : content
+}
+
+function readJson(file) {
+  const content = readText(file)
+
+  try {
+    return JSON.parse(content)
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(error)
+
+    throw new SyntaxError(
+      `无法解析 JSON 文件：${relative(ROOT, file)}` +
+        `\n${message}`,
+      {
+        cause: error,
+      },
+    )
+  }
 }
 
 function writeTextIfChanged(file, content) {
-  const previous = existsSync(file) ? readText(file) : null
+  const absolutePath = resolve(file)
+
+  const previous = existsSync(absolutePath)
+    ? readText(absolutePath)
+    : null
 
   if (previous === content) {
     return
   }
 
-  changedFiles.add(resolve(file))
+  changedFiles.add(absolutePath)
 
-  if (DRY_RUN) {
-    console.log(`[dry-run] 修改 ${relative(ROOT, file)}`)
+  if (!APPLY) {
+    console.log(
+      `[预览] 修改 ${relative(ROOT, absolutePath)}`,
+    )
+
     return
   }
 
-  writeFileSync(file, content, 'utf8')
-  console.log(`修改 ${relative(ROOT, file)}`)
+  mkdirSync(dirname(absolutePath), {
+    recursive: true,
+  })
+
+  writeFileSync(
+    absolutePath,
+    content,
+    'utf8',
+  )
+
+  console.log(
+    `修改 ${relative(ROOT, absolutePath)}`,
+  )
 }
 
 function sortObject(object) {
   return Object.fromEntries(
-    Object.entries(object).sort(([left], [right]) =>
-      left.localeCompare(right),
+    Object.entries(object).sort(
+      ([left], [right]) =>
+        left.localeCompare(right),
     ),
   )
 }
 
-function extensionOf(file) {
-  const name = file.slice(file.lastIndexOf('/') + 1)
-  const index = name.lastIndexOf('.')
-
-  return index >= 0 ? name.slice(index) : ''
-}
-
 function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return value.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    '\\$&',
+  )
 }
 
 function printChangedFiles() {
@@ -927,7 +1477,9 @@ function printChangedFiles() {
 
   console.log('\n变更文件：')
 
-  for (const file of [...changedFiles].sort()) {
+  for (
+    const file of [...changedFiles].sort()
+  ) {
     console.log(`- ${relative(ROOT, file)}`)
   }
 }

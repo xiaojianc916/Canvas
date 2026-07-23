@@ -635,8 +635,8 @@ fn require_entry<'a>(
 fn validate_entry_path(path: &str) -> Result<()> {
     if path.is_empty()
         || path.starts_with('/')
-        || path.starts_with('\')
-        || path.contains('\')
+        || path.starts_with('\\')
+        || path.contains('\\')
         || path.split('/').any(|component| {
             component.is_empty()
                 || component == "."

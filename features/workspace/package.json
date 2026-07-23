@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@hybrid-canvas/design-system": "workspace:*",
-    "lucide-react": "catalog:",
+    "@mynaui/icons-react": "catalog:",
     "motion": "catalog:"
   },
   "devDependencies": {
