@@ -18,10 +18,13 @@
   },
   "dependencies": {
     "@hybrid-canvas/canvas": "workspace:*",
-    "@hybrid-canvas/file": "workspace:*",
-    "tldraw": "catalog:"
+    "@hybrid-canvas/file": "workspace:*"
   },
   "devDependencies": {
+    "tldraw": "catalog:",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "tldraw": "5.2.5"
   }
 }

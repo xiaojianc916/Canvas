@@ -11,11 +11,11 @@
   "dependencies": {
     "@hybrid-canvas/canvas": "workspace:*",
     "@hybrid-canvas/document": "workspace:*",
-    "@hybrid-canvas/file": "workspace:*",
-    "tldraw": "catalog:"
+    "@hybrid-canvas/file": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "tldraw": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

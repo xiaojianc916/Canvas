@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "@hybrid-canvas/file",
   "version": "0.1.0",
   "private": true,
@@ -18,13 +18,16 @@
   },
   "devDependencies": {
     "@hybrid-canvas/foundations-test-kit": "workspace:*",
+    "tldraw": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
   "dependencies": {
-    "@hybrid-canvas/foundations-kernel": "workspace:*",
     "@hybrid-canvas/asset": "workspace:*",
-    "tldraw": "catalog:",
+    "@hybrid-canvas/foundations-kernel": "workspace:*",
     "valibot": "catalog:"
+  },
+  "peerDependencies": {
+    "tldraw": "5.2.5"
   }
 }

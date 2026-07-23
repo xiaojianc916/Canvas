@@ -24,13 +24,15 @@
     "@hybrid-canvas/foundations-test-kit": "workspace:*",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
   "dependencies": {
-    "valibot": "catalog:",
+    "@hybrid-canvas/design-system": "workspace:*",
     "@hybrid-canvas/foundations-kernel": "workspace:*",
-    "@hybrid-canvas/design-system": "workspace:*"
+    "valibot": "catalog:"
   },
   "peerDependencies": {
     "react": "19.2.7",
