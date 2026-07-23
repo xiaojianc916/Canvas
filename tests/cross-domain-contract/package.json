@@ -11,6 +11,7 @@
   "dependencies": {
     "@hybrid-canvas/canvas": "workspace:*",
     "@hybrid-canvas/document": "workspace:*",
+    "@hybrid-canvas/file": "workspace:*",
     "tldraw": "catalog:"
   },
   "devDependencies": {

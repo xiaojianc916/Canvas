@@ -15,9 +15,7 @@
 
 use crate::{Error, Result};
 #[cfg(unix)]
-#[cfg(unix)]\n#[cfg(unix)]
-use std::fs::File;
-use std::io::Write;
+#[cfg(unix)]\nuse std::io::Write;
 use std::path::Path;
 
 const TEMPORARY_FILE_PREFIX: &str = ".hybrid-canvas-";
@@ -63,7 +61,7 @@ fn replace_destination(source: &Path, destination: &Path) -> Result<()> {
 fn sync_directory(directory: &Path) -> Result<()> {
     #[cfg(unix)]
     {
-        File::open(directory)?.sync_all()?;
+        std::fs::File::open(directory)?.sync_all()?;
     }
 
     #[cfg(not(unix))]

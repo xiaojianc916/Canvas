@@ -97,11 +97,12 @@ export function SelectionColorSection({
 
   return (
     <ShapeInspectorSection
-      description={
-        commonColor === null && shapes.length > 1
-          ? '当前选择包含多个颜色；选择颜色后将统一覆盖。'
-          : undefined
-      }
+      {...(commonColor === null && shapes.length > 1
+        ? {
+            description:
+              '当前选择包含多个颜色；选择颜色后将统一覆盖。',
+          }
+        : {})}
       title="颜色"
     >
       <div className="grid grid-cols-6 gap-1.5">
@@ -145,11 +146,9 @@ export function SelectionFillSection({
 
   return (
     <ShapeInspectorSection
-      description={
-        commonFill === null && shapes.length > 1
-          ? '混合填充'
-          : undefined
-      }
+      {...(commonFill === null && shapes.length > 1
+        ? { description: '混合填充' }
+        : {})}
       title="填充"
     >
       <ShapeInspectorSegmentedControl
@@ -189,11 +188,9 @@ export function SelectionStrokeSections({
   return (
     <>
       <ShapeInspectorSection
-        description={
-          commonDash === null && shapes.length > 1
-            ? '混合线型'
-            : undefined
-        }
+        {...(commonDash === null && shapes.length > 1
+          ? { description: '混合线型' }
+          : {})}
         title="线型"
       >
         <ShapeInspectorSegmentedControl

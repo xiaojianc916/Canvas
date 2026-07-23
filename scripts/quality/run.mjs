@@ -2,51 +2,57 @@
 /**
  * Cross-platform quality runner.
  *
- * Windows requires pnpm.cmd to run through cmd.exe. Running it directly through
- * child_process.spawn causes spawn EINVAL on recent Node.js versions.
+ * Runs Turbo through the Node.js entrypoint instead of spawning pnpm.cmd with
+ * shell:true. This avoids Windows spawn EINVAL and Node DEP0190 warnings.
  */
 
 import { spawn } from 'node:child_process'
+import { resolve } from 'node:path'
 import process from 'node:process'
 
-function execute(command, args, options = {}) {
-  return new Promise((resolve) => {
+const turboCli = resolve(
+  process.cwd(),
+  'node_modules',
+  'turbo',
+  'bin',
+  'turbo',
+)
+
+const cargo = process.platform === 'win32' ? 'cargo.exe' : 'cargo'
+
+function execute(command, args) {
+  return new Promise((resolveExitCode) => {
     const child = spawn(command, args, {
       stdio: 'inherit',
       windowsHide: false,
-      shell: options.shell ?? false,
+      shell: false,
     })
 
     child.once('error', (error) => {
       console.error(`Unable to start ${command}: ${error.message}`)
-      resolve(1)
+      resolveExitCode(1)
     })
 
     child.once('exit', (code, signal) => {
       if (signal !== null) {
         console.error(`${command} terminated by signal: ${signal}`)
-        resolve(1)
+        resolveExitCode(1)
         return
       }
 
-      resolve(code ?? 1)
+      resolveExitCode(code ?? 1)
     })
   })
 }
 
+function turboTask(name) {
+  return [
+    process.execPath,
+    [turboCli, 'run', name, '--continue=always'],
+  ]
+}
+
 const mode = process.argv[2]
-
-const turboTask = (task) => ({
-  command: 'pnpm',
-  args: ['exec', 'turbo', 'run', task, '--continue=always'],
-  shell: process.platform === 'win32',
-})
-
-const cargoTask = (args) => ({
-  command: process.platform === 'win32' ? 'cargo.exe' : 'cargo',
-  args,
-  shell: false,
-})
 
 const tasks =
   mode === 'typecheck'
@@ -54,17 +60,15 @@ const tasks =
     : mode === 'test'
       ? [
           turboTask('test'),
-          cargoTask(['test', '--workspace', '--all-features']),
+          [cargo, ['test', '--workspace', '--all-features']],
         ]
       : mode === 'check'
         ? [
             turboTask('check'),
-            cargoTask([
-              'check',
-              '--workspace',
-              '--all-targets',
-              '--all-features',
-            ]),
+            [
+              cargo,
+              ['check', '--workspace', '--all-targets', '--all-features'],
+            ],
           ]
         : null
 
@@ -74,12 +78,12 @@ if (!tasks) {
 } else {
   let failed = false
 
-  for (const { command, args, shell } of tasks) {
+  for (const [command, args] of tasks) {
     console.log('')
     console.log(`>>> ${command} ${args.join(' ')}`)
     console.log('')
 
-    if ((await execute(command, args, { shell })) !== 0) {
+    if ((await execute(command, args)) !== 0) {
       failed = true
     }
   }
