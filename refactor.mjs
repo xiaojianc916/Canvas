@@ -1,25 +1,23 @@
 #!/usr/bin/env node
 
 /**
- * Hybrid Canvas — Tool Inspector Refactor / Phase 1
+ * Hybrid Canvas — Tool Inspector Refactor / Phase 2
  *
- * 目标：
- * 1. 移除 InspectorHost 固定的“设计 / 数据 / 交互”Tab。
- * 2. 从 WorkspaceContainer.tsx 抽离 CanvasInspectorContent。
- * 3. 建立独立的 inspector 目录。
- * 4. 保留当前行为，避免第一阶段同时修改状态和功能。
- * 5. 写入后续工具检查器拆分计划。
+ * 前提：
+ *   已执行 tool-inspector-refactor-phase1.mjs
+ *
+ * 本阶段：
+ * 1. 从 CanvasInspectorContent 中移除 CanvasActiveToolPanel。
+ * 2. 建立 ToolInspectorRouter。
+ * 3. 建立可复用的检查器控件。
+ * 4. 将形状、自由绘制/高亮、科学图表拆成独立文件。
+ * 5. 其余工具迁移到 BasicToolInspectors，保持现有能力。
  *
  * 使用：
- *   node tool-inspector-refactor-phase1.mjs
+ *   node tool-inspector-refactor-phase2.mjs
  *
- * 可选：
- *   node tool-inspector-refactor-phase1.mjs --dry-run
- *
- * 脚本会在：
- *   .refactor-backup/inspector-phase1-<timestamp>/
- *
- * 创建原始文件备份。
+ * 检查：
+ *   node tool-inspector-refactor-phase2.mjs --dry-run
  */
 
 import {
@@ -34,48 +32,70 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
-const SCRIPT_DIR = path.dirname(SCRIPT_PATH)
-const ROOT_DIR = SCRIPT_DIR
+const ROOT_DIR = path.dirname(SCRIPT_PATH)
 const DRY_RUN = process.argv.includes('--dry-run')
+
+const INSPECTOR_ROOT = path.join(
+  ROOT_DIR,
+  'apps/desktop/src/presentation/workspace/inspector',
+)
 
 const PATHS = {
   packageJson: path.join(ROOT_DIR, 'package.json'),
 
-  workspaceContainer: path.join(
-    ROOT_DIR,
-    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+  canvasInspector: path.join(
+    INSPECTOR_ROOT,
+    'CanvasInspectorContent.tsx',
   ),
 
-  inspectorHost: path.join(
-    ROOT_DIR,
-    'features/workspace/src/presentation/inspector/InspectorHost.tsx',
+  commonDirectory: path.join(INSPECTOR_ROOT, 'common'),
+  toolsDirectory: path.join(INSPECTOR_ROOT, 'tools'),
+
+  primitives: path.join(
+    INSPECTOR_ROOT,
+    'common/InspectorPrimitives.tsx',
   ),
 
-  inspectorDirectory: path.join(
-    ROOT_DIR,
-    'apps/desktop/src/presentation/workspace/inspector',
+  toolTypes: path.join(
+    INSPECTOR_ROOT,
+    'tools/types.ts',
   ),
 
-  extractedInspector: path.join(
-    ROOT_DIR,
-    'apps/desktop/src/presentation/workspace/inspector/CanvasInspectorContent.tsx',
+  shapeTool: path.join(
+    INSPECTOR_ROOT,
+    'tools/ShapeToolInspector.tsx',
   ),
 
-  inspectorIndex: path.join(
-    ROOT_DIR,
-    'apps/desktop/src/presentation/workspace/inspector/index.ts',
+  drawTool: path.join(
+    INSPECTOR_ROOT,
+    'tools/DrawToolInspector.tsx',
   ),
 
-  refactorPlan: path.join(
-    ROOT_DIR,
-    'docs/rfcs/tool-inspector-refactor.md',
+  chartTool: path.join(
+    INSPECTOR_ROOT,
+    'tools/ScientificChartToolInspector.tsx',
+  ),
+
+  basicTools: path.join(
+    INSPECTOR_ROOT,
+    'tools/BasicToolInspectors.tsx',
+  ),
+
+  router: path.join(
+    INSPECTOR_ROOT,
+    'tools/ToolInspectorRouter.tsx',
+  ),
+
+  toolsIndex: path.join(
+    INSPECTOR_ROOT,
+    'tools/index.ts',
   ),
 }
 
-const INSPECTOR_START_MARKER = 'function CanvasInspectorContent('
-const INSPECTOR_END_MARKER = 'function CanvasSelectionGeometryStatus()'
+const ACTIVE_TOOL_START = 'function CanvasActiveToolPanel('
+const ACTIVE_TOOL_END = 'function getCommonShapeProp('
 
-const EXTRACTED_INSPECTOR_IMPORTS = `import {
+const PRIMITIVES_SOURCE = `import {
   Select,
   SelectContent,
   SelectGroup,
@@ -84,529 +104,1111 @@ const EXTRACTED_INSPECTOR_IMPORTS = `import {
   type SelectOption,
   SelectTrigger,
 } from '@hybrid-canvas/design-system'
-import {
-  type ScientificChartType,
-  ScientificChartTypeStyle,
-} from '@hybrid-canvas/scientific-plot'
 import { useState } from 'react'
 import {
-  ArrowShapeArrowheadEndStyle,
-  ArrowShapeArrowheadStartStyle,
   DefaultColorStyle,
   DefaultDashStyle,
   DefaultFillStyle,
-  DefaultFontStyle,
   DefaultSizeStyle,
-  DefaultTextAlignStyle,
   type Editor,
-  GeoShapeGeoStyle,
-  type TLShape,
-  useValue,
 } from 'tldraw'
 
-`
+export const GEO_SHAPE_OPTIONS = [
+  { value: 'rectangle', label: '矩形' },
+  { value: 'ellipse', label: '椭圆' },
+  { value: 'triangle', label: '三角形' },
+  { value: 'diamond', label: '菱形' },
+  { value: 'pentagon', label: '五边形' },
+  { value: 'hexagon', label: '六边形' },
+  { value: 'octagon', label: '八边形' },
+  { value: 'star', label: '星形' },
+  { value: 'cloud', label: '云形' },
+  { value: 'rhombus', label: '平行四边形' },
+  { value: 'trapezoid', label: '梯形' },
+  { value: 'arrow-right', label: '右箭头' },
+  { value: 'arrow-left', label: '左箭头' },
+  { value: 'arrow-up', label: '上箭头' },
+  { value: 'arrow-down', label: '下箭头' },
+] satisfies readonly SelectOption[]
 
-const NEW_INSPECTOR_HOST = `import { ScrollArea } from '@hybrid-canvas/design-system'
-import type { ReactNode } from 'react'
+export const ARROWHEAD_OPTIONS = [
+  { value: 'none', label: '无' },
+  { value: 'arrow', label: '箭头' },
+  { value: 'triangle', label: '实心三角' },
+  { value: 'square', label: '方形' },
+  { value: 'dot', label: '圆点' },
+  { value: 'diamond', label: '菱形' },
+  { value: 'inverted', label: '反向三角' },
+  { value: 'bar', label: '横线' },
+] satisfies readonly SelectOption[]
 
-export interface InspectorHostProps {
-  readonly title?: string
-  readonly children: ReactNode
+export const SHAPE_COLORS = [
+  { value: 'black', label: '黑色', css: '#1d1d1d' },
+  { value: 'grey', label: '灰色', css: '#9ca3af' },
+  { value: 'red', label: '红色', css: '#ef4444' },
+  { value: 'orange', label: '橙色', css: '#f97316' },
+  { value: 'yellow', label: '黄色', css: '#eab308' },
+  { value: 'green', label: '绿色', css: '#22c55e' },
+  { value: 'blue', label: '蓝色', css: '#3b82f6' },
+  { value: 'violet', label: '紫色', css: '#8b5cf6' },
+  { value: 'light-red', label: '浅红', css: '#fca5a5' },
+  { value: 'light-green', label: '浅绿', css: '#86efac' },
+  { value: 'light-blue', label: '浅蓝', css: '#93c5fd' },
+  { value: 'light-violet', label: '浅紫', css: '#c4b5fd' },
+] as const
+
+export interface InspectorSectionProps {
+  readonly title: string
+  readonly description?: string
+  readonly children: import('react').ReactNode
 }
 
-/**
- * Right-side contextual inspector host.
- *
- * The host owns only layout and scrolling. It must not own editor selection,
- * active tool state, shape-specific rules, data configuration, or interaction
- * configuration.
- *
- * The rendered content is supplied by the active tool or selected object.
- */
-export function InspectorHost({ children }: InspectorHostProps) {
+export function ShapeInspectorSection({
+  title,
+  description,
+  children,
+}: InspectorSectionProps) {
   return (
-    <aside
-      aria-label="工具选项与对象属性"
-      className="flex h-full min-h-0 min-w-0 flex-col border-l border-divider bg-sidebar"
+    <section className="space-y-2.5 border-b border-divider pb-4 last:border-b-0">
+      <header className="space-y-0.5">
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          {title}
+        </h3>
+
+        {description ? (
+          <p className="text-[10px] leading-4 text-muted-foreground/80">
+            {description}
+          </p>
+        ) : null}
+      </header>
+
+      {children}
+    </section>
+  )
+}
+
+export function ToolPanelHeader({
+  title,
+  description,
+  children,
+}: {
+  readonly title: string
+  readonly description: string
+  readonly children: import('react').ReactNode
+}) {
+  return (
+    <div className="space-y-4">
+      <header className="border-b border-divider pb-3">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+          {description}
+        </p>
+      </header>
+
+      {children}
+    </div>
+  )
+}
+
+export function ShapeInspectorButton({
+  children,
+  onClick,
+  className = '',
+  disabled = false,
+}: {
+  readonly children: import('react').ReactNode
+  readonly onClick: () => void
+  readonly className?: string
+  readonly disabled?: boolean
+}) {
+  return (
+    <button
+      className={
+        'min-h-8 rounded-md border border-divider bg-background px-2 text-[11px] ' +
+        'transition-colors hover:bg-accent disabled:cursor-not-allowed ' +
+        'disabled:opacity-50 ' +
+        className
+      }
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
     >
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="min-w-0 p-3">{children}</div>
-      </ScrollArea>
-    </aside>
+      {children}
+    </button>
+  )
+}
+
+export function ShapeInspectorSegmentedControl({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  readonly options: readonly {
+    readonly value: string
+    readonly label: string
+  }[]
+  readonly value: string | null
+  readonly onChange: (value: string) => void
+  readonly ariaLabel?: string
+}) {
+  return (
+    <div
+      aria-label={ariaLabel}
+      className="grid gap-1.5"
+      role="group"
+      style={{
+        gridTemplateColumns:
+          'repeat(' + String(options.length) + ', minmax(0, 1fr))',
+      }}
+    >
+      {options.map((option) => (
+        <button
+          aria-pressed={value === option.value}
+          className={
+            'min-h-8 rounded-md border px-1 text-[10px] transition-colors ' +
+            (value === option.value
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-divider bg-background hover:bg-accent')
+          }
+          key={option.value}
+          onClick={() => onChange(option.value)}
+          type="button"
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export interface ShapeInspectorSelectProps {
+  readonly type: string
+  readonly options: readonly SelectOption[]
+  readonly value: string
+  readonly disabled?: boolean
+  readonly onChange: (value: string) => void
+}
+
+export function ShapeInspectorSelect({
+  type,
+  options,
+  value,
+  disabled = false,
+  onChange,
+}: ShapeInspectorSelectProps) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Select
+      data={options}
+      disabled={disabled}
+      onOpenChange={setOpen}
+      onValueChange={onChange}
+      open={open}
+      type={type}
+      value={value}
+    >
+      <SelectTrigger />
+
+      <SelectContent>
+        <SelectList>
+          <SelectGroup>
+            {options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectList>
+      </SelectContent>
+    </Select>
+  )
+}
+
+export function ShapeInspectorArrowheadSelect({
+  value,
+  onChange,
+}: {
+  readonly value: string | null
+  readonly onChange: (value: string) => void
+}) {
+  return (
+    <ShapeInspectorSelect
+      onChange={onChange}
+      options={ARROWHEAD_OPTIONS}
+      type="箭头端点"
+      value={value ?? 'none'}
+    />
+  )
+}
+
+export function ToolColorSection({
+  editor,
+}: {
+  readonly editor: Editor
+}) {
+  return (
+    <ShapeInspectorSection title="颜色">
+      <div className="grid grid-cols-6 gap-1.5">
+        {SHAPE_COLORS.map((color) => (
+          <button
+            aria-label={'设置默认颜色为' + color.label}
+            className="size-7 rounded-md border border-divider transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            key={color.value}
+            onClick={() =>
+              editor.setStyleForNextShapes(
+                DefaultColorStyle,
+                color.value,
+              )
+            }
+            style={{ backgroundColor: color.css }}
+            title={color.label}
+            type="button"
+          />
+        ))}
+      </div>
+    </ShapeInspectorSection>
+  )
+}
+
+export function ToolStrokeSizeSection({
+  editor,
+}: {
+  readonly editor: Editor
+}) {
+  return (
+    <ShapeInspectorSection
+      description="快捷档位；后续阶段增加精确数值与滑杆。"
+      title="粗细"
+    >
+      <ShapeInspectorSegmentedControl
+        ariaLabel="默认线条粗细"
+        onChange={(value) =>
+          editor.setStyleForNextShapes(DefaultSizeStyle, value as never)
+        }
+        options={[
+          { value: 's', label: '细' },
+          { value: 'm', label: '中' },
+          { value: 'l', label: '粗' },
+          { value: 'xl', label: '特粗' },
+        ]}
+        value={null}
+      />
+    </ShapeInspectorSection>
+  )
+}
+
+export function ToolDashSection({
+  editor,
+}: {
+  readonly editor: Editor
+}) {
+  return (
+    <ShapeInspectorSection title="线型">
+      <ShapeInspectorSegmentedControl
+        ariaLabel="默认线型"
+        onChange={(value) =>
+          editor.setStyleForNextShapes(DefaultDashStyle, value as never)
+        }
+        options={[
+          { value: 'draw', label: '手绘' },
+          { value: 'solid', label: '实线' },
+          { value: 'dashed', label: '虚线' },
+          { value: 'dotted', label: '点线' },
+        ]}
+        value={null}
+      />
+    </ShapeInspectorSection>
+  )
+}
+
+export function ToolFillSection({
+  editor,
+  includeNone = true,
+}: {
+  readonly editor: Editor
+  readonly includeNone?: boolean
+}) {
+  const options = includeNone
+    ? [
+        { value: 'none', label: '无' },
+        { value: 'semi', label: '半透明' },
+        { value: 'solid', label: '实心' },
+        { value: 'pattern', label: '图案' },
+      ]
+    : [
+        { value: 'semi', label: '半透明' },
+        { value: 'solid', label: '实心' },
+        { value: 'pattern', label: '图案' },
+      ]
+
+  return (
+    <ShapeInspectorSection title="填充">
+      <ShapeInspectorSegmentedControl
+        ariaLabel="默认填充"
+        onChange={(value) =>
+          editor.setStyleForNextShapes(DefaultFillStyle, value as never)
+        }
+        options={options}
+        value={null}
+      />
+    </ShapeInspectorSection>
+  )
+}
+
+export function InspectorHint({
+  children,
+}: {
+  readonly children: import('react').ReactNode
+}) {
+  return (
+    <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
+      {children}
+    </div>
   )
 }
 `
 
-const INSPECTOR_INDEX_CONTENT = `export { CanvasInspectorContent } from './CanvasInspectorContent'
+const TOOL_TYPES_SOURCE = `import type { Editor } from 'tldraw'
+
+export interface ToolInspectorProps {
+  readonly editor: Editor
+}
+
+export interface ToolInspectorRouterProps extends ToolInspectorProps {
+  readonly toolId: string
+}
 `
 
-const REFACTOR_PLAN_CONTENT = `# Tool Inspector Refactor
+const SHAPE_TOOL_SOURCE = `import { GeoShapeGeoStyle } from 'tldraw'
+import {
+  GEO_SHAPE_OPTIONS,
+  ShapeInspectorSection,
+  ShapeInspectorSelect,
+  ToolColorSection,
+  ToolDashSection,
+  ToolFillSection,
+  ToolPanelHeader,
+  ToolStrokeSizeSection,
+} from '../common/InspectorPrimitives'
+import type { ToolInspectorProps } from './types'
 
-## Status
+export function ShapeToolInspector({
+  editor,
+}: ToolInspectorProps) {
+  return (
+    <ToolPanelHeader
+      description="在画布中拖动创建形状；以下参数用于下一个新形状。"
+      title="形状"
+    >
+      <ShapeInspectorSection title="形状类型">
+        <ShapeInspectorSelect
+          onChange={(value) =>
+            editor.setStyleForNextShapes(
+              GeoShapeGeoStyle,
+              value as never,
+            )
+          }
+          options={GEO_SHAPE_OPTIONS}
+          type="形状"
+          value="rectangle"
+        />
+      </ShapeInspectorSection>
 
-Phase 1 establishes the structural boundary for the contextual tool inspector.
+      <ToolColorSection editor={editor} />
+      <ToolFillSection editor={editor} />
+      <ToolDashSection editor={editor} />
+      <ToolStrokeSizeSection editor={editor} />
+    </ToolPanelHeader>
+  )
+}
+`
 
-This RFC does not declare all tool inspectors complete. Completion must be
-verified by implementation, tests, and visual review.
+const DRAW_TOOL_SOURCE = `import {
+  InspectorHint,
+  ShapeInspectorSection,
+  ShapeInspectorSegmentedControl,
+  ToolColorSection,
+  ToolDashSection,
+  ToolPanelHeader,
+  ToolStrokeSizeSection,
+} from '../common/InspectorPrimitives'
+import type { ToolInspectorProps } from './types'
 
-## Product rule
+export interface DrawToolInspectorProps extends ToolInspectorProps {
+  readonly variant: 'draw' | 'highlight'
+}
 
-The right sidebar follows the current editor context:
+export function DrawToolInspector({
+  editor,
+  variant,
+}: DrawToolInspectorProps) {
+  const isHighlight = variant === 'highlight'
 
-1. When a creation tool is active and no object is selected, show the defaults
-   and behavior for that tool.
-2. When the Select tool owns a selection, show the selected object's actual
-   properties.
-3. When multiple objects are selected, show common properties, mixed values,
-   alignment, distribution, grouping, and ordering.
-4. When a specialized editing state is active, such as path editing, cropping,
-   or chart-series editing, show the controls for that editing state.
-5. Data and interaction controls are object capabilities. They are not
-   permanent global tabs.
+  return (
+    <ToolPanelHeader
+      description={
+        isHighlight
+          ? '连续绘制高亮标记；以下参数用于下一条高亮笔触。'
+          : '连续自由绘制；以下参数用于下一条笔触。'
+      }
+      title={isHighlight ? '高亮' : '自由绘制'}
+    >
+      <ToolColorSection editor={editor} />
+      <ToolStrokeSizeSection editor={editor} />
 
-## Ownership
+      {isHighlight ? (
+        <ShapeInspectorSection title="高亮外观">
+          <ShapeInspectorSegmentedControl
+            ariaLabel="高亮透明度"
+            onChange={() => {
+              // 高亮透明度需要独立 StyleProp，后续由 freehand feature 提供。
+            }}
+            options={[
+              { value: 'light', label: '浅' },
+              { value: 'medium', label: '中' },
+              { value: 'strong', label: '深' },
+            ]}
+            value="medium"
+          />
+        </ShapeInspectorSection>
+      ) : (
+        <ToolDashSection editor={editor} />
+      )}
 
-- tldraw Editor and TLStore remain the source of truth.
-- The inspector must derive selection and active-tool state directly from the
-  Editor.
-- The inspector must not introduce a second selection, tool, style, or history
-  store.
-- Document mutations must use Editor or Store transactions.
-- Undo and redo remain owned by tldraw History.
-- Feature-specific inspectors should be contributed by the owning feature.
+      <ShapeInspectorSection
+        description="当前阶段保留 tldraw 原生绘制行为。"
+        title="平滑与稳定"
+      >
+        <ShapeInspectorSegmentedControl
+          ariaLabel="笔触平滑方式"
+          onChange={() => {
+            // 后续接入 freehand extension 的 smoothing record/style。
+          }}
+          options={[
+            { value: 'none', label: '关闭' },
+            { value: 'basic', label: '基础' },
+            { value: 'weighted', label: '加权' },
+            { value: 'stabilizer', label: '稳定器' },
+          ]}
+          value="basic"
+        />
+      </ShapeInspectorSection>
 
-## Target structure
+      <InspectorHint>
+        下一阶段将接入精确笔刷尺寸、不透明度、流量、压感映射、稳定器和笔刷预设。
+      </InspectorHint>
+    </ToolPanelHeader>
+  )
+}
+`
 
-\`\`\`text
-apps/desktop/src/presentation/workspace/inspector/
-├── CanvasInspectorContent.tsx
-├── ToolInspectorRouter.tsx
-├── SelectionInspectorRouter.tsx
-├── context/
-│   ├── inspector-context.ts
-│   └── use-inspector-context.ts
-├── common/
-│   ├── InspectorHeader.tsx
-│   ├── InspectorSection.tsx
-│   ├── MixedValue.tsx
-│   ├── NumericField.tsx
-│   ├── ColorControl.tsx
-│   ├── StrokeControl.tsx
-│   ├── TransformSection.tsx
-│   └── ArrangementSection.tsx
-├── tools/
-│   ├── SelectToolInspector.tsx
-│   ├── HandToolInspector.tsx
-│   ├── ShapeToolInspector.tsx
-│   ├── LineToolInspector.tsx
-│   ├── ArrowToolInspector.tsx
-│   ├── DrawToolInspector.tsx
-│   ├── HighlightToolInspector.tsx
-│   ├── EraserToolInspector.tsx
-│   ├── TextToolInspector.tsx
-│   ├── NoteToolInspector.tsx
-│   └── FrameToolInspector.tsx
-└── selections/
-    ├── ShapeSelectionInspector.tsx
-    ├── TextSelectionInspector.tsx
-    ├── DrawSelectionInspector.tsx
-    ├── ArrowSelectionInspector.tsx
-    ├── ImageSelectionInspector.tsx
-    └── MultiSelectionInspector.tsx
-\`\`\`
+const CHART_TOOL_SOURCE = `import {
+  type ScientificChartType,
+  ScientificChartTypeStyle,
+} from '@hybrid-canvas/scientific-plot'
+import {
+  InspectorHint,
+  ShapeInspectorSection,
+  ShapeInspectorSegmentedControl,
+  ToolColorSection,
+  ToolPanelHeader,
+  ToolStrokeSizeSection,
+} from '../common/InspectorPrimitives'
+import type { ToolInspectorProps } from './types'
 
-The scientific chart inspector should ultimately be owned by:
+export function ScientificChartToolInspector({
+  editor,
+}: ToolInspectorProps) {
+  return (
+    <ToolPanelHeader
+      description="选择图表类型并拖动创建；创建后可配置数据、系列和坐标轴。"
+      title="图表"
+    >
+      <ShapeInspectorSection title="图表类型">
+        <ShapeInspectorSegmentedControl
+          ariaLabel="默认图表类型"
+          onChange={(value) =>
+            editor.setStyleForNextShapes(
+              ScientificChartTypeStyle,
+              value as ScientificChartType,
+            )
+          }
+          options={[
+            { value: 'line', label: '折线' },
+            { value: 'bar', label: '柱状' },
+            { value: 'area', label: '面积' },
+            { value: 'scatter', label: '散点' },
+          ]}
+          value={null}
+        />
+      </ShapeInspectorSection>
 
-\`\`\`text
-features/scientific-plot/src/presentation/inspector/
-├── ScientificChartToolInspector.tsx
-├── ScientificChartSelectionInspector.tsx
-├── ChartDataSection.tsx
-├── ChartSeriesSection.tsx
-├── ChartAxisSection.tsx
-├── ChartLegendSection.tsx
-├── ChartAnnotationSection.tsx
-└── ChartExportSection.tsx
-\`\`\`
+      <ShapeInspectorSection
+        description="第一阶段使用示例数据；后续接入 CSV、粘贴和工作区数据集。"
+        title="数据来源"
+      >
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            className="min-h-9 rounded-md border border-divider bg-background px-2 text-[11px] hover:bg-accent"
+            type="button"
+          >
+            示例数据
+          </button>
 
-Workspace may host the contribution but must not own scientific-chart domain
-rules.
+          <button
+            className="min-h-9 rounded-md border border-divider bg-background px-2 text-[11px] text-muted-foreground hover:bg-accent"
+            disabled
+            type="button"
+          >
+            导入数据
+          </button>
+        </div>
+      </ShapeInspectorSection>
 
-## Phase 1
+      <ToolColorSection editor={editor} />
+      <ToolStrokeSizeSection editor={editor} />
 
-- Remove permanent Design, Data, and Interaction tabs.
-- Keep InspectorHost responsible only for layout and scrolling.
-- Extract the existing canvas inspector from WorkspaceContainer.
-- Preserve existing behavior.
-- Add an explicit module boundary for later decomposition.
+      <InspectorHint>
+        创建图表后，右栏将切换为图表对象属性：数据、系列、X/Y
+        轴、图例、标签、注释、主题和导出。
+      </InspectorHint>
+    </ToolPanelHeader>
+  )
+}
+`
 
-## Phase 2
+const BASIC_TOOLS_SOURCE = `import {
+  ArrowShapeArrowheadEndStyle,
+  ArrowShapeArrowheadStartStyle,
+  DefaultFontStyle,
+  DefaultTextAlignStyle,
+} from 'tldraw'
+import {
+  InspectorHint,
+  ShapeInspectorArrowheadSelect,
+  ShapeInspectorSection,
+  ShapeInspectorSegmentedControl,
+  ToolColorSection,
+  ToolDashSection,
+  ToolFillSection,
+  ToolPanelHeader,
+  ToolStrokeSizeSection,
+} from '../common/InspectorPrimitives'
+import type { ToolInspectorProps } from './types'
 
-Split active-tool rendering into ToolInspectorRouter.
+export function ArrowToolInspector({
+  editor,
+}: ToolInspectorProps) {
+  return (
+    <ToolPanelHeader
+      description="在对象之间创建连接线；以下参数用于下一条连接线。"
+      title="连接"
+    >
+      <ShapeInspectorSection title="路由">
+        <ShapeInspectorSegmentedControl
+          ariaLabel="连接线路由"
+          onChange={() => {
+            // 后续由 flowchart feature 提供路由 StyleProp。
+          }}
+          options={[
+            { value: 'straight', label: '直线' },
+            { value: 'curved', label: '曲线' },
+            { value: 'orthogonal', label: '正交' },
+          ]}
+          value="straight"
+        />
+      </ShapeInspectorSection>
 
-Initial tool mapping:
+      <ToolColorSection editor={editor} />
+      <ToolDashSection editor={editor} />
+      <ToolStrokeSizeSection editor={editor} />
 
-| Tool | Inspector |
-| --- | --- |
-| select | SelectToolInspector |
-| hand | HandToolInspector |
-| geo | ShapeToolInspector |
-| line | LineToolInspector |
-| arrow | ArrowToolInspector |
-| draw | DrawToolInspector |
-| highlight | HighlightToolInspector |
-| eraser | EraserToolInspector |
-| text | TextToolInspector |
-| note | NoteToolInspector |
-| frame | FrameToolInspector |
-| scientific-chart | Feature contribution |
+      <ShapeInspectorSection title="起点">
+        <ShapeInspectorArrowheadSelect
+          onChange={(value) =>
+            editor.setStyleForNextShapes(
+              ArrowShapeArrowheadStartStyle,
+              value as never,
+            )
+          }
+          value="none"
+        />
+      </ShapeInspectorSection>
 
-Each tool inspector must read and display the actual next-shape styles. Controls
-must not use a permanent null value when the Editor already has a current
-default.
+      <ShapeInspectorSection title="终点">
+        <ShapeInspectorArrowheadSelect
+          onChange={(value) =>
+            editor.setStyleForNextShapes(
+              ArrowShapeArrowheadEndStyle,
+              value as never,
+            )
+          }
+          value="arrow"
+        />
+      </ShapeInspectorSection>
+    </ToolPanelHeader>
+  )
+}
 
-## Phase 3
+export function TextToolInspector({
+  editor,
+}: ToolInspectorProps) {
+  return (
+    <ToolPanelHeader
+      description="单击创建自动宽度文本，拖动创建固定宽度文本框。"
+      title="文本"
+    >
+      <ToolColorSection editor={editor} />
 
-Split selected-object rendering into SelectionInspectorRouter.
+      <ShapeInspectorSection title="字体分类">
+        <ShapeInspectorSegmentedControl
+          ariaLabel="默认字体分类"
+          onChange={(value) =>
+            editor.setStyleForNextShapes(
+              DefaultFontStyle,
+              value as never,
+            )
+          }
+          options={[
+            { value: 'draw', label: '手写' },
+            { value: 'sans', label: '无衬线' },
+            { value: 'serif', label: '衬线' },
+            { value: 'mono', label: '等宽' },
+          ]}
+          value={null}
+        />
+      </ShapeInspectorSection>
 
-Required selection contexts:
+      <ToolStrokeSizeSection editor={editor} />
 
-- no selection
-- single shape
-- multiple shapes of the same type
-- mixed-type multiple selection
-- locked selection
-- text editing
-- path or vertex editing
-- crop editing
-- chart editing
+      <ShapeInspectorSection title="对齐">
+        <ShapeInspectorSegmentedControl
+          ariaLabel="默认文本对齐"
+          onChange={(value) =>
+            editor.setStyleForNextShapes(
+              DefaultTextAlignStyle,
+              value as never,
+            )
+          }
+          options={[
+            { value: 'start', label: '左' },
+            { value: 'middle', label: '中' },
+            { value: 'end', label: '右' },
+          ]}
+          value={null}
+        />
+      </ShapeInspectorSection>
+    </ToolPanelHeader>
+  )
+}
 
-Mixed values must be represented explicitly rather than silently using the
-first selected object's value.
+export function NoteToolInspector({
+  editor,
+}: ToolInspectorProps) {
+  return (
+    <ToolPanelHeader
+      description="在画布中创建便签并立即输入内容。"
+      title="便签"
+    >
+      <ToolColorSection editor={editor} />
+      <ToolFillSection editor={editor} includeNone={false} />
 
-## Phase 4
+      <ShapeInspectorSection title="字体">
+        <ShapeInspectorSegmentedControl
+          ariaLabel="便签字体"
+          onChange={(value) =>
+            editor.setStyleForNextShapes(
+              DefaultFontStyle,
+              value as never,
+            )
+          }
+          options={[
+            { value: 'draw', label: '手写' },
+            { value: 'sans', label: '无衬线' },
+            { value: 'serif', label: '衬线' },
+            { value: 'mono', label: '等宽' },
+          ]}
+          value={null}
+        />
+      </ShapeInspectorSection>
 
-Replace primitive style controls with professional controls:
+      <ToolStrokeSizeSection editor={editor} />
+    </ToolPanelHeader>
+  )
+}
 
-- exact numeric stroke width plus quick presets
-- current color, custom picker, opacity, recent colors, and document colors
-- graphical line-style previews
-- graphical arrowhead previews
-- transform fields for X, Y, width, height, and rotation
-- stable alignment and distribution controls
-- tool preset persistence
-- accessible labels and keyboard operation
+export function FrameToolInspector({
+  editor,
+}: ToolInspectorProps) {
+  return (
+    <ToolPanelHeader
+      description="拖动创建用于组织内容和导出的画框。"
+      title="画框"
+    >
+      <ShapeInspectorSection title="尺寸预设">
+        <ShapeInspectorSegmentedControl
+          ariaLabel="画框尺寸预设"
+          onChange={() => {
+            // 后续由 workspace/frame extension 提供尺寸预设。
+          }}
+          options={[
+            { value: 'custom', label: '自定义' },
+            { value: 'screen', label: '屏幕' },
+            { value: 'paper', label: '纸张' },
+            { value: 'slide', label: '演示' },
+          ]}
+          value="custom"
+        />
+      </ShapeInspectorSection>
 
-## Phase 5
+      <ToolColorSection editor={editor} />
+      <ToolDashSection editor={editor} />
+      <ToolStrokeSizeSection editor={editor} />
 
-Implement professional tool-specific controls.
+      <InspectorHint>
+        下一阶段增加精确尺寸、裁剪内容、内边距、布局网格和导出区域。
+      </InspectorHint>
+    </ToolPanelHeader>
+  )
+}
 
-### Freehand
+export function EraserToolInspector() {
+  return (
+    <ToolPanelHeader
+      description="拖过对象或笔触进行擦除。"
+      title="橡皮擦"
+    >
+      <ShapeInspectorSection title="擦除方式">
+        <ShapeInspectorSegmentedControl
+          ariaLabel="擦除方式"
+          onChange={() => {
+            // 后续接入 eraser tool state。
+          }}
+          options={[
+            { value: 'object', label: '对象' },
+            { value: 'stroke', label: '笔画' },
+            { value: 'partial', label: '局部' },
+          ]}
+          value="object"
+        />
+      </ShapeInspectorSection>
 
-- brush preset
-- exact size
-- opacity and flow
-- smoothing mode
-- stabilization
-- pressure mapping
-- tip angle and roundness
-- stroke taper
-- input-device state
+      <InspectorHint>
+        当前实现使用对象擦除。笔画擦除和局部路径切割需要独立工具状态支持。
+      </InspectorHint>
+    </ToolPanelHeader>
+  )
+}
 
-### Arrow and connector
+export function HandToolInspector() {
+  return (
+    <ToolPanelHeader
+      description="拖动画布进行平移，滚轮或触控板用于缩放。"
+      title="移动画布"
+    >
+      <ShapeInspectorSection title="快速视图">
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            className="min-h-8 rounded-md border border-divider bg-background px-2 text-[11px] hover:bg-accent"
+            type="button"
+          >
+            适合内容
+          </button>
 
-- straight, curved, orthogonal, and manual routing
-- start and end arrowheads
-- snapping and bindings
-- obstacle avoidance
-- corner radius
-- label position
-- automatic rerouting
+          <button
+            className="min-h-8 rounded-md border border-divider bg-background px-2 text-[11px] hover:bg-accent"
+            type="button"
+          >
+            100%
+          </button>
+        </div>
+      </ShapeInspectorSection>
+    </ToolPanelHeader>
+  )
+}
 
-### Frame
+export function SelectToolInspector() {
+  return (
+    <ToolPanelHeader
+      description="选择画布中的对象以编辑属性。"
+      title="选择"
+    >
+      <ShapeInspectorSection title="选择辅助">
+        <ShapeInspectorSegmentedControl
+          ariaLabel="框选方式"
+          onChange={() => {
+            // 后续接入 selection tool preferences。
+          }}
+          options={[
+            { value: 'contain', label: '完全包含' },
+            { value: 'intersect', label: '相交即选' },
+          ]}
+          value="intersect"
+        />
+      </ShapeInspectorSection>
 
-- paper, screen, presentation, and social presets
-- exact dimensions
-- clipping
-- content movement
-- padding and layout
-- grid
-- export region
+      <InspectorHint>
+        按住 Shift 可多选；Alt 拖动可复制；双击对象可进入专用编辑。
+      </InspectorHint>
+    </ToolPanelHeader>
+  )
+}
+`
 
-### Scientific chart
+const ROUTER_SOURCE = `import { DrawToolInspector } from './DrawToolInspector'
+import {
+  ArrowToolInspector,
+  EraserToolInspector,
+  FrameToolInspector,
+  HandToolInspector,
+  NoteToolInspector,
+  SelectToolInspector,
+  TextToolInspector,
+} from './BasicToolInspectors'
+import { ScientificChartToolInspector } from './ScientificChartToolInspector'
+import { ShapeToolInspector } from './ShapeToolInspector'
+import type { ToolInspectorRouterProps } from './types'
 
-- chart family and type
-- data source
-- field mapping
-- series
-- X and Y axes
-- legend
-- labels and tooltips
-- annotations
-- themes and palettes
-- analysis
-- accessibility
-- export
+export function ToolInspectorRouter({
+  editor,
+  toolId,
+}: ToolInspectorRouterProps) {
+  switch (toolId) {
+    case 'geo':
+      return <ShapeToolInspector editor={editor} />
 
-## Validation
+    case 'draw':
+      return (
+        <DrawToolInspector
+          editor={editor}
+          variant="draw"
+        />
+      )
 
-At the end of each phase, run:
+    case 'highlight':
+      return (
+        <DrawToolInspector
+          editor={editor}
+          variant="highlight"
+        />
+      )
 
-\`\`\`bash
-pnpm exec biome check --write apps/desktop/src/presentation/workspace
-pnpm exec biome check --write features/workspace/src/presentation/inspector
-pnpm typecheck
-pnpm test
-\`\`\`
+    case 'scientific-chart':
+      return <ScientificChartToolInspector editor={editor} />
 
-Also perform visual review for:
+    case 'arrow':
+      return <ArrowToolInspector editor={editor} />
 
-- no clipped or overflowing inspector controls
-- no duplicate headers
-- stable scroll behavior
-- narrow inspector width
-- resized inspector width
-- every active tool
-- no selection
-- single selection
-- mixed multi-selection
-- keyboard focus
-- light and dark themes
+    case 'text':
+      return <TextToolInspector editor={editor} />
+
+    case 'note':
+      return <NoteToolInspector editor={editor} />
+
+    case 'frame':
+      return <FrameToolInspector editor={editor} />
+
+    case 'eraser':
+      return <EraserToolInspector />
+
+    case 'hand':
+      return <HandToolInspector />
+
+    case 'select':
+    default:
+      return <SelectToolInspector />
+  }
+}
+`
+
+const TOOLS_INDEX_SOURCE = `export { ToolInspectorRouter } from './ToolInspectorRouter'
+export type {
+  ToolInspectorProps,
+  ToolInspectorRouterProps,
+} from './types'
 `
 
 async function main() {
   console.log('')
-  console.log('Hybrid Canvas — Tool Inspector Refactor / Phase 1')
+  console.log('Hybrid Canvas — Tool Inspector Refactor / Phase 2')
   console.log(`Repository: ${ROOT_DIR}`)
   console.log(`Mode: ${DRY_RUN ? 'dry-run' : 'write'}`)
   console.log('')
 
-  await assertRepositoryRoot()
+  await assertFile(PATHS.packageJson)
+  await assertFile(PATHS.canvasInspector)
 
-  const workspaceSource = await readUtf8(PATHS.workspaceContainer)
-  const inspectorHostSource = await readUtf8(PATHS.inspectorHost)
+  const originalCanvasInspector = await readUtf8(
+    PATHS.canvasInspector,
+  )
 
-  const extraction = extractInspector(workspaceSource)
+  const transformedCanvasInspector =
+    transformCanvasInspector(originalCanvasInspector)
 
-  if (!DRY_RUN) {
-    const backupDirectory = await createBackupDirectory()
-
-    await backupFile(
-      PATHS.workspaceContainer,
-      path.join(
-        backupDirectory,
-        'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
-      ),
-    )
-
-    await backupFile(
-      PATHS.inspectorHost,
-      path.join(
-        backupDirectory,
-        'features/workspace/src/presentation/inspector/InspectorHost.tsx',
-      ),
-    )
-
-    await mkdir(PATHS.inspectorDirectory, { recursive: true })
-    await mkdir(path.dirname(PATHS.refactorPlan), { recursive: true })
-
-    if (extraction.kind === 'extracted') {
-      await writeUtf8(
-        PATHS.extractedInspector,
-        EXTRACTED_INSPECTOR_IMPORTS + extraction.inspectorSource,
-      )
-
-      await writeUtf8(
-        PATHS.workspaceContainer,
-        normalizeWorkspaceContainer(extraction.workspaceSource),
-      )
-    } else {
-      console.log(
-        'Inspector content was already extracted; WorkspaceContainer was left structurally unchanged.',
-      )
-    }
-
-    await writeUtf8(PATHS.inspectorHost, NEW_INSPECTOR_HOST)
-    await writeUtf8(PATHS.inspectorIndex, INSPECTOR_INDEX_CONTENT)
-    await writeUtf8(PATHS.refactorPlan, REFACTOR_PLAN_CONTENT)
-
+  if (DRY_RUN) {
+    console.log('✓ Phase 1 output detected')
+    console.log('✓ CanvasActiveToolPanel can be extracted')
+    console.log('✓ CanvasInspectorContent can be patched safely')
     console.log('')
-    console.log(`Backup created: ${relative(backupDirectory)}`)
-  } else {
-    console.log('Dry-run validation succeeded.')
-    console.log(
-      extraction.kind === 'extracted'
-        ? 'CanvasInspectorContent can be extracted.'
-        : 'CanvasInspectorContent appears to be already extracted.',
-    )
-
-    if (inspectorHostSource.includes('value="data"')) {
-      console.log('Permanent Data tab will be removed.')
-    }
-
-    if (inspectorHostSource.includes('value="interaction"')) {
-      console.log('Permanent Interaction tab will be removed.')
-    }
+    return
   }
 
-  printSummary(extraction.kind)
+  const backupDirectory = await createBackupDirectory()
+
+  await backupFile(
+    PATHS.canvasInspector,
+    path.join(
+      backupDirectory,
+      'CanvasInspectorContent.tsx',
+    ),
+  )
+
+  await mkdir(PATHS.commonDirectory, { recursive: true })
+  await mkdir(PATHS.toolsDirectory, { recursive: true })
+
+  await writeUtf8(PATHS.primitives, PRIMITIVES_SOURCE)
+  await writeUtf8(PATHS.toolTypes, TOOL_TYPES_SOURCE)
+  await writeUtf8(PATHS.shapeTool, SHAPE_TOOL_SOURCE)
+  await writeUtf8(PATHS.drawTool, DRAW_TOOL_SOURCE)
+  await writeUtf8(PATHS.chartTool, CHART_TOOL_SOURCE)
+  await writeUtf8(PATHS.basicTools, BASIC_TOOLS_SOURCE)
+  await writeUtf8(PATHS.router, ROUTER_SOURCE)
+  await writeUtf8(PATHS.toolsIndex, TOOLS_INDEX_SOURCE)
+  await writeUtf8(
+    PATHS.canvasInspector,
+    transformedCanvasInspector,
+  )
+
+  console.log('')
+  console.log(`Backup: ${relative(backupDirectory)}`)
+  console.log('')
+  console.log('Phase 2 complete:')
+  console.log('  ✓ ToolInspectorRouter created')
+  console.log('  ✓ Shape tool inspector extracted')
+  console.log('  ✓ Draw and highlight inspectors extracted')
+  console.log('  ✓ Scientific chart tool inspector extracted')
+  console.log('  ✓ Remaining tool inspectors preserved')
+  console.log('  ✓ Shared inspector primitives created')
+  console.log('')
+  console.log('Run:')
+  console.log(
+    '  pnpm exec biome check --write apps/desktop/src/presentation/workspace/inspector',
+  )
+  console.log('  pnpm typecheck')
+  console.log('  pnpm test')
+  console.log('')
 }
 
-async function assertRepositoryRoot() {
-  const requiredPaths = [
-    PATHS.packageJson,
-    PATHS.workspaceContainer,
-    PATHS.inspectorHost,
-  ]
-
-  for (const requiredPath of requiredPaths) {
-    try {
-      await access(requiredPath)
-    } catch {
-      throw new Error(
-        `Missing required file: ${relative(requiredPath)}\n` +
-          'Place this script in the Canvas repository root and run it again.',
-      )
-    }
-  }
-
-  const packageJson = JSON.parse(await readUtf8(PATHS.packageJson))
-
-  if (!packageJson || typeof packageJson !== 'object') {
-    throw new Error('The root package.json is invalid.')
-  }
-}
-
-function extractInspector(workspaceSource) {
-  const startIndex = workspaceSource.indexOf(INSPECTOR_START_MARKER)
-  const endIndex = workspaceSource.indexOf(INSPECTOR_END_MARKER)
+function transformCanvasInspector(source) {
+  const startIndex = source.indexOf(ACTIVE_TOOL_START)
+  const endIndex = source.indexOf(ACTIVE_TOOL_END)
 
   if (startIndex === -1) {
-    const alreadyImported =
-      workspaceSource.includes(
-        "from './inspector/CanvasInspectorContent'",
-      ) ||
-      workspaceSource.includes("from './inspector'")
-
-    if (alreadyImported) {
-      return {
-        kind: 'already-extracted',
-        workspaceSource,
-      }
+    if (source.includes('<ToolInspectorRouter')) {
+      console.log(
+        'ToolInspectorRouter is already present; no second transformation is needed.',
+      )
+      return source
     }
 
     throw new Error(
-      `Could not find marker: ${INSPECTOR_START_MARKER}\n` +
-        'The source file may have changed. Refusing to make an unsafe edit.',
+      `Could not find ${ACTIVE_TOOL_START}. ` +
+        'Run phase 1 first or inspect the source manually.',
     )
   }
 
   if (endIndex === -1 || endIndex <= startIndex) {
     throw new Error(
-      `Could not find a valid end marker: ${INSPECTOR_END_MARKER}\n` +
-        'Refusing to make an unsafe edit.',
+      `Could not find valid end marker ${ACTIVE_TOOL_END}. ` +
+        'Refusing an unsafe partial edit.',
     )
   }
 
-  const rawInspectorSource = workspaceSource
-    .slice(startIndex, endIndex)
-    .trim()
+  let nextSource =
+    source.slice(0, startIndex) + source.slice(endIndex)
 
-  const inspectorSource = rawInspectorSource.replace(
-    'function CanvasInspectorContent(',
-    'export function CanvasInspectorContent(',
+  nextSource = nextSource.replace(
+    '<CanvasActiveToolPanel editor={editor} toolId={activeToolId} />',
+    '<ToolInspectorRouter editor={editor} toolId={activeToolId} />',
   )
 
-  const nextWorkspaceSource =
-    workspaceSource.slice(0, startIndex) +
-    workspaceSource.slice(endIndex)
-
-  return {
-    kind: 'extracted',
-    inspectorSource: inspectorSource + '\n',
-    workspaceSource: nextWorkspaceSource,
-  }
-}
-
-function normalizeWorkspaceContainer(source) {
-  let nextSource = source
-
-  nextSource = replaceRequired(
-    nextSource,
-    `import {
-  ConfirmationDialog,
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectList,
-  type SelectOption,
-  SelectTrigger,
-} from '@hybrid-canvas/design-system'`,
-    `import { ConfirmationDialog } from '@hybrid-canvas/design-system'`,
-    'design-system import',
-  )
-
-  nextSource = replaceRequired(
-    nextSource,
-    `import { type ScientificChartType, ScientificChartTypeStyle } from '@hybrid-canvas/scientific-plot'
-`,
+  nextSource = removeDesignSystemImport(nextSource)
+  nextSource = nextSource.replace(
+    "import { useState } from 'react'\n",
     '',
-    'scientific chart import',
   )
 
-  nextSource = replaceRequired(
-    nextSource,
-    `import {
-  ArrowShapeArrowheadEndStyle,
-  ArrowShapeArrowheadStartStyle,
-  DefaultColorStyle,
-  DefaultDashStyle,
-  DefaultFillStyle,
-  DefaultFontStyle,
-  DefaultSizeStyle,
-  DefaultTextAlignStyle,
-  type Editor,
-  GeoShapeGeoStyle,
-  type TLShape,
-  useValue,
-} from 'tldraw'`,
-    `import { useValue } from 'tldraw'`,
-    'tldraw inspector imports',
+  nextSource = nextSource.replace(
+    '  type Editor,\n',
+    '',
   )
 
-  const localImportAnchor =
-    `import { reportUiError as reportError } from '../ui/ui-feedback'\n`
+  const tldrawImportEnd = "} from 'tldraw'\n"
 
-  if (
-    !nextSource.includes(
-      "from './inspector/CanvasInspectorContent'",
-    )
-  ) {
-    nextSource = replaceRequired(
-      nextSource,
-      localImportAnchor,
-      localImportAnchor +
-        `import { CanvasInspectorContent } from './inspector/CanvasInspectorContent'\n`,
-      'local inspector import anchor',
+  const commonImports = `import {
+  GEO_SHAPE_OPTIONS,
+  SHAPE_COLORS,
+  ShapeInspectorArrowheadSelect,
+  ShapeInspectorButton,
+  ShapeInspectorSection,
+  ShapeInspectorSegmentedControl,
+  ShapeInspectorSelect,
+} from './common/InspectorPrimitives'
+import { ToolInspectorRouter } from './tools/ToolInspectorRouter'
+`
+
+  if (!nextSource.includes(tldrawImportEnd)) {
+    throw new Error(
+      'Could not find the tldraw import block in CanvasInspectorContent.',
     )
   }
+
+  nextSource = nextSource.replace(
+    tldrawImportEnd,
+    tldrawImportEnd + commonImports,
+  )
 
   nextSource = nextSource.replace(/\n{3,}/g, '\n\n')
 
   return nextSource.trimEnd() + '\n'
 }
 
-function replaceRequired(source, oldValue, newValue, label) {
-  if (!source.includes(oldValue)) {
-    throw new Error(
-      `Could not update ${label}.\n` +
-        'The source file differs from the expected repository version. ' +
-        'Refusing to make a partial edit.',
-    )
+function removeDesignSystemImport(source) {
+  const importStart = source.indexOf('import {')
+  const importPackage =
+    "} from '@hybrid-canvas/design-system'\n"
+
+  if (importStart === -1) {
+    return source
   }
 
-  return source.replace(oldValue, newValue)
+  const packageEnd = source.indexOf(importPackage, importStart)
+
+  if (packageEnd === -1) {
+    return source
+  }
+
+  const endIndex = packageEnd + importPackage.length
+  const importBlock = source.slice(importStart, endIndex)
+
+  if (!importBlock.includes('@hybrid-canvas/design-system')) {
+    return source
+  }
+
+  return source.slice(0, importStart) + source.slice(endIndex)
+}
+
+async function assertFile(filePath) {
+  try {
+    await access(filePath)
+  } catch {
+    throw new Error(
+      `Missing required file: ${relative(filePath)}\n` +
+        'Run phase 1 before running phase 2.',
+    )
+  }
 }
 
 async function createBackupDirectory() {
@@ -618,17 +1220,16 @@ async function createBackupDirectory() {
   const backupDirectory = path.join(
     ROOT_DIR,
     '.refactor-backup',
-    `inspector-phase1-${timestamp}`,
+    `inspector-phase2-${timestamp}`,
   )
 
   await mkdir(backupDirectory, { recursive: true })
-
   return backupDirectory
 }
 
-async function backupFile(sourcePath, destinationPath) {
-  await mkdir(path.dirname(destinationPath), { recursive: true })
-  await copyFile(sourcePath, destinationPath)
+async function backupFile(source, destination) {
+  await mkdir(path.dirname(destination), { recursive: true })
+  await copyFile(source, destination)
 }
 
 async function readUtf8(filePath) {
@@ -638,11 +1239,15 @@ async function readUtf8(filePath) {
 async function writeUtf8(filePath, content) {
   await mkdir(path.dirname(filePath), { recursive: true })
 
-  const normalized = content
-    .replaceAll('\r\n', '\n')
-    .replace(/^\uFEFF/, '')
+  await writeFile(
+    filePath,
+    content
+      .replaceAll('\r\n', '\n')
+      .replace(/^\uFEFF/, '')
+      .trimEnd() + '\n',
+    'utf8',
+  )
 
-  await writeFile(filePath, normalized, 'utf8')
   console.log(`Updated: ${relative(filePath)}`)
 }
 
@@ -650,38 +1255,9 @@ function relative(filePath) {
   return path.relative(ROOT_DIR, filePath) || '.'
 }
 
-function printSummary(extractionKind) {
-  console.log('')
-  console.log('Phase 1 result:')
-  console.log(
-    extractionKind === 'extracted'
-      ? '  ✓ CanvasInspectorContent extracted from WorkspaceContainer'
-      : '  ✓ Existing CanvasInspectorContent extraction detected',
-  )
-  console.log('  ✓ Permanent Design/Data/Interaction tabs removed')
-  console.log('  ✓ InspectorHost reduced to layout and scrolling')
-  console.log('  ✓ Inspector module entry created')
-  console.log('  ✓ Refactor RFC written')
-  console.log('')
-  console.log('Next commands:')
-  console.log(
-    '  pnpm exec biome check --write apps/desktop/src/presentation/workspace',
-  )
-  console.log(
-    '  pnpm exec biome check --write features/workspace/src/presentation/inspector',
-  )
-  console.log('  pnpm typecheck')
-  console.log('  pnpm test')
-  console.log('')
-  console.log(
-    'Next implementation phase: split CanvasActiveToolPanel into one inspector per tool.',
-  )
-  console.log('')
-}
-
 main().catch((error) => {
   console.error('')
-  console.error('Refactor failed.')
+  console.error('Phase 2 failed.')
   console.error(error instanceof Error ? error.message : error)
   console.error('')
   process.exitCode = 1
