@@ -23,25 +23,22 @@ const obsoleteLifecycleContractPath =
 const architectureCheckPath =
   'tests/architecture/check-canvas-lifecycle.mjs'
 
-function replaceRequired(source, oldText, newText, label) {
-  if (!source.includes(oldText)) {
-    throw new Error(`Cannot apply refactor: missing ${label}`)
+function requireIndex(source, text, label) {
+  const index = source.indexOf(text)
+
+  if (index < 0) {
+    throw new Error(`Cannot apply recovery: missing ${label}`)
   }
 
-  return source.replace(oldText, newText)
+  return index
 }
 
-function removeRange(source, startText, endText, label) {
-  const start = source.indexOf(startText)
-
-  if (start < 0) {
-    throw new Error(`Cannot apply refactor: missing ${label} start`)
-  }
-
+function removeBetween(source, startText, endText, label) {
+  const start = requireIndex(source, startText, label + ' start')
   const end = source.indexOf(endText, start)
 
   if (end < 0) {
-    throw new Error(`Cannot apply refactor: missing ${label} end`)
+    throw new Error(`Cannot apply recovery: missing ${label} end`)
   }
 
   return source.slice(0, start) + source.slice(end + endText.length)
@@ -50,11 +47,14 @@ function removeRange(source, startText, endText, label) {
 let documentService = await readFile(documentServicePath, 'utf8')
 
 if (!documentService.includes('export type CanvasCloseState =')) {
-  documentService = replaceRequired(
+  const marker = 'export type CanvasReleaseResult ='
+  const index = requireIndex(
     documentService,
-    `export type CanvasReleaseResult =
-  | { readonly kind: 'released' }`,
-    `export type CanvasCloseState =
+    marker,
+    'CanvasReleaseResult insertion point',
+  )
+
+  const contract = `export type CanvasCloseState =
   | {
       readonly state: 'confirmation-required'
     }
@@ -72,10 +72,12 @@ export interface CanvasCloseSnapshot {
   readonly states: Readonly<Record<CanvasSessionId, CanvasCloseState>>
 }
 
-export type CanvasReleaseResult =
-  | { readonly kind: 'released' }`,
-    'document-owned CanvasCloseState contract insertion point',
-  )
+`
+
+  documentService =
+    documentService.slice(0, index) +
+    contract +
+    documentService.slice(index)
 }
 
 await writeFile(documentServicePath, documentService, 'utf8')
@@ -83,15 +85,12 @@ await writeFile(documentServicePath, documentService, 'utf8')
 let documentPublicApi = await readFile(documentPublicApiPath, 'utf8')
 
 if (!documentPublicApi.includes('type CanvasCloseSnapshot,')) {
-  documentPublicApi = replaceRequired(
-    documentPublicApi,
-    `  type CanvasCloseIntent,
-  type CanvasDocumentLifecycleSnapshot,`,
+  documentPublicApi = documentPublicApi.replace(
+    '  type CanvasCloseIntent,\n',
     `  type CanvasCloseIntent,
   type CanvasCloseSnapshot,
   type CanvasCloseState,
-  type CanvasDocumentLifecycleSnapshot,`,
-    'document public close state exports',
+`,
   )
 }
 
@@ -99,9 +98,19 @@ await writeFile(documentPublicApiPath, documentPublicApi, 'utf8')
 
 let workflow = await readFile(workflowPath, 'utf8')
 
-workflow = workflow.replace(
-  /import type \{[\s\S]*?\} from '@hybrid-canvas\/document'/,
-  `import type {
+const workflowBodyMarker =
+  '/**\n * Application termination has exactly one asynchronous boundary:'
+
+const workflowBodyIndex = requireIndex(
+  workflow,
+  workflowBodyMarker,
+  'CanvasWorkflow body marker',
+)
+
+const workflowBody = workflow.slice(workflowBodyIndex)
+
+const workflowImports = `import type { EditorSession } from '@hybrid-canvas/canvas/application'
+import type {
   CanvasCloseIntent,
   CanvasCloseSnapshot,
   CanvasCloseState,
@@ -109,31 +118,16 @@ workflow = workflow.replace(
   CanvasReleaseResult,
   CanvasSessionId,
   CanvasSessionSnapshot,
-} from '@hybrid-canvas/document'`,
-)
+} from '@hybrid-canvas/document'
+import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
 
-workflow = workflow.replace(
-  /import type \{[\s\S]*?\} from '@hybrid-canvas\/workspace\/contracts'/,
-  `import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'`,
-)
+`
 
-if (workflow.includes('export type CanvasCloseState =')) {
-  workflow = removeRange(
-    workflow,
-    'export type CanvasCloseState =',
-    '}\n\n/**\n * Application termination has exactly one asynchronous boundary:',
-    'workflow-local CanvasCloseState contract',
-  ).replace(
-    `/**\n * Application termination has exactly one asynchronous boundary:`,
-    `/**\n * Application termination has exactly one asynchronous boundary:`,
-  )
-}
-
+workflow = workflowImports + workflowBody
 workflow = workflow.replaceAll(
   'intent as DocumentCanvasCloseIntent',
   'intent',
 )
-
 workflow = workflow.replaceAll(
   `'discard' as DocumentCanvasCloseIntent`,
   `'discard'`,
@@ -141,10 +135,22 @@ workflow = workflow.replaceAll(
 
 await writeFile(workflowPath, workflow, 'utf8')
 
-let workspaceContainer = await readFile(workspaceContainerPath, 'utf8')
+let workspace = await readFile(workspaceContainerPath, 'utf8')
 
-workspaceContainer = workspaceContainer.replace(
-  /import type \{[\s\S]*?\} from '@hybrid-canvas\/workspace\/contracts'/,
+if (workspace.includes('export type WorkspaceCanvasCloseState =')) {
+  workspace = removeBetween(
+    workspace,
+    'export type WorkspaceCanvasCloseState =',
+    '}\n\nexport interface WorkspaceCanvasUIPort',
+    'WorkspaceContainer duplicated close contract',
+  ).replace(
+    '\n\n\nexport interface WorkspaceUIPort',
+    '\n\nexport interface WorkspaceUIPort',
+  )
+}
+
+workspace = workspace.replace(
+  /import type \{[^}]*\} from '@hybrid-canvas\/workspace\/contracts'/,
   `import type {
   CanvasSessionId,
   WorkbenchSessionStore,
@@ -153,43 +159,31 @@ workspaceContainer = workspaceContainer.replace(
 } from '@hybrid-canvas/workspace/contracts'`,
 )
 
-if (!workspaceContainer.includes("from '@hybrid-canvas/document'")) {
-  workspaceContainer = replaceRequired(
-    workspaceContainer,
-    `import { ConfirmationDialog } from '@hybrid-canvas/design-system'`,
-    `import { ConfirmationDialog } from '@hybrid-canvas/design-system'
-import type {
+workspace = workspace.replace(
+  /import type \{[^}]*\} from '@hybrid-canvas\/document'\\n?/,
+  '',
+)
+
+const documentContractImport = `import type {
   CanvasCloseIntent,
   CanvasCloseSnapshot,
   CanvasSessionSnapshot,
-} from '@hybrid-canvas/document'`,
-    'WorkspaceContainer document contract import insertion point',
-  )
-}
+} from '@hybrid-canvas/document'
+`
 
-if (workspaceContainer.includes('export type WorkspaceCanvasCloseState =')) {
-  workspaceContainer = removeRange(
-    workspaceContainer,
-    'export type WorkspaceCanvasCloseState =',
-    '}\n\nexport interface WorkspaceCanvasUIPort',
-    'WorkspaceContainer duplicated close contracts',
-  ).replace(
-    `export interface WorkspaceCanvasUIPort`,
-    `export interface WorkspaceCanvasUIPort`,
-  )
-}
+workspace = documentContractImport + workspace
 
-workspaceContainer = workspaceContainer.replaceAll(
-  `intent: 'normal' | 'discard'`,
-  `intent: CanvasCloseIntent`,
-)
-
-workspaceContainer = workspaceContainer.replaceAll(
+workspace = workspace.replaceAll(
   'WorkspaceCanvasCloseSnapshot',
   'CanvasCloseSnapshot',
 )
 
-workspaceContainer = workspaceContainer.replace(
+workspace = workspace.replaceAll(
+  `intent: 'normal' | 'discard'`,
+  `intent: CanvasCloseIntent`,
+)
+
+workspace = workspace.replace(
   `  readonly getSessionSnapshot: (
     sessionId: CanvasSessionId,
   ) => import('@hybrid-canvas/document').CanvasSessionSnapshot | null`,
@@ -198,7 +192,7 @@ workspaceContainer = workspaceContainer.replace(
   ) => CanvasSessionSnapshot | null`,
 )
 
-await writeFile(workspaceContainerPath, workspaceContainer, 'utf8')
+await writeFile(workspaceContainerPath, workspace, 'utf8')
 
 let workspaceContractsPublicApi = await readFile(
   workspaceContractsPublicApiPath,
@@ -331,18 +325,6 @@ if (!documentPublicApi?.includes('type CanvasCloseSnapshot')) {
   )
 }
 
-if (!workflow?.includes('CanvasCloseSnapshot')) {
-  violations.push(
-    'CanvasWorkflow must consume the document-owned close snapshot contract',
-  )
-}
-
-if (!workflow?.includes('CanvasCloseState')) {
-  violations.push(
-    'CanvasWorkflow must consume the document-owned close state contract',
-  )
-}
-
 if (workflow?.includes('export type CanvasCloseState')) {
   violations.push(
     'CanvasWorkflow must not redefine CanvasCloseState',
@@ -355,15 +337,15 @@ if (workflow?.includes('export interface CanvasCloseSnapshot')) {
   )
 }
 
-if (!workspace?.includes('CanvasCloseSnapshot')) {
+if (!workflow?.includes('CanvasCloseSnapshot')) {
   violations.push(
-    'Workspace presentation must consume the document-owned close snapshot',
+    'CanvasWorkflow must consume the document-owned close snapshot contract',
   )
 }
 
-if (workspace?.includes('export type CanvasCloseState')) {
+if (!workspace?.includes('CanvasCloseSnapshot')) {
   violations.push(
-    'Workspace presentation must not redefine CanvasCloseState',
+    'Workspace presentation must consume the document-owned close snapshot',
   )
 }
 
@@ -387,19 +369,19 @@ if (workflow?.includes('let activeClose: Promise<void> | null')) {
 
 if (!workflow?.includes('wait-for-settlement')) {
   violations.push(
-    'CanvasWorkflow must own the unified save and release settlement phase',
+    'CanvasWorkflow must own unified save and release settlement',
   )
 }
 
 if (!documentService?.includes('while (owned.saveOperation)')) {
   violations.push(
-    'Document release must settle its own save operation',
+    'Document release must settle its own active save operation',
   )
 }
 
 if (!termination?.includes('waiting-for-settlement')) {
   violations.push(
-    'Application termination must wait for unified lifecycle settlement',
+    'Application termination must wait for lifecycle settlement',
   )
 }
 
@@ -418,5 +400,5 @@ if (violations.length > 0) {
 await writeFile(architectureCheckPath, architectureCheck, 'utf8')
 
 console.log(
-  'Duplicate workspace close contracts removed; document contract is now the only source.',
+  'Canvas lifecycle imports rebuilt and duplicate workspace contracts deleted.',
 )

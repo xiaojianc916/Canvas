@@ -1,9 +1,12 @@
+import type {
+  CanvasCloseIntent,
+  CanvasCloseSnapshot,
+  CanvasSessionSnapshot,
+} from '@hybrid-canvas/document'
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
 import { EditorSessionHost, useEditor } from '@hybrid-canvas/canvas/react'
 import { ConfirmationDialog } from '@hybrid-canvas/design-system'
 import type {
-  CanvasCloseIntent,
-  CanvasCloseSnapshot,
   CanvasSessionId,
   WorkbenchSessionStore,
   WorkbenchTabId,
@@ -45,7 +48,7 @@ export interface WorkspaceCanvasUIPort {
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (
     sessionId: CanvasSessionId,
-  ) => import('@hybrid-canvas/document').CanvasSessionSnapshot | null
+  ) => CanvasSessionSnapshot | null
   readonly getVersion: () => number
   readonly subscribe: (listener: () => void) => () => void
 }

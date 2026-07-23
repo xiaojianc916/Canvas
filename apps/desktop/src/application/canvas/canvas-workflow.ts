@@ -1,3 +1,13 @@
+import type { EditorSession } from '@hybrid-canvas/canvas/application'
+import type {
+  CanvasCloseIntent,
+  CanvasCloseSnapshot,
+  CanvasCloseState,
+  CanvasDocumentService,
+  CanvasReleaseResult,
+  CanvasSessionId,
+  CanvasSessionSnapshot,
+} from '@hybrid-canvas/document'
 import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
 
 /**

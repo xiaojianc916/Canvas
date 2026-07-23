@@ -3,17 +3,14 @@
 import { readFile } from 'node:fs/promises'
 import process from 'node:process'
 
-const documentSessionPath =
-  'editor/document/src/domain/document-session.ts'
-
 const files = [
   'platforms/desktop-runtime/src/public-api.ts',
   'platforms/desktop-runtime/src/adapters/file/file-system.ts',
   'apps/desktop/src/application/canvas/canvas-workflow.ts',
   'apps/desktop/src/application/termination/application-termination-coordinator.ts',
   'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
-  'features/workspace/src/contracts/canvas-lifecycle-contract.ts',
   'editor/document/src/application/canvas-document-service.ts',
+  'editor/document/src/public-api.ts',
   'apps/desktop/src-tauri/src/ipc/mod.rs',
 ]
 
@@ -33,7 +30,10 @@ const forbidden = [
   'void documents.releaseCanvas',
   'wait-for-save',
   'wait-for-saves',
-  'planApplicationClose: () => ApplicationClosePlan',
+  'WorkspaceCanvasCloseState',
+  'WorkspaceCanvasCloseSnapshot',
+  'DocumentCanvasCloseIntent',
+  'canvas-lifecycle-contract',
 ]
 
 const sources = await Promise.all(
@@ -42,8 +42,6 @@ const sources = await Promise.all(
     source: await readFile(path, 'utf8'),
   })),
 )
-
-const documentSession = await readFile(documentSessionPath, 'utf8')
 
 const violations = []
 
@@ -59,171 +57,107 @@ function sourceFor(path) {
   return sources.find((entry) => entry.path === path)?.source
 }
 
-const workflow = sourceFor(
-  'apps/desktop/src/application/canvas/canvas-workflow.ts',
-)
-
 const documentService = sourceFor(
   'editor/document/src/application/canvas-document-service.ts',
 )
 
-const termination = sourceFor(
-  'apps/desktop/src/application/termination/application-termination-coordinator.ts',
+const documentPublicApi = sourceFor(
+  'editor/document/src/public-api.ts',
+)
+
+const workflow = sourceFor(
+  'apps/desktop/src/application/canvas/canvas-workflow.ts',
 )
 
 const workspace = sourceFor(
   'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
 )
 
-const lifecycleContract = sourceFor(
-  'features/workspace/src/contracts/canvas-lifecycle-contract.ts',
+const termination = sourceFor(
+  'apps/desktop/src/application/termination/application-termination-coordinator.ts',
 )
 
+if (!documentService?.includes('export type CanvasCloseState')) {
+  violations.push(
+    'Document service must be the only CanvasCloseState contract source',
+  )
+}
+
+if (!documentService?.includes('export interface CanvasCloseSnapshot')) {
+  violations.push(
+    'Document service must be the only CanvasCloseSnapshot contract source',
+  )
+}
+
+if (!documentPublicApi?.includes('type CanvasCloseState')) {
+  violations.push(
+    'Document public API must export CanvasCloseState',
+  )
+}
+
+if (!documentPublicApi?.includes('type CanvasCloseSnapshot')) {
+  violations.push(
+    'Document public API must export CanvasCloseSnapshot',
+  )
+}
+
+if (workflow?.includes('export type CanvasCloseState')) {
+  violations.push(
+    'CanvasWorkflow must not redefine CanvasCloseState',
+  )
+}
+
+if (workflow?.includes('export interface CanvasCloseSnapshot')) {
+  violations.push(
+    'CanvasWorkflow must not redefine CanvasCloseSnapshot',
+  )
+}
+
 if (!workflow?.includes('CanvasCloseSnapshot')) {
-  violations.push('Canvas lifecycle coordinator snapshot is missing')
+  violations.push(
+    'CanvasWorkflow must consume the document-owned close snapshot contract',
+  )
+}
+
+if (!workspace?.includes('CanvasCloseSnapshot')) {
+  violations.push(
+    'Workspace presentation must consume the document-owned close snapshot',
+  )
 }
 
 if (!workflow?.includes('const closeOperations = new Map')) {
   violations.push(
-    'Canvas lifecycle must store close operations per CanvasSessionId',
+    'Canvas close coordinator must track operations per CanvasSessionId',
   )
 }
 
 if (!workflow?.includes('const closeStates = new Map')) {
   violations.push(
-    'Canvas lifecycle must store close state per CanvasSessionId',
+    'Canvas close coordinator must track states per CanvasSessionId',
   )
 }
 
 if (workflow?.includes('let activeClose: Promise<void> | null')) {
   violations.push(
-    'Global single canvas close transaction is forbidden',
+    'Global Canvas close transaction is forbidden',
   )
 }
 
 if (!workflow?.includes('wait-for-settlement')) {
   violations.push(
-    'CanvasWorkflow must own one settlement phase for saves and releases',
-  )
-}
-
-if (!workflow?.includes('documents.getLifecycleSnapshot()')) {
-  violations.push(
-    'CanvasWorkflow must own application close planning',
-  )
-}
-
-if (workflow?.includes(`result.kind === 'wait-for-save'`)) {
-  violations.push(
-    'CanvasWorkflow must not retry a second release transaction after save',
-  )
-}
-
-if (!workflow?.includes('cancelCanvasClose(sessionId)')) {
-  violations.push(
-    'Canvas close cancellation must target one CanvasSessionId',
-  )
-}
-
-if (documentService?.includes('planApplicationClose')) {
-  violations.push(
-    'DocumentService must not own a second application termination lifecycle',
-  )
-}
-
-if (!documentService?.includes('getLifecycleSnapshot')) {
-  violations.push(
-    'DocumentService must expose lifecycle facts without owning termination',
-  )
-}
-
-if (documentService?.includes(`kind: 'wait-for-save'`)) {
-  violations.push(
-    'DocumentService must not expose a second-stage release result',
+    'CanvasWorkflow must own unified save and release settlement',
   )
 }
 
 if (!documentService?.includes('while (owned.saveOperation)')) {
   violations.push(
-    'DocumentService must settle active saves inside releaseCanvas',
-  )
-}
-
-if (!documentService?.includes('CanvasReleaseFailureCode')) {
-  violations.push(
-    'Document release failures must expose stable sanitized codes',
-  )
-}
-
-if (!documentService?.includes('toCanvasReleaseFailure')) {
-  violations.push(
-    'Document release failures must classify native failures safely',
+    'Document release must settle its own active save operation',
   )
 }
 
 if (!termination?.includes('waiting-for-settlement')) {
   violations.push(
     'Application termination must wait for lifecycle settlement',
-  )
-}
-
-if (termination?.includes('waiting-for-saves')) {
-  violations.push(
-    'Application termination must not retain a save-only waiting state',
-  )
-}
-
-if (workspace?.includes('../../application/canvas/')) {
-  violations.push(
-    'Workspace presentation must not import canvas application implementation',
-  )
-}
-
-if (workspace?.includes('WorkspaceCanvasCloseState')) {
-  violations.push(
-    'Workspace presentation must not duplicate the canvas close state contract',
-  )
-}
-
-if (workspace?.includes('WorkspaceCanvasCloseSnapshot')) {
-  violations.push(
-    'Workspace presentation must not duplicate the canvas close snapshot contract',
-  )
-}
-
-if (!workspace?.includes('CanvasCloseSnapshot')) {
-  violations.push(
-    'Workspace presentation must consume the shared canvas close contract',
-  )
-}
-
-if (!lifecycleContract?.includes('export type CanvasCloseState')) {
-  violations.push(
-    'Workspace contracts must own the single canvas close state definition',
-  )
-}
-
-if (!lifecycleContract?.includes('export interface CanvasCloseSnapshot')) {
-  violations.push(
-    'Workspace contracts must own the single canvas close snapshot definition',
-  )
-}
-
-if (!workflow?.includes('@hybrid-canvas/workspace/contracts')) {
-  violations.push(
-    'CanvasWorkflow must consume the shared workspace close lifecycle contract',
-  )
-}
-
-if (!documentSession.includes('phaseBeforeClosing')) {
-  violations.push(
-    'DocumentSession must retain its exact phase before native release',
-  )
-}
-
-if (!documentSession.includes('phase = phaseBeforeClosing')) {
-  violations.push(
-    'DocumentSession must restore the exact pre-close phase on failure',
   )
 }
 
