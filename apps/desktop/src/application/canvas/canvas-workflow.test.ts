@@ -21,7 +21,10 @@ function createDocumentPort(
     open: vi.fn(),
     save: vi.fn(),
     releaseCanvas: vi.fn(handler),
-    planApplicationClose: vi.fn(() => ({ kind: 'close-now' as const })),
+    getLifecycleSnapshot: vi.fn(() => ({
+      savingOperations: [],
+      unsavedSessionIds: [],
+    })),
     getEditorSession: vi.fn(() => null),
     getSessionSnapshot: vi.fn(() => null),
     getVersion: vi.fn(() => 0),
@@ -181,6 +184,40 @@ describe('CanvasWorkflow per-session close transactions', () => {
     })
 
     expect(workspace.closeCanvas).not.toHaveBeenCalled()
+  })
+
+  it('waits for active per-session release operations before application termination', async () => {
+    let resolveRelease!: () => void
+
+    const release = new Promise<void>((resolve) => {
+      resolveRelease = resolve
+    })
+
+    const documents = createDocumentPort(async () => {
+      await release
+      return { kind: 'released' }
+    })
+
+    const workspace = createWorkspace()
+
+    const workflow = createCanvasWorkflow(
+      documents,
+      workspace as never,
+    )
+
+    const closing = workflow.closeCanvas('session-a', 'normal')
+
+    expect(workflow.planApplicationClose()).toEqual({
+      kind: 'wait-for-settlement',
+      operations: [closing],
+    })
+
+    resolveRelease()
+    await closing
+
+    expect(workflow.planApplicationClose()).toEqual({
+      kind: 'close-now',
+    })
   })
 
   it('retains discard intent for a failed native release retry', async () => {

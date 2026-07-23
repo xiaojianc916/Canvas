@@ -58,16 +58,10 @@ export type CanvasReleaseResult =
     }
   | { readonly kind: 'not-found' }
 
-export type ApplicationClosePlan =
-  | { readonly kind: 'close-now' }
-  | {
-      readonly kind: 'confirm-discard'
-      readonly sessionIds: readonly CanvasSessionId[]
-    }
-  | {
-      readonly kind: 'wait-for-saves'
-      readonly operations: readonly Promise<void>[]
-    }
+export interface CanvasDocumentLifecycleSnapshot {
+  readonly savingOperations: readonly Promise<void>[]
+  readonly unsavedSessionIds: readonly CanvasSessionId[]
+}
 
 export interface CanvasDocumentService {
   readonly create: (title: string) => OpenedCanvasSession
@@ -77,7 +71,7 @@ export interface CanvasDocumentService {
     sessionId: CanvasSessionId,
     intent: CanvasCloseIntent,
   ) => Promise<CanvasReleaseResult>
-  readonly planApplicationClose: () => ApplicationClosePlan
+  readonly getLifecycleSnapshot: () => CanvasDocumentLifecycleSnapshot
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (
     sessionId: CanvasSessionId,
@@ -375,32 +369,27 @@ export function createCanvasDocumentService({
     }
   }
 
-  function planApplicationClose(): ApplicationClosePlan {
-    const operations: Promise<void>[] = []
-    const dirtySessionIds: CanvasSessionId[] = []
+  function getLifecycleSnapshot(): CanvasDocumentLifecycleSnapshot {
+    const savingOperations: Promise<void>[] = []
+    const unsavedSessionIds: CanvasSessionId[] = []
 
     for (const [sessionId, owned] of sessions) {
       if (owned.saveOperation) {
-        operations.push(owned.saveOperation)
+        savingOperations.push(owned.saveOperation)
         continue
       }
 
-      const state = owned.document.getSnapshot().persistence
+      const persistence = owned.document.getSnapshot().persistence
 
-      if (state === 'dirty' || state === 'failed') {
-        dirtySessionIds.push(sessionId)
+      if (persistence === 'dirty' || persistence === 'failed') {
+        unsavedSessionIds.push(sessionId)
       }
     }
 
-    if (operations.length > 0) {
-      return { kind: 'wait-for-saves', operations }
+    return {
+      savingOperations,
+      unsavedSessionIds,
     }
-
-    if (dirtySessionIds.length > 0) {
-      return { kind: 'confirm-discard', sessionIds: dirtySessionIds }
-    }
-
-    return { kind: 'close-now' }
   }
 
   function requireSession(sessionId: CanvasSessionId) {
@@ -418,7 +407,7 @@ export function createCanvasDocumentService({
     open,
     save,
     releaseCanvas,
-    planApplicationClose,
+    getLifecycleSnapshot,
 
     getEditorSession(sessionId) {
       return sessions.get(sessionId)?.editor ?? null

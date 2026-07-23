@@ -1,4 +1,6 @@
-import type { ApplicationClosePlan, CanvasSessionId } from '@hybrid-canvas/document'
+import type { CanvasSessionId } from '@hybrid-canvas/document'
+
+import type { ApplicationClosePlan } from '../canvas/canvas-workflow'
 
 export type ApplicationTerminationIntent =
   | 'window-close'
@@ -15,7 +17,7 @@ export type ApplicationTerminationSnapshot =
       readonly sessionIds: readonly CanvasSessionId[]
     }
   | {
-      readonly state: 'waiting-for-saves'
+      readonly state: 'waiting-for-settlement'
       readonly intent: ApplicationTerminationIntent
     }
   | {
@@ -68,17 +70,12 @@ export function createApplicationTerminationCoordinator(
 
   function beginTermination(intent: ApplicationTerminationIntent): void {
     generation += 1
+
     emit({
       state: 'terminating',
       intent,
     })
 
-    /*
-     * forceClose 会终止 native process；DocumentRegistry 与其私有路径映射
-     * 在同一进程生命周期内一起释放。这里不能建立第二套逐 document_close
-     * 协议，否则会出现部分 native session 已释放、另一个失败、退出却中止的
-     * 不可恢复半关闭状态。
-     */
     terminator.terminate(intent)
   }
 
@@ -103,7 +100,7 @@ export function createApplicationTerminationCoordinator(
     const currentGeneration = ++generation
 
     emit({
-      state: 'waiting-for-saves',
+      state: 'waiting-for-settlement',
       intent,
     })
 

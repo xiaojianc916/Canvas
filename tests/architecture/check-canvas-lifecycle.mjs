@@ -29,6 +29,8 @@ const forbidden = [
   'CanvasCloseRequestResult',
   'pendingCloseSessionId',
   'void documents.releaseCanvas',
+  'wait-for-saves',
+  'planApplicationClose: () => ApplicationClosePlan',
 ]
 
 const sources = await Promise.all(
@@ -54,6 +56,24 @@ const workflow = sources.find(
   ({ path }) =>
     path === 'apps/desktop/src/application/canvas/canvas-workflow.ts',
 )?.source
+
+if (!workflow?.includes('wait-for-settlement')) {
+  violations.push(
+    'CanvasWorkflow must own one application settlement phase for saves and releases',
+  )
+}
+
+if (!workflow?.includes('documents.getLifecycleSnapshot()')) {
+  violations.push(
+    'CanvasWorkflow must own application close planning instead of delegating it',
+  )
+}
+
+if (documentService?.includes('planApplicationClose')) {
+  violations.push(
+    'Document service must not own a second application termination lifecycle',
+  )
+}
 
 if (!workflow?.includes('CanvasCloseSnapshot')) {
   violations.push('Canvas lifecycle coordinator snapshot is missing')

@@ -1,6 +1,5 @@
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
 import type {
-  ApplicationClosePlan,
   CanvasCloseIntent,
   CanvasDocumentService,
   CanvasReleaseFailure,
@@ -26,6 +25,21 @@ export interface CanvasCloseSnapshot {
   readonly states: Readonly<Record<CanvasSessionId, CanvasCloseState>>
 }
 
+/**
+ * Application termination has exactly one asynchronous boundary:
+ * every active save and every active native document release settles first.
+ */
+export type ApplicationClosePlan =
+  | { readonly kind: 'close-now' }
+  | {
+      readonly kind: 'confirm-discard'
+      readonly sessionIds: readonly CanvasSessionId[]
+    }
+  | {
+      readonly kind: 'wait-for-settlement'
+      readonly operations: readonly Promise<void>[]
+    }
+
 const EMPTY_CLOSE_SNAPSHOT: CanvasCloseSnapshot = Object.freeze({
   states: Object.freeze({}),
 })
@@ -34,21 +48,12 @@ export interface CanvasWorkflow {
   readonly create: (title: string) => Promise<void>
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
-
-  /**
-   * 每个 canvas session 都拥有独立 close transaction。
-   *
-   * 同一 session 的重复请求复用同一 Promise；
-   * 不同 session 的 native document release 可并行执行。
-   */
   readonly closeCanvas: (
     sessionId: CanvasSessionId,
     intent: CanvasCloseIntent,
   ) => Promise<void>
-
   readonly cancelCanvasClose: (sessionId: CanvasSessionId) => void
   readonly getCloseSnapshot: () => CanvasCloseSnapshot
-
   readonly planApplicationClose: () => ApplicationClosePlan
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (
@@ -105,11 +110,9 @@ export function createCanvasWorkflow(
   }
 
   function clearCloseState(sessionId: CanvasSessionId): void {
-    if (!closeStates.delete(sessionId)) {
-      return
+    if (closeStates.delete(sessionId)) {
+      publishCloseStates()
     }
-
-    publishCloseStates()
   }
 
   async function create(title: string): Promise<void> {
@@ -118,18 +121,7 @@ export function createCanvasWorkflow(
     try {
       workspace.createCanvas(opened)
     } catch (workspaceError) {
-      const release = await documents.releaseCanvas(
-        opened.sessionId,
-        'discard',
-      )
-
-      if (
-        release.kind !== 'released' &&
-        release.kind !== 'not-found'
-      ) {
-        throw new Error('CANVAS_CREATION_ROLLBACK_FAILED')
-      }
-
+      await rollbackOpenedCanvas(opened.sessionId, 'CANVAS_CREATION_ROLLBACK_FAILED')
       throw workspaceError
     }
   }
@@ -144,19 +136,19 @@ export function createCanvasWorkflow(
     try {
       workspace.createCanvas(opened)
     } catch (workspaceError) {
-      const release = await documents.releaseCanvas(
-        opened.sessionId,
-        'discard',
-      )
-
-      if (
-        release.kind !== 'released' &&
-        release.kind !== 'not-found'
-      ) {
-        throw new Error('CANVAS_OPEN_ROLLBACK_FAILED')
-      }
-
+      await rollbackOpenedCanvas(opened.sessionId, 'CANVAS_OPEN_ROLLBACK_FAILED')
       throw workspaceError
+    }
+  }
+
+  async function rollbackOpenedCanvas(
+    sessionId: CanvasSessionId,
+    errorCode: string,
+  ): Promise<void> {
+    const result = await documents.releaseCanvas(sessionId, 'discard')
+
+    if (result.kind !== 'released' && result.kind !== 'not-found') {
+      throw new Error(errorCode)
     }
   }
 
@@ -170,8 +162,9 @@ export function createCanvasWorkflow(
       return existingOperation
     }
 
-    const operation = performClose(sessionId, intent).finally(() => {
+    const operation = runCloseTransaction(sessionId, intent).finally(() => {
       closeOperations.delete(sessionId)
+      emit()
     })
 
     closeOperations.set(sessionId, operation)
@@ -179,7 +172,7 @@ export function createCanvasWorkflow(
     return operation
   }
 
-  async function performClose(
+  async function runCloseTransaction(
     sessionId: CanvasSessionId,
     intent: CanvasCloseIntent,
   ): Promise<void> {
@@ -228,15 +221,33 @@ export function createCanvasWorkflow(
         return
 
       case 'wait-for-save':
-        setCloseState(sessionId, {
-          state: 'release-failed',
-          intent,
-          failure: {
-            code: 'platform',
-            recoverable: false,
-          },
-        })
+        throw new Error('CANVAS_RELEASE_SETTLEMENT_INCOMPLETE')
     }
+  }
+
+  function planApplicationClose(): ApplicationClosePlan {
+    const documentLifecycle = documents.getLifecycleSnapshot()
+
+    const operations = [
+      ...documentLifecycle.savingOperations,
+      ...closeOperations.values(),
+    ]
+
+    if (operations.length > 0) {
+      return {
+        kind: 'wait-for-settlement',
+        operations,
+      }
+    }
+
+    if (documentLifecycle.unsavedSessionIds.length > 0) {
+      return {
+        kind: 'confirm-discard',
+        sessionIds: documentLifecycle.unsavedSessionIds,
+      }
+    }
+
+    return { kind: 'close-now' }
   }
 
   return {
@@ -259,7 +270,7 @@ export function createCanvasWorkflow(
       return closeSnapshot
     },
 
-    planApplicationClose: documents.planApplicationClose,
+    planApplicationClose,
     getEditorSession: documents.getEditorSession,
     getSessionSnapshot: documents.getSessionSnapshot,
 

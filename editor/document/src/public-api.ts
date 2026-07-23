@@ -1,6 +1,6 @@
 export {
-  type ApplicationClosePlan,
   type CanvasCloseIntent,
+  type CanvasDocumentLifecycleSnapshot,
   type CanvasReleaseFailure,
   type CanvasReleaseFailureCode,
   type CanvasReleaseResult,
