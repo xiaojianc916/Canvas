@@ -1,17 +1,4 @@
-import type { EditorSession } from '@hybrid-canvas/canvas/application'
-import type {
-  CanvasCloseIntent as DocumentCanvasCloseIntent,
-  CanvasDocumentService,
-  CanvasReleaseResult,
-  CanvasSessionId,
-  CanvasSessionSnapshot,
-} from '@hybrid-canvas/document'
-import type {
-  CanvasCloseIntent,
-  CanvasCloseSnapshot,
-  CanvasCloseState,
-  WorkbenchSessionStore,
-} from '@hybrid-canvas/workspace/contracts'
+import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
 
 /**
  * Application termination has exactly one asynchronous boundary:
@@ -135,7 +122,7 @@ export function createCanvasWorkflow(
   ): Promise<void> {
     const result = await documents.releaseCanvas(
       sessionId,
-      'discard' as DocumentCanvasCloseIntent,
+      'discard',
     )
 
     if (result.kind !== 'released' && result.kind !== 'not-found') {
@@ -174,7 +161,7 @@ export function createCanvasWorkflow(
 
     const result = await documents.releaseCanvas(
       sessionId,
-      intent as DocumentCanvasCloseIntent,
+      intent,
     )
 
     applyReleaseResult(sessionId, intent, result)

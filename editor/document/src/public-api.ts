@@ -1,5 +1,7 @@
 export {
   type CanvasCloseIntent,
+  type CanvasCloseSnapshot,
+  type CanvasCloseState,
   type CanvasDocumentLifecycleSnapshot,
   type CanvasReleaseFailure,
   type CanvasReleaseFailureCode,
