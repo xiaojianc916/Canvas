@@ -64,7 +64,8 @@ export function transformPoint(t: Transform2D, p: Point): Point {
 }
 
 export function transformVector(t: Transform2D, v: Vector2D): Vector2D {
-  const pt = t.transformPoint(new DOMPoint(v[0], v[1]))
+  // A vector has homogeneous w = 0: matrix translation must not affect it.
+  const pt = t.transformPoint(new DOMPoint(v[0], v[1], 0, 0))
   return [pt.x, pt.y]
 }
 

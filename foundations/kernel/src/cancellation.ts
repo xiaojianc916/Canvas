@@ -21,10 +21,22 @@ export class CancellationTokenSource {
         return source.#reason
       },
       onCancelled(listener: () => void): () => void {
+        // Cancellation is level-triggered. A listener registered after
+        // cancellation must observe the already-cancelled state immediately;
+        // otherwise withCancellation has a check-then-subscribe race.
+        if (source.#cancelled) {
+          listener()
+          return () => {}
+        }
+
         source.#listeners.push(listener)
+
         return () => {
           const idx = source.#listeners.indexOf(listener)
-          if (idx >= 0) source.#listeners.splice(idx, 1)
+
+          if (idx >= 0) {
+            source.#listeners.splice(idx, 1)
+          }
         }
       },
     }
