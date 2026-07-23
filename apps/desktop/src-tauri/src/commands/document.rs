@@ -1,8 +1,7 @@
 use crate::asset_protocol::{AssetProtocolError, AssetProtocolRegistry, AssetSessionSnapshotEntry};
 use crate::error::{Error, IpcError, Result};
 use hybrid_canvas_file_native::{
-    DocumentRevision, DrawAssetInput, DrawDocumentV2Input, atomic_write,
-    canonicalize_legacy_draw_document_v1, decode_draw_document_v2, document_revision,
+    DocumentRevision, DrawAssetInput, DrawDocumentV2Input, atomic_write, decode_draw_document_v2, document_revision,
     encode_draw_document_v2,
 };
 use serde::{Deserialize, Serialize};
@@ -546,48 +545,28 @@ async fn write_document(
 }
 
 fn decode_document(bytes: &[u8]) -> Result<DecodedDocument> {
-    if bytes.starts_with(b"PK\x03\x04") {
-        let decoded = decode_draw_document_v2(bytes)?;
-
-        let assets = decoded
-            .assets
-            .into_iter()
-            .map(|asset| AssetSessionSnapshotEntry {
-                content_hash: asset.content_hash,
-                content_type: asset.content_type,
-                bytes: Arc::from(asset.bytes),
-            })
-            .collect::<Vec<_>>();
-
-        return Ok(DecodedDocument {
-            content: serde_json::to_string(&decoded.document)?,
-            created_at: decoded.created_at,
-            assets,
-        });
+    if !bytes.starts_with(b"PK\x03\x04") {
+        return Err(Error::Validation(
+            "selected .draw file is not a supported v2 document".into(),
+        ));
     }
 
-    ensure_logical_document_size(bytes.len() as u64)?;
+    let decoded = decode_draw_document_v2(bytes)?;
 
-    let canonical = canonicalize_legacy_draw_document_v1(bytes)?;
-    let legacy: serde_json::Value = serde_json::from_str(&canonical)?;
-
-    let created_at = legacy
-        .get("header")
-        .and_then(|header| header.get("createdAt"))
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| Error::Validation("v1 document has no createdAt".into()))?
-        .to_owned();
-
-    let document = legacy
-        .get("content")
-        .and_then(|content| content.get("document"))
-        .filter(|value| value.is_object())
-        .ok_or_else(|| Error::Validation("v1 document has no store snapshot".into()))?;
+    let assets = decoded
+        .assets
+        .into_iter()
+        .map(|asset| AssetSessionSnapshotEntry {
+            content_hash: asset.content_hash,
+            content_type: asset.content_type,
+            bytes: Arc::from(asset.bytes),
+        })
+        .collect::<Vec<_>>();
 
     Ok(DecodedDocument {
-        content: serde_json::to_string(document)?,
-        created_at,
-        assets: Vec::new(),
+        content: serde_json::to_string(&decoded.document)?,
+        created_at: decoded.created_at,
+        assets,
     })
 }
 
@@ -744,8 +723,9 @@ mod tests {
         .to_string()
     }
 
-    fn legacy_v1(marker: &str) -> Vec<u8> {
-        serde_json::json!({
+    #[test]
+    fn rejects_legacy_non_zip_documents() {
+        let legacy = serde_json::json!({
             "header": {
                 "format": "hybrid-canvas/draw",
                 "version": 1,
@@ -755,30 +735,18 @@ mod tests {
                 "document": {
                     "schema": {},
                     "store": {
-                        "marker": marker
+                        "marker": "legacy"
                     }
                 },
                 "session": {}
             }
         })
         .to_string()
-        .into_bytes()
-    }
+        .into_bytes();
 
-    #[test]
-    fn v1_reader_is_explicit_migration() {
-        let decoded = decode_document(&legacy_v1("legacy")).expect("v1 migration should succeed");
+        let result = decode_document(&legacy);
 
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&decoded.content).expect("logical snapshot"),
-            serde_json::json!({
-                "schema": {},
-                "store": {
-                    "marker": "legacy"
-                }
-            }),
-        );
-        assert!(decoded.assets.is_empty());
+        assert!(matches!(result, Err(Error::Validation(_))));
     }
 
     #[test]
