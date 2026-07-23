@@ -5,6 +5,8 @@ import {
   copyFile,
   mkdir,
   readFile,
+  readdir,
+  unlink,
   writeFile,
 } from 'node:fs/promises'
 import path from 'node:path'
@@ -18,9 +20,14 @@ const ROOT_DIR = path.dirname(
 const DRY_RUN =
   process.argv.includes('--dry-run')
 
-const FEATURE_ROOT = path.join(
+const TOOLS_DIRECTORY = path.join(
   ROOT_DIR,
-  'features/flowchart',
+  'apps/desktop/src/presentation/workspace/inspector/tools',
+)
+
+const DESKTOP_SOURCE_DIRECTORY = path.join(
+  ROOT_DIR,
+  'apps/desktop/src',
 )
 
 const PATHS = {
@@ -29,859 +36,57 @@ const PATHS = {
     'package.json',
   ),
 
-  extension: path.join(
-    FEATURE_ROOT,
-    'src/extension.ts',
+  registry: path.join(
+    TOOLS_DIRECTORY,
+    'ToolInspectorRegistry.tsx',
   ),
 
-  publicApi: path.join(
-    FEATURE_ROOT,
-    'src/public-api.ts',
+  index: path.join(
+    TOOLS_DIRECTORY,
+    'index.ts',
   ),
 
-  inspector: path.join(
-    FEATURE_ROOT,
-    'src/presentation/ConnectorToolInspector.tsx',
+  legacyArrow: path.join(
+    TOOLS_DIRECTORY,
+    'ArrowToolInspector.tsx',
+  ),
+
+  legacyDraw: path.join(
+    TOOLS_DIRECTORY,
+    'DrawToolInspector.tsx',
+  ),
+
+  legacyScientificChart: path.join(
+    TOOLS_DIRECTORY,
+    'ScientificChartToolInspector.tsx',
+  ),
+
+  freehandExtension: path.join(
+    ROOT_DIR,
+    'features/freehand/src/extension.ts',
+  ),
+
+  flowchartExtension: path.join(
+    ROOT_DIR,
+    'features/flowchart/src/extension.ts',
+  ),
+
+  scientificPlotExtension: path.join(
+    ROOT_DIR,
+    'features/scientific-plot/src/extension.ts',
   ),
 }
 
-const INSPECTOR_SOURCE = `import type {
-  HybridCanvasToolInspectorProps,
-} from '@hybrid-canvas/canvas/extensions'
-import {
-  ArrowShapeArrowheadEndStyle,
-  ArrowShapeArrowheadStartStyle,
-  DefaultColorStyle,
-  DefaultDashStyle,
-  DefaultSizeStyle,
-  useValue,
-} from 'tldraw'
-
-const CONNECTOR_PRESETS = [
-  {
-    id: 'dependency',
-    label: '依赖',
-    description: '单向实线',
-    color: 'blue',
-    size: 'm',
-    dash: 'solid',
-    start: 'none',
-    end: 'arrow',
-  },
-  {
-    id: 'bidirectional',
-    label: '双向',
-    description: '双向箭头',
-    color: 'blue',
-    size: 'm',
-    dash: 'solid',
-    start: 'arrow',
-    end: 'arrow',
-  },
-  {
-    id: 'association',
-    label: '关联',
-    description: '无端点虚线',
-    color: 'grey',
-    size: 's',
-    dash: 'dashed',
-    start: 'none',
-    end: 'none',
-  },
-  {
-    id: 'composition',
-    label: '组合',
-    description: '菱形起点',
-    color: 'black',
-    size: 'm',
-    dash: 'solid',
-    start: 'diamond',
-    end: 'arrow',
-  },
-] as const
-
-const COLORS = [
-  {
-    value: 'black',
-    label: '黑色',
-    css: '#1d1d1d',
-  },
-  {
-    value: 'grey',
-    label: '灰色',
-    css: '#6b7280',
-  },
-  {
-    value: 'red',
-    label: '红色',
-    css: '#dc2626',
-  },
-  {
-    value: 'orange',
-    label: '橙色',
-    css: '#f97316',
-  },
-  {
-    value: 'yellow',
-    label: '黄色',
-    css: '#eab308',
-  },
-  {
-    value: 'green',
-    label: '绿色',
-    css: '#16a34a',
-  },
-  {
-    value: 'blue',
-    label: '蓝色',
-    css: '#2563eb',
-  },
-  {
-    value: 'violet',
-    label: '紫色',
-    css: '#7c3aed',
-  },
-  {
-    value: 'light-red',
-    label: '浅红',
-    css: '#f87171',
-  },
-  {
-    value: 'light-green',
-    label: '浅绿',
-    css: '#4ade80',
-  },
-  {
-    value: 'light-blue',
-    label: '浅蓝',
-    css: '#60a5fa',
-  },
-  {
-    value: 'light-violet',
-    label: '浅紫',
-    css: '#a78bfa',
-  },
-] as const
-
-const SIZE_OPTIONS = [
-  {
-    value: 's',
-    label: '细',
-    pixels: 2,
-  },
-  {
-    value: 'm',
-    label: '中',
-    pixels: 3,
-  },
-  {
-    value: 'l',
-    label: '粗',
-    pixels: 4,
-  },
-  {
-    value: 'xl',
-    label: '特粗',
-    pixels: 6,
-  },
-] as const
-
-const DASH_OPTIONS = [
-  {
-    value: 'draw',
-    label: '手绘',
-  },
-  {
-    value: 'solid',
-    label: '实线',
-  },
-  {
-    value: 'dashed',
-    label: '虚线',
-  },
-  {
-    value: 'dotted',
-    label: '点线',
-  },
-] as const
-
-const ARROWHEAD_OPTIONS = [
-  {
-    value: 'none',
-    label: '无',
-    symbol: '—',
-  },
-  {
-    value: 'arrow',
-    label: '箭头',
-    symbol: '→',
-  },
-  {
-    value: 'triangle',
-    label: '实心',
-    symbol: '▶',
-  },
-  {
-    value: 'dot',
-    label: '圆点',
-    symbol: '●',
-  },
-  {
-    value: 'square',
-    label: '方形',
-    symbol: '■',
-  },
-  {
-    value: 'diamond',
-    label: '菱形',
-    symbol: '◆',
-  },
-  {
-    value: 'bar',
-    label: '横线',
-    symbol: '⊣',
-  },
-  {
-    value: 'inverted',
-    label: '反向',
-    symbol: '◀',
-  },
-] as const
-
-export function ConnectorToolInspector({
-  editor,
-}: HybridCanvasToolInspectorProps) {
-  const currentColor = useValue(
-    'flowchart connector next color',
-    () =>
-      editor.getStyleForNextShape(
-        DefaultColorStyle,
-      ),
-    [editor],
-  )
-
-  const currentSize = useValue(
-    'flowchart connector next size',
-    () =>
-      editor.getStyleForNextShape(
-        DefaultSizeStyle,
-      ),
-    [editor],
-  )
-
-  const currentDash = useValue(
-    'flowchart connector next dash',
-    () =>
-      editor.getStyleForNextShape(
-        DefaultDashStyle,
-      ),
-    [editor],
-  )
-
-  const currentStart = useValue(
-    'flowchart connector next start',
-    () =>
-      editor.getStyleForNextShape(
-        ArrowShapeArrowheadStartStyle,
-      ),
-    [editor],
-  )
-
-  const currentEnd = useValue(
-    'flowchart connector next end',
-    () =>
-      editor.getStyleForNextShape(
-        ArrowShapeArrowheadEndStyle,
-      ),
-    [editor],
-  )
-
-  const currentColorCss =
-    COLORS.find(
-      (color) =>
-        color.value === currentColor,
-    )?.css ?? '#2563eb'
-
-  const applyPreset = (
-    preset:
-      (typeof CONNECTOR_PRESETS)[number],
-  ) => {
-    editor.setStyleForNextShapes(
-      DefaultColorStyle,
-      preset.color,
-    )
-
-    editor.setStyleForNextShapes(
-      DefaultSizeStyle,
-      preset.size,
-    )
-
-    editor.setStyleForNextShapes(
-      DefaultDashStyle,
-      preset.dash,
-    )
-
-    editor.setStyleForNextShapes(
-      ArrowShapeArrowheadStartStyle,
-      preset.start,
-    )
-
-    editor.setStyleForNextShapes(
-      ArrowShapeArrowheadEndStyle,
-      preset.end,
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      <header className="border-b border-divider pb-3">
-        <h2 className="text-sm font-semibold">
-          连接线
-        </h2>
-
-        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-          在对象之间创建可绑定的连接线。
-        </p>
-      </header>
-
-      <InspectorSection
-        description="预设会同时应用颜色、粗细、线型和端点。"
-        title="连接预设"
-      >
-        <div className="grid grid-cols-2 gap-2">
-          {CONNECTOR_PRESETS.map(
-            (preset) => {
-              const selected =
-                currentColor ===
-                  preset.color &&
-                currentSize ===
-                  preset.size &&
-                currentDash ===
-                  preset.dash &&
-                currentStart ===
-                  preset.start &&
-                currentEnd ===
-                  preset.end
-
-              return (
-                <button
-                  aria-pressed={selected}
-                  className={
-                    'min-h-14 rounded-md border p-2 text-left ' +
-                    'transition-colors focus-visible:outline-none ' +
-                    'focus-visible:ring-2 focus-visible:ring-primary ' +
-                    (
-                      selected
-                        ? 'border-primary bg-primary/10'
-                        : 'border-divider bg-background hover:bg-accent'
-                    )
-                  }
-                  key={preset.id}
-                  onClick={() => {
-                    applyPreset(preset)
-                  }}
-                  type="button"
-                >
-                  <ConnectorPreview
-                    color={
-                      COLORS.find(
-                        (color) =>
-                          color.value ===
-                          preset.color,
-                      )?.css ?? '#2563eb'
-                    }
-                    dash={preset.dash}
-                    end={preset.end}
-                    start={preset.start}
-                  />
-
-                  <span className="mt-1.5 block text-[11px] font-medium">
-                    {preset.label}
-                  </span>
-
-                  <span className="mt-0.5 block text-[10px] text-muted-foreground">
-                    {preset.description}
-                  </span>
-                </button>
-              )
-            },
-          )}
-        </div>
-      </InspectorSection>
-
-      <InspectorSection title="颜色">
-        <div className="grid grid-cols-6 gap-1.5">
-          {COLORS.map((color) => (
-            <button
-              aria-label={
-                '设置连接线颜色为' +
-                color.label
-              }
-              aria-pressed={
-                currentColor === color.value
-              }
-              className={
-                'size-7 rounded-md border border-divider transition-transform ' +
-                'hover:scale-105 focus-visible:outline-none ' +
-                'focus-visible:ring-2 focus-visible:ring-primary ' +
-                (
-                  currentColor === color.value
-                    ? 'ring-2 ring-primary ring-offset-1'
-                    : ''
-                )
-              }
-              key={color.value}
-              onClick={() => {
-                editor.setStyleForNextShapes(
-                  DefaultColorStyle,
-                  color.value,
-                )
-              }}
-              style={{
-                backgroundColor: color.css,
-              }}
-              title={color.label}
-              type="button"
-            />
-          ))}
-        </div>
-      </InspectorSection>
-
-      <InspectorSection title="粗细">
-        <div
-          aria-label="连接线粗细"
-          className="grid grid-cols-4 gap-1.5"
-          role="group"
-        >
-          {SIZE_OPTIONS.map((option) => (
-            <button
-              aria-pressed={
-                currentSize === option.value
-              }
-              className={
-                'flex min-h-10 flex-col items-center justify-center gap-1 ' +
-                'rounded-md border px-1 text-[10px] transition-colors ' +
-                (
-                  currentSize === option.value
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-divider bg-background hover:bg-accent'
-                )
-              }
-              key={option.value}
-              onClick={() => {
-                editor.setStyleForNextShapes(
-                  DefaultSizeStyle,
-                  option.value,
-                )
-              }}
-              type="button"
-            >
-              <span
-                aria-hidden="true"
-                className="block w-7 rounded-full"
-                style={{
-                  backgroundColor:
-                    currentColorCss,
-                  height: option.pixels,
-                }}
-              />
-
-              <span>{option.label}</span>
-            </button>
-          ))}
-        </div>
-      </InspectorSection>
-
-      <InspectorSection title="线型">
-        <SegmentedControl
-          ariaLabel="连接线线型"
-          onChange={(value) => {
-            editor.setStyleForNextShapes(
-              DefaultDashStyle,
-              value as never,
-            )
-          }}
-          options={DASH_OPTIONS}
-          value={currentDash}
-        />
-      </InspectorSection>
-
-      <ArrowheadSection
-        label="起点"
-        onChange={(value) => {
-          editor.setStyleForNextShapes(
-            ArrowShapeArrowheadStartStyle,
-            value as never,
-          )
-        }}
-        value={currentStart}
-      />
-
-      <ArrowheadSection
-        label="终点"
-        onChange={(value) => {
-          editor.setStyleForNextShapes(
-            ArrowShapeArrowheadEndStyle,
-            value as never,
-          )
-        }}
-        value={currentEnd}
-      />
-
-      <InspectorSection title="连接行为">
-        <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 rounded-md border border-divider bg-background p-3 text-[10px]">
-          <dt className="text-muted-foreground">
-            对象吸附
-          </dt>
-          <dd>启用</dd>
-
-          <dt className="text-muted-foreground">
-            移动时跟随
-          </dt>
-          <dd>启用</dd>
-
-          <dt className="text-muted-foreground">
-            当前路由
-          </dt>
-          <dd>tldraw 原生</dd>
-        </dl>
-      </InspectorSection>
-
-      <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
-        当前只显示已经真实生效的连接参数。
-        正交路由、避障、标签和自动重路由将在 Flowchart
-        Connector 实现后开放。
-      </div>
-    </div>
-  )
-}
-
-function ArrowheadSection({
-  label,
-  value,
-  onChange,
-}: {
-  readonly label: string
-  readonly value: string
-  readonly onChange: (
-    value: string,
-  ) => void
-}) {
-  return (
-    <InspectorSection title={label}>
-      <div
-        aria-label={
-          label + '端点样式'
-        }
-        className="grid grid-cols-4 gap-1.5"
-        role="group"
-      >
-        {ARROWHEAD_OPTIONS.map(
-          (option) => (
-            <button
-              aria-pressed={
-                value === option.value
-              }
-              className={
-                'flex min-h-12 flex-col items-center justify-center gap-1 ' +
-                'rounded-md border px-1 transition-colors ' +
-                (
-                  value === option.value
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-divider bg-background hover:bg-accent'
-                )
-              }
-              key={option.value}
-              onClick={() => {
-                onChange(option.value)
-              }}
-              title={option.label}
-              type="button"
-            >
-              <span
-                aria-hidden="true"
-                className="font-mono text-base leading-none"
-              >
-                {option.symbol}
-              </span>
-
-              <span className="text-[9px]">
-                {option.label}
-              </span>
-            </button>
-          ),
-        )}
-      </div>
-    </InspectorSection>
-  )
-}
-
-interface InspectorSectionProps {
-  readonly title: string
-  readonly description?: string
-  readonly children:
-    import('react').ReactNode
-}
-
-function InspectorSection({
-  title,
-  description,
-  children,
-}: InspectorSectionProps) {
-  return (
-    <section className="space-y-2.5 border-b border-divider pb-4 last:border-b-0">
-      <header className="space-y-0.5">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-          {title}
-        </h3>
-
-        {description ? (
-          <p className="text-[10px] leading-4 text-muted-foreground/80">
-            {description}
-          </p>
-        ) : null}
-      </header>
-
-      {children}
-    </section>
-  )
-}
-
-function SegmentedControl({
-  ariaLabel,
-  value,
-  options,
-  onChange,
-}: {
-  readonly ariaLabel: string
-  readonly value: string
-  readonly options: readonly {
-    readonly value: string
-    readonly label: string
-  }[]
-  readonly onChange: (
-    value: string,
-  ) => void
-}) {
-  return (
-    <div
-      aria-label={ariaLabel}
-      className="grid gap-1.5"
-      role="group"
-      style={{
-        gridTemplateColumns:
-          'repeat(' +
-          String(options.length) +
-          ', minmax(0, 1fr))',
-      }}
-    >
-      {options.map((option) => (
-        <button
-          aria-pressed={
-            value === option.value
-          }
-          className={
-            'min-h-8 rounded-md border px-1 text-[10px] transition-colors ' +
-            (
-              value === option.value
-                ? 'border-primary bg-primary/10 text-primary'
-                : 'border-divider bg-background hover:bg-accent'
-            )
-          }
-          key={option.value}
-          onClick={() => {
-            onChange(option.value)
-          }}
-          type="button"
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function ConnectorPreview({
-  color,
-  dash,
-  start,
-  end,
-}: {
-  readonly color: string
-  readonly dash: string
-  readonly start: string
-  readonly end: string
-}) {
-  const dashArray =
-    dash === 'dashed'
-      ? '5 4'
-      : dash === 'dotted'
-        ? '2 3'
-        : undefined
-
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-5 w-full"
-      preserveAspectRatio="none"
-      viewBox="0 0 88 20"
-    >
-      <defs>
-        <marker
-          id={'preview-start-' + start}
-          markerHeight="6"
-          markerWidth="6"
-          orient="auto-start-reverse"
-          refX="5"
-          refY="3"
-        >
-          <path
-            d={
-              getMarkerPath(start)
-            }
-            fill={color}
-          />
-        </marker>
-
-        <marker
-          id={'preview-end-' + end}
-          markerHeight="6"
-          markerWidth="6"
-          orient="auto"
-          refX="5"
-          refY="3"
-        >
-          <path
-            d={
-              getMarkerPath(end)
-            }
-            fill={color}
-          />
-        </marker>
-      </defs>
-
-      <line
-        markerEnd={
-          end === 'none'
-            ? undefined
-            : 'url(#preview-end-' +
-              end +
-              ')'
-        }
-        markerStart={
-          start === 'none'
-            ? undefined
-            : 'url(#preview-start-' +
-              start +
-              ')'
-        }
-        stroke={color}
-        strokeDasharray={dashArray}
-        strokeLinecap="round"
-        strokeWidth="2"
-        x1="7"
-        x2="81"
-        y1="10"
-        y2="10"
-      />
-    </svg>
-  )
-}
-
-function getMarkerPath(
-  type: string,
-): string {
-  switch (type) {
-    case 'diamond':
-      return 'M 0 3 L 3 0 L 6 3 L 3 6 Z'
-
-    case 'dot':
-      return 'M 3 0 A 3 3 0 1 0 3 6 A 3 3 0 1 0 3 0'
-
-    case 'square':
-      return 'M 0 0 H 6 V 6 H 0 Z'
-
-    case 'bar':
-      return 'M 4 0 H 6 V 6 H 4 Z'
-
-    case 'inverted':
-      return 'M 0 0 L 6 3 L 0 6 Z'
-
-    case 'arrow':
-    case 'triangle':
-    default:
-      return 'M 0 0 L 6 3 L 0 6 Z'
-  }
-}
-`
-
-function transformExtension(source) {
-  if (
-    source.includes(
-      'ConnectorToolInspector',
-    )
-  ) {
-    return source
-  }
-
-  let next = source
-
-  next = replaceRequired(
-    next,
-    `import type { HybridCanvasExtension } from '@hybrid-canvas/canvas/extensions'
-import { FlowNodeShapeUtil } from './shapes/FlowNodeShapeUtil'`,
-    `import type { HybridCanvasExtension } from '@hybrid-canvas/canvas/extensions'
-import { ConnectorToolInspector } from './presentation/ConnectorToolInspector'
-import { FlowNodeShapeUtil } from './shapes/FlowNodeShapeUtil'`,
-    'connector inspector import',
-  )
-
-  next = replaceRequired(
-    next,
-    `  shapeLabels: {
-    'flow-node': '流程图节点',
-  },
-}`,
-    `  shapeLabels: {
-    'flow-node': '流程图节点',
-  },
-  toolInspectors: [
-    {
-      toolId: 'arrow',
-      owner: '@hybrid-canvas/flowchart',
-      priority: 100,
-      component: ConnectorToolInspector,
-    },
-  ],
-}`,
-    'connector inspector contribution',
-  )
-
-  return next
-}
-
-function transformPublicApi(source) {
-  if (
-    source.includes(
-      "from './presentation/ConnectorToolInspector'",
-    )
-  ) {
-    return source
-  }
-
-  return (
-    source.trimEnd() +
-    `
-
-export { ConnectorToolInspector } from './presentation/ConnectorToolInspector'
-`
-  )
-}
+const LEGACY_FILES = [
+  PATHS.legacyArrow,
+  PATHS.legacyDraw,
+  PATHS.legacyScientificChart,
+]
 
 async function main() {
   console.log('')
   console.log(
-    'Hybrid Canvas — Flowchart Connector Inspector',
+    'Hybrid Canvas — Remove Legacy Feature Tool Inspectors',
   )
   console.log(`Repository: ${ROOT_DIR}`)
   console.log(
@@ -891,23 +96,32 @@ async function main() {
 
   await validateRepository()
 
-  const extensionSource =
-    await readUtf8(PATHS.extension)
+  const registrySource =
+    await readUtf8(PATHS.registry)
 
-  const publicApiSource =
-    await readUtf8(PATHS.publicApi)
+  const indexSource =
+    await readUtf8(PATHS.index)
 
-  const transformedExtension =
-    transformExtension(extensionSource)
+  const transformedRegistry =
+    transformRegistry(registrySource)
 
-  const transformedPublicApi =
-    transformPublicApi(publicApiSource)
+  const transformedIndex =
+    transformIndex(indexSource)
+
+  validateTransformedSources(
+    transformedRegistry,
+    transformedIndex,
+  )
 
   if (DRY_RUN) {
-    console.log('✓ Flowchart Feature detected')
-    console.log('✓ Extension inspector contract detected')
-    console.log('✓ Connector inspector can be generated')
-    console.log('✓ Extension contribution can be registered')
+    console.log('✓ Freehand Feature contribution detected')
+    console.log('✓ Flowchart Feature contribution detected')
+    console.log('✓ Scientific Plot contribution detected')
+    console.log('✓ Legacy Arrow inspector detected')
+    console.log('✓ Legacy Draw inspector detected')
+    console.log('✓ Legacy Chart inspector detected')
+    console.log('✓ Registry can be cleaned safely')
+    console.log('✓ Barrel exports can be cleaned safely')
     console.log('✓ No files were changed')
     console.log('')
     return
@@ -916,110 +130,517 @@ async function main() {
   const backupDirectory =
     await createBackupDirectory()
 
-  await backupFile(
-    PATHS.extension,
-    path.join(
-      backupDirectory,
-      'extension.ts',
-    ),
-  )
+  for (const filePath of [
+    PATHS.registry,
+    PATHS.index,
+    ...LEGACY_FILES,
+  ]) {
+    await backupFile(
+      filePath,
+      path.join(
+        backupDirectory,
+        path.relative(ROOT_DIR, filePath),
+      ),
+    )
+  }
 
-  await backupFile(
-    PATHS.publicApi,
-    path.join(
-      backupDirectory,
-      'public-api.ts',
-    ),
+  await writeUtf8(
+    PATHS.registry,
+    transformedRegistry,
   )
 
   await writeUtf8(
-    PATHS.inspector,
-    INSPECTOR_SOURCE,
+    PATHS.index,
+    transformedIndex,
   )
 
-  await writeUtf8(
-    PATHS.extension,
-    transformedExtension,
-  )
+  const remainingReferences =
+    await findLegacyReferences()
 
-  await writeUtf8(
-    PATHS.publicApi,
-    transformedPublicApi,
-  )
+  if (remainingReferences.length > 0) {
+    throw new Error(
+      'Legacy inspectors are still referenced after registry cleanup:\n' +
+        remainingReferences
+          .map(
+            (reference) =>
+              '  - ' + reference,
+          )
+          .join('\n'),
+    )
+  }
+
+  for (const filePath of LEGACY_FILES) {
+    await unlink(filePath)
+
+    console.log(
+      `Deleted: ${relative(filePath)}`,
+    )
+  }
 
   console.log('')
   console.log(
     `Backup: ${relative(backupDirectory)}`,
   )
   console.log('')
-  console.log('Connector inspector complete:')
-  console.log('  ✓ Feature-owned connector inspector created')
-  console.log('  ✓ Functional connector presets added')
-  console.log('  ✓ Current colors and styles displayed')
-  console.log('  ✓ Graphical endpoint selector added')
-  console.log('  ✓ Invalid routing controls removed')
-  console.log('  ✓ Extension contribution registered')
+  console.log('Legacy cleanup complete:')
+  console.log('  ✓ App ArrowToolInspector deleted')
+  console.log('  ✓ App DrawToolInspector deleted')
+  console.log(
+    '  ✓ App ScientificChartToolInspector deleted',
+  )
+  console.log(
+    '  ✓ Core feature-owned contributions removed',
+  )
+  console.log(
+    '  ✓ Legacy barrel exports removed',
+  )
+  console.log(
+    '  ✓ Feature extensions are now the sole owners',
+  )
   console.log('')
   console.log('Run validation:')
   console.log(
-    '  pnpm exec biome check --write features/flowchart',
+    '  pnpm exec biome check --write apps/desktop/src/presentation/workspace/inspector/tools',
   )
   console.log('  pnpm typecheck')
   console.log('  pnpm test')
   console.log('')
 }
 
-async function validateRepository() {
-  for (const filePath of [
-    PATHS.packageJson,
-    PATHS.extension,
-    PATHS.publicApi,
+function transformRegistry(source) {
+  let next = source
+
+  const obsoleteImports = [
+    `import { ArrowToolInspector } from './ArrowToolInspector'
+`,
+    `import { DrawToolInspector } from './DrawToolInspector'
+`,
+    `import { ScientificChartToolInspector } from './ScientificChartToolInspector'
+`,
+    `import type { ToolInspectorProps } from './types'
+`,
+  ]
+
+  for (const obsoleteImport of obsoleteImports) {
+    next = replaceRequired(
+      next,
+      obsoleteImport,
+      '',
+      'obsolete Registry import',
+    )
+  }
+
+  next = removeBlock(
+    next,
+    'function DrawInspector(',
+    '/**',
+    'legacy Draw/Highlight wrappers',
+  )
+
+  const oldCommentStart = next.indexOf(
+    '/**',
+  )
+
+  const contributionStart = next.indexOf(
+    'export const CORE_TOOL_INSPECTOR_CONTRIBUTIONS:',
+    oldCommentStart,
+  )
+
+  if (
+    oldCommentStart === -1 ||
+    contributionStart === -1
+  ) {
+    throw new Error(
+      'Could not locate the legacy Core contribution comment.',
+    )
+  }
+
+  const newComment = `/**
+ * App-owned inspectors for generic tldraw tools only.
+ *
+ * Feature-owned tools are intentionally absent:
+ *
+ * - draw/highlight are owned by @hybrid-canvas/freehand
+ * - arrow is owned by @hybrid-canvas/flowchart
+ * - scientific-chart is owned by @hybrid-canvas/scientific-plot
+ *
+ * Missing Feature contributions must resolve to UnknownToolInspector.
+ * Do not add duplicate App fallbacks.
+ */
+`
+
+  next =
+    next.slice(0, oldCommentStart) +
+    newComment +
+    next.slice(contributionStart)
+
+  for (const toolId of [
+    'arrow',
+    'draw',
+    'highlight',
+    'scientific-chart',
   ]) {
+    next = removeContribution(
+      next,
+      toolId,
+    )
+  }
+
+  next = next.replace(/\n{3,}/g, '\n\n')
+
+  return next.trimEnd() + '\n'
+}
+
+function transformIndex(source) {
+  let next = source
+
+  const obsoleteExports = [
+    `export { ArrowToolInspector } from './ArrowToolInspector'
+`,
+    `export { DrawToolInspector } from './DrawToolInspector'
+`,
+    `export { ScientificChartToolInspector } from './ScientificChartToolInspector'
+`,
+  ]
+
+  for (const obsoleteExport of obsoleteExports) {
+    next = replaceRequired(
+      next,
+      obsoleteExport,
+      '',
+      'obsolete tools barrel export',
+    )
+  }
+
+  return next.trimEnd() + '\n'
+}
+
+function removeContribution(
+  source,
+  toolId,
+) {
+  const marker =
+    `      toolId: '${toolId}',`
+
+  const markerIndex =
+    source.indexOf(marker)
+
+  if (markerIndex === -1) {
+    throw new Error(
+      `Core contribution not found: ${toolId}`,
+    )
+  }
+
+  const blockStart =
+    source.lastIndexOf(
+      '    {',
+      markerIndex,
+    )
+
+  const blockEndMarker = '\n    },'
+  const blockEnd =
+    source.indexOf(
+      blockEndMarker,
+      markerIndex,
+    )
+
+  if (
+    blockStart === -1 ||
+    blockEnd === -1
+  ) {
+    throw new Error(
+      `Could not determine contribution block: ${toolId}`,
+    )
+  }
+
+  return (
+    source.slice(0, blockStart) +
+    source.slice(
+      blockEnd +
+        blockEndMarker.length,
+    )
+  )
+}
+
+function removeBlock(
+  source,
+  startMarker,
+  endMarker,
+  label,
+) {
+  const startIndex =
+    source.indexOf(startMarker)
+
+  const endIndex =
+    source.indexOf(
+      endMarker,
+      startIndex,
+    )
+
+  if (
+    startIndex === -1 ||
+    endIndex === -1 ||
+    endIndex <= startIndex
+  ) {
+    throw new Error(
+      `Could not remove ${label}.`,
+    )
+  }
+
+  return (
+    source.slice(0, startIndex) +
+    source.slice(endIndex)
+  )
+}
+
+function validateTransformedSources(
+  registry,
+  index,
+) {
+  const forbiddenRegistryValues = [
+    'ArrowToolInspector',
+    'DrawToolInspector',
+    'ScientificChartToolInspector',
+    "toolId: 'arrow'",
+    "toolId: 'draw'",
+    "toolId: 'highlight'",
+    "toolId: 'scientific-chart'",
+    'function DrawInspector',
+    'function HighlightInspector',
+  ]
+
+  for (
+    const forbiddenValue of
+    forbiddenRegistryValues
+  ) {
+    if (
+      registry.includes(forbiddenValue)
+    ) {
+      throw new Error(
+        'Registry cleanup was incomplete: ' +
+          forbiddenValue,
+      )
+    }
+  }
+
+  const forbiddenIndexValues = [
+    './ArrowToolInspector',
+    './DrawToolInspector',
+    './ScientificChartToolInspector',
+  ]
+
+  for (
+    const forbiddenValue of
+    forbiddenIndexValues
+  ) {
+    if (
+      index.includes(forbiddenValue)
+    ) {
+      throw new Error(
+        'Barrel cleanup was incomplete: ' +
+          forbiddenValue,
+      )
+    }
+  }
+
+  const requiredCoreTools = [
+    "toolId: 'select'",
+    "toolId: 'hand'",
+    "toolId: 'geo'",
+    "toolId: 'line'",
+    "toolId: 'eraser'",
+    "toolId: 'text'",
+    "toolId: 'note'",
+    "toolId: 'frame'",
+  ]
+
+  for (
+    const requiredTool of
+    requiredCoreTools
+  ) {
+    if (!registry.includes(requiredTool)) {
+      throw new Error(
+        'Required Core inspector was removed unexpectedly: ' +
+          requiredTool,
+      )
+    }
+  }
+}
+
+async function validateRepository() {
+  for (
+    const filePath of
+    Object.values(PATHS)
+  ) {
     await assertFile(filePath)
   }
 
-  const contractPath = path.join(
-    ROOT_DIR,
-    'editor/core/src/contracts/extension-contract.ts',
+  const freehandExtension =
+    await readUtf8(
+      PATHS.freehandExtension,
+    )
+
+  const flowchartExtension =
+    await readUtf8(
+      PATHS.flowchartExtension,
+    )
+
+  const scientificExtension =
+    await readUtf8(
+      PATHS.scientificPlotExtension,
+    )
+
+  assertFeatureContribution(
+    freehandExtension,
+    'draw',
+    '@hybrid-canvas/freehand',
   )
 
-  await assertFile(contractPath)
+  assertFeatureContribution(
+    freehandExtension,
+    'highlight',
+    '@hybrid-canvas/freehand',
+  )
 
-  const contractSource =
-    await readUtf8(contractPath)
+  assertFeatureContribution(
+    flowchartExtension,
+    'arrow',
+    '@hybrid-canvas/flowchart',
+  )
 
+  assertFeatureContribution(
+    scientificExtension,
+    'scientific-chart',
+    '@hybrid-canvas/scientific-plot',
+  )
+
+  const registry =
+    await readUtf8(PATHS.registry)
+
+  for (const toolId of [
+    'arrow',
+    'draw',
+    'highlight',
+    'scientific-chart',
+  ]) {
+    if (
+      !registry.includes(
+        `toolId: '${toolId}'`,
+      )
+    ) {
+      throw new Error(
+        `Legacy Core contribution is already missing: ${toolId}`,
+      )
+    }
+  }
+}
+
+function assertFeatureContribution(
+  source,
+  toolId,
+  owner,
+) {
   if (
-    !contractSource.includes(
-      'toolInspectors?:',
+    !source.includes(
+      `toolId: '${toolId}'`,
+    ) ||
+    !source.includes(
+      `owner: '${owner}'`,
     )
   ) {
     throw new Error(
-      'Extension tool inspector contract is missing.',
+      `Required Feature contribution is missing: ${owner}/${toolId}`,
     )
   }
+}
 
-  const extensionSource =
-    await readUtf8(PATHS.extension)
+async function findLegacyReferences() {
+  const sourceFiles =
+    await collectSourceFiles(
+      DESKTOP_SOURCE_DIRECTORY,
+    )
 
-  if (
-    !extensionSource.includes(
-      'FlowNodeShapeUtil',
-    )
-  ) {
-    throw new Error(
-      'Expected flowchart extension structure was not found.',
-    )
+  const legacyNames = [
+    'ArrowToolInspector',
+    'DrawToolInspector',
+    'ScientificChartToolInspector',
+  ]
+
+  const legacyPaths = new Set(
+    LEGACY_FILES.map(
+      (filePath) =>
+        path.resolve(filePath),
+    ),
+  )
+
+  const references = []
+
+  for (const filePath of sourceFiles) {
+    if (
+      legacyPaths.has(
+        path.resolve(filePath),
+      )
+    ) {
+      continue
+    }
+
+    const source =
+      await readUtf8(filePath)
+
+    for (const legacyName of legacyNames) {
+      if (source.includes(legacyName)) {
+        references.push(
+          relative(filePath) +
+            ': ' +
+            legacyName,
+        )
+      }
+    }
   }
 
-  if (
-    extensionSource.includes(
-      'ConnectorToolInspector',
+  return references
+}
+
+async function collectSourceFiles(
+  directory,
+) {
+  const entries = await readdir(
+    directory,
+    {
+      withFileTypes: true,
+    },
+  )
+
+  const files = []
+
+  for (const entry of entries) {
+    const entryPath = path.join(
+      directory,
+      entry.name,
     )
-  ) {
-    throw new Error(
-      'Connector inspector appears to be already installed.',
-    )
+
+    if (entry.isDirectory()) {
+      files.push(
+        ...await collectSourceFiles(
+          entryPath,
+        ),
+      )
+
+      continue
+    }
+
+    if (
+      entry.isFile() &&
+      (
+        entry.name.endsWith('.ts') ||
+        entry.name.endsWith('.tsx')
+      )
+    ) {
+      files.push(entryPath)
+    }
   }
+
+  return files
 }
 
 function replaceRequired(
@@ -1060,12 +681,15 @@ async function createBackupDirectory() {
   const backupDirectory = path.join(
     ROOT_DIR,
     '.refactor-backup',
-    `flowchart-connector-inspector-${timestamp}`,
+    `remove-legacy-tool-inspectors-${timestamp}`,
   )
 
-  await mkdir(backupDirectory, {
-    recursive: true,
-  })
+  await mkdir(
+    backupDirectory,
+    {
+      recursive: true,
+    },
+  )
 
   return backupDirectory
 }
@@ -1128,7 +752,7 @@ function relative(filePath) {
 main().catch((error) => {
   console.error('')
   console.error(
-    'Flowchart connector inspector failed.',
+    'Legacy tool inspector cleanup failed.',
   )
   console.error(
     error instanceof Error

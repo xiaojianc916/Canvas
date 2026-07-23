@@ -3,18 +3,14 @@ import type {
   HybridCanvasToolInspectorProps,
 } from '@hybrid-canvas/canvas/extensions'
 import type { ComponentType } from 'react'
-import { ArrowToolInspector } from './ArrowToolInspector'
-import { DrawToolInspector } from './DrawToolInspector'
 import { EraserToolInspector } from './EraserToolInspector'
 import { FrameToolInspector } from './FrameToolInspector'
 import { HandToolInspector } from './HandToolInspector'
 import { LineToolInspector } from './LineToolInspector'
 import { NoteToolInspector } from './NoteToolInspector'
-import { ScientificChartToolInspector } from './ScientificChartToolInspector'
 import { SelectToolInspector } from './SelectToolInspector'
 import { ShapeToolInspector } from './ShapeToolInspector'
 import { TextToolInspector } from './TextToolInspector'
-import type { ToolInspectorProps } from './types'
 
 export type ToolInspectorContribution =
   HybridCanvasToolInspectorContribution
@@ -26,36 +22,17 @@ export interface ToolInspectorResolution {
   readonly component: ComponentType<HybridCanvasToolInspectorProps>
 }
 
-function DrawInspector(
-  props: ToolInspectorProps,
-) {
-  return (
-    <DrawToolInspector
-      {...props}
-      variant="draw"
-    />
-  )
-}
-
-function HighlightInspector(
-  props: ToolInspectorProps,
-) {
-  return (
-    <DrawToolInspector
-      {...props}
-      variant="highlight"
-    />
-  )
-}
-
 /**
- * Temporary core contribution list.
+ * App-owned inspectors for generic tldraw tools only.
  *
- * Domain-specific entries will move to their owning Feature packages:
+ * Feature-owned tools are intentionally absent:
  *
- * - draw/highlight -> @hybrid-canvas/freehand
- * - arrow -> @hybrid-canvas/flowchart
- * - scientific-chart -> @hybrid-canvas/scientific-plot
+ * - draw/highlight are owned by @hybrid-canvas/freehand
+ * - arrow is owned by @hybrid-canvas/flowchart
+ * - scientific-chart is owned by @hybrid-canvas/scientific-plot
+ *
+ * Missing Feature contributions must resolve to UnknownToolInspector.
+ * Do not add duplicate App fallbacks.
  */
 export const CORE_TOOL_INSPECTOR_CONTRIBUTIONS:
   readonly ToolInspectorContribution[] = [
@@ -79,21 +56,7 @@ export const CORE_TOOL_INSPECTOR_CONTRIBUTIONS:
       owner: 'core',
       component: LineToolInspector,
     },
-    {
-      toolId: 'arrow',
-      owner: 'core',
-      component: ArrowToolInspector,
-    },
-    {
-      toolId: 'draw',
-      owner: 'core',
-      component: DrawInspector,
-    },
-    {
-      toolId: 'highlight',
-      owner: 'core',
-      component: HighlightInspector,
-    },
+
     {
       toolId: 'eraser',
       owner: 'core',
@@ -114,11 +77,7 @@ export const CORE_TOOL_INSPECTOR_CONTRIBUTIONS:
       owner: 'core',
       component: FrameToolInspector,
     },
-    {
-      toolId: 'scientific-chart',
-      owner: 'core',
-      component: ScientificChartToolInspector,
-    },
+
   ]
 
 export class ToolInspectorRegistry {
