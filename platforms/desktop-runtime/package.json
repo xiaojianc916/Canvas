@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "@hybrid-canvas/platforms-desktop-runtime",
   "version": "0.1.0",
   "type": "module",
@@ -16,6 +16,7 @@
     "@hybrid-canvas/desktop-ipc": "workspace:*",
     "@hybrid-canvas/file": "workspace:*",
     "@hybrid-canvas/settings": "workspace:*",
-    "@tauri-apps/api": "catalog:tauri"
+    "@tauri-apps/api": "catalog:tauri",
+    "tldraw": "catalog:"
   }
 }

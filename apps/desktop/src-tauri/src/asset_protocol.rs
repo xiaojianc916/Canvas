@@ -244,7 +244,9 @@ impl AssetProtocolRegistry {
             .split('/')
             .filter(|component| !component.is_empty());
 
-        if host == "hybrid-canvas-asset.localhost" {
+        if host == "hybrid-canvas-asset.localhost"
+            || host == "localhost"
+        {
             if components.next() != Some(ASSET_PROTOCOL_HOST) {
                 return Err(AssetProtocolError::InvalidToken);
             }

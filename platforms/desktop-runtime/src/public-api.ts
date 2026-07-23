@@ -1,3 +1,8 @@
+export {
+  createNativeTLAssetStoreSession,
+  type NativeTLAssetStoreSession,
+} from './adapters/assets/native-tl-asset-store'
+
 export type { SettingsStore } from '@hybrid-canvas/settings'
 
 export type {
