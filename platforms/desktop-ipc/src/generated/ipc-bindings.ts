@@ -5,7 +5,35 @@
 
 
 export const commands = {
-
+/**
+ * Opens one .draw file selected by the native file dialog.
+ * 
+ * No caller-controlled path is accepted.
+ */
+async documentOpen() : Promise<DocumentOpenResponse> {
+    return await TAURI_INVOKE("document_open");
+},
+/**
+ * Creates a new document session or moves an existing session through a native
+ * Save As dialog. No filesystem path is accepted from the renderer.
+ */
+async documentSaveAs(request: DocumentSaveAsRequest) : Promise<DocumentSaveAsResult> {
+    return await TAURI_INVOKE("document_save_as", { request });
+},
+/**
+ * Saves content to the document already selected by a native dialog.
+ * 
+ * The renderer supplies an opaque document ID, never a local path.
+ */
+async documentSave(request: DocumentSaveRequest) : Promise<null> {
+    return await TAURI_INVOKE("document_save", { request });
+},
+/**
+ * Ends the native document session and releases its private file handle.
+ */
+async documentClose(request: DocumentCloseRequest) : Promise<null> {
+    return await TAURI_INVOKE("document_close", { request });
+}
 }
 
 /** user-defined events **/
@@ -38,6 +66,9 @@ export type DocumentSaveAsRequest = {
 documentId: DocumentId | null; content: string; suggestedName: string | null }
 export type DocumentSaveAsResult = { document: DocumentDescriptor | null }
 export type DocumentSaveRequest = { documentId: DocumentId; content: string }
+export type IpcError = { code: IpcErrorCode; message: string; operation: IpcOperation; recoverable: boolean }
+export type IpcErrorCode = "validation" | "not-found" | "permission-denied" | "persistence" | "plugin" | "asset" | "import-export" | "platform"
+export type IpcOperation = "file" | "plugin" | "asset" | "import-export" | "platform"
 
 /** tauri-specta globals **/
 

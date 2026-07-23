@@ -245,7 +245,7 @@ pub async fn document_save(
     let path = documents.path(request.document_id)?;
     ensure_draw_document_path(&path)?;
 
-    write_document(path, request.content).await
+    Ok(write_document(path, request.content).await?)
 }
 
 /// Ends the native document session and releases its private file handle.
@@ -255,7 +255,7 @@ pub fn document_close(
     documents: State<'_, DocumentRegistry>,
     request: DocumentCloseRequest,
 ) -> DocumentCommandResult<()> {
-    documents.remove(request.document_id)
+    Ok(documents.remove(request.document_id)?)
 }
 
 async fn read_document(path: PathBuf) -> Result<String> {
