@@ -204,7 +204,7 @@ export function CanvasToolbar() {
     <div
       aria-label="画布工具"
       className={cn(
-        'absolute left-1/2 top-3 z-20 flex max-w-[calc(100%-24px)]',
+        'pointer-events-auto absolute left-1/2 top-3 z-20 flex max-w-[calc(100%-24px)]',
         '-translate-x-1/2 items-center gap-0.5 rounded-[10px]',
         'border border-border/90 bg-background/95 p-1',
         'shadow-[0_1px_2px_rgba(0,0,0,0.05),0_8px_24px_rgba(0,0,0,0.08)]',
@@ -260,7 +260,7 @@ export function CanvasToolbar() {
           <div
             aria-label="更多画布操作"
             className={cn(
-              'absolute right-0 top-[calc(100%+8px)] z-[var(--ui-z-popover)]',
+              'pointer-events-auto absolute right-0 top-[calc(100%+8px)] z-[var(--ui-z-popover)]',
               'w-56 overflow-hidden rounded-lg border border-border',
               'bg-background p-1.5 shadow-xl',
             )}
@@ -270,7 +270,7 @@ export function CanvasToolbar() {
               <MenuAction
                 icon={Scan}
                 label="选择全部"
-                onClick={() => execute('select-all')}
+                onClick={() => execute('select-all-shapes')}
                 shortcut="Ctrl+A"
               />
 
@@ -498,7 +498,8 @@ function invokeAction(
   const action = actions[actionId]
 
   if (!action) {
-    throw new Error('TLDRAW_ACTION_NOT_REGISTERED:' + actionId)
+    console.warn('TLDRAW_ACTION_NOT_REGISTERED:' + actionId)
+    return
   }
 
   void action.onSelect('toolbar')

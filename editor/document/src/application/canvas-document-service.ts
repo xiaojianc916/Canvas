@@ -8,7 +8,6 @@ import type { TLStoreSnapshot } from 'tldraw'
 import {
   createDocumentSession,
   type DocumentPersistenceState,
-  type DocumentSaveTicket,
   type DocumentSession,
 } from '../domain/document-session'
 import type {
@@ -194,6 +193,121 @@ export function createCanvasDocumentService({
       return null
     }
 
+    try {
+      const canvasId = crypto.randomUUID()
+      const sessionId = crypto.randomUUID()
+      const initialSnapshot = parseEditorSnapshot(opened.content)
+
+      const editor = await editorSessions.create({
+        documentId: canvasId,
+        sessionId,
+        initialSnapshot,
+        assetStoreRestore: opened.assetPersistenceToken
+          ? { persistenceToken: opened.assetPersistenceToken }
+          : undefined,
+        extensions,
+      })
+
+      sessions.set(
+        sessionId,
+        createOwnedSession(
+          editor,
+          opened.id,
+          opened.revision,
+        ),
+      )
+
+      return {
+        canvasId,
+        sessionId,
+        title: opened.displayName,
+      }
+    } catch (openError) {
+      return rollbackOpenedNativeDocument(opened.id, openError)
+    }
+  }
+
+  async function rollbackOpenedNativeDocument(
+    documentId: string,
+    openError: unknown,
+  ): Promise<never> {
+    try {
+      await persistence.close(documentId)
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [openError, rollbackError],
+        'DOCUMENT_OPEN_ROLLBACK_FAILED',
+      )
+    }
+
+    throw openError
+  }
+
+  function createOwnedSession(
+    editor: EditorSession,
+    documentId: string | null,
+    revision: string | null,
+  ): OwnedCanvasSession {
+    const editorDocument: EditorDocumentPort = editor
+    const document = createDocumentSession(documentId)
+
+    const owned: OwnedCanvasSession = {
+      editor,
+      editorDocument,
+      document,
+      stopObservingDocument: () => {},
+      saveOperation: null,
+      revision,
+    }
+
+    owned.stopObservingDocument = editorDocument.subscribeDocumentEvents(
+      (event) => {
+        if (event.kind === 'ready') {
+          if (!document.isInitialized()) {
+            document.initialize(editorDocument.captureDocument())
+            emit()
+          }
+
+          return
+        }
+
+        if (!document.isInitialized()) {
+          throw new Error('DOCUMENT_CHANGE_BEFORE_EDITOR_READY')
+        }
+
+        document.recordDocumentChange(editorDocument.captureDocument())
+        emit()
+      },
+    )
+
+    return owned
+  }
+
+  function save(sessionId: CanvasSessionId): Promise<void> {
+    const owned = requireSession(sessionId)
+
+    if (owned.saveOperation) {
+      return owned.saveOperation
+    }
+
+    owned.saveOperation = performSave(owned).finally(() => {
+      owned.saveOperation = null
+    })
+
+    return owned.saveOperation
+  }
+
+  async function performSave(owned: OwnedCanvasSession): Promise<void> {
+    if (!owned.document.isInitialized()) {
+      throw new Error('DOCUMENT_SESSION_NOT_READY')
+    }
+
+    const documentSnapshot = owned.editorDocument.captureDocument()
+    const ticket = owned.document.beginSave(documentSnapshot)
+
+    emit()
+
+    try {
       const content = JSON.stringify(documentSnapshot)
       const assetPersistenceToken =
         await owned.editor.captureAssetPersistenceToken()
@@ -410,10 +524,6 @@ export function createCanvasDocumentService({
 
     async dispose() {
       for (const owned of sessions.values()) {
-        /*
-         * Native DocumentRegistry remains process-owned during application
-         * teardown. Renderer asset sessions are still explicitly settled.
-         */
         owned.stopObservingDocument()
       }
 

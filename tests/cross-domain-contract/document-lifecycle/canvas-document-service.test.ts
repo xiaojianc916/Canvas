@@ -22,9 +22,7 @@ function createHarness() {
   let currentSnapshot = snapshot({ shapes: [] })
 
   const documentListeners = new Set<(event: EditorDocumentEvent) => void>()
-  const closeEditorSession = vi
-    .fn()
-    .mockResolvedValue(undefined)
+  const closeEditorSession = vi.fn().mockResolvedValue(undefined)
 
   const persistence = {
     open: vi.fn(),
@@ -58,7 +56,7 @@ function createHarness() {
 
   const service = createCanvasDocumentService({
     editorSessions: {
-      create: () => editor,
+      create: async () => editor,
       close: closeEditorSession,
       dispose: vi.fn().mockResolvedValue(undefined),
     },
@@ -90,9 +88,7 @@ function createHarness() {
 describe('Canvas document native-release contract', () => {
   it('releases a clean unsaved canvas without invoking native document_close', async () => {
     const harness = createHarness()
-    const opened = await harness.service.create(
-      '未命名画布',
-    )
+    const opened = await harness.service.create('未命名画布')
 
     harness.ready()
 
@@ -109,9 +105,7 @@ describe('Canvas document native-release contract', () => {
 
   it('requires an explicit discard intent for dirty canvases', async () => {
     const harness = createHarness()
-    const opened = await harness.service.create(
-      '未命名画布',
-    )
+    const opened = await harness.service.create('未命名画布')
 
     harness.ready()
     harness.change(snapshot({ shapes: [{ id: 'shape:1' }] }))
@@ -172,9 +166,7 @@ describe('Canvas document native-release contract', () => {
 
   it('uses Save As once and retains only an opaque native document ID', async () => {
     const harness = createHarness()
-    const opened = await harness.service.create(
-      '未命名画布',
-    )
+    const opened = await harness.service.create('未命名画布')
 
     harness.ready()
     harness.change(snapshot({ shapes: [{ id: 'shape:1' }] }))
@@ -277,9 +269,7 @@ describe('Canvas document native-release contract', () => {
       null,
     )
 
-    expect(
-      harness.service.getSessionSnapshot(opened.sessionId),
-    ).toEqual({
+    expect(harness.service.getSessionSnapshot(opened.sessionId)).toEqual({
       sessionId: opened.sessionId,
       persistence: 'clean',
     })
@@ -305,35 +295,25 @@ describe('Canvas document native-release contract', () => {
     harness.ready()
     harness.change(snapshot({ shapes: [{ id: 'shape:conflict' }] }))
 
-    const conflict = Object.assign(
-      new Error('document save conflict'),
-      {
-        details: {
-          code: 'file-conflict',
-          operation: 'file',
-          recoverable: true,
-        },
+    const conflict = Object.assign(new Error('document save conflict'), {
+      details: {
+        code: 'file-conflict',
+        operation: 'file',
+        recoverable: true,
       },
-    )
+    })
 
     harness.persistence.save.mockRejectedValue(conflict)
 
-    await expect(
-      harness.service.save(opened.sessionId),
-    ).rejects.toBe(conflict)
+    await expect(harness.service.save(opened.sessionId)).rejects.toBe(conflict)
 
-    expect(
-      harness.service.getSessionSnapshot(opened.sessionId),
-    ).toEqual({
+    expect(harness.service.getSessionSnapshot(opened.sessionId)).toEqual({
       sessionId: opened.sessionId,
       persistence: 'failed',
     })
 
     await expect(
-      harness.service.releaseCanvas(
-        opened.sessionId,
-        'normal',
-      ),
+      harness.service.releaseCanvas(opened.sessionId, 'normal'),
     ).resolves.toEqual({
       kind: 'confirmation-required',
     })
@@ -362,25 +342,22 @@ describe('Canvas document native-release contract', () => {
     harness.ready()
     harness.change(snapshot({ shapes: [{ id: 'shape:1' }] }))
 
-    let resolveSave
+    let resolveSave: () => void = () => {
+      throw new Error('save resolver not initialized')
+    }
 
-    const pendingSave = new Promise((resolve) => {
-      resolveSave = () =>
-        resolve({ revision: 'revision-next' })
+    const pendingSave = new Promise<{ readonly revision: string }>((resolve) => {
+      resolveSave = () => resolve({ revision: 'revision-next' })
     })
 
     harness.persistence.save.mockImplementation(() => pendingSave)
 
     const saving = harness.service.save(opened.sessionId)
-    const releasing = harness.service.releaseCanvas(
-      opened.sessionId,
-      'discard',
-    )
+    const releasing = harness.service.releaseCanvas(opened.sessionId, 'discard')
 
     expect(harness.persistence.close).not.toHaveBeenCalled()
 
     resolveSave()
-
     await saving
 
     await expect(releasing).resolves.toEqual({

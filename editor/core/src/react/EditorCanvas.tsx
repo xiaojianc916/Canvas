@@ -161,10 +161,10 @@ function createCanvasUiOverrides(
 
 function CanvasUiOverlay() {
   return (
-    <>
+    <div className="pointer-events-none absolute inset-0 z-20">
       <CanvasToolbar />
       <CanvasZoomControl />
-    </>
+    </div>
   )
 }
 
@@ -182,7 +182,7 @@ function CanvasZoomControl() {
   )
 
   return (
-    <div className="absolute bottom-3 right-3 z-20 flex h-8 items-center rounded-lg border bg-background/95 shadow-sm backdrop-blur-xl">
+    <div className="pointer-events-auto absolute bottom-3 right-3 flex h-8 items-center rounded-lg border bg-background/95 shadow-sm backdrop-blur-xl">
       <button
         aria-label="缩小"
         className="grid size-8 place-items-center rounded-l-lg text-muted-foreground hover:bg-accent hover:text-foreground"
