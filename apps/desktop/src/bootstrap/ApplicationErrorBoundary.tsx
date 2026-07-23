@@ -1,6 +1,7 @@
 import { Button } from '@hybrid-canvas/design-system'
 import { error as reportError } from '@hybrid-canvas/foundations-observability'
-import { Copy, DangerTriangle, Refresh } from '@mynaui/icons-react'import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Copy, DangerTriangle, Refresh } from '@mynaui/icons-react'
+import { Component, type ErrorInfo, type ReactNode } from 'react'
 
 interface ApplicationErrorBoundaryProps {
   readonly children: ReactNode

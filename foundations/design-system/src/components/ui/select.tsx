@@ -1,5 +1,6 @@
 import { Combobox as BaseCombobox } from '@base-ui/react/combobox'
-import { Check, ChevronsUpDown, Search } from '@mynaui/icons-react'import {
+import { Check, ChevronsUpDown, Search } from '@mynaui/icons-react'
+import {
   type ComponentPropsWithoutRef,
   createContext,
   forwardRef,
@@ -150,10 +151,7 @@ export const SelectTrigger = forwardRef<HTMLButtonElement, SelectTriggerProps>(
           <>
             <span className="min-w-0 flex-1 truncate">{selectedItem?.label ?? `选择${type}…`}</span>
 
-            <ChevronsUpDown
-              aria-hidden="true"
-              className="size-4 shrink-0 text-muted-foreground"
-            />
+            <ChevronsUpDown aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
           </>
         )}
       </BaseCombobox.Trigger>

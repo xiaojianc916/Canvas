@@ -7,7 +7,8 @@ import {
   Image,
   LayersThree,
   Search,
-} from '@mynaui/icons-react'import type { ComponentType } from 'react'
+} from '@mynaui/icons-react'
+import type { ComponentType } from 'react'
 
 import type { WorkspaceSurfaceId } from '../../contracts/workbench-contract'
 

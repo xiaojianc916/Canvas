@@ -1,5 +1,6 @@
 import { error as reportError } from '@hybrid-canvas/foundations-observability'
-import { DangerCircle, X } from '@mynaui/icons-react'import { useEffect, useState } from 'react'
+import { DangerCircle, X } from '@mynaui/icons-react'
+import { useEffect, useState } from 'react'
 
 const EVENT_NAME = 'hybrid-canvas:ui-feedback'
 

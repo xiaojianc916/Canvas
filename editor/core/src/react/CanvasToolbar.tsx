@@ -36,7 +36,8 @@ import {
   TypeText,
   Undo,
   Union,
-} from '@mynaui/icons-react'import { type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react'
+} from '@mynaui/icons-react'
+import { type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react'
 import { useValue } from 'tldraw'
 
 import type { CanvasToolId } from '../application/model/canvas-session-view-model'

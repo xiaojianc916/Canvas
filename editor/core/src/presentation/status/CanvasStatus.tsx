@@ -1,4 +1,5 @@
-import { Grid, LinkTwo, MousePointer } from '@mynaui/icons-react'import { useValue } from 'tldraw'
+import { Grid, LinkTwo, MousePointer } from '@mynaui/icons-react'
+import { useValue } from 'tldraw'
 
 import { useEditor, useExtensionRegistration } from '../../react/editor-context'
 

@@ -1,5 +1,6 @@
 import { Menu } from '@base-ui/react/menu'
-import { ChevronRight } from '@mynaui/icons-react'import { type ComponentPropsWithoutRef, forwardRef } from 'react'
+import { ChevronRight } from '@mynaui/icons-react'
+import { type ComponentPropsWithoutRef, forwardRef } from 'react'
 import { cn } from '../../lib/utils'
 
 export const DropdownMenu = Menu.Root
@@ -31,16 +32,11 @@ export const DropdownMenuTrigger = forwardRef<
   )
 })
 
-type DropdownMenuContentProps =
-  ComponentPropsWithoutRef<typeof Menu.Popup> & {
-    readonly sideOffset?: number
-    readonly side?: ComponentPropsWithoutRef<
-      typeof Menu.Positioner
-    >['side']
-    readonly align?: ComponentPropsWithoutRef<
-      typeof Menu.Positioner
-    >['align']
-  }
+type DropdownMenuContentProps = ComponentPropsWithoutRef<typeof Menu.Popup> & {
+  readonly sideOffset?: number
+  readonly side?: ComponentPropsWithoutRef<typeof Menu.Positioner>['side']
+  readonly align?: ComponentPropsWithoutRef<typeof Menu.Positioner>['align']
+}
 
 const popupClassName = [
   'min-w-32 overflow-hidden',
@@ -57,36 +53,25 @@ const popupClassName = [
   'data-[ending-style]:opacity-0',
 ].join(' ')
 
-export const DropdownMenuContent = forwardRef<
-  HTMLDivElement,
-  DropdownMenuContentProps
->(function DropdownMenuContent(
-  {
-    className,
-    sideOffset = 6,
-    side = 'bottom',
-    align = 'start',
-    ...props
+export const DropdownMenuContent = forwardRef<HTMLDivElement, DropdownMenuContentProps>(
+  function DropdownMenuContent(
+    { className, sideOffset = 6, side = 'bottom', align = 'start', ...props },
+    ref,
+  ) {
+    return (
+      <Menu.Portal>
+        <Menu.Positioner
+          align={align}
+          className="z-[var(--ui-z-popover)] outline-none"
+          side={side}
+          sideOffset={sideOffset}
+        >
+          <Menu.Popup className={cn(popupClassName, className)} ref={ref} {...props} />
+        </Menu.Positioner>
+      </Menu.Portal>
+    )
   },
-  ref,
-) {
-  return (
-    <Menu.Portal>
-      <Menu.Positioner
-        align={align}
-        className="z-[var(--ui-z-popover)] outline-none"
-        side={side}
-        sideOffset={sideOffset}
-      >
-        <Menu.Popup
-          className={cn(popupClassName, className)}
-          ref={ref}
-          {...props}
-        />
-      </Menu.Positioner>
-    </Menu.Portal>
-  )
-})
+)
 
 export const DropdownMenuItem = forwardRef<
   HTMLDivElement,
@@ -121,12 +106,7 @@ export const DropdownMenuLabel = forwardRef<
 >(function DropdownMenuLabel({ className, ...props }, ref) {
   return (
     <Menu.GroupLabel
-      className={cn(
-        'px-2 py-1.5',
-        'text-sm font-semibold',
-        'text-foreground',
-        className,
-      )}
+      className={cn('px-2 py-1.5', 'text-sm font-semibold', 'text-foreground', className)}
       ref={ref}
       {...props}
     />
@@ -139,42 +119,29 @@ export const DropdownMenuSeparator = forwardRef<
 >(function DropdownMenuSeparator({ className, ...props }, ref) {
   return (
     <Menu.Separator
-      className={cn(
-        '-mx-1 my-1 h-px',
-        'bg-divider',
-        className,
-      )}
+      className={cn('-mx-1 my-1 h-px', 'bg-divider', className)}
       ref={ref}
       {...props}
     />
   )
 })
 
-export const DropdownMenuShortcut = forwardRef<
-  HTMLSpanElement,
-  ComponentPropsWithoutRef<'span'>
->(function DropdownMenuShortcut({ className, ...props }, ref) {
-  return (
-    <span
-      className={cn(
-        'ml-auto',
-        'text-xs tracking-widest',
-        'text-muted-foreground',
-        className,
-      )}
-      ref={ref}
-      {...props}
-    />
-  )
-})
+export const DropdownMenuShortcut = forwardRef<HTMLSpanElement, ComponentPropsWithoutRef<'span'>>(
+  function DropdownMenuShortcut({ className, ...props }, ref) {
+    return (
+      <span
+        className={cn('ml-auto', 'text-xs tracking-widest', 'text-muted-foreground', className)}
+        ref={ref}
+        {...props}
+      />
+    )
+  },
+)
 
 export const DropdownMenuSubTrigger = forwardRef<
   HTMLDivElement,
   ComponentPropsWithoutRef<typeof Menu.SubmenuTrigger>
->(function DropdownMenuSubTrigger(
-  { className, children, ...props },
-  ref,
-) {
+>(function DropdownMenuSubTrigger({ className, children, ...props }, ref) {
   return (
     <Menu.SubmenuTrigger
       className={cn(
@@ -198,50 +165,31 @@ export const DropdownMenuSubTrigger = forwardRef<
     >
       {children}
 
-      <ChevronRight
-        aria-hidden="true"
-        className="ml-auto size-4 text-muted-foreground"
-      />
+      <ChevronRight aria-hidden="true" className="ml-auto size-4 text-muted-foreground" />
     </Menu.SubmenuTrigger>
   )
 })
 
-type DropdownMenuSubContentProps =
-  ComponentPropsWithoutRef<typeof Menu.Popup> & {
-    readonly sideOffset?: number
-    readonly side?: ComponentPropsWithoutRef<
-      typeof Menu.Positioner
-    >['side']
-    readonly align?: ComponentPropsWithoutRef<
-      typeof Menu.Positioner
-    >['align']
-  }
+type DropdownMenuSubContentProps = ComponentPropsWithoutRef<typeof Menu.Popup> & {
+  readonly sideOffset?: number
+  readonly side?: ComponentPropsWithoutRef<typeof Menu.Positioner>['side']
+  readonly align?: ComponentPropsWithoutRef<typeof Menu.Positioner>['align']
+}
 
-export const DropdownMenuSubContent = forwardRef<
-  HTMLDivElement,
-  DropdownMenuSubContentProps
->(function DropdownMenuSubContent(
-  {
-    className,
-    sideOffset = 4,
-    side = 'right',
-    align = 'start',
-    ...props
+export const DropdownMenuSubContent = forwardRef<HTMLDivElement, DropdownMenuSubContentProps>(
+  function DropdownMenuSubContent(
+    { className, sideOffset = 4, side = 'right', align = 'start', ...props },
+    ref,
+  ) {
+    return (
+      <Menu.Positioner
+        align={align}
+        className="z-[var(--ui-z-popover)] outline-none"
+        side={side}
+        sideOffset={sideOffset}
+      >
+        <Menu.Popup className={cn(popupClassName, className)} ref={ref} {...props} />
+      </Menu.Positioner>
+    )
   },
-  ref,
-) {
-  return (
-    <Menu.Positioner
-      align={align}
-      className="z-[var(--ui-z-popover)] outline-none"
-      side={side}
-      sideOffset={sideOffset}
-    >
-      <Menu.Popup
-        className={cn(popupClassName, className)}
-        ref={ref}
-        {...props}
-      />
-    </Menu.Positioner>
-  )
-})
+)

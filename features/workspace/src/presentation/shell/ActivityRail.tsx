@@ -27,7 +27,8 @@ import {
   QuestionCircle,
   RefreshAlt,
   Search,
-} from '@mynaui/icons-react'import type { ComponentType } from 'react'
+} from '@mynaui/icons-react'
+import type { ComponentType } from 'react'
 
 type NavigationIcon = ComponentType<{
   className?: string
@@ -131,9 +132,7 @@ export function ActivityRail({
       <div className="flex flex-col gap-1">
         <RailButton icon={Cog} label="设置" onClick={onSettingsOpen} />
 
-        <HelpMenu
-          onDeveloperToolsOpen={onDeveloperToolsOpen}
-        />
+        <HelpMenu onDeveloperToolsOpen={onDeveloperToolsOpen} />
       </div>
     </nav>
   )
@@ -186,11 +185,7 @@ function RailButton({ label, icon: Icon, active = false, onClick }: RailButtonPr
   )
 }
 
-function HelpMenu({
-  onDeveloperToolsOpen,
-}: {
-  readonly onDeveloperToolsOpen: () => void
-}) {
+function HelpMenu({ onDeveloperToolsOpen }: { readonly onDeveloperToolsOpen: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -206,47 +201,22 @@ function HelpMenu({
           'data-[popup-open]:text-foreground',
         ].join(' ')}
       >
-        <QuestionCircle
-          aria-hidden="true"
-          className="size-4"
-        />
+        <QuestionCircle aria-hidden="true" className="size-4" />
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent
-        align="start"
-        className="w-56"
-        side="right"
-        sideOffset={8}
-      >
+      <DropdownMenuContent align="start" className="w-56" side="right" sideOffset={8}>
         <DropdownMenuGroup>
+          <HelpMenuItem external icon={BookOpen} label="文档" />
 
-          <HelpMenuItem
-            external
-            icon={BookOpen}
-            label="文档"
-          />
-
-          <HelpMenuItem
-            external
-            icon={RefreshAlt}
-            label="更新日志"
-          />
+          <HelpMenuItem external icon={RefreshAlt} label="更新日志" />
         </DropdownMenuGroup>
 
         <DropdownMenuSeparator />
 
         <DropdownMenuGroup>
-          <HelpMenuItem
-            external
-            icon={Message}
-            label="Discord"
-          />
+          <HelpMenuItem external icon={Message} label="Discord" />
 
-          <HelpMenuItem
-            icon={Code}
-            label="开发者工具"
-            onClick={onDeveloperToolsOpen}
-          />
+          <HelpMenuItem icon={Code} label="开发者工具" onClick={onDeveloperToolsOpen} />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -269,25 +239,14 @@ function HelpMenuItem({
   onClick,
 }: HelpMenuItemProps) {
   return (
-    <DropdownMenuItem
-      disabled={disabled}
-      onClick={onClick}
-    >
-      <Icon
-        aria-hidden="true"
-        className="size-4 text-muted-foreground"
-      />
+    <DropdownMenuItem disabled={disabled} onClick={onClick}>
+      <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
 
-      <span className="flex-1">
-        {label}
-      </span>
+      <span className="flex-1">{label}</span>
 
       {external ? (
         <DropdownMenuShortcut>
-          <ExternalLink
-            aria-hidden="true"
-            className="size-3.5"
-          />
+          <ExternalLink aria-hidden="true" className="size-3.5" />
         </DropdownMenuShortcut>
       ) : null}
     </DropdownMenuItem>

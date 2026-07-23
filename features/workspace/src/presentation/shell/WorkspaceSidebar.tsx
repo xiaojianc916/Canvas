@@ -10,7 +10,8 @@ import {
   LayersThree,
   Plus,
   Search,
-} from '@mynaui/icons-react'import type { CanvasPageViewModel } from '../../contracts/shell-contract'
+} from '@mynaui/icons-react'
+import type { CanvasPageViewModel } from '../../contracts/shell-contract'
 import type { CanvasNavigationItemId } from './ActivityRail'
 
 export interface WorkspaceSidebarProps {
@@ -106,7 +107,11 @@ const PANEL_DETAILS: Record<
 > = {
   search: { title: '搜索', description: '搜索当前工作区中的页面、对象和文本内容。', icon: Search },
   layers: { title: '图层', description: '选择页面后，可在这里浏览和整理图层。', icon: LayersThree },
-  relations: { title: '关系', description: '连接画布中的内容，建立可视化关系。', icon: ChartNetwork },
+  relations: {
+    title: '关系',
+    description: '连接画布中的内容，建立可视化关系。',
+    icon: ChartNetwork,
+  },
   data: {
     title: '自动化',
     description: '把重复操作和流程编排成可执行的自动化。',
@@ -114,7 +119,11 @@ const PANEL_DETAILS: Record<
   },
   assets: { title: '素材', description: '集中管理图片、附件和可复用素材。', icon: Image },
   extensions: { title: '插件', description: '探索能够增强画布工作流的扩展能力。', icon: Box },
-  documents: { title: '恢复', description: '在这里恢复最近打开的画布与本地文件。', icon: FolderTwo },
+  documents: {
+    title: '恢复',
+    description: '在这里恢复最近打开的画布与本地文件。',
+    icon: FolderTwo,
+  },
 }
 
 function WorkspacePanel({ kind }: { readonly kind: Exclude<CanvasNavigationItemId, 'pages'> }) {

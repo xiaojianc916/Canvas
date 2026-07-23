@@ -1,5 +1,6 @@
 import { Button } from '@hybrid-canvas/design-system'
-import { FilePlus, Folder } from '@mynaui/icons-react'export interface NoCanvasSurfaceProps {
+import { FilePlus, Folder } from '@mynaui/icons-react'
+export interface NoCanvasSurfaceProps {
   readonly onCreateDocument: () => void
   readonly onOpenDocument: () => void
 }

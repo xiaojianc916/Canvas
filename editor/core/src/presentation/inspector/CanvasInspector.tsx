@@ -1,5 +1,6 @@
 import { Separator } from '@hybrid-canvas/design-system'
-import { Box, Component, Move } from '@mynaui/icons-react'import { useValue } from 'tldraw'
+import { Box, Component, Move } from '@mynaui/icons-react'
+import { useValue } from 'tldraw'
 
 import { useEditor, useExtensionRegistration } from '../../react/editor-context'
 

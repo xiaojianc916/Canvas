@@ -1,5 +1,6 @@
 import { Dialog, EmptyState, Input } from '@hybrid-canvas/design-system'
-import { Command, Search } from '@mynaui/icons-react'import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { Command, Search } from '@mynaui/icons-react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { CommandRegistry } from '../../application/public-api'
 import type { RegisteredCommand } from '../../contracts/public-api'
 

@@ -1,4 +1,5 @@
-import { DangerCircle, Inbox, Spinner } from '@mynaui/icons-react'import type { ReactNode } from 'react'
+import { DangerCircle, Inbox, Spinner } from '@mynaui/icons-react'
+import type { ReactNode } from 'react'
 import { Button } from './button'
 
 export function LoadingState({ label = '正在加载…' }: { readonly label?: string }) {

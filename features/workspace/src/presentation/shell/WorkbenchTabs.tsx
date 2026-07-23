@@ -11,7 +11,15 @@ import {
   Plus,
   Search,
   X,
-} from '@mynaui/icons-react'import { type ComponentType, type DragEvent, type KeyboardEvent, useEffect, useLayoutEffect, useRef } from 'react'
+} from '@mynaui/icons-react'
+import {
+  type ComponentType,
+  type DragEvent,
+  type KeyboardEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from 'react'
 
 import type { WorkbenchTabId, WorkbenchTabViewModel } from '../../contracts/workbench-contract'
 
