@@ -160,14 +160,21 @@ export function createDocumentSession(
     },
 
     beginClosing() {
-      assertNotClosed()
+      switch (phase) {
+        case 'initializing':
+        case 'ready':
+        case 'save-failed':
+          phaseBeforeClosing = phase
+          phase = 'closing'
+          return
 
-      if (phase === 'saving') {
-        throw new Error('DOCUMENT_SESSION_SAVE_IN_PROGRESS')
+        case 'saving':
+          throw new Error('DOCUMENT_SESSION_SAVE_IN_PROGRESS')
+
+        case 'closing':
+        case 'closed':
+          throw new Error('DOCUMENT_SESSION_NOT_ACTIVE')
       }
-
-      phaseBeforeClosing = phase
-      phase = 'closing'
     },
 
     cancelClosing() {
