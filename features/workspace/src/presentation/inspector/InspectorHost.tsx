@@ -1,4 +1,4 @@
-import { ScrollArea, Tabs, TabsContent, TabsList, TabsTrigger } from '@hybrid-canvas/design-system'
+import { ScrollArea } from '@hybrid-canvas/design-system'
 import type { ReactNode } from 'react'
 
 export interface InspectorHostProps {
@@ -6,41 +6,24 @@ export interface InspectorHostProps {
   readonly children: ReactNode
 }
 
+/**
+ * Right-side contextual inspector host.
+ *
+ * The host owns only layout and scrolling. It must not own editor selection,
+ * active tool state, shape-specific rules, data configuration, or interaction
+ * configuration.
+ *
+ * The rendered content is supplied by the active tool or selected object.
+ */
 export function InspectorHost({ children }: InspectorHostProps) {
   return (
-    <section className="flex h-full min-h-0 min-w-0 flex-col bg-sidebar">
-      <Tabs className="flex min-h-0 flex-1 flex-col" defaultValue="design">
-        <TabsList className="grid h-10 w-full shrink-0 grid-cols-3 rounded-none border-b bg-transparent p-1.5">
-          <TabsTrigger className="h-7 text-[11px] shadow-none" value="design">
-            设计
-          </TabsTrigger>
-          <TabsTrigger className="h-7 text-[11px] shadow-none" value="data">
-            数据
-          </TabsTrigger>
-          <TabsTrigger className="h-7 text-[11px] shadow-none" value="interaction">
-            交互
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent className="mt-0 min-h-0 flex-1" value="design">
-          <ScrollArea className="h-full">
-            <div className="p-3">{children}</div>
-          </ScrollArea>
-        </TabsContent>
-        <TabsContent className="mt-0 min-h-0 flex-1" value="data">
-          <InspectorPlaceholder description="选择支持数据绑定的对象后，可在这里配置字段和数据源。" />
-        </TabsContent>
-        <TabsContent className="mt-0 min-h-0 flex-1" value="interaction">
-          <InspectorPlaceholder description="选择对象后，可在这里配置触发器、动作和页面导航。" />
-        </TabsContent>
-      </Tabs>
-    </section>
-  )
-}
-
-function InspectorPlaceholder({ description }: { readonly description: string }) {
-  return (
-    <div className="px-6 py-12 text-center text-[11px] leading-5 text-muted-foreground">
-      {description}
-    </div>
+    <aside
+      aria-label="工具选项与对象属性"
+      className="flex h-full min-h-0 min-w-0 flex-col border-l border-divider bg-sidebar"
+    >
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="min-w-0 p-3">{children}</div>
+      </ScrollArea>
+    </aside>
   )
 }
