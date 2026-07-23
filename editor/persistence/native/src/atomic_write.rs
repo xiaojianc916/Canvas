@@ -15,7 +15,8 @@
 
 use crate::{Error, Result};
 #[cfg(unix)]
-#[cfg(unix)]\nuse std::fs::File;
+#[cfg(unix)]\n#[cfg(unix)]
+use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 

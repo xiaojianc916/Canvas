@@ -26,11 +26,11 @@
     "check": "pnpm test:architecture && node scripts/quality/run.mjs check",
     "check:rust": "cargo check --workspace --all-targets --all-features",
     "typecheck": "node scripts/quality/run.mjs typecheck",
+    "test": "node scripts/quality/run.mjs test",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "test": "node scripts/quality/run.mjs test",
     "test:rust": "cargo test --workspace --all-features",
     "clippy": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
     "audit": "pnpm audit --audit-level high",
@@ -52,4 +52,4 @@
     "turbo": "2.10.5",
     "typescript": "catalog:"
   }
-}\n
+}
