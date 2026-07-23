@@ -178,24 +178,58 @@ export function createCanvasDocumentService({
       return null
     }
 
-    const canvasId = crypto.randomUUID()
-    const sessionId = crypto.randomUUID()
-    const initialSnapshot = parseEditorSnapshot(opened.content)
+    /*
+     * Native document_open registers an opaque document handle before the
+     * renderer can validate the logical .draw payload with the complete tldraw
+     * extension schema.
+     *
+     * Treat parsing, configured store creation and session registration as one
+     * transaction. Until sessions.set() succeeds, any failure must release the
+     * native document handle.
+     */
+    try {
+      const canvasId = crypto.randomUUID()
+      const sessionId = crypto.randomUUID()
+      const initialSnapshot = parseEditorSnapshot(opened.content)
 
-    const editor = editorSessions.create({
-      documentId: canvasId,
-      sessionId,
-      initialSnapshot,
-      extensions,
-    })
+      const editor = editorSessions.create({
+        documentId: canvasId,
+        sessionId,
+        initialSnapshot,
+        extensions,
+      })
 
-    sessions.set(sessionId, createOwnedSession(editor, opened.id))
+      sessions.set(sessionId, createOwnedSession(editor, opened.id))
 
-    return {
-      canvasId,
-      sessionId,
-      title: opened.displayName,
+      return {
+        canvasId,
+        sessionId,
+        title: opened.displayName,
+      }
+    } catch (openError) {
+      return rollbackOpenedNativeDocument(opened.id, openError)
     }
+  }
+
+  async function rollbackOpenedNativeDocument(
+    documentId: string,
+    openError: unknown,
+  ): Promise<never> {
+    try {
+      await persistence.close(documentId)
+    } catch (rollbackError) {
+      /*
+       * Never hide a leaked native handle behind the original parsing or
+       * tldraw validation error. Preserve both failures for diagnostics while
+       * exposing a stable application-level failure message.
+       */
+      throw new AggregateError(
+        [openError, rollbackError],
+        'DOCUMENT_OPEN_ROLLBACK_FAILED',
+      )
+    }
+
+    throw openError
   }
 
   function createOwnedSession(
