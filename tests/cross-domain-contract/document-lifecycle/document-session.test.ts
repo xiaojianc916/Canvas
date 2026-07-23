@@ -1,12 +1,13 @@
 import { createDocumentSession } from '@hybrid-canvas/document'
-import type { TLEditorSnapshot } from 'tldraw'
+import type { TLStoreSnapshot } from 'tldraw'
 import { describe, expect, it } from 'vitest'
 
-function snapshot(documentValue: unknown): TLEditorSnapshot {
-  return {
-    document: documentValue,
-    session: {},
-  } as unknown as TLEditorSnapshot
+function snapshot(documentValue: unknown): TLStoreSnapshot {
+  /*
+   * DocumentSession accepts only persistable TLStore document state. Tests no
+   * longer manufacture an editor session snapshot.
+   */
+  return documentValue as TLStoreSnapshot
 }
 
 describe('DocumentSession', () => {

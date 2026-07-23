@@ -6,6 +6,7 @@ import {
   type TLAnyShapeUtilConstructor,
   type TLEditorSnapshot,
   type TLStore,
+  type TLStoreSnapshot,
 } from 'tldraw'
 
 import {
@@ -78,7 +79,7 @@ export interface EditorSession {
    * Explicit document persistence adapter consumed structurally by
    * editor/document's EditorDocumentPort.
    */
-  readonly captureDocument: () => TLEditorSnapshot
+  readonly captureDocument: () => TLStoreSnapshot
 
   readonly subscribeDocumentEvents: (listener: (event: EditorDocumentEvent) => void) => () => void
 
@@ -137,13 +138,22 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
     return attachedEditor
   }
 
-  function captureDocument(): TLEditorSnapshot {
+  function captureDocument(): TLStoreSnapshot {
+    assertActive()
+
     /*
-     * A complete TLEditorSnapshot includes TLSessionStateSnapshot. tldraw
-     * initializes session state through a live Editor, not a detached TLStore.
-     *
-     * Persistable capture is valid only after attachEditor() has established
-     * the explicit mounted-editor readiness boundary.
+     * TLStore document records are the sole persistable canvas source of truth.
+     * Session state belongs to the local editor instance and is deliberately
+     * excluded from this boundary.
+     */
+    return store.getStoreSnapshot()
+  }
+
+  function captureLegacyEditorSnapshot(): TLEditorSnapshot {
+    /*
+     * Temporary v1 compatibility boundary. A complete TLEditorSnapshot needs
+     * initialized tldraw session state and therefore requires an attached
+     * Editor. The v2 writer must not use this method.
      */
     return requireAttachedEditor().getSnapshot()
   }
@@ -253,7 +263,7 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
       publishSessionSnapshot()
     },
 
-    getSnapshot: captureDocument,
+    getSnapshot: captureLegacyEditorSnapshot,
     captureDocument,
 
     subscribeDocumentEvents(listener) {

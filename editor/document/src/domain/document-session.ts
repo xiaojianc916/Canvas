@@ -1,4 +1,4 @@
-import type { TLEditorSnapshot } from 'tldraw'
+import type { TLStoreSnapshot } from 'tldraw'
 
 import {
   checkpointsEqual,
@@ -33,9 +33,9 @@ export interface DocumentSessionSnapshot {
 }
 
 export interface DocumentSession {
-  readonly initialize: (snapshot: TLEditorSnapshot) => void
-  readonly recordDocumentChange: (snapshot: TLEditorSnapshot) => void
-  readonly beginSave: (snapshot: TLEditorSnapshot) => DocumentSaveTicket
+  readonly initialize: (snapshot: TLStoreSnapshot) => void
+  readonly recordDocumentChange: (snapshot: TLStoreSnapshot) => void
+  readonly beginSave: (snapshot: TLStoreSnapshot) => DocumentSaveTicket
   readonly completeSave: (
     ticket: DocumentSaveTicket,
     documentId: string,

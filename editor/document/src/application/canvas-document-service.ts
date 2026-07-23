@@ -289,13 +289,23 @@ export function createCanvasDocumentService({
       throw new Error('DOCUMENT_SESSION_NOT_READY')
     }
 
-    const snapshot = owned.editorDocument.captureDocument()
-    const ticket = owned.document.beginSave(snapshot)
+    const documentSnapshot = owned.editorDocument.captureDocument()
+    const ticket = owned.document.beginSave(documentSnapshot)
 
     emit()
 
     try {
-      const content = serializeDrawDocument(snapshot)
+      /*
+       * Temporary v1 compatibility bridge.
+       *
+       * Dirty tracking and DocumentSession accept only TLStoreSnapshot. The
+       * legacy v1 JSON writer still requires a complete TLEditorSnapshot, so
+       * capture it only at this serialization boundary.
+       *
+       * Delete this call when the v2 document-only writer becomes canonical.
+       */
+      const legacyEditorSnapshot = owned.editor.getSnapshot()
+      const content = serializeDrawDocument(legacyEditorSnapshot)
       const currentDocumentId = owned.document.getDocumentId()
 
       const saved = currentDocumentId

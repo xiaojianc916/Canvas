@@ -48,7 +48,7 @@ function createHarness() {
     documentId: 'editor-document',
 
     captureDocument() {
-      return currentSnapshot
+      return currentSnapshot.document
     },
 
     getSnapshot() {

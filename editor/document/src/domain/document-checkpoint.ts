@@ -1,4 +1,4 @@
-import type { TLEditorSnapshot } from 'tldraw'
+import type { TLStoreSnapshot } from 'tldraw'
 
 // Tests: tests/cross-domain-contract/document-lifecycle/document-session.test.ts
 
@@ -8,20 +8,26 @@ import type { TLEditorSnapshot } from 'tldraw'
  * The canonical value is retained instead of using a non-cryptographic hash,
  * so dirty-state correctness cannot be affected by a hash collision.
  *
- * Session records such as camera, selection, active tool and viewport are not
- * part of this value.
+ * This boundary accepts only TLStoreSnapshot. Session state such as camera,
+ * selection, active tool, current page and viewport cannot enter dirty tracking
+ * by construction.
  */
 export interface DocumentCheckpoint {
   readonly canonicalDocument: string
 }
 
-export function createDocumentCheckpoint(snapshot: TLEditorSnapshot): DocumentCheckpoint {
+export function createDocumentCheckpoint(
+  document: TLStoreSnapshot,
+): DocumentCheckpoint {
   return {
-    canonicalDocument: stableStringify(snapshot.document),
+    canonicalDocument: stableStringify(document),
   }
 }
 
-export function checkpointsEqual(left: DocumentCheckpoint, right: DocumentCheckpoint): boolean {
+export function checkpointsEqual(
+  left: DocumentCheckpoint,
+  right: DocumentCheckpoint,
+): boolean {
   return left.canonicalDocument === right.canonicalDocument
 }
 
@@ -62,7 +68,12 @@ function stableStringify(value: unknown): string {
 
   return (
     '{' +
-    keys.map((key) => JSON.stringify(key) + ':' + stableStringify(record[key])).join(',') +
+    keys
+      .map(
+        (key) =>
+          JSON.stringify(key) + ':' + stableStringify(record[key]),
+      )
+      .join(',') +
     '}'
   )
 }

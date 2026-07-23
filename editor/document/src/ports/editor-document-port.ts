@@ -1,4 +1,4 @@
-import type { TLEditorSnapshot } from 'tldraw'
+import type { TLStoreSnapshot } from 'tldraw'
 
 // Contract tests: tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts
 
@@ -12,12 +12,13 @@ export type EditorDocumentEvent =
 
 export interface EditorDocumentPort {
   /**
-   * Returns a synchronous snapshot of the canonical tldraw editor state.
+   * Returns the canonical persistable tldraw document snapshot.
    *
-   * The document application layer creates the persistence checkpoint from
-   * snapshot.document. Runtime/session state is never used for dirty tracking.
+   * This contains document-scoped TLStore records only. Camera, selection,
+   * current tool, viewport and other local session state are excluded by the
+   * return type and must be persisted through a separate local-session port.
    */
-  readonly captureDocument: () => TLEditorSnapshot
+  readonly captureDocument: () => TLStoreSnapshot
 
   /**
    * Emits ready exactly at the explicit editor attachment boundary.
@@ -25,5 +26,7 @@ export interface EditorDocumentPort {
    * Changed events are emitted only after ready and only for user-originated
    * TLStore document transactions.
    */
-  readonly subscribeDocumentEvents: (listener: (event: EditorDocumentEvent) => void) => () => void
+  readonly subscribeDocumentEvents: (
+    listener: (event: EditorDocumentEvent) => void,
+  ) => () => void
 }
