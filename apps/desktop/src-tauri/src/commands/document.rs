@@ -70,24 +70,48 @@ impl DocumentRegistry {
             .ok_or_else(|| Error::NotFound("document session does not exist".into()))
     }
 
-    fn replace_path(
+    fn save_as_existing(
         &self,
         document_id: DocumentId,
         path: PathBuf,
-        revision: String,
-    ) -> Result<()> {
+        content: &str,
+    ) -> Result<String> {
+        ensure_document_size(content.len() as u64)?;
+        ensure_draw_document_path(&path)?;
+
+        /*
+         * Save As must revalidate and retain the native document handle while
+         * producing the new file. If the document was closed after the dialog
+         * opened, fail before touching the selected destination.
+         *
+         * Holding the same write lock used by ordinary CAS saves and close
+         * prevents Save, Save As and Close from interleaving for this registry.
+         */
         let mut documents = self
             .documents
             .write()
-            .map_err(|_| Error::Internal("document registry write lock poisoned".into()))?;
+            .map_err(|_| Error::Internal(
+                "document registry write lock poisoned".into(),
+            ))?;
 
         let handle = documents
             .get_mut(&document_id)
-            .ok_or_else(|| Error::NotFound("document session does not exist".into()))?;
+            .ok_or_else(|| Error::NotFound(
+                "document session does not exist".into(),
+            ))?;
+
+        let canonical_content =
+            canonicalize_draw_document(content.as_bytes())?;
+
+        atomic_write(&path, canonical_content.as_bytes())?;
+
+        let revision =
+            document_revision(canonical_content.as_bytes());
 
         handle.path = path;
-        handle.revision = revision;
-        Ok(())
+        handle.revision.clone_from(&revision);
+
+        Ok(revision)
     }
 
     fn save_existing(
@@ -300,22 +324,37 @@ pub async fn document_save_as(
     let path = selected_native_path(selected)?;
     ensure_draw_document_path(&path)?;
 
-    let revision =
-        write_document(path.clone(), request.content).await?;
-
-    let document_id = match request.document_id {
+    let (document_id, revision) = match request.document_id {
         Some(document_id) => {
-            documents.replace_path(
-                document_id,
+            let registry = documents.inner().clone();
+            let save_path = path.clone();
+            let content = request.content;
+
+            let revision = tokio::task::spawn_blocking(move || {
+                registry.save_as_existing(
+                    document_id,
+                    save_path,
+                    &content,
+                )
+            })
+            .await
+            .map_err(|_| Error::Internal(
+                "document Save As task terminated unexpectedly".into(),
+            ))??;
+
+            (document_id, revision)
+        }
+        None => {
+            let revision =
+                write_document(path.clone(), request.content).await?;
+
+            let document_id = documents.insert(
                 path.clone(),
                 revision.clone(),
             )?;
-            document_id
+
+            (document_id, revision)
         }
-        None => documents.insert(
-            path.clone(),
-            revision.clone(),
-        )?,
     };
 
     Ok(DocumentSaveAsResult {
@@ -719,6 +758,84 @@ mod tests {
         assert_eq!(
             std::fs::read(&path).expect("file should remain readable"),
             b"external change",
+        );
+    }
+
+    #[test]
+    fn save_as_unknown_document_does_not_write_destination() {
+        let directory =
+            tempfile::tempdir().expect("temporary directory");
+        let destination =
+            directory.path().join("must-not-exist.draw");
+        let content = valid_document("save-as");
+
+        let registry = DocumentRegistry::default();
+
+        let result = registry.save_as_existing(
+            DocumentId::new(),
+            destination.clone(),
+            &content,
+        );
+
+        assert!(matches!(result, Err(Error::NotFound(_))));
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn save_as_updates_path_and_revision_together() {
+        let directory =
+            tempfile::tempdir().expect("temporary directory");
+
+        let original_path =
+            directory.path().join("original.draw");
+        let destination =
+            directory.path().join("renamed.draw");
+
+        let original = valid_document("original");
+
+        std::fs::write(&original_path, &original)
+            .expect("original document should be written");
+
+        let original_revision =
+            document_revision(original.as_bytes());
+
+        let registry = DocumentRegistry::default();
+        let document_id = registry
+            .insert(
+                original_path,
+                original_revision.clone(),
+            )
+            .expect("document should register");
+
+        let replacement = valid_document("replacement");
+
+        let next_revision = registry
+            .save_as_existing(
+                document_id,
+                destination.clone(),
+                &replacement,
+            )
+            .expect("Save As should succeed");
+
+        assert_ne!(next_revision, original_revision);
+
+        assert_eq!(
+            registry
+                .path(document_id)
+                .expect("updated path should resolve"),
+            destination,
+        );
+
+        let stored_bytes = std::fs::read(
+            registry
+                .path(document_id)
+                .expect("updated path should remain registered"),
+        )
+        .expect("saved document should be readable");
+
+        assert_eq!(
+            document_revision(&stored_bytes),
+            next_revision,
         );
     }
 

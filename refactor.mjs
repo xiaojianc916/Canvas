@@ -1,10 +1,29 @@
 #!/usr/bin/env node
 
 /**
- * P0-D.1 — Harden revision/CAS conflict and revision-advance invariants.
+ * P0-D.2 — Make Save As a single native registry transaction.
  *
- * Audited base:
- *   fb9d58af977c0610cb9dfc22c352510430b27252
+ * Required base:
+ *   - P0-D revision/CAS applied
+ *   - P0-D.1 CAS hardening applied
+ *
+ * Replaces:
+ *
+ *   validate document ID
+ *   -> write selected file
+ *   -> update registry later
+ *
+ * With:
+ *
+ *   acquire registry write lock
+ *   -> revalidate document ID
+ *   -> canonicalize
+ *   -> atomic_write selected file
+ *   -> update path + revision
+ *   -> release lock
+ *
+ * This prevents a failed Save As from writing a file after the native document
+ * session has been concurrently closed.
  *
  * Usage:
  *   node refactor.mjs --check
@@ -26,11 +45,19 @@ const rootArgument = argv.find(
 const root = resolve(rootArgument ?? process.cwd())
 
 if (apply && check) {
-  fail('Use either --check or --apply, not both.')
+  console.error(
+    '\nP0-D.2 Save As transaction failed:\n' +
+      'Use either --check or --apply, not both.\n',
+  )
+  process.exit(1)
 }
 
 if (!apply && !check) {
-  fail('Missing mode. Use --check or --apply.')
+  console.error(
+    '\nP0-D.2 Save As transaction failed:\n' +
+      'Missing mode. Use --check or --apply.\n',
+  )
+  process.exit(1)
 }
 
 const paths = {
@@ -40,18 +67,13 @@ const paths = {
     root,
     'apps/desktop/src-tauri/src/commands/document.rs',
   ),
-
-  serviceTest: join(
-    root,
-    'tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts',
-  ),
 }
 
 function fail(message) {
   console.error(
-    `\nP0-D.1 CAS hardening failed:\n${message}\n`,
+    `\nP0-D.2 Save As transaction failed:\n${message}\n`,
   )
-  process.exitCode = 1
+  process.exit(1)
 }
 
 async function exists(path) {
@@ -104,173 +126,210 @@ function insertBeforeOnce(
 }
 
 function updateDocumentCommand(source) {
-  if (
-    !source.includes(
-      'fn save_existing(',
-    ) ||
-    !source.includes(
-      'expected_revision: &str',
-    ) ||
-    !source.includes(
-      'Error::FileConflict(',
+  const alreadyApplied =
+    source.includes('fn save_as_existing(') &&
+    !source.includes('fn replace_path(') &&
+    source.includes(
+      '"document Save As task terminated unexpectedly"',
+    ) &&
+    source.includes(
+      'fn save_as_unknown_document_does_not_write_destination()',
     )
+
+  if (alreadyApplied) {
+    return {
+      changed: false,
+      content: source,
+    }
+  }
+
+  if (
+    !source.includes('fn save_existing(') ||
+    !source.includes('expected_revision: &str') ||
+    !source.includes('fn valid_document(')
   ) {
     throw new Error(
       [
-        'The revision/CAS implementation was not found.',
-        'Expected repository state after fb9d58a.',
+        'Required CAS baseline was not found.',
+        'Apply P0-D and P0-D.1 before this script.',
       ].join('\n'),
     )
   }
 
   let next = source
 
-  const oldDiskRead = `        let disk_bytes = std::fs::read(&handle.path)?;
-        ensure_document_size(disk_bytes.len() as u64)?;`
+  const oldReplacePath = `    fn replace_path(
+        &self,
+        document_id: DocumentId,
+        path: PathBuf,
+        revision: String,
+    ) -> Result<()> {
+        let mut documents = self
+            .documents
+            .write()
+            .map_err(|_| Error::Internal("document registry write lock poisoned".into()))?;
 
-  const newDiskRead = `        let disk_bytes = match std::fs::read(&handle.path) {
-            Ok(bytes) => bytes,
-            Err(error)
-                if error.kind() == std::io::ErrorKind::NotFound =>
-            {
-                /*
-                 * An opened document disappearing from disk is an external
-                 * state change. Recreating it through ordinary Save would
-                 * silently discard the deletion decision.
-                 */
-                return Err(Error::FileConflict(
-                    "document was removed outside Canvas".into(),
-                ));
-            }
-            Err(error) => return Err(error.into()),
-        };
+        let handle = documents
+            .get_mut(&document_id)
+            .ok_or_else(|| Error::NotFound("document session does not exist".into()))?;
 
-        ensure_document_size(disk_bytes.len() as u64)?;`
+        handle.path = path;
+        handle.revision = revision;
+        Ok(())
+    }`
 
-  if (!next.includes(newDiskRead)) {
-    next = replaceOnce(
-      next,
-      oldDiskRead,
-      newDiskRead,
-      'map external deletion to file conflict',
-    )
-  }
+  const newSaveAsTransaction = `    fn save_as_existing(
+        &self,
+        document_id: DocumentId,
+        path: PathBuf,
+        content: &str,
+    ) -> Result<String> {
+        ensure_document_size(content.len() as u64)?;
+        ensure_draw_document_path(&path)?;
 
-  if (!next.includes('fn valid_document(')) {
-    next = insertBeforeOnce(
-      next,
-      `    #[test]
-    fn registry_keeps_path_private_behind_document_id() {`,
-      `    fn valid_document(marker: &str) -> String {
-        format!(
-            r#"{{
-                "header": {{
-                    "format": "hybrid-canvas/draw",
-                    "version": 1,
-                    "createdAt": "2026-07-23T00:00:00.000Z"
-                }},
-                "content": {{
-                    "document": {{}},
-                    "session": {{}},
-                    "marker": "{marker}"
-                }}
-            }}"#,
-        )
-    }
+        /*
+         * Save As must revalidate and retain the native document handle while
+         * producing the new file. If the document was closed after the dialog
+         * opened, fail before touching the selected destination.
+         *
+         * Holding the same write lock used by ordinary CAS saves and close
+         * prevents Save, Save As and Close from interleaving for this registry.
+         */
+        let mut documents = self
+            .documents
+            .write()
+            .map_err(|_| Error::Internal(
+                "document registry write lock poisoned".into(),
+            ))?;
 
-`,
-      'add valid CAS document fixture',
-    )
-  }
+        let handle = documents
+            .get_mut(&document_id)
+            .ok_or_else(|| Error::NotFound(
+                "document session does not exist".into(),
+            ))?;
+
+        let canonical_content =
+            canonicalize_draw_document(content.as_bytes())?;
+
+        atomic_write(&path, canonical_content.as_bytes())?;
+
+        let revision =
+            document_revision(canonical_content.as_bytes());
+
+        handle.path = path;
+        handle.revision.clone_from(&revision);
+
+        Ok(revision)
+    }`
+
+  next = replaceOnce(
+    next,
+    oldReplacePath,
+    newSaveAsTransaction,
+    'replace non-transactional registry path update',
+  )
+
+  const oldSaveAsWrite = `    let revision =
+        write_document(path.clone(), request.content).await?;
+
+    let document_id = match request.document_id {
+        Some(document_id) => {
+            documents.replace_path(
+                document_id,
+                path.clone(),
+                revision.clone(),
+            )?;
+            document_id
+        }
+        None => documents.insert(
+            path.clone(),
+            revision.clone(),
+        )?,
+    };`
+
+  const newSaveAsWrite = `    let (document_id, revision) = match request.document_id {
+        Some(document_id) => {
+            let registry = documents.inner().clone();
+            let save_path = path.clone();
+            let content = request.content;
+
+            let revision = tokio::task::spawn_blocking(move || {
+                registry.save_as_existing(
+                    document_id,
+                    save_path,
+                    &content,
+                )
+            })
+            .await
+            .map_err(|_| Error::Internal(
+                "document Save As task terminated unexpectedly".into(),
+            ))??;
+
+            (document_id, revision)
+        }
+        None => {
+            let revision =
+                write_document(path.clone(), request.content).await?;
+
+            let document_id = documents.insert(
+                path.clone(),
+                revision.clone(),
+            )?;
+
+            (document_id, revision)
+        }
+    };`
+
+  next = replaceOnce(
+    next,
+    oldSaveAsWrite,
+    newSaveAsWrite,
+    'make existing-document Save As transactional',
+  )
 
   if (
     !next.includes(
-      'fn rejects_stale_renderer_revision_before_writing()',
+      'fn save_as_unknown_document_does_not_write_destination()',
     )
   ) {
     next = insertBeforeOnce(
       next,
       `    #[test]
-    fn rejects_save_when_disk_revision_changed() {`,
+    fn suggested_name_never_accepts_a_path() {`,
       `    #[test]
-    fn rejects_stale_renderer_revision_before_writing() {
+    fn save_as_unknown_document_does_not_write_destination() {
         let directory =
             tempfile::tempdir().expect("temporary directory");
-        let path = directory.path().join("stale.draw");
-        let original = valid_document("original");
-
-        std::fs::write(&path, &original)
-            .expect("fixture should be written");
-
-        let current_revision =
-            document_revision(original.as_bytes());
+        let destination =
+            directory.path().join("must-not-exist.draw");
+        let content = valid_document("save-as");
 
         let registry = DocumentRegistry::default();
-        let document_id = registry
-            .insert(path.clone(), current_revision)
-            .expect("document should register");
 
-        let replacement = valid_document("replacement");
-
-        let result = registry.save_existing(
-            document_id,
-            "stale-renderer-revision",
-            &replacement,
+        let result = registry.save_as_existing(
+            DocumentId::new(),
+            destination.clone(),
+            &content,
         );
 
-        assert!(matches!(result, Err(Error::FileConflict(_))));
-        assert_eq!(
-            std::fs::read_to_string(&path)
-                .expect("original file should remain readable"),
-            original,
-        );
+        assert!(matches!(result, Err(Error::NotFound(_))));
+        assert!(!destination.exists());
     }
 
     #[test]
-    fn rejects_save_when_document_was_removed_externally() {
+    fn save_as_updates_path_and_revision_together() {
         let directory =
             tempfile::tempdir().expect("temporary directory");
-        let path = directory.path().join("removed.draw");
+
+        let original_path =
+            directory.path().join("original.draw");
+        let destination =
+            directory.path().join("renamed.draw");
+
         let original = valid_document("original");
 
-        std::fs::write(&path, &original)
-            .expect("fixture should be written");
-
-        let current_revision =
-            document_revision(original.as_bytes());
-
-        let registry = DocumentRegistry::default();
-        let document_id = registry
-            .insert(
-                path.clone(),
-                current_revision.clone(),
-            )
-            .expect("document should register");
-
-        std::fs::remove_file(&path)
-            .expect("external deletion should succeed");
-
-        let replacement = valid_document("replacement");
-
-        let result = registry.save_existing(
-            document_id,
-            &current_revision,
-            &replacement,
-        );
-
-        assert!(matches!(result, Err(Error::FileConflict(_))));
-        assert!(!path.exists());
-    }
-
-    #[test]
-    fn successful_save_advances_revision_and_rejects_old_revision() {
-        let directory =
-            tempfile::tempdir().expect("temporary directory");
-        let path = directory.path().join("advance.draw");
-        let original = valid_document("original");
-
-        std::fs::write(&path, &original)
-            .expect("fixture should be written");
+        std::fs::write(&original_path, &original)
+            .expect("original document should be written");
 
         let original_revision =
             document_revision(original.as_bytes());
@@ -278,7 +337,7 @@ function updateDocumentCommand(source) {
         let registry = DocumentRegistry::default();
         let document_id = registry
             .insert(
-                path.clone(),
+                original_path,
                 original_revision.clone(),
             )
             .expect("document should register");
@@ -286,226 +345,73 @@ function updateDocumentCommand(source) {
         let replacement = valid_document("replacement");
 
         let next_revision = registry
-            .save_existing(
+            .save_as_existing(
                 document_id,
-                &original_revision,
+                destination.clone(),
                 &replacement,
             )
-            .expect("first CAS save should succeed");
+            .expect("Save As should succeed");
 
         assert_ne!(next_revision, original_revision);
 
-        let stored_bytes = std::fs::read(&path)
-            .expect("saved file should be readable");
+        assert_eq!(
+            registry
+                .path(document_id)
+                .expect("updated path should resolve"),
+            destination,
+        );
+
+        let stored_bytes = std::fs::read(
+            registry
+                .path(document_id)
+                .expect("updated path should remain registered"),
+        )
+        .expect("saved document should be readable");
 
         assert_eq!(
             document_revision(&stored_bytes),
             next_revision,
         );
-
-        let second_replacement =
-            valid_document("second-replacement");
-
-        let stale_result = registry.save_existing(
-            document_id,
-            &original_revision,
-            &second_replacement,
-        );
-
-        assert!(matches!(
-            stale_result,
-            Err(Error::FileConflict(_)),
-        ));
-
-        assert_eq!(
-            document_revision(
-                &std::fs::read(&path)
-                    .expect("saved file should remain readable"),
-            ),
-            next_revision,
-        );
     }
 
 `,
-      'add complete native CAS regression coverage',
+      'add Save As transaction regression tests',
     )
   }
 
-  const oldConflictFixture = `        let original = r#"{\\"format\\":\\"hybrid-canvas/draw\\",\\"version\\":1,\\"content\\":{}}"#;`
+  if (next.includes('fn replace_path(')) {
+    throw new Error(
+      'The obsolete post-write replace_path operation still exists.',
+    )
+  }
 
-  if (next.includes(oldConflictFixture)) {
-    next = replaceOnce(
-      next,
-      oldConflictFixture,
-      `        let original = valid_document("original");`,
-      'use valid logical document in conflict test',
+  if (!next.includes('fn save_as_existing(')) {
+    throw new Error(
+      'Transactional Save As operation was not installed.',
     )
   }
 
   if (
-    !next.includes(
-      'fn rejects_save_when_disk_revision_changed()',
-    ) ||
-    !next.includes(
-      'fn rejects_save_when_document_was_removed_externally()',
-    ) ||
-    !next.includes(
-      'fn successful_save_advances_revision_and_rejects_old_revision()',
-    )
+    count(
+      next,
+      'document Save As task terminated unexpectedly',
+    ) !== 1
   ) {
     throw new Error(
-      'Native CAS regression tests were not installed.',
+      'Expected exactly one blocking Save As transaction.',
     )
   }
 
-  return next
-}
-
-function updateServiceTest(source) {
-  if (
-    !source.includes(
-      `'revision-current',
-      expect.any(String),`,
-    )
-  ) {
-    throw new Error(
-      [
-        'Renderer revision/CAS test baseline was not found.',
-        'Expected repository state after fb9d58a.',
-      ].join('\n'),
-    )
+  return {
+    changed: next !== source,
+    content: next,
   }
-
-  let next = source
-
-  if (
-    !next.includes(
-      'advances the owned revision after every successful save',
-    )
-  ) {
-    next = insertBeforeOnce(
-      next,
-      `  it('settles an active save inside the same release transaction', async () => {`,
-      `  it('advances the owned revision after every successful save', async () => {
-    const harness = createHarness()
-
-    harness.persistence.open.mockResolvedValue({
-      id: 'native-document-revision-advance',
-      displayName: 'revision-advance.draw',
-      revision: 'revision-current',
-      content: serializeDrawDocument(snapshot({ shapes: [] })),
-    })
-
-    const opened = await harness.service.open()
-
-    if (!opened) {
-      throw new Error('expected native document')
-    }
-
-    harness.ready()
-
-    harness.persistence.save
-      .mockResolvedValueOnce({
-        revision: 'revision-second',
-      })
-      .mockResolvedValueOnce({
-        revision: 'revision-third',
-      })
-
-    await harness.service.save(opened.sessionId)
-    await harness.service.save(opened.sessionId)
-
-    expect(harness.persistence.save).toHaveBeenNthCalledWith(
-      1,
-      'native-document-revision-advance',
-      'revision-current',
-      expect.any(String),
-    )
-
-    expect(harness.persistence.save).toHaveBeenNthCalledWith(
-      2,
-      'native-document-revision-advance',
-      'revision-second',
-      expect.any(String),
-    )
-
-    expect(
-      harness.service.getSessionSnapshot(opened.sessionId),
-    ).toEqual({
-      sessionId: opened.sessionId,
-      persistence: 'clean',
-    })
-  })
-
-  it('keeps a file-conflict save failed and requires close confirmation', async () => {
-    const harness = createHarness()
-
-    harness.persistence.open.mockResolvedValue({
-      id: 'native-document-conflict',
-      displayName: 'conflict.draw',
-      revision: 'revision-current',
-      content: serializeDrawDocument(snapshot({ shapes: [] })),
-    })
-
-    const opened = await harness.service.open()
-
-    if (!opened) {
-      throw new Error('expected native document')
-    }
-
-    harness.ready()
-    harness.change(snapshot({ shapes: [{ id: 'shape:conflict' }] }))
-
-    const conflict = Object.assign(
-      new Error('document save conflict'),
-      {
-        details: {
-          code: 'file-conflict',
-          operation: 'file',
-          recoverable: true,
-        },
-      },
-    )
-
-    harness.persistence.save.mockRejectedValue(conflict)
-
-    await expect(
-      harness.service.save(opened.sessionId),
-    ).rejects.toBe(conflict)
-
-    expect(
-      harness.service.getSessionSnapshot(opened.sessionId),
-    ).toEqual({
-      sessionId: opened.sessionId,
-      persistence: 'failed',
-    })
-
-    await expect(
-      harness.service.releaseCanvas(
-        opened.sessionId,
-        'normal',
-      ),
-    ).resolves.toEqual({
-      kind: 'confirmation-required',
-    })
-
-    expect(harness.persistence.close).not.toHaveBeenCalled()
-    expect(harness.closeEditorSession).not.toHaveBeenCalled()
-  })
-
-`,
-      'add renderer revision advancement and conflict tests',
-    )
-  }
-
-  return next
 }
 
 async function main() {
   for (const path of [
     paths.packageJson,
     paths.documentCommand,
-    paths.serviceTest,
   ]) {
     if (!(await exists(path))) {
       throw new Error(`Required file was not found: ${path}`)
@@ -522,55 +428,41 @@ async function main() {
     )
   }
 
-  const [documentCommandSource, serviceTestSource] =
-    await Promise.all([
-      readFile(paths.documentCommand, 'utf8'),
-      readFile(paths.serviceTest, 'utf8'),
-    ])
-
-  const outputs = new Map([
-    [
-      paths.documentCommand,
-      updateDocumentCommand(documentCommandSource),
-    ],
-    [
-      paths.serviceTest,
-      updateServiceTest(serviceTestSource),
-    ],
-  ])
-
-  const originals = new Map([
-    [paths.documentCommand, documentCommandSource],
-    [paths.serviceTest, serviceTestSource],
-  ])
-
-  const changed = [...outputs].filter(
-    ([path, content]) => originals.get(path) !== content,
+  const original = await readFile(
+    paths.documentCommand,
+    'utf8',
   )
 
-  if (changed.length === 0) {
+  const change = updateDocumentCommand(original)
+
+  if (!change.changed) {
     console.log(
-      'P0-D.1 CAS hardening is already applied.',
+      'P0-D.2 transactional Save As is already applied.',
     )
     return
   }
 
-  console.log('P0-D.1 CAS hardening files:')
-
-  for (const [path] of changed) {
-    console.log(`- ${path.slice(root.length + 1)}`)
-  }
-
   if (check) {
+    console.log(
+      'P0-D.2 transactional Save As is safe to apply.',
+    )
     console.log('')
-    console.log('It will verify:')
-    console.log('- stale renderer revision rejection;')
-    console.log('- external modification rejection;')
-    console.log('- external deletion rejection;')
-    console.log('- successful next-revision advancement;')
-    console.log('- rejection of a previously consumed revision;')
-    console.log('- renderer use of the latest returned revision;')
-    console.log('- dirty/failed state after file-conflict;')
+    console.log('It will:')
+    console.log(
+      '- remove the post-write replace_path operation;',
+    )
+    console.log(
+      '- serialize existing-document Save As with Save and Close;',
+    )
+    console.log(
+      '- revalidate the document before writing the destination;',
+    )
+    console.log(
+      '- update path and revision under the same registry lock;',
+    )
+    console.log(
+      '- prevent unknown or concurrently closed IDs from creating files;',
+    )
     console.log('')
     console.log(
       'Run again with --apply to write the changes.',
@@ -578,39 +470,43 @@ async function main() {
     return
   }
 
-  /*
-   * Both transformations finish before either file is written.
-   */
   try {
-    for (const [path, content] of outputs) {
-      await writeFile(path, content, 'utf8')
-    }
+    await writeFile(
+      paths.documentCommand,
+      change.content,
+      'utf8',
+    )
   } catch (error) {
-    for (const [path, content] of originals) {
-      await writeFile(path, content, 'utf8')
-    }
+    await writeFile(
+      paths.documentCommand,
+      original,
+      'utf8',
+    )
 
     throw error
   }
 
+  console.log('Applied P0-D.2 transactional Save As.')
   console.log('')
-  console.log('Applied P0-D.1 CAS hardening.')
+  console.log('Changed:')
+  console.log(
+    '- apps/desktop/src-tauri/src/commands/document.rs',
+  )
   console.log('')
   console.log('Required verification:')
-  console.log('  pnpm format')
-  console.log('  pnpm lint')
-  console.log('  pnpm typecheck')
-  console.log('  pnpm test')
   console.log('  cargo fmt --all')
   console.log(
     '  cargo check --workspace --all-targets --all-features',
   )
   console.log(
-    '  cargo test --workspace --all-features',
+    '  cargo test --workspace --all-targets --all-features',
   )
   console.log(
     '  cargo clippy --workspace --all-targets --all-features -- -D warnings',
   )
+  console.log('  pnpm lint')
+  console.log('  pnpm typecheck')
+  console.log('  pnpm test')
 }
 
 main().catch((error) => {
