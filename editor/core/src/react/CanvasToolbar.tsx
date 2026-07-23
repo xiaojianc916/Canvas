@@ -124,6 +124,10 @@ const CORE_CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   },
 ]
 
+export interface CanvasToolbarProps {
+  readonly onSave?: () => void
+}
+
 export function CanvasToolbar() {
   const editor = useEditor()
   const actions = useActions()
