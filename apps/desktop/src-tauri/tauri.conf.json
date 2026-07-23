@@ -28,7 +28,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'; connect-src 'self'; frame-ancestors 'none';"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: hybrid-canvas-asset: http://hybrid-canvas-asset.localhost https://hybrid-canvas-asset.localhost; font-src 'self' data:; media-src 'self' hybrid-canvas-asset: http://hybrid-canvas-asset.localhost https://hybrid-canvas-asset.localhost; object-src 'none'; base-uri 'self'; connect-src 'self'; frame-ancestors 'none';"
     }
   },
   "bundle": {

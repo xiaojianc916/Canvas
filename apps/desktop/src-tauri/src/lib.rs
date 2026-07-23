@@ -4,6 +4,7 @@
     reason = "Tauri command signatures are consumed by generated IPC handlers"
 )]
 
+pub mod asset_protocol;
 pub mod bootstrap;
 pub mod commands;
 pub mod error;

@@ -2,12 +2,25 @@ use tauri::Wry;
 use tauri_plugin_store::StoreExt;
 
 use super::logging;
+use crate::asset_protocol::{
+    AssetProtocolRegistry, ASSET_PROTOCOL_SCHEME,
+};
 use crate::commands;
 use crate::commands::document::DocumentRegistry;
 
 pub fn build() -> tauri::Builder<Wry> {
+    let asset_protocol = AssetProtocolRegistry::default();
+    let protocol_registry = asset_protocol.clone();
+
     tauri::Builder::<Wry>::default()
         .manage(DocumentRegistry::default())
+        .manage(asset_protocol)
+        .register_uri_scheme_protocol(
+            ASSET_PROTOCOL_SCHEME,
+            move |_webview, request| {
+                protocol_registry.response(&request)
+            },
+        )
         .plugin(logging::plugin().build())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
