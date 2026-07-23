@@ -1,6 +1,7 @@
 import { createEditorSessionRegistry } from '@hybrid-canvas/canvas/application'
 import { createCanvasDocumentService } from '@hybrid-canvas/document'
 import { flowchartExtension } from '@hybrid-canvas/flowchart'
+import { freehandExtension } from '@hybrid-canvas/freehand'
 import {
   createDesktopSettingsStore,
   createDrawFileCommands,
@@ -80,7 +81,11 @@ export function createApplicationRuntime({
         })
       },
     },
-    extensions: [flowchartExtension, scientificPlotExtension],
+    extensions: [
+      flowchartExtension,
+      freehandExtension,
+      scientificPlotExtension,
+    ],
   })
 
   const canvases = createCanvasWorkflow(documents, workspace)

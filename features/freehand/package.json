@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "@hybrid-canvas/freehand",
   "version": "0.1.0",
   "private": true,
@@ -18,13 +18,18 @@
   },
   "devDependencies": {
     "@hybrid-canvas/foundations-test-kit": "workspace:*",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
   "dependencies": {
-    "valibot": "catalog:",
-    "@hybrid-canvas/foundations-kernel": "workspace:*",
+    "@hybrid-canvas/canvas": "workspace:*",
     "@hybrid-canvas/foundations-geometry": "workspace:*",
-    "@hybrid-canvas/canvas": "workspace:*"
+    "@hybrid-canvas/foundations-kernel": "workspace:*",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "tldraw": "catalog:",
+    "valibot": "catalog:"
   }
 }
