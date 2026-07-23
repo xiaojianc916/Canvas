@@ -31,7 +31,7 @@ const EMPTY_SUBSCRIBE = () => () => {}
 const EMPTY_EDITOR_SNAPSHOT = () => EMPTY_EDITOR_SESSION_SNAPSHOT
 
 export interface WorkspaceCanvasUIPort {
-  readonly create: (title: string) => void
+  readonly create: (title: string) => Promise<void>
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
   readonly closeCanvas: (
@@ -186,7 +186,15 @@ export function WorkspaceContainer({
           .filter((tab) => tab.kind === 'canvas')
           .map((tab) => tab.title)
 
-        port.canvases.create(createUntitledCanvasTitle(existingTitles))
+        void port.canvases
+          .create(createUntitledCanvasTitle(existingTitles))
+          .catch((cause: unknown) => {
+            reportError('canvas create failed', {
+              scope: 'workspace',
+              operation: 'create-canvas',
+              cause,
+            })
+          })
       },
 
       openCanvas() {

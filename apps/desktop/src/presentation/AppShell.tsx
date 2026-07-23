@@ -70,9 +70,9 @@ export function AppShell({ runtime }: AppShellProps) {
   const openSettings = useCallback(() => setSettingsOpen(true), [])
 
   const createCanvasWithFeedback = useCallback(
-    (title: string) => {
+    async (title: string): Promise<void> => {
       try {
-        runtime.canvases.create(title)
+        await runtime.canvases.create(title)
         setFailedCanvasTitle(null)
       } catch (cause) {
         reportDiagnosticError('canvas create failed', {
@@ -349,7 +349,7 @@ function useMainWindowCloseRequest(
 function useApplicationCommands(
   runtime: AppShellRuntime,
   toggleCommandPalette: () => void,
-  createCanvas: (title: string) => void,
+  createCanvas: (title: string) => Promise<void>,
 ): void {
   useEffect(() => {
     const unregister = [
@@ -367,7 +367,7 @@ function useApplicationCommands(
         category: '文件',
         shortcut: 'Ctrl+N',
         execute() {
-          createCanvas('未命名画布')
+          void createCanvas('未命名画布')
         },
       }),
 

@@ -4,9 +4,6 @@ export { createDesktopAssetStore } from './adapters/asset/asset-store'
 
 export { createClipboard } from './adapters/clipboard/clipboard'
 
-export type { FileDialog } from './adapters/dialog/file-dialog'
-export { createFileDialog } from './adapters/dialog/file-dialog'
-
 export type {
   DocumentFileCommands,
   DocumentId,

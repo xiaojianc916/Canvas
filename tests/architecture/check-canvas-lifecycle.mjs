@@ -3,98 +3,72 @@
 import { readFile } from 'node:fs/promises'
 import process from 'node:process'
 
-const files = {
-  documentService:
-    'editor/document/src/application/canvas-document-service.ts',
-  workflow:
-    'apps/desktop/src/application/canvas/canvas-workflow.ts',
-  workspace:
-    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
-  documentPublicApi: 'editor/document/src/public-api.ts',
-}
+const files = [
+  'platforms/desktop-runtime/src/public-api.ts',
+  'platforms/desktop-runtime/src/adapters/file/file-system.ts',
+  'apps/desktop/src/application/canvas/canvas-workflow.ts',
+  'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+  'editor/document/src/application/canvas-document-service.ts',
+  'apps/desktop/src-tauri/src/ipc/mod.rs',
+]
 
-const [
-  documentService,
-  workflow,
-  workspace,
-  documentPublicApi,
-] = await Promise.all(
-  Object.values(files).map((path) => readFile(path, 'utf8')),
+const forbidden = [
+  'createDrawFileCommands',
+  'DrawFileCommands',
+  'createFileDialog',
+  'FileDialog',
+  'file_open',
+  'file_save',
+  'requestClose',
+  'discardAndClose',
+  'discardAllAndClose',
+  'CanvasCloseDecision',
+  'CanvasCloseRequestResult',
+  'pendingCloseSessionId',
+  'void documents.releaseCanvas',
+]
+
+const sources = await Promise.all(
+  files.map(async (path) => ({
+    path,
+    source: await readFile(path, 'utf8'),
+  })),
 )
 
 const violations = []
 
-const removedSymbols = [
-  'CanvasCloseDecision',
-  'CanvasCloseRequestResult',
-  'requestClose',
-  'discardAndClose',
-  'discardAllAndClose',
-  'pendingCloseSessionId',
-]
-
-for (const symbol of removedSymbols) {
-  for (const [name, source] of Object.entries({
-    documentService,
-    workflow,
-    workspace,
-    documentPublicApi,
-  })) {
-    if (source.includes(symbol)) {
-      violations.push(
-        name + ': obsolete canvas-close API remains: ' + symbol,
-      )
+for (const { path, source } of sources) {
+  for (const token of forbidden) {
+    if (source.includes(token)) {
+      violations.push(path + ': forbidden legacy token ' + token)
     }
   }
 }
 
-if (!documentService.includes('CanvasCloseIntent')) {
-  violations.push('documentService: CanvasCloseIntent is required')
+const workflow = sources.find(
+  ({ path }) =>
+    path === 'apps/desktop/src/application/canvas/canvas-workflow.ts',
+)?.source
+
+if (!workflow?.includes('CanvasCloseSnapshot')) {
+  violations.push('Canvas lifecycle coordinator snapshot is missing')
 }
 
-if (!documentService.includes('releaseCanvas')) {
-  violations.push('documentService: releaseCanvas is required')
+if (!workflow?.includes('closeCanvas')) {
+  violations.push('Canvas lifecycle coordinator entry point is missing')
 }
 
-if (!workflow.includes('CanvasCloseSnapshot')) {
-  violations.push('workflow: CanvasCloseSnapshot is required')
-}
-
-if (!workflow.includes('closeCanvas')) {
-  violations.push('workflow: closeCanvas is required')
-}
-
-if (!workflow.includes("readonly intent: CanvasCloseIntent")) {
-  violations.push(
-    'workflow: release state must retain the original CanvasCloseIntent',
-  )
-}
-
-if (!workflow.includes('workspace.closeCanvas(sessionId)')) {
-  violations.push(
-    'workflow: workspace tab removal must be owned by the close transaction',
-  )
-}
-
-if (!workspace.includes('getCloseSnapshot')) {
-  violations.push(
-    'workspace: UI must render close state from CanvasLifecycleCoordinator',
-  )
-}
-
-if (workspace.includes('useState<CanvasSessionId')) {
-  violations.push(
-    'workspace: component-local canvas close state is forbidden',
-  )
+if (!workflow?.includes('await documents.releaseCanvas')) {
+  violations.push('Canvas lifecycle rollback must await native release')
 }
 
 if (violations.length > 0) {
   console.error(
-    'Canvas lifecycle architecture check failed:\n' +
+    'Canvas legacy protocol removal check failed:\n' +
       violations.map((item) => '- ' + item).join('\n'),
   )
 
   process.exitCode = 1
 } else {
-  console.log('Canvas lifecycle architecture check passed.')
+  console.log('Canvas legacy protocol removal check passed.')
 }

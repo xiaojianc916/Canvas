@@ -27,7 +27,7 @@ export type CanvasCloseSnapshot =
     }
 
 export interface CanvasWorkflow {
-  readonly create: (title: string) => void
+  readonly create: (title: string) => Promise<void>
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
 
@@ -80,14 +80,25 @@ export function createCanvasWorkflow(
     emit()
   }
 
-  function create(title: string): void {
+  async function create(title: string): Promise<void> {
     const opened = documents.create(title)
 
     try {
       workspace.createCanvas(opened)
-    } catch (error) {
-      void documents.releaseCanvas(opened.sessionId, 'discard')
-      throw error
+    } catch (workspaceError) {
+      const release = await documents.releaseCanvas(
+        opened.sessionId,
+        'discard',
+      )
+
+      if (
+        release.kind !== 'released' &&
+        release.kind !== 'not-found'
+      ) {
+        throw new Error('CANVAS_CREATION_ROLLBACK_FAILED')
+      }
+
+      throw workspaceError
     }
   }
 
@@ -100,9 +111,20 @@ export function createCanvasWorkflow(
 
     try {
       workspace.createCanvas(opened)
-    } catch (error) {
-      await documents.releaseCanvas(opened.sessionId, 'discard')
-      throw error
+    } catch (workspaceError) {
+      const release = await documents.releaseCanvas(
+        opened.sessionId,
+        'discard',
+      )
+
+      if (
+        release.kind !== 'released' &&
+        release.kind !== 'not-found'
+      ) {
+        throw new Error('CANVAS_OPEN_ROLLBACK_FAILED')
+      }
+
+      throw workspaceError
     }
   }
 
