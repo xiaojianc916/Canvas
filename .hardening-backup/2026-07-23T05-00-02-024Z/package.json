@@ -42,7 +42,7 @@
     "test:architecture": "node tests/architecture/check.mjs && node tests/architecture/check-import-graph.mjs && node tests/architecture/check-termination-ux.mjs && node tests/architecture/check-ui-architecture.mjs && node tests/architecture/check-window-surface.mjs && node tests/architecture/check-window-dragging.mjs && node tests/architecture/check-rust-async-boundaries.mjs && node tests/architecture/check-rust-logging.mjs",
     "analyze:bundle": "node tests/performance/report-bundle.mjs",
     "analyze:bundle:check": "node tests/performance/check-bundle-budget.mjs",
-    "verify:release": "pnpm format:check && pnpm lint && pnpm test:architecture && pnpm typecheck && pnpm test && pnpm build:desktop && pnpm analyze:bundle:check && pnpm clippy && pnpm audit --audit-level high && pnpm audit:rust"
+    "verify:release": "pnpm format:check && pnpm lint && pnpm test:architecture && pnpm typecheck && pnpm test && pnpm build:desktop && pnpm analyze:bundle:check && pnpm clippy"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.4",

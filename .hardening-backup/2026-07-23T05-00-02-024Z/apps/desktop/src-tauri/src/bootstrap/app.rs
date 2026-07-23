@@ -23,13 +23,18 @@ pub fn build() -> tauri::Builder<Wry> {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::window::window_create,
             commands::window::window_get,
             commands::window::window_list,
             commands::window::window_show,
             commands::window::window_focus,
             commands::window::window_close,
+            commands::window::window_destroy,
+            commands::window::window_open_devtools,
             commands::window::window_set_title,
             commands::window::window_save_state,
+            commands::opener::opener_show_in_folder,
+            commands::opener::opener_open_external,
             commands::file::file_open,
             commands::file::file_save,
             commands::file::file_save_as,

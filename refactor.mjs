@@ -1,414 +1,315 @@
 #!/usr/bin/env node
+/**
+ * scripts/harden-tauri-release.mjs
+ *
+ * 用法：
+ *   node scripts/harden-tauri-release.mjs
+ *
+ * 作用：
+ * - 禁用发布版本的 Tauri DevTools feature
+ * - 从 IPC 注册表移除通用窗口创建/销毁/DevTools/系统 opener 命令
+ * - 让原 opener command 即使被意外重新注册，也默认拒绝执行
+ * - 将 pnpm audit 与 cargo deny 纳入 release script 与 GitHub Actions
+ * - 为 Windows 原子覆盖写入插入“禁止不安全覆盖”的保护门
+ *
+ * 注意：
+ * Windows 安全覆盖写入需要后续用 ReplaceFileW / 平台专用实现完成。
+ * 本脚本的策略是宁可让覆盖保存失败，也不允许旧文件先被移走导致丢失。
+ */
 
-import {
-  access,
-  copyFile,
-  mkdir,
-  readFile,
-  writeFile,
-} from 'node:fs/promises'
-import path from 'node:path'
+import { readFile, writeFile, mkdir, rename, copyFile, stat } from 'node:fs/promises'
+import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
 
-const ROOT_DIR = path.dirname(
-  fileURLToPath(import.meta.url),
-)
+const root = resolve(process.cwd())
+const timestamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')
+const backupRoot = join(root, '.hardening-backup', timestamp)
 
-const DRY_RUN =
-  process.argv.includes('--dry-run')
+const files = {
+  rootPackage: 'package.json',
+  workflow: '.github/workflows/quality.yml',
+  workspaceCargo: 'Cargo.toml',
+  tauriApp: 'apps/desktop/src-tauri/src/bootstrap/app.rs',
+  opener: 'apps/desktop/src-tauri/src/commands/opener.rs',
+  atomicWrite: 'editor/persistence/native/src/atomic_write.rs',
+}
 
-const FRAME_INSPECTOR_PATH = path.join(
-  ROOT_DIR,
-  'apps/desktop/src/presentation/workspace/inspector/tools/FrameToolInspector.tsx',
-)
+async function assertFile(relativePath) {
+  const absolutePath = join(root, relativePath)
 
-const PACKAGE_JSON_PATH = path.join(
-  ROOT_DIR,
-  'package.json',
-)
+  try {
+    await stat(absolutePath)
+  } catch {
+    throw new Error(`找不到预期文件：${relativePath}`)
+  }
 
-const FRAME_INSPECTOR_SOURCE = `import {
-  createShapeId,
-  DefaultColorStyle,
-  useValue,
-} from 'tldraw'
-import {
-  InspectorHint,
-  ShapeInspectorSection,
-  ToolColorSection,
-  ToolPanelHeader,
-} from '../common/InspectorPrimitives'
-import type { ToolInspectorProps } from './types'
+  return absolutePath
+}
 
-const FRAME_PRESETS = [
-  {
-    id: 'presentation',
-    label: '演示',
-    description: '16:9',
-    width: 1920,
-    height: 1080,
-  },
-  {
-    id: 'desktop',
-    label: '桌面',
-    description: '1440 × 900',
-    width: 1440,
-    height: 900,
-  },
-  {
-    id: 'mobile',
-    label: '移动',
-    description: '390 × 844',
-    width: 390,
-    height: 844,
-  },
-  {
-    id: 'a4-landscape',
-    label: 'A4 横向',
-    description: '1123 × 794',
-    width: 1123,
-    height: 794,
-  },
-] as const
+async function load(relativePath) {
+  return readFile(await assertFile(relativePath), 'utf8')
+}
 
-export function FrameToolInspector({
-  editor,
-}: ToolInspectorProps) {
-  const currentColor = useValue(
-    'inspector next frame color',
-    () =>
-      editor.getStyleForNextShape(
-        DefaultColorStyle,
-      ),
-    [editor],
-  )
+async function save(relativePath, content) {
+  const sourcePath = await assertFile(relativePath)
+  const backupPath = join(backupRoot, relativePath)
 
-  const createPresetFrame = (
-    preset:
-      (typeof FRAME_PRESETS)[number],
-  ) => {
-    const id = createShapeId()
-    const viewport =
-      editor.getViewportPageBounds()
+  await mkdir(dirname(backupPath), { recursive: true })
+  await copyFile(sourcePath, backupPath)
 
-    const x =
-      viewport.center.x -
-      preset.width / 2
+  const temporaryPath = `${sourcePath}.hardening-${process.pid}.tmp`
+  await writeFile(temporaryPath, content, 'utf8')
+  await rename(temporaryPath, sourcePath)
 
-    const y =
-      viewport.center.y -
-      preset.height / 2
+  console.log(`已修改：${relative(root, sourcePath)}`)
+}
 
-    editor.markHistoryStoppingPoint(
-      'create frame from preset',
+function replaceExactly(content, oldText, newText, description) {
+  const count = content.split(oldText).length - 1
+
+  if (count !== 1) {
+    throw new Error(
+      `${description}：预期匹配 1 次，实际匹配 ${count} 次。仓库版本可能已变化，请人工合并。`,
     )
-
-    editor.createShape({
-      id,
-      type: 'frame',
-      x,
-      y,
-      props: {
-        w: preset.width,
-        h: preset.height,
-        name: preset.label,
-        color: currentColor,
-      },
-    } as never)
-
-    editor.select(id)
-    editor.setCurrentTool('select')
   }
 
-  return (
-    <ToolPanelHeader
-      description="拖动创建自定义画框，或使用预设快速创建标准尺寸。"
-      title="画框"
-    >
-      <ShapeInspectorSection
-        description="点击预设后，会在当前视口中心创建并选中画框。"
-        title="快速创建"
-      >
-        <div className="grid grid-cols-2 gap-2">
-          {FRAME_PRESETS.map((preset) => (
-            <button
-              className="group min-h-20 rounded-md border border-divider bg-background p-2 text-left transition-colors hover:border-primary/50 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              key={preset.id}
-              onClick={() => {
-                createPresetFrame(preset)
-              }}
-              type="button"
-            >
-              <FramePresetPreview
-                height={preset.height}
-                width={preset.width}
-              />
-
-              <span className="mt-2 block text-[11px] font-medium">
-                {preset.label}
-              </span>
-
-              <span className="mt-0.5 block font-mono text-[9px] tabular-nums text-muted-foreground">
-                {preset.description}
-              </span>
-            </button>
-          ))}
-        </div>
-      </ShapeInspectorSection>
-
-      <ToolColorSection editor={editor} />
-
-      <ShapeInspectorSection title="自定义尺寸">
-        <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
-          在画布中拖动以创建任意尺寸的画框。
-          创建后可在底部状态栏双击 W 或 H 输入精确尺寸。
-        </div>
-      </ShapeInspectorSection>
-
-      <InspectorHint>
-        预设创建是一次完整的文档操作，可以通过撤销命令恢复。
-        画框名称、位置和尺寸创建后仍可继续编辑。
-      </InspectorHint>
-    </ToolPanelHeader>
-  )
+  return content.replace(oldText, newText)
 }
 
-function FramePresetPreview({
-  width,
-  height,
-}: {
-  readonly width: number
-  readonly height: number
-}) {
-  const maximumWidth = 72
-  const maximumHeight = 34
-  const ratio = width / height
-
-  let previewWidth = maximumWidth
-  let previewHeight =
-    previewWidth / ratio
-
-  if (previewHeight > maximumHeight) {
-    previewHeight = maximumHeight
-    previewWidth =
-      previewHeight * ratio
+function appendUnique(content, marker, text, description) {
+  if (content.includes(marker)) {
+    console.log(`跳过：${description} 已存在`)
+    return content
   }
 
-  return (
-    <div className="flex h-9 items-center justify-center rounded bg-canvas/70">
-      <span
-        aria-hidden="true"
-        className="block rounded-sm border border-current text-muted-foreground/50 transition-colors group-hover:text-primary/70"
-        style={{
-          width: previewWidth,
-          height: previewHeight,
-        }}
-      />
-    </div>
-  )
+  return `${content.trimEnd()}\n${text}\n`
 }
-`
 
-async function main() {
-  console.log('')
-  console.log(
-    'Hybrid Canvas — Implement Frame Presets',
-  )
-  console.log(`Repository: ${ROOT_DIR}`)
-  console.log(
-    `Mode: ${DRY_RUN ? 'dry-run' : 'write'}`,
-  )
-  console.log('')
+async function hardenRootPackage() {
+  const path = files.rootPackage
+  const packageJson = JSON.parse(await load(path))
 
-  await validateRepository()
-
-  if (DRY_RUN) {
-    console.log('✓ Existing Frame inspector detected')
-    console.log('✓ Legacy no-op presets detected')
-    console.log('✓ Functional preset implementation ready')
-    console.log('✓ No files were changed')
-    console.log('')
-    return
+  const releaseCommand = packageJson.scripts?.['verify:release']
+  if (!releaseCommand) {
+    throw new Error('package.json 缺少 scripts.verify:release')
   }
 
-  const backupDirectory =
-    await createBackupDirectory()
+  const requiredChecks = ['pnpm audit --audit-level high', 'pnpm audit:rust']
+  const missingChecks = requiredChecks.filter((check) => !releaseCommand.includes(check))
 
-  await backupFile(
-    FRAME_INSPECTOR_PATH,
-    path.join(
-      backupDirectory,
-      'FrameToolInspector.tsx',
-    ),
-  )
+  if (missingChecks.length > 0) {
+    packageJson.scripts['verify:release'] = `${releaseCommand} && ${missingChecks.join(' && ')}`
+  }
 
-  await writeUtf8(
-    FRAME_INSPECTOR_PATH,
-    FRAME_INSPECTOR_SOURCE,
-  )
-
-  console.log('')
-  console.log(
-    `Backup: ${relative(backupDirectory)}`,
-  )
-  console.log('')
-  console.log('Frame preset implementation complete:')
-  console.log('  ✓ Presentation preset implemented')
-  console.log('  ✓ Desktop preset implemented')
-  console.log('  ✓ Mobile preset implemented')
-  console.log('  ✓ A4 landscape preset implemented')
-  console.log('  ✓ Frames created at viewport center')
-  console.log('  ✓ Current frame color preserved')
-  console.log('  ✓ Created frame selected automatically')
-  console.log('  ✓ History support added')
-  console.log('  ✓ Legacy no-op controls removed')
-  console.log('')
-  console.log('Run validation:')
-  console.log(
-    '  pnpm exec biome check --write apps/desktop/src/presentation/workspace/inspector/tools/FrameToolInspector.tsx',
-  )
-  console.log('  pnpm typecheck')
-  console.log('  pnpm test')
-  console.log('')
+  await save(path, `${JSON.stringify(packageJson, null, 2)}\n`)
 }
 
-async function validateRepository() {
-  await assertFile(PACKAGE_JSON_PATH)
-  await assertFile(FRAME_INSPECTOR_PATH)
+async function hardenCargoWorkspace() {
+  const path = files.workspaceCargo
+  let content = await load(path)
 
-  const source =
-    await readUtf8(
-      FRAME_INSPECTOR_PATH,
-    )
+  content = replaceExactly(
+    content,
+    'tauri = { version = "2.5.1", features = ["devtools"] }',
+    'tauri = { version = "2.5.1", features = [] }',
+    '移除 Tauri devtools feature',
+  )
 
-  const requiredMarkers = [
-    'export function FrameToolInspector',
-    '画框尺寸预设',
-    '后续接入画框尺寸预设',
-    '后续接入 frame clipping',
+  await save(path, content)
+}
+
+async function hardenCommandRegistration() {
+  const path = files.tauriApp
+  let content = await load(path)
+
+  const commandsToRemove = [
+    '            commands::window::window_create,\n',
+    '            commands::window::window_destroy,\n',
+    '            commands::window::window_open_devtools,\n',
+    '            commands::opener::opener_show_in_folder,\n',
+    '            commands::opener::opener_open_external,\n',
   ]
 
-  for (
-    const marker of requiredMarkers
-  ) {
-    if (!source.includes(marker)) {
-      throw new Error(
-        'Expected legacy Frame inspector marker not found: ' +
-          marker +
-          '\\nThe Frame inspector may already have been changed.',
-      )
+  for (const command of commandsToRemove) {
+    if (content.includes(command)) {
+      content = content.replace(command, '')
     }
   }
 
-  if (
-    source.includes(
-      'createPresetFrame',
-    )
-  ) {
+  const marker = '.invoke_handler(tauri::generate_handler!['
+  if (!content.includes(marker)) {
+    throw new Error('未找到 Tauri invoke_handler 注册表')
+  }
+
+  await save(path, content)
+}
+
+async function disableUnsafeOpenerCommands() {
+  const path = files.opener
+
+  const replacement = `use crate::error::Result;
+use serde::Deserialize;
+use specta::Type;
+use tauri::command;
+
+#[derive(Debug, Deserialize, Type)]
+pub struct ShowInFolderOptions {
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize, Type)]
+pub struct OpenExternalOptions {
+    pub url: String,
+}
+
+/// 此 command 不应在生产版本注册。
+///
+/// 原实现把 renderer 可控字符串传入 \`cmd /C start\`、\`open\` 或
+/// \`xdg-open\`，其中 Windows 的 cmd.exe 会重新解释元字符，形成命令注入面。
+///
+/// 若未来需要恢复此能力：
+/// 1. 不得通过 shell / command interpreter 启动；
+/// 2. 使用官方 tauri-plugin-opener 的受限 API；
+/// 3. 用结构化 URL parser 做精确 scheme allowlist；
+/// 4. 将 command 限制到特定 capability/window。
+#[command]
+pub async fn opener_show_in_folder(_options: ShowInFolderOptions) -> Result<()> {
+    Err(crate::Error::PermissionDenied(
+        "opening arbitrary filesystem paths is disabled in this build".into(),
+    ))
+}
+
+#[command]
+pub async fn opener_open_external(_options: OpenExternalOptions) -> Result<()> {
+    Err(crate::Error::PermissionDenied(
+        "opening external URLs is disabled in this build".into(),
+    ))
+}
+`
+
+  await save(path, replacement)
+}
+
+async function hardenWindowsAtomicWrite() {
+  const path = files.atomicWrite
+  let content = await load(path)
+
+  const oldImplementation = `#[cfg(windows)]
+fn replace_file(source: &Path, destination: &Path) -> Result<()> {
+    let backup = backup_path(destination);
+    if destination.exists() {
+        std::fs::rename(destination, &backup)?;
+    }
+    match std::fs::rename(source, destination) {
+        Ok(()) => {
+            let _ = std::fs::remove_file(backup);
+            Ok(())
+        }
+        Err(error) => {
+            let _ = std::fs::rename(backup, destination);
+            Err(error.into())
+        }
+    }
+}
+
+#[cfg(windows)]
+fn backup_path(destination: &Path) -> PathBuf {
+    let name = destination
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("canvas.draw");
+    destination.with_file_name(format!(".{name}.backup"))
+}
+`
+
+  const safeTemporaryImplementation = `#[cfg(windows)]
+fn replace_file(source: &Path, destination: &Path) -> Result<()> {
+    // 禁止旧实现：
+    //   destination -> 固定 backup -> source -> destination
+    //
+    // 该流程在两次 rename 之间可能让正式文件消失；固定 backup 名还会造成
+    // 多窗口/多进程冲突。std::fs 当前没有提供 Windows 的安全覆盖替换 API。
+    //
+    // 在接入 ReplaceFileW / MoveFileExW（带 WRITE_THROUGH）或经过验证的跨平台
+    // 原子写库之前，宁可拒绝覆盖已有文件，也不能以数据损坏为代价“看似保存成功”。
+    if destination.exists() {
+        return Err(Error::Persistence(
+            "refusing unsafe Windows overwrite: atomic replacement backend is not configured"
+                .into(),
+        ));
+    }
+
+    std::fs::rename(source, destination)?;
+    Ok(())
+}
+`
+
+  if (!content.includes(oldImplementation)) {
     throw new Error(
-      'Functional Frame presets appear to be already installed.',
+      '未找到预期的 Windows replace_file 实现；请不要自动改写 atomic_write.rs。',
     )
   }
+
+  content = content.replace(oldImplementation, safeTemporaryImplementation)
+  content = content.replace('use std::path::{Path, PathBuf};', 'use std::path::Path;')
+
+  await save(path, content)
 }
 
-async function assertFile(filePath) {
-  try {
-    await access(filePath)
-  } catch {
-    throw new Error(
-      `Missing required file: ${relative(filePath)}`,
-    )
-  }
+async function hardenWorkflow() {
+  const path = files.workflow
+  let content = await load(path)
+
+  const jsAuditStep = `
+      - name: JavaScript dependency audit
+        run: pnpm audit --audit-level high
+`
+
+  const releaseSecurityNote = `
+# Security policy:
+# - JavaScript audit runs in CI and release verification.
+# - Rust advisories, licenses, bans and sources run via cargo-deny.
+# - Pin third-party GitHub Actions to immutable commit SHAs before protected-branch release.
+`
+
+  content = appendUnique(
+    content,
+    '- name: JavaScript dependency audit',
+    jsAuditStep,
+    'JavaScript dependency audit',
+  )
+
+  content = appendUnique(
+    content,
+    '# Security policy:',
+    releaseSecurityNote,
+    '安全策略说明',
+  )
+
+  await save(path, content)
 }
 
-async function createBackupDirectory() {
-  const timestamp = new Date()
-    .toISOString()
-    .replaceAll(':', '-')
-    .replaceAll('.', '-')
+async function main() {
+  console.log(`仓库根目录：${root}`)
+  console.log(`原始文件备份目录：${backupRoot}`)
 
-  const backupDirectory = path.join(
-    ROOT_DIR,
-    '.refactor-backup',
-    `frame-presets-${timestamp}`,
-  )
+  await hardenRootPackage()
+  await hardenCargoWorkspace()
+  await hardenCommandRegistration()
+  await disableUnsafeOpenerCommands()
+  await hardenWindowsAtomicWrite()
+  await hardenWorkflow()
 
-  await mkdir(
-    backupDirectory,
-    {
-      recursive: true,
-    },
-  )
-
-  return backupDirectory
-}
-
-async function backupFile(
-  sourcePath,
-  destinationPath,
-) {
-  await mkdir(
-    path.dirname(destinationPath),
-    {
-      recursive: true,
-    },
-  )
-
-  await copyFile(
-    sourcePath,
-    destinationPath,
-  )
-}
-
-async function readUtf8(filePath) {
-  return readFile(filePath, 'utf8')
-}
-
-async function writeUtf8(
-  filePath,
-  source,
-) {
-  await mkdir(
-    path.dirname(filePath),
-    {
-      recursive: true,
-    },
-  )
-
-  await writeFile(
-    filePath,
-    source
-      .replaceAll('\r\n', '\n')
-      .replace(/^\uFEFF/, '')
-      .trimEnd() + '\n',
-    'utf8',
-  )
-
-  console.log(
-    `Updated: ${relative(filePath)}`,
-  )
-}
-
-function relative(filePath) {
-  return (
-    path.relative(
-      ROOT_DIR,
-      filePath,
-    ) || '.'
-  )
+  console.log('\n已完成机械化安全加固。接下来必须运行：')
+  console.log('  pnpm install --frozen-lockfile')
+  console.log('  pnpm verify:release')
+  console.log('  cargo test --workspace --all-features')
+  console.log('  cargo clippy --workspace --all-targets --all-features -- -D warnings')
+  console.log('\nWindows 原子覆盖保存目前会安全拒绝已有文件覆盖。')
+  console.log('在实现 ReplaceFileW / MoveFileExW 的平台后端并补足崩溃测试前，不应发布 Windows 覆盖保存功能。')
 }
 
 main().catch((error) => {
-  console.error('')
-  console.error(
-    'Frame preset implementation failed.',
-  )
-  console.error(
-    error instanceof Error
-      ? error.message
-      : error,
-  )
-  console.error('')
+  console.error(`\n加固脚本失败：${error instanceof Error ? error.message : String(error)}`)
   process.exitCode = 1
 })

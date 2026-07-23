@@ -8,64 +8,31 @@ pub struct ShowInFolderOptions {
     pub path: String,
 }
 
-#[command]
-pub async fn opener_show_in_folder(
-    _app: tauri::AppHandle,
-    options: ShowInFolderOptions,
-) -> Result<()> {
-    // Delegates to desktop-runtime/native when implemented.
-    // For now let the OS handle it via the opener plugin.
-    let path = std::path::Path::new(&options.path);
-    if let Some(_parent) = path.parent() {
-        #[cfg(target_os = "windows")]
-        std::process::Command::new("explorer")
-            .args(["/select,", &options.path])
-            .spawn()?;
-        #[cfg(target_os = "macos")]
-        std::process::Command::new("open")
-            .args(["-R", &options.path])
-            .spawn()?;
-        #[cfg(target_os = "linux")]
-        std::process::Command::new("xdg-open")
-            .arg(_parent)
-            .spawn()?;
-    }
-    Ok(())
-}
-
 #[derive(Debug, Deserialize, Type)]
 pub struct OpenExternalOptions {
     pub url: String,
 }
 
+/// 此 command 不应在生产版本注册。
+///
+/// 原实现把 renderer 可控字符串传入 `cmd /C start`、`open` 或
+/// `xdg-open`，其中 Windows 的 cmd.exe 会重新解释元字符，形成命令注入面。
+///
+/// 若未来需要恢复此能力：
+/// 1. 不得通过 shell / command interpreter 启动；
+/// 2. 使用官方 tauri-plugin-opener 的受限 API；
+/// 3. 用结构化 URL parser 做精确 scheme allowlist；
+/// 4. 将 command 限制到特定 capability/window。
 #[command]
-pub async fn opener_open_external(
-    _app: tauri::AppHandle,
-    options: OpenExternalOptions,
-) -> Result<()> {
-    // Simple scheme check — full URL parsing added when desktop-runtime/native implements this.
-    let lower = options.url.to_lowercase();
-    if !(lower.starts_with("https://")
-        || lower.starts_with("http://")
-        || lower.starts_with("mailto:")
-        || lower.starts_with("tel:"))
-    {
-        return Err(crate::Error::Validation(format!(
-            "Unsupported or missing URL scheme: {}",
-            options.url
-        )));
-    }
-    #[cfg(target_os = "windows")]
-    std::process::Command::new("cmd")
-        .args(["/C", "start", "", &options.url])
-        .spawn()?;
-    #[cfg(target_os = "macos")]
-    std::process::Command::new("open")
-        .args([&options.url])
-        .spawn()?;
-    #[cfg(target_os = "linux")]
-    std::process::Command::new("xdg-open")
-        .args([&options.url])
-        .spawn()?;
-    Ok(())
+pub async fn opener_show_in_folder(_options: ShowInFolderOptions) -> Result<()> {
+    Err(crate::Error::PermissionDenied(
+        "opening arbitrary filesystem paths is disabled in this build".into(),
+    ))
+}
+
+#[command]
+pub async fn opener_open_external(_options: OpenExternalOptions) -> Result<()> {
+    Err(crate::Error::PermissionDenied(
+        "opening external URLs is disabled in this build".into(),
+    ))
 }
