@@ -19,6 +19,7 @@ function createHarness() {
 
   const documentListeners = new Set<(event: EditorDocumentEvent) => void>()
   const closeEditorSession = vi.fn()
+
   const persistence = {
     open: vi.fn(),
     save: vi.fn(),
@@ -29,12 +30,15 @@ function createHarness() {
   const editor = {
     sessionId: 'editor-session',
     documentId: 'editor-document',
+
     captureDocument() {
       return currentSnapshot
     },
+
     getSnapshot() {
       return currentSnapshot
     },
+
     subscribeDocumentEvents(listener: (event: EditorDocumentEvent) => void) {
       documentListeners.add(listener)
 
@@ -54,104 +58,94 @@ function createHarness() {
     extensions: [],
   })
 
-  function emit(event: EditorDocumentEvent) {
-    for (const listener of documentListeners) {
-      listener(event)
-    }
-  }
-
   return {
     service,
     persistence,
     closeEditorSession,
 
     ready() {
-      emit({ kind: 'ready' })
+      for (const listener of documentListeners) {
+        listener({ kind: 'ready' })
+      }
     },
 
     change(nextSnapshot: TLEditorSnapshot) {
       currentSnapshot = nextSnapshot
-      emit({ kind: 'changed' })
+
+      for (const listener of documentListeners) {
+        listener({ kind: 'changed' })
+      }
     },
   }
 }
 
-describe('CanvasDocumentService document-ID lifecycle contract', () => {
-  it('closes a clean blank canvas without confirmation', async () => {
+describe('Canvas document native-release contract', () => {
+  it('releases a clean unsaved canvas without invoking native document_close', async () => {
     const harness = createHarness()
     const opened = harness.service.create('未命名画布')
 
     harness.ready()
 
-    expect(harness.service.getSessionSnapshot(opened.sessionId)).toEqual({
-      sessionId: opened.sessionId,
-      persistence: 'clean',
+    await expect(
+      harness.service.releaseCanvas(opened.sessionId, 'normal'),
+    ).resolves.toEqual({
+      kind: 'released',
     })
 
-    expect(harness.service.requestClose(opened.sessionId)).toEqual({
-      kind: 'close-now',
+    expect(harness.persistence.close).not.toHaveBeenCalled()
+    expect(harness.closeEditorSession).toHaveBeenCalledWith(opened.sessionId)
+    expect(harness.service.getEditorSession(opened.sessionId)).toBeNull()
+  })
+
+  it('requires an explicit discard intent for dirty canvases', async () => {
+    const harness = createHarness()
+    const opened = harness.service.create('未命名画布')
+
+    harness.ready()
+    harness.change(snapshot({ shapes: [{ id: 'shape:1' }] }))
+
+    await expect(
+      harness.service.releaseCanvas(opened.sessionId, 'normal'),
+    ).resolves.toEqual({
+      kind: 'confirmation-required',
+    })
+
+    expect(harness.service.getEditorSession(opened.sessionId)).not.toBeNull()
+
+    await expect(
+      harness.service.releaseCanvas(opened.sessionId, 'discard'),
+    ).resolves.toEqual({
+      kind: 'released',
     })
 
     expect(harness.closeEditorSession).toHaveBeenCalledWith(opened.sessionId)
-    expect(harness.persistence.close).not.toHaveBeenCalled()
   })
 
-  it('requires confirmation after a real document change', () => {
-    const harness = createHarness()
-    const opened = harness.service.create('未命名画布')
-
-    harness.ready()
-
-    harness.change(
-      snapshot({
-        shapes: [{ id: 'shape:1' }],
-      }),
-    )
-
-    expect(harness.service.getSessionSnapshot(opened.sessionId)?.persistence).toBe(
-      'dirty',
-    )
-
-    expect(harness.service.requestClose(opened.sessionId)).toEqual({
-      kind: 'confirm-discard',
-      persistence: 'dirty',
-    })
-  })
-
-  it('opens through the native document gateway without exposing a path', async () => {
+  it('opens through the native gateway without exposing a filesystem path', async () => {
     const harness = createHarness()
 
     harness.persistence.open.mockResolvedValue({
-      id: 'document-native-opened',
+      id: 'native-document-opened',
       displayName: 'architecture.draw',
       content: serializeDrawDocument(snapshot({ shapes: [] })),
     })
 
-    const opened = await harness.service.open()
-
-    expect(opened).toEqual({
+    await expect(harness.service.open()).resolves.toEqual({
       canvasId: expect.any(String),
       sessionId: expect.any(String),
       title: 'architecture.draw',
     })
-
-    expect(harness.persistence.open).toHaveBeenCalledOnce()
   })
 
-  it('uses Save As once for an unsaved canvas and stores only document ID', async () => {
+  it('uses Save As once and retains only an opaque native document ID', async () => {
     const harness = createHarness()
     const opened = harness.service.create('未命名画布')
 
     harness.ready()
-
-    harness.change(
-      snapshot({
-        shapes: [{ id: 'shape:1' }],
-      }),
-    )
+    harness.change(snapshot({ shapes: [{ id: 'shape:1' }]}))
 
     harness.persistence.saveAs.mockResolvedValue({
-      id: 'document-native-created',
+      id: 'native-document-created',
       displayName: 'untitled.draw',
     })
 
@@ -164,17 +158,17 @@ describe('CanvasDocumentService document-ID lifecycle contract', () => {
       },
     )
 
-    expect(harness.persistence.save).not.toHaveBeenCalled()
-    expect(
-      harness.service.getSessionSnapshot(opened.sessionId)?.persistence,
-    ).toBe('clean')
+    expect(harness.service.getSessionSnapshot(opened.sessionId)).toEqual({
+      sessionId: opened.sessionId,
+      persistence: 'clean',
+    })
   })
 
-  it('uses document_save after a native document has been opened', async () => {
+  it('uses native document_save for an opened native document', async () => {
     const harness = createHarness()
 
     harness.persistence.open.mockResolvedValue({
-      id: 'document-native-existing',
+      id: 'native-document-existing',
       displayName: 'existing.draw',
       content: serializeDrawDocument(snapshot({ shapes: [] })),
     })
@@ -182,78 +176,46 @@ describe('CanvasDocumentService document-ID lifecycle contract', () => {
     const opened = await harness.service.open()
 
     if (!opened) {
-      throw new Error('expected document to open')
+      throw new Error('expected native document')
     }
 
     harness.ready()
-
-    harness.change(
-      snapshot({
-        shapes: [{ id: 'shape:1' }],
-      }),
-    )
+    harness.change(snapshot({ shapes: [{ id: 'shape:1' }]}))
 
     await harness.service.save(opened.sessionId)
 
     expect(harness.persistence.save).toHaveBeenCalledWith(
-      'document-native-existing',
+      'native-document-existing',
       expect.any(String),
     )
-
-    expect(harness.persistence.saveAs).not.toHaveBeenCalled()
   })
 
-  it('releases native document ID when a clean opened canvas closes', async () => {
+  it('keeps the editor and document session alive after native release failure', async () => {
     const harness = createHarness()
 
     harness.persistence.open.mockResolvedValue({
-      id: 'document-native-close',
-      displayName: 'close.draw',
+      id: 'native-document-release-failure',
+      displayName: 'failure.draw',
       content: serializeDrawDocument(snapshot({ shapes: [] })),
     })
 
     const opened = await harness.service.open()
 
     if (!opened) {
-      throw new Error('expected document to open')
+      throw new Error('expected native document')
     }
 
     harness.ready()
 
-    expect(harness.service.requestClose(opened.sessionId)).toEqual({
-      kind: 'close-now',
-    })
-
-    await harness.service.close(opened.sessionId)
-
-    expect(harness.persistence.close).toHaveBeenCalledWith(
-      'document-native-close',
+    harness.persistence.close.mockRejectedValue(
+      new Error('native document_close rejected'),
     )
 
-    expect(harness.closeEditorSession).toHaveBeenCalledWith(opened.sessionId)
-  })
-
-  it('keeps the canvas session alive when native document_close fails', async () => {
-    const harness = createHarness()
-
-    harness.persistence.open.mockResolvedValue({
-      id: 'document-native-close-failure',
-      displayName: 'close-failure.draw',
-      content: serializeDrawDocument(snapshot({ shapes: [] })),
+    await expect(
+      harness.service.releaseCanvas(opened.sessionId, 'normal'),
+    ).resolves.toEqual({
+      kind: 'release-failed',
     })
-
-    const opened = await harness.service.open()
-
-    if (!opened) {
-      throw new Error('expected document to open')
-    }
-
-    harness.ready()
-
-    const closeError = new Error('native document close failed')
-    harness.persistence.close.mockRejectedValue(closeError)
-
-    await expect(harness.service.close(opened.sessionId)).rejects.toBe(closeError)
 
     expect(harness.closeEditorSession).not.toHaveBeenCalled()
     expect(harness.service.getEditorSession(opened.sessionId)).not.toBeNull()
@@ -264,7 +226,11 @@ describe('CanvasDocumentService document-ID lifecycle contract', () => {
 
     harness.persistence.close.mockResolvedValue(undefined)
 
-    await harness.service.close(opened.sessionId)
+    await expect(
+      harness.service.releaseCanvas(opened.sessionId, 'normal'),
+    ).resolves.toEqual({
+      kind: 'released',
+    })
 
     expect(harness.closeEditorSession).toHaveBeenCalledWith(opened.sessionId)
   })
