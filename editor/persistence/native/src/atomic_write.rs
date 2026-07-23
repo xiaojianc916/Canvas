@@ -29,8 +29,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::ptr::{null, null_mut};
 #[cfg(windows)]
 use windows_sys::Win32::Storage::FileSystem::{
-    MoveFileExW, ReplaceFileW, MOVEFILE_REPLACE_EXISTING,
-    MOVEFILE_WRITE_THROUGH,
+    MoveFileExW, ReplaceFileW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
 };
 
 #[cfg(not(any(unix, windows)))]

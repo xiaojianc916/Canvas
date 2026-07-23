@@ -8,11 +8,8 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tauri::http::{
-    header::{
-        CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE,
-        X_CONTENT_TYPE_OPTIONS,
-    },
     Request, Response, StatusCode,
+    header::{CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS},
 };
 
 pub const ASSET_PROTOCOL_SCHEME: &str = "hybrid-canvas-asset";
@@ -65,10 +62,7 @@ pub enum AssetProtocolError {
 }
 
 impl AssetProtocolRegistry {
-    pub fn open_session(
-        &self,
-        session_token: &str,
-    ) -> Result<(), AssetProtocolError> {
+    pub fn open_session(&self, session_token: &str) -> Result<(), AssetProtocolError> {
         validate_token(session_token)?;
 
         let mut state = self
@@ -124,8 +118,7 @@ impl AssetProtocolRegistry {
             .ok_or(AssetProtocolError::NotFound)?;
 
         if let Some(existing) = session.get_mut(asset_token) {
-            if existing.content_type != content_type
-                || existing.bytes.as_ref() != bytes.as_slice()
+            if existing.content_type != content_type || existing.bytes.as_ref() != bytes.as_slice()
             {
                 /*
                  * A SHA-256 identity must never resolve to different bytes or
@@ -198,17 +191,12 @@ impl AssetProtocolRegistry {
             .remove(asset_token)
             .ok_or(AssetProtocolError::Internal)?;
 
-        state.total_bytes = state
-            .total_bytes
-            .saturating_sub(removed.bytes.len());
+        state.total_bytes = state.total_bytes.saturating_sub(removed.bytes.len());
 
         Ok(true)
     }
 
-    pub fn remove_session(
-        &self,
-        session_token: &str,
-    ) -> Result<bool, AssetProtocolError> {
+    pub fn remove_session(&self, session_token: &str) -> Result<bool, AssetProtocolError> {
         validate_token(session_token)?;
 
         let mut state = self
@@ -225,8 +213,7 @@ impl AssetProtocolRegistry {
             .map(|asset| asset.bytes.len())
             .sum::<usize>();
 
-        state.total_bytes =
-            state.total_bytes.saturating_sub(removed_bytes);
+        state.total_bytes = state.total_bytes.saturating_sub(removed_bytes);
 
         Ok(true)
     }
@@ -246,8 +233,7 @@ impl AssetProtocolRegistry {
     ) -> Result<(), AssetProtocolError> {
         validate_token(session_token)?;
 
-        let mut restored_assets =
-            HashMap::<String, RegisteredAsset>::new();
+        let mut restored_assets = HashMap::<String, RegisteredAsset>::new();
         let mut restored_bytes = 0_usize;
 
         for asset in assets {
@@ -258,8 +244,7 @@ impl AssetProtocolRegistry {
                 return Err(AssetProtocolError::AssetTooLarge);
             }
 
-            let actual_hash =
-                hex::encode(Sha256::digest(asset.bytes.as_ref()));
+            let actual_hash = hex::encode(Sha256::digest(asset.bytes.as_ref()));
 
             if actual_hash != asset.content_hash {
                 return Err(AssetProtocolError::InvalidContentHash);
@@ -267,14 +252,10 @@ impl AssetProtocolRegistry {
 
             restored_bytes = restored_bytes
                 .checked_add(asset.bytes.len())
-                .ok_or(
-                    AssetProtocolError::RegistryBudgetExceeded,
-                )?;
+                .ok_or(AssetProtocolError::RegistryBudgetExceeded)?;
 
             if restored_bytes > MAX_REGISTRY_BYTES {
-                return Err(
-                    AssetProtocolError::RegistryBudgetExceeded,
-                );
+                return Err(AssetProtocolError::RegistryBudgetExceeded);
             }
 
             let content_hash = asset.content_hash;
@@ -285,10 +266,7 @@ impl AssetProtocolRegistry {
                 references: 1,
             };
 
-            if restored_assets
-                .insert(content_hash, registered)
-                .is_some()
-            {
+            if restored_assets.insert(content_hash, registered).is_some() {
                 return Err(AssetProtocolError::DuplicateAsset);
             }
         }
@@ -305,14 +283,10 @@ impl AssetProtocolRegistry {
         let next_total = state
             .total_bytes
             .checked_add(restored_bytes)
-            .ok_or(
-                AssetProtocolError::RegistryBudgetExceeded,
-            )?;
+            .ok_or(AssetProtocolError::RegistryBudgetExceeded)?;
 
         if next_total > MAX_REGISTRY_BYTES {
-            return Err(
-                AssetProtocolError::RegistryBudgetExceeded,
-            );
+            return Err(AssetProtocolError::RegistryBudgetExceeded);
         }
 
         state
@@ -342,12 +316,10 @@ impl AssetProtocolRegistry {
 
         let mut snapshot = session
             .iter()
-            .map(|(content_hash, asset)| {
-                AssetSessionSnapshotEntry {
-                    content_hash: content_hash.clone(),
-                    content_type: asset.content_type.clone(),
-                    bytes: Arc::clone(&asset.bytes),
-                }
+            .map(|(content_hash, asset)| AssetSessionSnapshotEntry {
+                content_hash: content_hash.clone(),
+                content_type: asset.content_type.clone(),
+                bytes: Arc::clone(&asset.bytes),
             })
             .collect::<Vec<_>>();
 
@@ -355,9 +327,7 @@ impl AssetProtocolRegistry {
          * Hash ordering makes the handoff deterministic for the v2 ZIP writer
          * regardless of HashMap iteration order.
          */
-        snapshot.sort_unstable_by(|left, right| {
-            left.content_hash.cmp(&right.content_hash)
-        });
+        snapshot.sort_unstable_by(|left, right| left.content_hash.cmp(&right.content_hash));
 
         Ok(snapshot)
     }
@@ -381,15 +351,10 @@ impl AssetProtocolRegistry {
             .is_some_and(|assets| assets.contains_key(asset_token)))
     }
 
-    pub fn response<B>(
-        &self,
-        request: &Request<B>,
-    ) -> Response<Vec<u8>> {
+    pub fn response<B>(&self, request: &Request<B>) -> Response<Vec<u8>> {
         match self.resolve_request(request) {
             Ok(asset) => asset_response(&asset),
-            Err(AssetProtocolError::NotFound) => {
-                empty_response(StatusCode::NOT_FOUND)
-            }
+            Err(AssetProtocolError::NotFound) => empty_response(StatusCode::NOT_FOUND),
             Err(
                 AssetProtocolError::InvalidToken
                 | AssetProtocolError::InvalidContentHash
@@ -399,9 +364,7 @@ impl AssetProtocolRegistry {
                 | AssetProtocolError::DuplicateAsset
                 | AssetProtocolError::ReferenceOverflow,
             ) => empty_response(StatusCode::BAD_REQUEST),
-            Err(AssetProtocolError::Internal) => {
-                empty_response(StatusCode::INTERNAL_SERVER_ERROR)
-            }
+            Err(AssetProtocolError::Internal) => empty_response(StatusCode::INTERNAL_SERVER_ERROR),
         }
     }
 
@@ -422,9 +385,7 @@ impl AssetProtocolRegistry {
             .split('/')
             .filter(|component| !component.is_empty());
 
-        if host == "hybrid-canvas-asset.localhost"
-            || host == "localhost"
-        {
+        if host == "hybrid-canvas-asset.localhost" || host == "localhost" {
             if components.next() != Some(ASSET_PROTOCOL_HOST) {
                 return Err(AssetProtocolError::InvalidToken);
             }
@@ -432,13 +393,9 @@ impl AssetProtocolRegistry {
             return Err(AssetProtocolError::InvalidToken);
         }
 
-        let session_token = components
-            .next()
-            .ok_or(AssetProtocolError::InvalidToken)?;
+        let session_token = components.next().ok_or(AssetProtocolError::InvalidToken)?;
 
-        let asset_token = components
-            .next()
-            .ok_or(AssetProtocolError::InvalidToken)?;
+        let asset_token = components.next().ok_or(AssetProtocolError::InvalidToken)?;
 
         if components.next().is_some() {
             return Err(AssetProtocolError::InvalidToken);
@@ -478,23 +435,21 @@ fn validate_token(value: &str) -> Result<(), AssetProtocolError> {
         return Err(AssetProtocolError::InvalidToken);
     }
 
-    if !value.bytes().all(|byte| {
-        byte.is_ascii_alphanumeric()
-            || matches!(byte, b'-' | b'_')
-    }) {
+    if !value
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
         return Err(AssetProtocolError::InvalidToken);
     }
 
     Ok(())
 }
 
-fn validate_content_hash(
-    content_hash: &str,
-) -> Result<(), AssetProtocolError> {
+fn validate_content_hash(content_hash: &str) -> Result<(), AssetProtocolError> {
     if content_hash.len() != 64
-        || !content_hash.bytes().all(|byte| {
-            byte.is_ascii_digit() || matches!(byte, b'a'..=b'f')
-        })
+        || !content_hash
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
     {
         return Err(AssetProtocolError::InvalidContentHash);
     }
@@ -502,21 +457,12 @@ fn validate_content_hash(
     Ok(())
 }
 
-fn validate_content_type(
-    content_type: &str,
-) -> Result<(), AssetProtocolError> {
+fn validate_content_type(content_type: &str) -> Result<(), AssetProtocolError> {
     match content_type {
-        "image/png"
-        | "image/jpeg"
-        | "image/webp"
-        | "image/gif"
-        | "application/pdf"
-        | "video/mp4"
-        | "video/webm"
-        | "audio/mpeg"
-        | "audio/mp4"
-        | "audio/ogg"
-        | "audio/wav" => Ok(()),
+        "image/png" | "image/jpeg" | "image/webp" | "image/gif" | "application/pdf"
+        | "video/mp4" | "video/webm" | "audio/mpeg" | "audio/mp4" | "audio/ogg" | "audio/wav" => {
+            Ok(())
+        }
 
         /*
          * SVG is deliberately excluded here. It is active content and requires
@@ -534,9 +480,7 @@ fn asset_response(asset: &RegisteredAsset) -> Response<Vec<u8>> {
         .header(X_CONTENT_TYPE_OPTIONS, "nosniff")
         .header(CACHE_CONTROL, "private, max-age=31536000, immutable")
         .body(asset.bytes.as_ref().to_vec())
-        .unwrap_or_else(|_| {
-            empty_response(StatusCode::INTERNAL_SERVER_ERROR)
-        })
+        .unwrap_or_else(|_| empty_response(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 fn empty_response(status: StatusCode) -> Response<Vec<u8>> {
@@ -594,12 +538,7 @@ mod tests {
             .open_session("session-1")
             .expect("session should open");
 
-        let asset = insert(
-            &registry,
-            "session-1",
-            "image/png",
-            &[1, 2, 3, 4],
-        );
+        let asset = insert(&registry, "session-1", "image/png", &[1, 2, 3, 4]);
 
         let response = registry.response(&request(&format!(
             "hybrid-canvas-asset://asset/session-1/{asset}"
@@ -637,12 +576,7 @@ mod tests {
             .open_session("session-1")
             .expect("session should open");
 
-        let asset = insert(
-            &registry,
-            "session-1",
-            "image/png",
-            &[1, 2, 3],
-        );
+        let asset = insert(&registry, "session-1", "image/png", &[1, 2, 3]);
 
         assert!(
             registry
@@ -665,19 +599,9 @@ mod tests {
             .open_session("session-1")
             .expect("session should open");
 
-        let asset = insert(
-            &registry,
-            "session-1",
-            "image/png",
-            &[1, 2, 3],
-        );
+        let asset = insert(&registry, "session-1", "image/png", &[1, 2, 3]);
 
-        let duplicate = insert(
-            &registry,
-            "session-1",
-            "image/png",
-            &[1, 2, 3],
-        );
+        let duplicate = insert(&registry, "session-1", "image/png", &[1, 2, 3]);
 
         assert_eq!(asset, duplicate);
 
@@ -732,10 +656,7 @@ mod tests {
             bytes,
         );
 
-        assert_eq!(
-            result,
-            Err(AssetProtocolError::InvalidContentHash),
-        );
+        assert_eq!(result, Err(AssetProtocolError::InvalidContentHash),);
     }
 
     #[test]
@@ -746,24 +667,9 @@ mod tests {
             .open_session("session-1")
             .expect("session should open");
 
-        insert(
-            &registry,
-            "session-1",
-            "image/png",
-            &[3],
-        );
-        insert(
-            &registry,
-            "session-1",
-            "image/png",
-            &[1],
-        );
-        insert(
-            &registry,
-            "session-1",
-            "image/png",
-            &[2],
-        );
+        insert(&registry, "session-1", "image/png", &[3]);
+        insert(&registry, "session-1", "image/png", &[1]);
+        insert(&registry, "session-1", "image/png", &[2]);
 
         let snapshot = registry
             .snapshot_session("session-1")
@@ -774,19 +680,15 @@ mod tests {
             .map(|asset| asset.content_hash.as_str())
             .collect::<Vec<_>>();
 
-        assert!(hashes.windows(2).all(|pair| {
-            pair[0] < pair[1]
-        }));
+        assert!(hashes.windows(2).all(|pair| { pair[0] < pair[1] }));
     }
 
     #[test]
     fn restores_complete_content_addressed_session() {
         let registry = AssetProtocolRegistry::default();
 
-        let first_bytes =
-            Arc::<[u8]>::from(vec![1, 2, 3]);
-        let second_bytes =
-            Arc::<[u8]>::from(vec![4, 5, 6]);
+        let first_bytes = Arc::<[u8]>::from(vec![1, 2, 3]);
+        let second_bytes = Arc::<[u8]>::from(vec![4, 5, 6]);
 
         let first_hash = hash(first_bytes.as_ref());
         let second_hash = hash(second_bytes.as_ref());
@@ -797,14 +699,12 @@ mod tests {
                 vec![
                     AssetSessionSnapshotEntry {
                         content_hash: second_hash.clone(),
-                        content_type:
-                            "image/png".to_owned(),
+                        content_type: "image/png".to_owned(),
                         bytes: Arc::clone(&second_bytes),
                     },
                     AssetSessionSnapshotEntry {
                         content_hash: first_hash.clone(),
-                        content_type:
-                            "image/png".to_owned(),
+                        content_type: "image/png".to_owned(),
                         bytes: Arc::clone(&first_bytes),
                     },
                 ],
@@ -813,19 +713,13 @@ mod tests {
 
         assert!(
             registry
-                .contains(
-                    "restored-session",
-                    &first_hash,
-                )
+                .contains("restored-session", &first_hash,)
                 .expect("first asset should resolve")
         );
 
         assert!(
             registry
-                .contains(
-                    "restored-session",
-                    &second_hash,
-                )
+                .contains("restored-session", &second_hash,)
                 .expect("second asset should resolve")
         );
 
@@ -835,32 +729,26 @@ mod tests {
 
         assert_eq!(snapshot.len(), 2);
 
-        assert!(snapshot.windows(2).all(|pair| {
-            pair[0].content_hash < pair[1].content_hash
-        }));
-
-        let first_response =
-            registry.response(&request(&format!(
-                "hybrid-canvas-asset://asset/restored-session/{first_hash}"
-            )));
-
-        assert_eq!(
-            first_response.status(),
-            StatusCode::OK,
+        assert!(
+            snapshot
+                .windows(2)
+                .all(|pair| { pair[0].content_hash < pair[1].content_hash })
         );
 
-        assert_eq!(
-            first_response.body(),
-            &first_bytes.as_ref().to_vec(),
-        );
+        let first_response = registry.response(&request(&format!(
+            "hybrid-canvas-asset://asset/restored-session/{first_hash}"
+        )));
+
+        assert_eq!(first_response.status(), StatusCode::OK,);
+
+        assert_eq!(first_response.body(), &first_bytes.as_ref().to_vec(),);
     }
 
     #[test]
     fn invalid_restore_does_not_publish_partial_session() {
         let registry = AssetProtocolRegistry::default();
 
-        let valid_bytes =
-            Arc::<[u8]>::from(vec![1, 2, 3]);
+        let valid_bytes = Arc::<[u8]>::from(vec![1, 2, 3]);
 
         let valid_hash = hash(valid_bytes.as_ref());
 
@@ -869,25 +757,18 @@ mod tests {
             vec![
                 AssetSessionSnapshotEntry {
                     content_hash: valid_hash,
-                    content_type:
-                        "image/png".to_owned(),
+                    content_type: "image/png".to_owned(),
                     bytes: valid_bytes,
                 },
                 AssetSessionSnapshotEntry {
                     content_hash: "0".repeat(64),
-                    content_type:
-                        "image/png".to_owned(),
-                    bytes: Arc::<[u8]>::from(
-                        vec![9, 9, 9],
-                    ),
+                    content_type: "image/png".to_owned(),
+                    bytes: Arc::<[u8]>::from(vec![9, 9, 9]),
                 },
             ],
         );
 
-        assert_eq!(
-            result,
-            Err(AssetProtocolError::InvalidContentHash),
-        );
+        assert_eq!(result, Err(AssetProtocolError::InvalidContentHash),);
 
         assert!(matches!(
             registry.snapshot_session("failed-session"),
@@ -906,30 +787,22 @@ mod tests {
             "duplicate-session",
             vec![
                 AssetSessionSnapshotEntry {
-                    content_hash:
-                        content_hash.clone(),
-                    content_type:
-                        "image/png".to_owned(),
+                    content_hash: content_hash.clone(),
+                    content_type: "image/png".to_owned(),
                     bytes: Arc::clone(&bytes),
                 },
                 AssetSessionSnapshotEntry {
                     content_hash,
-                    content_type:
-                        "image/png".to_owned(),
+                    content_type: "image/png".to_owned(),
                     bytes,
                 },
             ],
         );
 
-        assert_eq!(
-            result,
-            Err(AssetProtocolError::DuplicateAsset),
-        );
+        assert_eq!(result, Err(AssetProtocolError::DuplicateAsset),);
 
         assert!(matches!(
-            registry.snapshot_session(
-                "duplicate-session",
-            ),
+            registry.snapshot_session("duplicate-session",),
             Err(AssetProtocolError::NotFound),
         ));
     }
@@ -951,18 +824,10 @@ mod tests {
             let bytes = vec![1];
             let content_hash = hash(&bytes);
 
-            let result = registry.insert(
-                "session",
-                &content_hash,
-                &content_hash,
-                content_type,
-                bytes,
-            );
+            let result =
+                registry.insert("session", &content_hash, &content_hash, content_type, bytes);
 
-            assert_eq!(
-                result,
-                Err(AssetProtocolError::UnsupportedContentType),
-            );
+            assert_eq!(result, Err(AssetProtocolError::UnsupportedContentType),);
         }
     }
 }

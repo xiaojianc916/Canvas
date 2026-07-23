@@ -9,17 +9,14 @@ use tauri_specta::{Builder, ErrorHandlingMode};
 
 use crate::commands::{
     asset::{
-        AssetRemoveRequest, AssetSessionCloseRequest,
-        AssetSessionResult, AssetUploadRequest, AssetUploadResult,
+        AssetRemoveRequest, AssetSessionCloseRequest, AssetSessionResult, AssetUploadRequest,
+        AssetUploadResult,
     },
     document::{
         DocumentCloseRequest, DocumentDescriptor, DocumentId, DocumentOpenResponse,
-        DocumentOpenResult, DocumentSaveAsRequest, DocumentSaveAsResult,
-        DocumentSaveRequest,
+        DocumentOpenResult, DocumentSaveAsRequest, DocumentSaveAsResult, DocumentSaveRequest,
     },
-    settings::{
-        AppSettings, CanvasSettings, EditorSettings, ExportSettings, PrivacySettings,
-    },
+    settings::{AppSettings, CanvasSettings, EditorSettings, ExportSettings, PrivacySettings},
 };
 
 const OUTPUT_PATH: &str = concat!(

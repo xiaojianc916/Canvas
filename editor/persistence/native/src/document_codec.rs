@@ -1,11 +1,11 @@
 //! Native logical-document boundary.
- //!
- //! Renderer code may supply a .draw payload only as a logical JSON document.
- //! This module validates the native file envelope before it reaches disk and
- //! serializes it canonically. Atomic replacement remains a separate concern.
- //!
- //! Future physical formats (ZIP, binary assets, manifests, migrations) must
- //! be implemented behind this codec without widening the renderer IPC surface.
+//!
+//! Renderer code may supply a .draw payload only as a logical JSON document.
+//! This module validates the native file envelope before it reaches disk and
+//! serializes it canonically. Atomic replacement remains a separate concern.
+//!
+//! Future physical formats (ZIP, binary assets, manifests, migrations) must
+//! be implemented behind this codec without widening the renderer IPC surface.
 
 use crate::{Error, Result};
 use serde_json::Value;
@@ -28,34 +28,26 @@ pub fn canonicalize_draw_document(input: &[u8]) -> Result<String> {
     }
 
     let value: Value = serde_json::from_slice(input).map_err(|error| {
-        Error::CorruptedContainer(format!(
-            "logical document is not valid JSON: {error}"
-        ))
+        Error::CorruptedContainer(format!("logical document is not valid JSON: {error}"))
     })?;
 
     validate_draw_envelope(&value)?;
 
     serde_json::to_string(&value).map_err(|error| {
-        Error::CorruptedContainer(format!(
-            "logical document cannot be serialized: {error}"
-        ))
+        Error::CorruptedContainer(format!("logical document cannot be serialized: {error}"))
     })
 }
 
 fn validate_draw_envelope(value: &Value) -> Result<()> {
     let root = value.as_object().ok_or_else(|| {
-        Error::CorruptedContainer(
-            "logical document root must be an object".into(),
-        )
+        Error::CorruptedContainer("logical document root must be an object".into())
     })?;
 
     let header = root
         .get("header")
         .and_then(Value::as_object)
         .ok_or_else(|| {
-            Error::CorruptedContainer(
-                "logical document header must be an object".into(),
-            )
+            Error::CorruptedContainer("logical document header must be an object".into())
         })?;
 
     let format = header.get("format").and_then(Value::as_str);
@@ -112,10 +104,8 @@ mod tests {
 
     #[test]
     fn canonicalizes_a_valid_logical_document() {
-        let document =
-            canonicalize_draw_document(&valid_document()).expect(
-                "valid logical document should be accepted",
-            );
+        let document = canonicalize_draw_document(&valid_document())
+            .expect("valid logical document should be accepted");
 
         assert!(!document.contains('\n'));
         assert!(document.contains("\"hybrid-canvas/draw\""));
@@ -131,9 +121,7 @@ mod tests {
 
     #[test]
     fn rejects_a_raw_tldraw_snapshot_without_envelope() {
-        let result = canonicalize_draw_document(
-            br#"{ "document": {}, "session": {} }"#,
-        );
+        let result = canonicalize_draw_document(br#"{ "document": {}, "session": {} }"#);
 
         assert!(result.is_err());
     }

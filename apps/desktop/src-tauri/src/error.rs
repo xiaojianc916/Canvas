@@ -142,10 +142,9 @@ impl Error {
 
     fn operation(&self) -> IpcOperation {
         match self {
-            Self::Persistence(_)
-            | Self::File(_)
-            | Self::FileConflict(_)
-            | Self::Io(_) => IpcOperation::File,
+            Self::Persistence(_) | Self::File(_) | Self::FileConflict(_) | Self::Io(_) => {
+                IpcOperation::File
+            }
             Self::Plugin(_) => IpcOperation::Plugin,
             Self::Asset(_) => IpcOperation::Asset,
             Self::Import(_) | Self::Export(_) => IpcOperation::ImportExport,
@@ -178,11 +177,9 @@ impl Error {
             Self::FileConflict(_) => "文件已在其他位置被修改",
             Self::PermissionDenied(_) => "该操作未获授权",
 
-            Self::Io(_)
-            | Self::Persistence(_)
-            | Self::File(_)
-            | Self::Store(_)
-            | Self::Fs(_) => "文件操作失败",
+            Self::Io(_) | Self::Persistence(_) | Self::File(_) | Self::Store(_) | Self::Fs(_) => {
+                "文件操作失败"
+            }
 
             Self::SerdeJson(_) => "数据格式无效",
 

@@ -124,9 +124,7 @@ impl Default for PrivacySettings {
 
 #[command]
 #[specta::specta]
-pub async fn settings_get(
-    app: AppHandle,
-) -> SettingsCommandResult<AppSettings> {
+pub async fn settings_get(app: AppHandle) -> SettingsCommandResult<AppSettings> {
     (|| -> Result<AppSettings> {
         let store = app.store("settings.json")?;
 
@@ -141,10 +139,7 @@ pub async fn settings_get(
 
 #[command]
 #[specta::specta]
-pub async fn settings_set(
-    app: AppHandle,
-    settings: AppSettings,
-) -> SettingsCommandResult<()> {
+pub async fn settings_set(app: AppHandle, settings: AppSettings) -> SettingsCommandResult<()> {
     (|| -> Result<()> {
         let store = app.store("settings.json")?;
         store.set("settings", serde_json::to_value(&settings)?);
@@ -156,9 +151,7 @@ pub async fn settings_set(
 
 #[command]
 #[specta::specta]
-pub async fn settings_reset(
-    app: AppHandle,
-) -> SettingsCommandResult<AppSettings> {
+pub async fn settings_reset(app: AppHandle) -> SettingsCommandResult<AppSettings> {
     (|| -> Result<AppSettings> {
         let defaults = AppSettings::default();
         let store = app.store("settings.json")?;

@@ -92,8 +92,8 @@ mod tests {
     fn parses_canonical_revision() {
         let revision = document_revision(b"canvas");
 
-        let parsed = DocumentRevision::parse(revision.as_str())
-            .expect("canonical revision should parse");
+        let parsed =
+            DocumentRevision::parse(revision.as_str()).expect("canonical revision should parse");
 
         assert_eq!(parsed, revision);
     }
