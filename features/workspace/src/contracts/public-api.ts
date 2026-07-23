@@ -1,4 +1,12 @@
 export type {
+  CanvasCloseIntent,
+  CanvasCloseSnapshot,
+  CanvasCloseState,
+  CanvasReleaseFailure,
+  CanvasReleaseFailureCode,
+} from './canvas-lifecycle-contract'
+
+export type {
   RegisteredCommand,
   UICommand,
   UICommandHandler,

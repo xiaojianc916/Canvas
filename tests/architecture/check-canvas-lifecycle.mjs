@@ -12,6 +12,7 @@ const files = [
   'apps/desktop/src/application/canvas/canvas-workflow.ts',
   'apps/desktop/src/application/termination/application-termination-coordinator.ts',
   'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+  'features/workspace/src/contracts/canvas-lifecycle-contract.ts',
   'editor/document/src/application/canvas-document-service.ts',
   'apps/desktop/src-tauri/src/ipc/mod.rs',
 ]
@@ -72,6 +73,10 @@ const termination = sourceFor(
 
 const workspace = sourceFor(
   'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+)
+
+const lifecycleContract = sourceFor(
+  'features/workspace/src/contracts/canvas-lifecycle-contract.ts',
 )
 
 if (!workflow?.includes('CanvasCloseSnapshot')) {
@@ -174,9 +179,39 @@ if (workspace?.includes('../../application/canvas/')) {
   )
 }
 
-if (!workspace?.includes('WorkspaceCanvasCloseSnapshot')) {
+if (workspace?.includes('WorkspaceCanvasCloseState')) {
   violations.push(
-    'Workspace presentation must own a structural close UI contract',
+    'Workspace presentation must not duplicate the canvas close state contract',
+  )
+}
+
+if (workspace?.includes('WorkspaceCanvasCloseSnapshot')) {
+  violations.push(
+    'Workspace presentation must not duplicate the canvas close snapshot contract',
+  )
+}
+
+if (!workspace?.includes('CanvasCloseSnapshot')) {
+  violations.push(
+    'Workspace presentation must consume the shared canvas close contract',
+  )
+}
+
+if (!lifecycleContract?.includes('export type CanvasCloseState')) {
+  violations.push(
+    'Workspace contracts must own the single canvas close state definition',
+  )
+}
+
+if (!lifecycleContract?.includes('export interface CanvasCloseSnapshot')) {
+  violations.push(
+    'Workspace contracts must own the single canvas close snapshot definition',
+  )
+}
+
+if (!workflow?.includes('@hybrid-canvas/workspace/contracts')) {
+  violations.push(
+    'CanvasWorkflow must consume the shared workspace close lifecycle contract',
   )
 }
 

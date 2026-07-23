@@ -2,6 +2,8 @@ import type { EditorSession } from '@hybrid-canvas/canvas/application'
 import { EditorSessionHost, useEditor } from '@hybrid-canvas/canvas/react'
 import { ConfirmationDialog } from '@hybrid-canvas/design-system'
 import type {
+  CanvasCloseIntent,
+  CanvasCloseSnapshot,
   CanvasSessionId,
   WorkbenchSessionStore,
   WorkbenchTabId,
@@ -30,41 +32,16 @@ const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({
 const EMPTY_SUBSCRIBE = () => () => {}
 const EMPTY_EDITOR_SNAPSHOT = () => EMPTY_EDITOR_SESSION_SNAPSHOT
 
-export type WorkspaceCanvasCloseState =
-  | { readonly state: 'confirmation-required' }
-  | {
-      readonly state: 'releasing'
-      readonly intent: 'normal' | 'discard'
-    }
-  | {
-      readonly state: 'release-failed'
-      readonly intent: 'normal' | 'discard'
-      readonly failure: {
-        readonly code:
-          | 'permission-denied'
-          | 'persistence'
-          | 'not-found'
-          | 'platform'
-        readonly recoverable: boolean
-      }
-    }
-
-export interface WorkspaceCanvasCloseSnapshot {
-  readonly states: Readonly<
-    Record<CanvasSessionId, WorkspaceCanvasCloseState>
-  >
-}
-
 export interface WorkspaceCanvasUIPort {
   readonly create: (title: string) => Promise<void>
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
   readonly closeCanvas: (
     sessionId: CanvasSessionId,
-    intent: 'normal' | 'discard',
+    intent: CanvasCloseIntent,
   ) => Promise<void>
   readonly cancelCanvasClose: (sessionId: CanvasSessionId) => void
-  readonly getCloseSnapshot: () => WorkspaceCanvasCloseSnapshot
+  readonly getCloseSnapshot: () => CanvasCloseSnapshot
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (
     sessionId: CanvasSessionId,
@@ -181,7 +158,7 @@ export function WorkspaceContainer({
   )
 
   const handleCloseCanvas = useCallback(
-    (sessionId: CanvasSessionId, intent: 'normal' | 'discard' = 'normal') => {
+    (sessionId: CanvasSessionId, intent: CanvasCloseIntent = 'normal') => {
       void port.canvases.closeCanvas(sessionId, intent).catch((cause: unknown) => {
         reportError('canvas close transaction failed', {
           scope: 'workspace',

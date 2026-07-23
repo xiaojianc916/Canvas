@@ -1,29 +1,17 @@
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
 import type {
-  CanvasCloseIntent,
+  CanvasCloseIntent as DocumentCanvasCloseIntent,
   CanvasDocumentService,
-  CanvasReleaseFailure,
   CanvasReleaseResult,
   CanvasSessionId,
   CanvasSessionSnapshot,
 } from '@hybrid-canvas/document'
-import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
-
-export type CanvasCloseState =
-  | { readonly state: 'confirmation-required' }
-  | {
-      readonly state: 'releasing'
-      readonly intent: CanvasCloseIntent
-    }
-  | {
-      readonly state: 'release-failed'
-      readonly intent: CanvasCloseIntent
-      readonly failure: CanvasReleaseFailure
-    }
-
-export interface CanvasCloseSnapshot {
-  readonly states: Readonly<Record<CanvasSessionId, CanvasCloseState>>
-}
+import type {
+  CanvasCloseIntent,
+  CanvasCloseSnapshot,
+  CanvasCloseState,
+  WorkbenchSessionStore,
+} from '@hybrid-canvas/workspace/contracts'
 
 /**
  * Application termination has exactly one asynchronous boundary:
@@ -145,7 +133,10 @@ export function createCanvasWorkflow(
     sessionId: CanvasSessionId,
     errorCode: string,
   ): Promise<void> {
-    const result = await documents.releaseCanvas(sessionId, 'discard')
+    const result = await documents.releaseCanvas(
+      sessionId,
+      'discard' as DocumentCanvasCloseIntent,
+    )
 
     if (result.kind !== 'released' && result.kind !== 'not-found') {
       throw new Error(errorCode)
@@ -181,7 +172,10 @@ export function createCanvasWorkflow(
       intent,
     })
 
-    const result = await documents.releaseCanvas(sessionId, intent)
+    const result = await documents.releaseCanvas(
+      sessionId,
+      intent as DocumentCanvasCloseIntent,
+    )
 
     applyReleaseResult(sessionId, intent, result)
   }
