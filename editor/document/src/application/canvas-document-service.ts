@@ -199,14 +199,18 @@ export function createCanvasDocumentService({
       const initialSnapshot = parseEditorSnapshot(opened.content)
 
       const editor = await editorSessions.create({
-        documentId: canvasId,
-        sessionId,
-        initialSnapshot,
-        assetStoreRestore: opened.assetPersistenceToken
-          ? { persistenceToken: opened.assetPersistenceToken }
-          : undefined,
-        extensions,
-      })
+  documentId: canvasId,
+  sessionId,
+  initialSnapshot,
+  ...(opened.assetPersistenceToken
+    ? {
+        assetStoreRestore: {
+          persistenceToken: opened.assetPersistenceToken,
+        },
+      }
+    : {}),
+  extensions,
+})
 
       sessions.set(
         sessionId,
