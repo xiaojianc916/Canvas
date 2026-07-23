@@ -14,9 +14,7 @@
   },
   "dependencies": {
     "@hybrid-canvas/desktop-ipc": "workspace:*",
-    "@hybrid-canvas/asset": "workspace:*",
     "@hybrid-canvas/file": "workspace:*",
-    "@hybrid-canvas/plugin": "workspace:*",
     "@hybrid-canvas/settings": "workspace:*",
     "@tauri-apps/api": "catalog:tauri"
   }
