@@ -1,21 +1,42 @@
 //! Crash-safe replacement of a document file.
 //!
-//! The persistence contract has one save path on every supported platform:
+//! The persistence contract has exactly one physical save algorithm:
 //!
 //! 1. Create a uniquely named temporary file in the destination directory.
 //! 2. Write the complete document.
 //! 3. Synchronize the temporary file.
-//! 4. Rename the temporary file over the destination.
+//! 4. Atomically replace the destination with the platform primitive.
 //! 5. Synchronize the containing directory where the platform supports it.
 //!
 //! Keeping the temporary file in the destination directory guarantees that the
-//! replacement stays on one filesystem. If writing or replacement fails, the
-//! original destination is left untouched and NamedTempFile removes the
-//! temporary file during drop.
+//! replacement remains on one filesystem.
+//!
+//! There is deliberately no delete, copy, truncate or non-atomic fallback. If
+//! the platform replacement fails, the existing destination remains untouched
+//! and the save operation fails.
 
 use crate::{Error, Result};
 use std::io::Write;
 use std::path::Path;
+
+#[cfg(windows)]
+use std::ffi::OsStr;
+#[cfg(windows)]
+use std::iter::once;
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+#[cfg(windows)]
+use std::ptr::{null, null_mut};
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    MoveFileExW, ReplaceFileW, MOVEFILE_REPLACE_EXISTING,
+    MOVEFILE_WRITE_THROUGH,
+};
+
+#[cfg(not(any(unix, windows)))]
+compile_error!(
+    "hybrid-canvas-file-native requires an audited atomic replacement      implementation for this platform"
+);
 
 const TEMPORARY_FILE_PREFIX: &str = ".hybrid-canvas-";
 const TEMPORARY_FILE_SUFFIX: &str = ".tmp";
@@ -42,21 +63,72 @@ pub fn atomic_write(path: impl AsRef<Path>, content: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Replaces destination with source.
+/// Atomically replaces destination with source on Unix platforms.
 ///
-/// Both paths are in the same parent directory, therefore they are on the same
-/// filesystem. Rust's std::fs::rename is the single cross-platform replacement
-/// primitive used by this persistence backend.
+/// The temporary file and destination are created in the same directory, so
+/// rename remains on one filesystem. POSIX rename replaces an existing regular
+/// destination atomically.
+#[cfg(unix)]
 fn replace_destination(source: &Path, destination: &Path) -> Result<()> {
     std::fs::rename(source, destination)?;
     Ok(())
 }
 
-/// Synchronizes directory metadata after a successful rename where supported.
+/// Atomically installs or replaces destination on Windows.
 ///
-/// Windows does not provide a portable std::fs directory synchronization API.
-/// The file itself is already synchronized before replacement. The replacement
-/// remains a single operation; no backup/delete/copy fallback is used.
+/// ReplaceFileW is used when a destination already exists. It performs a
+/// filesystem replacement rather than a delete-then-move sequence.
+///
+/// MoveFileExW is used only when creating a new destination. REPLACE_EXISTING
+/// also closes the race where another process creates the destination after the
+/// existence check. WRITE_THROUGH requests that the move is flushed before the
+/// call returns.
+///
+/// No copy, delete, truncate or non-atomic fallback is allowed.
+#[cfg(windows)]
+fn replace_destination(source: &Path, destination: &Path) -> Result<()> {
+    let source_wide = to_wide_path(source.as_os_str());
+    let destination_wide = to_wide_path(destination.as_os_str());
+
+    let replaced = unsafe {
+        if destination.exists() {
+            ReplaceFileW(
+                destination_wide.as_ptr(),
+                source_wide.as_ptr(),
+                null(),
+                0,
+                null_mut(),
+                null_mut(),
+            )
+        } else {
+            MoveFileExW(
+                source_wide.as_ptr(),
+                destination_wide.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        }
+    };
+
+    if replaced == 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    Ok(())
+}
+
+#[cfg(windows)]
+fn to_wide_path(value: &OsStr) -> Vec<u16> {
+    value.encode_wide().chain(once(0)).collect()
+}
+
+/// Synchronizes directory metadata after a successful replacement where
+/// supported.
+///
+/// Unix directory synchronization persists the renamed directory entry.
+///
+/// Windows does not expose a portable directory fsync through std. The temporary
+/// file is synchronized before replacement, ReplaceFileW is a single filesystem
+/// operation, and new-file MoveFileExW uses MOVEFILE_WRITE_THROUGH.
 fn sync_directory(directory: &Path) -> Result<()> {
     #[cfg(unix)]
     {

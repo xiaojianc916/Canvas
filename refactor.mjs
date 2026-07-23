@@ -1,34 +1,52 @@
 #!/usr/bin/env node
 
 /**
- * P0-A — Separate persistable tldraw document state from local editor session
- * state.
+ * P0-B — Replace the existing native document replacement implementation with
+ * platform-correct atomic replacement.
  *
- * This refactor changes the document lifecycle boundary from:
+ * Based on repository state after:
+ *   0e7174d3f3f82d0d46ab04b839e5b0e823afe179
+ *   e7f61fe5ed75a4385def6421e6cd31e57c1f45e5
  *
- *   captureDocument(): TLEditorSnapshot
+ * This script does not add another writer and does not retain the previous
+ * generic replacement implementation.
  *
- * to:
+ * The one physical save algorithm remains:
  *
- *   captureDocument(): TLStoreSnapshot
+ *   same-directory unique temp
+ *     -> write complete content
+ *     -> sync temp file
+ *     -> platform atomic replacement
+ *     -> sync containing directory where supported
  *
- * Dirty tracking and save checkpoints therefore contain only tldraw document
- * records. Camera, selection, current tool, viewport and other session state
- * are no longer accepted by the document lifecycle domain.
+ * Platform implementation:
  *
- * The current v1 JSON writer still requires a complete TLEditorSnapshot. Until
- * the v2 DocumentCodec replaces it, CanvasDocumentService explicitly captures
- * a legacy full editor snapshot only at the v1 serialization boundary.
+ *   Unix/macOS:
+ *     rename(temp, destination)
+ *
+ *   Windows, destination exists:
+ *     ReplaceFileW(destination, temp)
+ *
+ *   Windows, destination does not exist:
+ *     MoveFileExW(temp, destination, MOVEFILE_WRITE_THROUGH)
+ *
+ * Forbidden:
+ *
+ *   delete destination -> rename
+ *   copy temp -> destination
+ *   truncate destination in place
+ *   retry through a non-atomic fallback
+ *   retain the old cross-platform std::fs::rename implementation
  *
  * Usage:
- *   node refactor-p0-document-session-boundary.mjs --check
- *   node refactor-p0-document-session-boundary.mjs --apply
- *   node refactor-p0-document-session-boundary.mjs --apply /path/to/Canvas
+ *   node refactor.mjs --check
+ *   node refactor.mjs --apply
+ *   node refactor.mjs --apply /path/to/Canvas
  */
 
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { access, readFile, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import process from 'node:process'
 
 const argv = process.argv.slice(2)
@@ -47,51 +65,19 @@ if (!apply && !check) {
 
 const paths = {
   packageJson: join(root, 'package.json'),
-
-  editorSession: join(
+  nativeCargo: join(
     root,
-    'editor/core/src/runtime/editor-session.ts',
+    'editor/persistence/native/Cargo.toml',
   ),
-
-  editorDocumentPort: join(
+  atomicWrite: join(
     root,
-    'editor/document/src/ports/editor-document-port.ts',
-  ),
-
-  documentCheckpoint: join(
-    root,
-    'editor/document/src/domain/document-checkpoint.ts',
-  ),
-
-  documentSession: join(
-    root,
-    'editor/document/src/domain/document-session.ts',
-  ),
-
-  canvasDocumentService: join(
-    root,
-    'editor/document/src/application/canvas-document-service.ts',
-  ),
-
-  canvasDocumentServiceTest: join(
-    root,
-    'tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts',
-  ),
-
-  documentSessionTest: join(
-    root,
-    'tests/cross-domain-contract/document-lifecycle/document-session.test.ts',
-  ),
-
-  adr: join(
-    root,
-    'docs/adr/ADR-004-document-session-persistence-boundary.md',
+    'editor/persistence/native/src/atomic_write.rs',
   ),
 }
 
 function fail(message) {
   console.error(
-    `\nP0-A document/session boundary refactor failed:\n${message}\n`,
+    `\nP0-B platform atomic replacement refactor failed:\n${message}\n`,
   )
   process.exitCode = 1
 }
@@ -117,7 +103,7 @@ function replaceExactlyOnce(
     throw new Error(
       [
         `Expected source fragment was not found: ${description}`,
-        'The repository may differ from the audited version.',
+        'The repository may differ from the audited pushed state.',
         'Refusing fuzzy replacement.',
       ].join('\n'),
     )
@@ -141,525 +127,253 @@ function replaceExactlyOnce(
   )
 }
 
-function replaceAllChecked(
-  source,
-  oldText,
-  newText,
-  expectedCount,
-  description,
-) {
-  const parts = source.split(oldText)
-  const count = parts.length - 1
+const oldModuleDocumentation = `//! Crash-safe replacement of a document file.
+//!
+//! The persistence contract has one save path on every supported platform:
+//!
+//! 1. Create a uniquely named temporary file in the destination directory.
+//! 2. Write the complete document.
+//! 3. Synchronize the temporary file.
+//! 4. Rename the temporary file over the destination.
+//! 5. Synchronize the containing directory where the platform supports it.
+//!
+//! Keeping the temporary file in the destination directory guarantees that the
+//! replacement stays on one filesystem. If writing or replacement fails, the
+//! original destination is left untouched and NamedTempFile removes the
+//! temporary file during drop.`
 
-  if (count !== expectedCount) {
+const newModuleDocumentation = `//! Crash-safe replacement of a document file.
+//!
+//! The persistence contract has exactly one physical save algorithm:
+//!
+//! 1. Create a uniquely named temporary file in the destination directory.
+//! 2. Write the complete document.
+//! 3. Synchronize the temporary file.
+//! 4. Atomically replace the destination with the platform primitive.
+//! 5. Synchronize the containing directory where the platform supports it.
+//!
+//! Keeping the temporary file in the destination directory guarantees that the
+//! replacement remains on one filesystem.
+//!
+//! There is deliberately no delete, copy, truncate or non-atomic fallback. If
+//! the platform replacement fails, the existing destination remains untouched
+//! and the save operation fails.`
+
+const oldImports = `use crate::{Error, Result};
+use std::io::Write;
+use std::path::Path;`
+
+const newImports = `use crate::{Error, Result};
+use std::io::Write;
+use std::path::Path;
+
+#[cfg(windows)]
+use std::ffi::OsStr;
+#[cfg(windows)]
+use std::iter::once;
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+#[cfg(windows)]
+use std::ptr::{null, null_mut};
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    MoveFileExW, ReplaceFileW, MOVEFILE_REPLACE_EXISTING,
+    MOVEFILE_WRITE_THROUGH,
+};
+
+#[cfg(not(any(unix, windows)))]
+compile_error!(
+    "hybrid-canvas-file-native requires an audited atomic replacement \
+     implementation for this platform"
+);`
+
+const oldReplacementImplementation = `/// Replaces destination with source.
+///
+/// Both paths are in the same parent directory, therefore they are on the same
+/// filesystem. Rust's std::fs::rename is the single cross-platform replacement
+/// primitive used by this persistence backend.
+fn replace_destination(source: &Path, destination: &Path) -> Result<()> {
+    std::fs::rename(source, destination)?;
+    Ok(())
+}`
+
+const newReplacementImplementation = `/// Atomically replaces destination with source on Unix platforms.
+///
+/// The temporary file and destination are created in the same directory, so
+/// rename remains on one filesystem. POSIX rename replaces an existing regular
+/// destination atomically.
+#[cfg(unix)]
+fn replace_destination(source: &Path, destination: &Path) -> Result<()> {
+    std::fs::rename(source, destination)?;
+    Ok(())
+}
+
+/// Atomically installs or replaces destination on Windows.
+///
+/// ReplaceFileW is used when a destination already exists. It performs a
+/// filesystem replacement rather than a delete-then-move sequence.
+///
+/// MoveFileExW is used only when creating a new destination. REPLACE_EXISTING
+/// also closes the race where another process creates the destination after the
+/// existence check. WRITE_THROUGH requests that the move is flushed before the
+/// call returns.
+///
+/// No copy, delete, truncate or non-atomic fallback is allowed.
+#[cfg(windows)]
+fn replace_destination(source: &Path, destination: &Path) -> Result<()> {
+    let source_wide = to_wide_path(source.as_os_str());
+    let destination_wide = to_wide_path(destination.as_os_str());
+
+    let replaced = unsafe {
+        if destination.exists() {
+            ReplaceFileW(
+                destination_wide.as_ptr(),
+                source_wide.as_ptr(),
+                null(),
+                0,
+                null_mut(),
+                null_mut(),
+            )
+        } else {
+            MoveFileExW(
+                source_wide.as_ptr(),
+                destination_wide.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        }
+    };
+
+    if replaced == 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    Ok(())
+}
+
+#[cfg(windows)]
+fn to_wide_path(value: &OsStr) -> Vec<u16> {
+    value.encode_wide().chain(once(0)).collect()
+}`
+
+const oldDirectoryDocumentation = `/// Synchronizes directory metadata after a successful rename where supported.
+///
+/// Windows does not provide a portable std::fs directory synchronization API.
+/// The file itself is already synchronized before replacement. The replacement
+/// remains a single operation; no backup/delete/copy fallback is used.`
+
+const newDirectoryDocumentation = `/// Synchronizes directory metadata after a successful replacement where
+/// supported.
+///
+/// Unix directory synchronization persists the renamed directory entry.
+///
+/// Windows does not expose a portable directory fsync through std. The temporary
+/// file is synchronized before replacement, ReplaceFileW is a single filesystem
+/// operation, and new-file MoveFileExW uses MOVEFILE_WRITE_THROUGH.`
+
+const windowsCargoSection = `
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Storage_FileSystem",
+] }
+`
+
+function updateAtomicWrite(source) {
+  if (
+    source.includes('#[cfg(windows)]') &&
+    source.includes('ReplaceFileW(') &&
+    source.includes('MoveFileExW(') &&
+    source.includes('MOVEFILE_WRITE_THROUGH') &&
+    !source.includes(
+      "Rust's std::fs::rename is the single cross-platform",
+    )
+  ) {
+    return {
+      changed: false,
+      content: source,
+    }
+  }
+
+  let next = replaceExactlyOnce(
+    source,
+    oldModuleDocumentation,
+    newModuleDocumentation,
+    'replace atomic-write module contract',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    oldImports,
+    newImports,
+    'add platform atomic replacement imports',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    oldReplacementImplementation,
+    newReplacementImplementation,
+    'remove generic replacement and install platform implementations',
+  )
+
+  next = replaceExactlyOnce(
+    next,
+    oldDirectoryDocumentation,
+    newDirectoryDocumentation,
+    'update directory synchronization contract',
+  )
+
+  if (
+    next.includes(
+      "Rust's std::fs::rename is the single cross-platform",
+    )
+  ) {
+    throw new Error(
+      'The old generic replacement implementation was not fully removed.',
+    )
+  }
+
+  if (
+    next.includes('remove_file(destination)') ||
+    next.includes('copy(source, destination)') ||
+    next.includes('File::create(destination)')
+  ) {
+    throw new Error(
+      'A forbidden non-atomic replacement fallback was detected.',
+    )
+  }
+
+  return {
+    changed: true,
+    content: next,
+  }
+}
+
+function updateNativeCargo(source) {
+  if (source.includes("[target.'cfg(windows)'.dependencies]")) {
+    if (
+      source.includes('windows-sys') &&
+      source.includes('"Win32_Storage_FileSystem"')
+    ) {
+      return {
+        changed: false,
+        content: source,
+      }
+    }
+
     throw new Error(
       [
-        `Unexpected replacement count for: ${description}`,
-        `Expected: ${expectedCount}`,
-        `Actual: ${count}`,
-        'Refusing to modify an unaudited source version.',
+        'The native persistence crate already has a different Windows dependency section.',
+        'Refusing to merge dependency definitions automatically.',
       ].join('\n'),
     )
   }
 
-  return parts.join(newText)
-}
-
-const canonicalDocumentCheckpoint = `import type { TLStoreSnapshot } from 'tldraw'
-
-// Tests: tests/cross-domain-contract/document-lifecycle/document-session.test.ts
-
-/**
- * Exact content-addressed identity of the persistable TLStore document.
- *
- * The canonical value is retained instead of using a non-cryptographic hash,
- * so dirty-state correctness cannot be affected by a hash collision.
- *
- * This boundary accepts only TLStoreSnapshot. Session state such as camera,
- * selection, active tool, current page and viewport cannot enter dirty tracking
- * by construction.
- */
-export interface DocumentCheckpoint {
-  readonly canonicalDocument: string
-}
-
-export function createDocumentCheckpoint(
-  document: TLStoreSnapshot,
-): DocumentCheckpoint {
-  return {
-    canonicalDocument: stableStringify(document),
-  }
-}
-
-export function checkpointsEqual(
-  left: DocumentCheckpoint,
-  right: DocumentCheckpoint,
-): boolean {
-  return left.canonicalDocument === right.canonicalDocument
-}
-
-function stableStringify(value: unknown): string {
-  if (value === null) {
-    return 'null'
-  }
-
-  switch (typeof value) {
-    case 'string':
-    case 'boolean':
-      return JSON.stringify(value)
-
-    case 'number':
-      return Number.isFinite(value) ? JSON.stringify(value) : 'null'
-
-    case 'bigint':
-      return JSON.stringify(value.toString())
-
-    case 'undefined':
-    case 'function':
-    case 'symbol':
-      return 'null'
-
-    case 'object':
-      break
-  }
-
-  if (Array.isArray(value)) {
-    return '[' + value.map((item) => stableStringify(item)).join(',') + ']'
-  }
-
-  const record = value as Record<string, unknown>
-
-  const keys = Object.keys(record)
-    .filter((key) => record[key] !== undefined)
-    .sort((left, right) => left.localeCompare(right))
-
-  return (
-    '{' +
-    keys
-      .map(
-        (key) =>
-          JSON.stringify(key) + ':' + stableStringify(record[key]),
-      )
-      .join(',') +
-    '}'
-  )
-}
-`
-
-const canonicalEditorDocumentPort = `import type { TLStoreSnapshot } from 'tldraw'
-
-// Contract tests: tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts
-
-export type EditorDocumentEvent =
-  | {
-      readonly kind: 'ready'
-    }
-  | {
-      readonly kind: 'changed'
-    }
-
-export interface EditorDocumentPort {
-  /**
-   * Returns the canonical persistable tldraw document snapshot.
-   *
-   * This contains document-scoped TLStore records only. Camera, selection,
-   * current tool, viewport and other local session state are excluded by the
-   * return type and must be persisted through a separate local-session port.
-   */
-  readonly captureDocument: () => TLStoreSnapshot
-
-  /**
-   * Emits ready exactly at the explicit editor attachment boundary.
-   *
-   * Changed events are emitted only after ready and only for user-originated
-   * TLStore document transactions.
-   */
-  readonly subscribeDocumentEvents: (
-    listener: (event: EditorDocumentEvent) => void,
-  ) => () => void
-}
-`
-
-const adrSource = `# ADR-004：tldraw Document 与本机 Session 持久化边界
-
-- 状态：Accepted
-- 日期：2026-07-23
-- 决策者：Hybrid Canvas maintainers
-
-## 背景
-
-tldraw 的 \`TLEditorSnapshot\` 包含两个生命周期不同的部分：
-
-- \`document\`：shape、page、binding、asset record 等画布文档；
-- \`session\`：camera、selection、current tool、current page、viewport 等本机编辑状态。
-
-现有 v1 JSON 文件将两者一起写入 \`.draw\`。同时，文档生命周期接口也接收完整
-\`TLEditorSnapshot\`，使 session 状态在类型上可以进入 dirty tracking、保存 checkpoint
-和文件格式边界。
-
-虽然当前 checkpoint 实现只读取 \`snapshot.document\`，但这只是实现约定，不是类型约束。
-
-## 决策
-
-文档生命周期从本 ADR 起只接收：
-
-\`\`\`ts
-TLStoreSnapshot
-\`\`\`
-
-具体约束如下：
-
-1. \`EditorDocumentPort.captureDocument()\` 返回 \`TLStoreSnapshot\`；
-2. dirty tracking 只比较 document snapshot；
-3. \`DocumentSession\` 不接收 \`TLEditorSnapshot\`；
-4. session 变化不得产生文档 dirty 状态；
-5. v2 \`.draw\` 只持久化 document snapshot；
-6. 本机 session 必须通过独立的 local-session storage 保存；
-7. local session 必须绑定 document fingerprint，避免恢复到错误文件；
-8. v1 reader 可以读取旧 session，但必须将其视为一次性的本机 session seed；
-9. v2 writer 不得重新写入 tldraw session state。
-
-## v1 过渡边界
-
-在 v2 DocumentCodec 切换前，现有 v1 writer 仍要求完整
-\`TLEditorSnapshot\`。
-
-因此允许在唯一的 v1 serialization boundary 临时执行：
-
-\`\`\`ts
-const document = editorDocument.captureDocument()
-const legacySnapshot = editor.getSnapshot()
-serializeDrawDocument(legacySnapshot)
-\`\`\`
-
-该兼容桥具有以下限制：
-
-- 不能用于 dirty tracking；
-- 不能进入 DocumentSession；
-- 不能复制到新的 writer；
-- v2 writer 落地时必须删除；
-- 不得被声明为 v2 logical document contract。
-
-## v2 logical document
-
-v2 的逻辑文档至少包含：
-
-\`\`\`ts
-interface LogicalDrawDocumentV2 {
-  readonly tldraw: TLStoreSnapshot
-  readonly assets: readonly DrawAssetDescriptor[]
-}
-\`\`\`
-
-真实二进制资源由 Native DocumentCodec 和 TLAssetStore 管理，不进入 snapshot JSON。
-
-## 后果
-
-正面影响：
-
-- session 变化不再污染 dirty tracking；
-- 文件内容与本机 UI 状态生命周期明确；
-- v2 不需要伪造或持久化 session；
-- DocumentSession 可以脱离已挂载 Editor 测试；
-- 为后续 local-session storage 和 v2 DocumentCodec 建立稳定边界。
-
-代价：
-
-- v1 writer 暂时保留一个显式兼容桥；
-- 需要后续实现 local-session storage；
-- v1 reader 需要拆分 document 与 legacy session seed。
-
-## 删除条件
-
-完成以下条件后删除 v1 兼容桥：
-
-- v2 DocumentCodec reader/writer 完整 roundtrip；
-- TLAssetStore 已接入；
-- v1 reader 可输出 canonical logical document；
-- 所有新保存只走 v2 writer；
-- local session 已独立持久化。
-`
-
-function updateEditorSession(source) {
-  if (
-    source.includes(
-      'readonly captureDocument: () => TLStoreSnapshot',
-    ) &&
-    source.includes(
-      'function captureDocument(): TLStoreSnapshot',
-    ) &&
-    source.includes('return store.getStoreSnapshot()')
-  ) {
-    return {
-      content: source,
-      changed: false,
-    }
-  }
-
-  let next = replaceExactlyOnce(
-    source,
-    `  type TLEditorSnapshot,
-  type TLStore,`,
-    `  type TLEditorSnapshot,
-  type TLStore,
-  type TLStoreSnapshot,`,
-    'import TLStoreSnapshot in EditorSession',
-  )
-
-  next = replaceExactlyOnce(
-    next,
-    `  readonly captureDocument: () => TLEditorSnapshot`,
-    `  readonly captureDocument: () => TLStoreSnapshot`,
-    'change EditorSession.captureDocument return type',
-  )
-
-  const oldCapture = `  function captureDocument(): TLEditorSnapshot {
-    /*
-     * A complete TLEditorSnapshot includes TLSessionStateSnapshot. tldraw
-     * initializes session state through a live Editor, not a detached TLStore.
-     *
-     * Persistable capture is valid only after attachEditor() has established
-     * the explicit mounted-editor readiness boundary.
-     */
-    return requireAttachedEditor().getSnapshot()
-  }`
-
-  const newCapture = `  function captureDocument(): TLStoreSnapshot {
-    assertActive()
-
-    /*
-     * TLStore document records are the sole persistable canvas source of truth.
-     * Session state belongs to the local editor instance and is deliberately
-     * excluded from this boundary.
-     */
-    return store.getStoreSnapshot()
-  }
-
-  function captureLegacyEditorSnapshot(): TLEditorSnapshot {
-    /*
-     * Temporary v1 compatibility boundary. A complete TLEditorSnapshot needs
-     * initialized tldraw session state and therefore requires an attached
-     * Editor. The v2 writer must not use this method.
-     */
-    return requireAttachedEditor().getSnapshot()
-  }`
-
-  next = replaceExactlyOnce(
-    next,
-    oldCapture,
-    newCapture,
-    'separate document capture from legacy full editor capture',
-  )
-
-  next = replaceExactlyOnce(
-    next,
-    `    getSnapshot: captureDocument,
-    captureDocument,`,
-    `    getSnapshot: captureLegacyEditorSnapshot,
-    captureDocument,`,
-    'keep getSnapshot as the explicit v1 compatibility boundary',
-  )
+  const normalized = source.endsWith('\n')
+    ? source
+    : `${source}\n`
 
   return {
-    content: next,
     changed: true,
-  }
-}
-
-function updateDocumentSession(source) {
-  if (
-    source.includes(
-      "import type { TLStoreSnapshot } from 'tldraw'",
-    ) &&
-    !source.includes('TLEditorSnapshot')
-  ) {
-    return {
-      content: source,
-      changed: false,
-    }
-  }
-
-  let next = replaceExactlyOnce(
-    source,
-    `import type { TLEditorSnapshot } from 'tldraw'`,
-    `import type { TLStoreSnapshot } from 'tldraw'`,
-    'replace DocumentSession snapshot import',
-  )
-
-  next = replaceAllChecked(
-    next,
-    'snapshot: TLEditorSnapshot',
-    'snapshot: TLStoreSnapshot',
-    3,
-    'change all DocumentSession inputs to TLStoreSnapshot',
-  )
-
-  return {
-    content: next,
-    changed: true,
-  }
-}
-
-function updateCanvasDocumentService(source) {
-  if (
-    source.includes(
-      'const documentSnapshot = owned.editorDocument.captureDocument()',
-    ) &&
-    source.includes(
-      'const legacyEditorSnapshot = owned.editor.getSnapshot()',
-    )
-  ) {
-    return {
-      content: source,
-      changed: false,
-    }
-  }
-
-  const oldSaveBoundary = `    const snapshot = owned.editorDocument.captureDocument()
-    const ticket = owned.document.beginSave(snapshot)
-
-    emit()
-
-    try {
-      const content = serializeDrawDocument(snapshot)
-      const currentDocumentId = owned.document.getDocumentId()`
-
-  const newSaveBoundary = `    const documentSnapshot = owned.editorDocument.captureDocument()
-    const ticket = owned.document.beginSave(documentSnapshot)
-
-    emit()
-
-    try {
-      /*
-       * Temporary v1 compatibility bridge.
-       *
-       * Dirty tracking and DocumentSession accept only TLStoreSnapshot. The
-       * legacy v1 JSON writer still requires a complete TLEditorSnapshot, so
-       * capture it only at this serialization boundary.
-       *
-       * Delete this call when the v2 document-only writer becomes canonical.
-       */
-      const legacyEditorSnapshot = owned.editor.getSnapshot()
-      const content = serializeDrawDocument(legacyEditorSnapshot)
-      const currentDocumentId = owned.document.getDocumentId()`
-
-  return {
-    content: replaceExactlyOnce(
-      source,
-      oldSaveBoundary,
-      newSaveBoundary,
-      'make v1 full snapshot capture an explicit compatibility bridge',
-    ),
-    changed: true,
-  }
-}
-
-function updateCanvasDocumentServiceTest(source) {
-  if (
-    source.includes(
-      'captureDocument() {\n      return currentSnapshot.document',
-    )
-  ) {
-    return {
-      content: source,
-      changed: false,
-    }
-  }
-
-  return {
-    content: replaceExactlyOnce(
-      source,
-      `    captureDocument() {
-      return currentSnapshot
-    },`,
-      `    captureDocument() {
-      return currentSnapshot.document
-    },`,
-      'make CanvasDocumentService test port return document-only snapshot',
-    ),
-    changed: true,
-  }
-}
-
-function updateDocumentSessionTest(source) {
-  if (
-    source.includes(
-      "import type { TLStoreSnapshot } from 'tldraw'",
-    ) &&
-    source.includes(
-      'function snapshot(documentValue: unknown): TLStoreSnapshot',
-    )
-  ) {
-    return {
-      content: source,
-      changed: false,
-    }
-  }
-
-  let next = replaceExactlyOnce(
-    source,
-    `import type { TLEditorSnapshot } from 'tldraw'`,
-    `import type { TLStoreSnapshot } from 'tldraw'`,
-    'replace document-session test snapshot import',
-  )
-
-  const oldFixture = `function snapshot(documentValue: unknown): TLEditorSnapshot {
-  return {
-    document: documentValue,
-    session: {},
-  } as unknown as TLEditorSnapshot
-}`
-
-  const newFixture = `function snapshot(documentValue: unknown): TLStoreSnapshot {
-  /*
-   * DocumentSession accepts only persistable TLStore document state. Tests no
-   * longer manufacture an editor session snapshot.
-   */
-  return documentValue as TLStoreSnapshot
-}`
-
-  next = replaceExactlyOnce(
-    next,
-    oldFixture,
-    newFixture,
-    'replace fake TLEditorSnapshot document-session fixture',
-  )
-
-  return {
-    content: next,
-    changed: true,
-  }
-}
-
-async function prepareCanonicalFile(path, canonicalContent, label) {
-  if (!(await exists(path))) {
-    return {
-      content: canonicalContent,
-      changed: true,
-    }
-  }
-
-  const current = await readFile(path, 'utf8')
-
-  if (current === canonicalContent) {
-    return {
-      content: current,
-      changed: false,
-    }
-  }
-
-  if (label === 'ADR') {
-    throw new Error(
-      [
-        `ADR already exists with different content: ${path}`,
-        'Refusing to overwrite an existing architecture decision.',
-      ].join('\n'),
-    )
-  }
-
-  return {
-    content: canonicalContent,
-    changed: true,
+    content: normalized + windowsCargoSection,
   }
 }
 
@@ -668,7 +382,7 @@ async function main() {
     throw new Error(
       [
         `Canvas repository root was not found: ${root}`,
-        'Run from the repository root or pass the root path.',
+        'Run this script from the repository root or pass its path.',
       ].join('\n'),
     )
   }
@@ -683,212 +397,116 @@ async function main() {
     )
   }
 
-  const requiredPaths = [
-    paths.editorSession,
-    paths.editorDocumentPort,
-    paths.documentCheckpoint,
-    paths.documentSession,
-    paths.canvasDocumentService,
-    paths.canvasDocumentServiceTest,
-    paths.documentSessionTest,
-  ]
-
-  for (const path of requiredPaths) {
+  for (const path of [
+    paths.nativeCargo,
+    paths.atomicWrite,
+  ]) {
     if (!(await exists(path))) {
-      throw new Error(`Required source file was not found: ${path}`)
+      throw new Error(`Required file was not found: ${path}`)
     }
   }
 
-  const [
-    editorSessionSource,
-    editorDocumentPortSource,
-    documentCheckpointSource,
-    documentSessionSource,
-    canvasDocumentServiceSource,
-    canvasDocumentServiceTestSource,
-    documentSessionTestSource,
-  ] = await Promise.all([
-    readFile(paths.editorSession, 'utf8'),
-    readFile(paths.editorDocumentPort, 'utf8'),
-    readFile(paths.documentCheckpoint, 'utf8'),
-    readFile(paths.documentSession, 'utf8'),
-    readFile(paths.canvasDocumentService, 'utf8'),
-    readFile(paths.canvasDocumentServiceTest, 'utf8'),
-    readFile(paths.documentSessionTest, 'utf8'),
+  const [cargoSource, atomicWriteSource] = await Promise.all([
+    readFile(paths.nativeCargo, 'utf8'),
+    readFile(paths.atomicWrite, 'utf8'),
   ])
 
-  const changes = {
-    editorSession: updateEditorSession(editorSessionSource),
-
-    editorDocumentPort: await prepareCanonicalFile(
-      paths.editorDocumentPort,
-      canonicalEditorDocumentPort,
-      'EditorDocumentPort',
-    ),
-
-    documentCheckpoint: await prepareCanonicalFile(
-      paths.documentCheckpoint,
-      canonicalDocumentCheckpoint,
-      'DocumentCheckpoint',
-    ),
-
-    documentSession: updateDocumentSession(documentSessionSource),
-
-    canvasDocumentService: updateCanvasDocumentService(
-      canvasDocumentServiceSource,
-    ),
-
-    canvasDocumentServiceTest: updateCanvasDocumentServiceTest(
-      canvasDocumentServiceTestSource,
-    ),
-
-    documentSessionTest: updateDocumentSessionTest(
-      documentSessionTestSource,
-    ),
-
-    adr: await prepareCanonicalFile(
-      paths.adr,
-      adrSource,
-      'ADR',
-    ),
-  }
-
-  const changedEntries = Object.entries(changes).filter(
-    ([, change]) => change.changed,
+  const atomicWriteChange = updateAtomicWrite(
+    atomicWriteSource,
   )
 
-  if (changedEntries.length === 0) {
+  const cargoChange = updateNativeCargo(cargoSource)
+
+  if (!atomicWriteChange.changed && !cargoChange.changed) {
     console.log(
-      'P0-A document/session persistence boundary is already applied.',
+      'P0-B platform atomic replacement is already applied.',
     )
     return
   }
 
   if (check) {
     console.log(
-      'P0-A document/session boundary refactor is safe to apply.',
+      'P0-B platform atomic replacement is safe to apply.',
     )
     console.log('')
     console.log('It will:')
     console.log(
-      '- make EditorDocumentPort return TLStoreSnapshot only;',
+      '- remove the generic cross-platform std::fs::rename replacement;',
     )
     console.log(
-      '- exclude session state from dirty tracking by type;',
+      '- use POSIX rename on Unix and macOS;',
     )
     console.log(
-      '- keep full TLEditorSnapshot only at the temporary v1 writer boundary;',
+      '- use ReplaceFileW for existing Windows documents;',
     )
     console.log(
-      '- update lifecycle fixtures to document-only snapshots;',
+      '- use MoveFileExW with WRITE_THROUGH for new Windows documents;',
     )
     console.log(
-      '- record the v2 document/session decision in ADR-004;',
+      '- reject unsupported platforms at compile time;',
+    )
+    console.log(
+      '- keep exactly one physical writer and no fallback path;',
     )
     console.log('')
-    console.log('Files to change:')
-
-    for (const [name] of changedEntries) {
-      console.log(`- ${name}`)
-    }
-
+    console.log('It will not:')
+    console.log('- change the .draw format;')
+    console.log('- add another writer;')
+    console.log('- add compatibility parsing;')
+    console.log('- add recovery, lock or watcher scaffolding;')
     console.log('')
     console.log('Run again with --apply to write the changes.')
     return
   }
 
-  await mkdir(dirname(paths.adr), {
-    recursive: true,
-  })
-
   await Promise.all([
-    changes.editorSession.changed
+    atomicWriteChange.changed
       ? writeFile(
-          paths.editorSession,
-          changes.editorSession.content,
+          paths.atomicWrite,
+          atomicWriteChange.content,
           'utf8',
         )
       : Promise.resolve(),
 
-    changes.editorDocumentPort.changed
+    cargoChange.changed
       ? writeFile(
-          paths.editorDocumentPort,
-          changes.editorDocumentPort.content,
+          paths.nativeCargo,
+          cargoChange.content,
           'utf8',
         )
-      : Promise.resolve(),
-
-    changes.documentCheckpoint.changed
-      ? writeFile(
-          paths.documentCheckpoint,
-          changes.documentCheckpoint.content,
-          'utf8',
-        )
-      : Promise.resolve(),
-
-    changes.documentSession.changed
-      ? writeFile(
-          paths.documentSession,
-          changes.documentSession.content,
-          'utf8',
-        )
-      : Promise.resolve(),
-
-    changes.canvasDocumentService.changed
-      ? writeFile(
-          paths.canvasDocumentService,
-          changes.canvasDocumentService.content,
-          'utf8',
-        )
-      : Promise.resolve(),
-
-    changes.canvasDocumentServiceTest.changed
-      ? writeFile(
-          paths.canvasDocumentServiceTest,
-          changes.canvasDocumentServiceTest.content,
-          'utf8',
-        )
-      : Promise.resolve(),
-
-    changes.documentSessionTest.changed
-      ? writeFile(
-          paths.documentSessionTest,
-          changes.documentSessionTest.content,
-          'utf8',
-        )
-      : Promise.resolve(),
-
-    changes.adr.changed
-      ? writeFile(paths.adr, changes.adr.content, 'utf8')
       : Promise.resolve(),
   ])
 
   console.log(
-    'Applied P0-A document/session persistence boundary.',
+    'Applied the single platform-correct atomic replacement path.',
   )
   console.log('')
-  console.log('The document lifecycle now accepts TLStoreSnapshot only.')
+  console.log('Changed:')
   console.log(
-    'The complete TLEditorSnapshot remains only as a temporary v1 writer bridge.',
+    '- editor/persistence/native/src/atomic_write.rs',
+  )
+  console.log(
+    '- editor/persistence/native/Cargo.toml',
   )
   console.log('')
   console.log('Required verification:')
-  console.log('  pnpm format')
+  console.log('  cargo fmt --all')
   console.log(
-    '  pnpm --filter @hybrid-canvas/canvas typecheck',
+    '  cargo check -p hybrid-canvas-file-native --all-targets',
   )
   console.log(
-    '  pnpm --filter @hybrid-canvas/document typecheck',
+    '  cargo test -p hybrid-canvas-file-native',
   )
   console.log(
-    '  pnpm --filter @hybrid-canvas/test-cross-domain-contract typecheck',
-  )
-  console.log(
-    '  pnpm --filter @hybrid-canvas/test-cross-domain-contract test',
+    '  cargo clippy -p hybrid-canvas-file-native --all-targets -- -D warnings',
   )
   console.log('  pnpm typecheck')
   console.log('  pnpm lint')
   console.log('  pnpm test')
+  console.log('')
+  console.log(
+    'The Windows replacement path must also pass CI or verification on a real Windows runner.',
+  )
 }
 
 main().catch((error) => {
