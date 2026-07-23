@@ -28,10 +28,15 @@ function invalidPersistedSnapshot(): TLEditorSnapshot {
 function createAssetStoreHarness() {
   const dispose = vi.fn().mockResolvedValue(undefined)
 
+  const getPersistenceToken = vi
+    .fn()
+    .mockResolvedValue(null)
+
   const factory: EditorAssetStoreSessionFactory = () => ({
     assets: {
       upload: vi.fn(),
     } as unknown as TLAssetStore,
+    getPersistenceToken,
     dispose,
   })
 
@@ -94,6 +99,49 @@ describe('EditorSessionRegistry persisted snapshot boundary', () => {
     expect(assets.dispose).toHaveBeenCalledTimes(2)
   })
 
+  it('binds restored resources and persistence capture to the same session', async () => {
+    const persistenceToken =
+      'restored-native-session'
+
+    const getPersistenceToken = vi
+      .fn()
+      .mockResolvedValue(persistenceToken)
+
+    const factory: EditorAssetStoreSessionFactory =
+      vi.fn((restore) => ({
+        assets: {
+          upload: vi.fn(),
+        } as unknown as TLAssetStore,
+        getPersistenceToken,
+        dispose: vi.fn().mockResolvedValue(undefined),
+      }))
+
+    const registry =
+      createEditorSessionRegistry(factory)
+
+    const session = await registry.create({
+      sessionId: 'restored-editor-session',
+      documentId: 'restored-document',
+      assetStoreRestore: {
+        persistenceToken,
+      },
+      extensions: [],
+    })
+
+    expect(factory).toHaveBeenCalledWith({
+      persistenceToken,
+    })
+
+    await expect(
+      session.captureAssetPersistenceToken(),
+    ).resolves.toBe(persistenceToken)
+
+    expect(getPersistenceToken)
+      .toHaveBeenCalledTimes(1)
+
+    await registry.close(session.sessionId)
+  })
+
   it('waits for owned asset disposal before close settles', async () => {
     let releaseAssetStore = () => {}
 
@@ -108,6 +156,9 @@ describe('EditorSessionRegistry persisted snapshot boundary', () => {
       assets: {
         upload: vi.fn(),
       } as unknown as TLAssetStore,
+      getPersistenceToken: vi
+        .fn()
+        .mockResolvedValue(null),
       dispose,
     }))
 

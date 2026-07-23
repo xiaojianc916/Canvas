@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * P0-C.6.3.1 — Fix TLAsset meta index-signature access.
+ * P0-C.6.4 — Wire Native asset persistence through EditorSession ownership.
+ *
+ * Required base:
+ *   42f35852886f1af4bd867a6d41478fd2f8fd41ce
  *
  * Usage:
  *   node refactor.mjs --check
@@ -20,7 +23,7 @@ import { join, resolve } from 'node:path'
 import process from 'node:process'
 
 const STEP_NAME =
-  'P0-C.6.3.1 TLAsset meta access repair'
+  'P0-C.6.4 EditorSession asset persistence ownership'
 
 function fail(message) {
   console.error(`\n${STEP_NAME} failed:\n${message}\n`)
@@ -89,7 +92,33 @@ const { mode, root } = parseArguments(
 const paths = {
   packageJson: join(root, 'package.json'),
 
-  adapter: join(
+  editorSession: join(
+    root,
+    'editor',
+    'core',
+    'src',
+    'runtime',
+    'editor-session.ts',
+  ),
+
+  publicApi: join(
+    root,
+    'editor',
+    'core',
+    'src',
+    'application',
+    'public-api.ts',
+  ),
+
+  registryTest: join(
+    root,
+    'tests',
+    'cross-domain-contract',
+    'document-lifecycle',
+    'editor-session-registry.test.ts',
+  ),
+
+  nativeAdapter: join(
     root,
     'platforms',
     'desktop-runtime',
@@ -110,6 +139,12 @@ async function exists(path) {
 }
 
 function countOccurrences(source, fragment) {
+  if (fragment.length === 0) {
+    throw new Error(
+      'Cannot count an empty source fragment.',
+    )
+  }
+
   let count = 0
   let offset = 0
 
@@ -128,7 +163,7 @@ function countOccurrences(source, fragment) {
   }
 }
 
-function replaceRequired(
+function replaceExact(
   source,
   baseline,
   final,
@@ -159,27 +194,264 @@ function replaceRequired(
       `Unexpected source state: ${description}`,
       `Baseline count: ${baselineCount}`,
       `Final count: ${finalCount}`,
-      'Expected exactly one baseline or one already-fixed expression.',
-      'Refusing an ambiguous modification.',
+      'Expected one audited baseline or one final implementation.',
+      'Refusing an ambiguous or partial modification.',
     ].join('\n'),
   )
 }
 
-function updateAdapter(source) {
+const assetContractsBaseline = `export interface EditorAssetStoreSession {
+  readonly assets: TLAssetStore
+  readonly dispose: () => Promise<void>
+}
+
+export type EditorAssetStoreSessionFactory =
+  () => EditorAssetStoreSession`
+
+const assetContractsFinal = `/**
+ * Process-local Native resource capability associated with an opened document.
+ *
+ * This value is an opaque lifecycle capability. It is never part of the .draw
+ * format and must never be interpreted as a path, URL or archive entry.
+ */
+export interface EditorAssetStoreRestore {
+  readonly persistenceToken: string
+}
+
+export interface EditorAssetStoreSession {
+  readonly assets: TLAssetStore
+
+  /**
+   * Settles accepted asset operations and returns the Native resource-session
+   * capability. Asset-free documents return null without allocating a session.
+   */
+  readonly getPersistenceToken: () => Promise<string | null>
+
+  readonly dispose: () => Promise<void>
+}
+
+export type EditorAssetStoreSessionFactory = (
+  restore?: EditorAssetStoreRestore,
+) => EditorAssetStoreSession`
+
+const createOptionsBaseline = `export interface CreateEditorSessionOptions {
+  readonly sessionId: string
+  readonly documentId: string
+  readonly initialSnapshot?: TLEditorSnapshot
+  readonly extensions?: readonly HybridCanvasExtension[]
+}`
+
+const createOptionsFinal = `export interface CreateEditorSessionOptions {
+  readonly sessionId: string
+  readonly documentId: string
+  readonly initialSnapshot?: TLEditorSnapshot
+
+  /**
+   * Present only when Native has transactionally restored resources while
+   * opening an existing v2 document.
+   */
+  readonly assetStoreRestore?: EditorAssetStoreRestore
+
+  readonly extensions?: readonly HybridCanvasExtension[]
+}`
+
+const sessionInterfaceBaseline = `  readonly captureDocument: () => TLStoreSnapshot
+
+  readonly subscribeDocumentEvents: (listener: (event: EditorDocumentEvent) => void) => () => void`
+
+const sessionInterfaceFinal = `  readonly captureDocument: () => TLStoreSnapshot
+
+  /**
+   * Returns the settled Native resource capability for the same editor session
+   * whose TLStoreSnapshot is being persisted.
+   */
+  readonly captureAssetPersistenceToken: () => Promise<string | null>
+
+  readonly subscribeDocumentEvents: (listener: (event: EditorDocumentEvent) => void) => () => void`
+
+const sessionReturnBaseline = `    getSnapshot: captureLegacyEditorSnapshot,
+    captureDocument,
+
+    subscribeDocumentEvents(listener) {`
+
+const sessionReturnFinal = `    getSnapshot: captureLegacyEditorSnapshot,
+    captureDocument,
+
+    captureAssetPersistenceToken() {
+      assertActive()
+      return assetStoreSession.getPersistenceToken()
+    },
+
+    subscribeDocumentEvents(listener) {`
+
+const factoryInvocationBaseline = `      const assetStoreSession = assetStoreFactory()`
+
+const factoryInvocationFinal = `      const assetStoreSession = assetStoreFactory(
+        options.assetStoreRestore,
+      )`
+
+function updateEditorSession(source) {
   let result = source
 
-  result = replaceRequired(
+  result = replaceExact(
     result,
-    `asset.meta?.hybridCanvasAssetToken`,
-    `asset.meta?.['hybridCanvasAssetToken']`,
-    'hybridCanvasAssetToken index access',
+    assetContractsBaseline,
+    assetContractsFinal,
+    'define the EditorSession asset capability boundary',
   )
 
-  result = replaceRequired(
+  result = replaceExact(
     result,
-    `asset.meta?.hybridCanvasContentHash`,
-    `asset.meta?.['hybridCanvasContentHash']`,
-    'hybridCanvasContentHash index access',
+    createOptionsBaseline,
+    createOptionsFinal,
+    'accept a Native-restored asset session',
+  )
+
+  result = replaceExact(
+    result,
+    sessionInterfaceBaseline,
+    sessionInterfaceFinal,
+    'expose asset persistence capture',
+  )
+
+  result = replaceExact(
+    result,
+    sessionReturnBaseline,
+    sessionReturnFinal,
+    'delegate persistence capture to the owned asset session',
+  )
+
+  result = replaceExact(
+    result,
+    factoryInvocationBaseline,
+    factoryInvocationFinal,
+    'inject restoration into the asset factory',
+  )
+
+  return result
+}
+
+function updatePublicApi(source) {
+  const baseline = `  type EditorAssetStoreSession,
+  type EditorAssetStoreSessionFactory,`
+
+  const final = `  type EditorAssetStoreRestore,
+  type EditorAssetStoreSession,
+  type EditorAssetStoreSessionFactory,`
+
+  return replaceExact(
+    source,
+    baseline,
+    final,
+    'export the asset restoration contract',
+  )
+}
+
+const firstHarnessBaseline = `  const factory: EditorAssetStoreSessionFactory = () => ({
+    assets: {
+      upload: vi.fn(),
+    } as unknown as TLAssetStore,
+    dispose,
+  })`
+
+const firstHarnessFinal = `  const getPersistenceToken = vi
+    .fn()
+    .mockResolvedValue(null)
+
+  const factory: EditorAssetStoreSessionFactory = () => ({
+    assets: {
+      upload: vi.fn(),
+    } as unknown as TLAssetStore,
+    getPersistenceToken,
+    dispose,
+  })`
+
+const secondHarnessBaseline = `    const registry = createEditorSessionRegistry(() => ({
+      assets: {
+        upload: vi.fn(),
+      } as unknown as TLAssetStore,
+      dispose,
+    }))`
+
+const secondHarnessFinal = `    const registry = createEditorSessionRegistry(() => ({
+      assets: {
+        upload: vi.fn(),
+      } as unknown as TLAssetStore,
+      getPersistenceToken: vi
+        .fn()
+        .mockResolvedValue(null),
+      dispose,
+    }))`
+
+const finalTestAnchor = `  it('waits for owned asset disposal before close settles', async () => {`
+
+const capabilityTest = `  it('binds restored resources and persistence capture to the same session', async () => {
+    const persistenceToken =
+      'restored-native-session'
+
+    const getPersistenceToken = vi
+      .fn()
+      .mockResolvedValue(persistenceToken)
+
+    const factory: EditorAssetStoreSessionFactory =
+      vi.fn((restore) => ({
+        assets: {
+          upload: vi.fn(),
+        } as unknown as TLAssetStore,
+        getPersistenceToken,
+        dispose: vi.fn().mockResolvedValue(undefined),
+      }))
+
+    const registry =
+      createEditorSessionRegistry(factory)
+
+    const session = await registry.create({
+      sessionId: 'restored-editor-session',
+      documentId: 'restored-document',
+      assetStoreRestore: {
+        persistenceToken,
+      },
+      extensions: [],
+    })
+
+    expect(factory).toHaveBeenCalledWith({
+      persistenceToken,
+    })
+
+    await expect(
+      session.captureAssetPersistenceToken(),
+    ).resolves.toBe(persistenceToken)
+
+    expect(getPersistenceToken)
+      .toHaveBeenCalledTimes(1)
+
+    await registry.close(session.sessionId)
+  })
+
+${finalTestAnchor}`
+
+function updateRegistryTest(source) {
+  let result = source
+
+  result = replaceExact(
+    result,
+    firstHarnessBaseline,
+    firstHarnessFinal,
+    'add persistence capture to the primary asset harness',
+  )
+
+  result = replaceExact(
+    result,
+    secondHarnessBaseline,
+    secondHarnessFinal,
+    'add persistence capture to the disposal harness',
+  )
+
+  result = replaceExact(
+    result,
+    finalTestAnchor,
+    capabilityTest,
+    'test restored resource ownership',
   )
 
   return result
@@ -209,60 +481,131 @@ function validateRepository(packageJson) {
   }
 }
 
-function validatePrerequisites(source) {
+function validateAdapter(source) {
   for (const fragment of [
-    'function persistedAssetToken(',
-    'asset: TLAsset',
-    'hybridCanvasAssetToken',
-    'hybridCanvasContentHash',
-    'contentHash !== token',
+    'export interface NativeAssetStoreSessionRestore',
+    'readonly persistenceToken: string',
+    'readonly getPersistenceToken: () => Promise<string | null>',
+    'restore?: NativeAssetStoreSessionRestore',
+    `asset.meta?.['hybridCanvasAssetToken']`,
+    `asset.meta?.['hybridCanvasContentHash']`,
   ]) {
     if (!source.includes(fragment)) {
       throw new Error(
-        `Expected adapter prerequisite is missing: ${fragment}`,
+        `Native adapter prerequisite is missing: ${fragment}`,
       )
     }
   }
 }
 
-function validateFinal(source) {
-  const required = [
-    `asset.meta?.['hybridCanvasAssetToken']`,
-    `asset.meta?.['hybridCanvasContentHash']`,
+function validateFinal(
+  editorSession,
+  publicApi,
+  registryTest,
+) {
+  const requiredSession = [
+    'export interface EditorAssetStoreRestore',
+    'readonly persistenceToken: string',
+    'readonly getPersistenceToken: () => Promise<string | null>',
+    'restore?: EditorAssetStoreRestore',
+    'readonly assetStoreRestore?: EditorAssetStoreRestore',
+    'readonly captureAssetPersistenceToken: () => Promise<string | null>',
+    'return assetStoreSession.getPersistenceToken()',
+    'options.assetStoreRestore',
   ]
 
-  for (const fragment of required) {
-    if (
-      countOccurrences(source, fragment) !== 1
-    ) {
+  for (const fragment of requiredSession) {
+    if (!editorSession.includes(fragment)) {
       throw new Error(
-        `Expected exactly one final expression: ${fragment}`,
+        `EditorSession persistence boundary is missing: ${fragment}`,
       )
     }
   }
 
-  for (const obsolete of [
-    'asset.meta?.hybridCanvasAssetToken',
-    'asset.meta?.hybridCanvasContentHash',
+  if (
+    countOccurrences(
+      editorSession,
+      'captureAssetPersistenceToken()',
+    ) !== 1
+  ) {
+    throw new Error(
+      'Expected exactly one asset persistence capture implementation.',
+    )
+  }
+
+  if (
+    countOccurrences(
+      editorSession,
+      'assetStoreFactory(',
+    ) !== 1
+  ) {
+    throw new Error(
+      'Expected exactly one owned asset-store construction site.',
+    )
+  }
+
+  if (
+    !publicApi.includes(
+      'type EditorAssetStoreRestore,',
+    )
+  ) {
+    throw new Error(
+      'Editor asset restore contract is not exported.',
+    )
+  }
+
+  for (const fragment of [
+    'binds restored resources and persistence capture to the same session',
+    'assetStoreRestore: {',
+    'session.captureAssetPersistenceToken()',
+    'expect(factory).toHaveBeenCalledWith({',
   ]) {
-    if (source.includes(obsolete)) {
+    if (!registryTest.includes(fragment)) {
       throw new Error(
-        `Obsolete index-signature access remains: ${obsolete}`,
+        `EditorSession contract test is missing: ${fragment}`,
       )
     }
   }
 
   for (const forbidden of [
-    'as any',
-    'as unknown as',
+    'assetSessionToken: any',
+    'persistenceToken: any',
     '// @ts-ignore',
     '// @ts-expect-error',
+    'URL.createObjectURL',
+    'FileReader',
   ]) {
-    if (source.includes(forbidden)) {
+    if (
+      editorSession.includes(forbidden) ||
+      registryTest.includes(forbidden)
+    ) {
       throw new Error(
-        `Type-check suppression is not allowed: ${forbidden}`,
+        `Forbidden compatibility or suppression remains: ${forbidden}`,
       )
     }
+  }
+}
+
+async function restoreFiles(originals) {
+  const results = await Promise.allSettled(
+    [...originals].map(
+      ([path, content]) =>
+        writeFile(path, content, 'utf8'),
+    ),
+  )
+
+  const failures = results.filter(
+    (result) =>
+      result.status === 'rejected',
+  )
+
+  if (failures.length > 0) {
+    throw new AggregateError(
+      failures.map(
+        (failure) => failure.reason,
+      ),
+      'Apply failed and original files could not all be restored.',
+    )
   }
 }
 
@@ -277,21 +620,70 @@ async function main() {
 
   const [
     packageJson,
-    adapterOriginal,
+    editorSessionOriginal,
+    publicApiOriginal,
+    registryTestOriginal,
+    nativeAdapter,
   ] = await Promise.all([
     readFile(paths.packageJson, 'utf8'),
-    readFile(paths.adapter, 'utf8'),
+    readFile(paths.editorSession, 'utf8'),
+    readFile(paths.publicApi, 'utf8'),
+    readFile(paths.registryTest, 'utf8'),
+    readFile(paths.nativeAdapter, 'utf8'),
   ])
 
   validateRepository(packageJson)
-  validatePrerequisites(adapterOriginal)
+  validateAdapter(nativeAdapter)
 
-  const adapterFinal =
-    updateAdapter(adapterOriginal)
+  const editorSessionFinal =
+    updateEditorSession(
+      editorSessionOriginal,
+    )
 
-  validateFinal(adapterFinal)
+  const publicApiFinal =
+    updatePublicApi(publicApiOriginal)
 
-  if (adapterFinal === adapterOriginal) {
+  const registryTestFinal =
+    updateRegistryTest(
+      registryTestOriginal,
+    )
+
+  validateFinal(
+    editorSessionFinal,
+    publicApiFinal,
+    registryTestFinal,
+  )
+
+  const originals = new Map([
+    [
+      paths.editorSession,
+      editorSessionOriginal,
+    ],
+    [paths.publicApi, publicApiOriginal],
+    [
+      paths.registryTest,
+      registryTestOriginal,
+    ],
+  ])
+
+  const outputs = new Map([
+    [
+      paths.editorSession,
+      editorSessionFinal,
+    ],
+    [paths.publicApi, publicApiFinal],
+    [
+      paths.registryTest,
+      registryTestFinal,
+    ],
+  ])
+
+  const changed = [...outputs].filter(
+    ([path, content]) =>
+      originals.get(path) !== content,
+  )
+
+  if (changed.length === 0) {
     console.log(
       `${STEP_NAME} is already applied.`,
     )
@@ -299,19 +691,32 @@ async function main() {
   }
 
   console.log(`${STEP_NAME} will update:`)
-  console.log(
-    `- ${paths.adapter.slice(root.length + 1)}`,
-  )
+
+  for (const [path] of changed) {
+    console.log(
+      `- ${path.slice(root.length + 1)}`,
+    )
+  }
+
   console.log('')
   console.log('It will:')
   console.log(
-    '- use bracket access for TLAsset meta index signatures;',
+    '- make EditorSession own the Native resource capability;',
   )
   console.log(
-    '- fix both TS4111 diagnostics;',
+    '- inject restored resources into the official TLAssetStore factory;',
   )
   console.log(
-    '- add no casts, suppressions or compatibility code.',
+    '- expose one settled persistence capture boundary;',
+  )
+  console.log(
+    '- preserve lazy allocation for asset-free documents;',
+  )
+  console.log(
+    '- keep session tokens out of the physical document format;',
+  )
+  console.log(
+    '- add a cross-domain ownership contract test.',
   )
 
   if (mode === '--check') {
@@ -319,39 +724,38 @@ async function main() {
     console.log(
       'Check completed. No files were written.',
     )
+    console.log('')
+    console.log('Apply with:')
+    console.log('  node refactor.mjs --apply')
     return
   }
 
   try {
-    await writeFile(
-      paths.adapter,
-      adapterFinal,
-      'utf8',
-    )
-
-    const written = await readFile(
-      paths.adapter,
-      'utf8',
-    )
-
-    if (written !== adapterFinal) {
-      throw new Error(
-        'Written adapter differs from validated output.',
-      )
+    for (const [path, content] of changed) {
+      await writeFile(path, content, 'utf8')
     }
 
-    validateFinal(written)
+    const [
+      writtenEditorSession,
+      writtenPublicApi,
+      writtenRegistryTest,
+    ] = await Promise.all([
+      readFile(paths.editorSession, 'utf8'),
+      readFile(paths.publicApi, 'utf8'),
+      readFile(paths.registryTest, 'utf8'),
+    ])
+
+    validateFinal(
+      writtenEditorSession,
+      writtenPublicApi,
+      writtenRegistryTest,
+    )
   } catch (error) {
     console.error(
-      '\nApply failed. Restoring original adapter...',
+      '\nApply failed. Restoring original files...',
     )
 
-    await writeFile(
-      paths.adapter,
-      adapterOriginal,
-      'utf8',
-    )
-
+    await restoreFiles(originals)
     throw error
   }
 
@@ -363,6 +767,12 @@ async function main() {
   console.log('  pnpm lint')
   console.log('  pnpm typecheck')
   console.log('  pnpm test')
+  console.log(
+    '  cargo check --workspace --all-targets',
+  )
+  console.log(
+    '  cargo test --workspace --all-targets',
+  )
   console.log('  pnpm tauri dev')
 }
 

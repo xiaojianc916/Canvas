@@ -18,18 +18,43 @@ import {
 
 // Contract tests: tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts
 
+/**
+ * Process-local Native resource capability associated with an opened document.
+ *
+ * This value is an opaque lifecycle capability. It is never part of the .draw
+ * format and must never be interpreted as a path, URL or archive entry.
+ */
+export interface EditorAssetStoreRestore {
+  readonly persistenceToken: string
+}
+
 export interface EditorAssetStoreSession {
   readonly assets: TLAssetStore
+
+  /**
+   * Settles accepted asset operations and returns the Native resource-session
+   * capability. Asset-free documents return null without allocating a session.
+   */
+  readonly getPersistenceToken: () => Promise<string | null>
+
   readonly dispose: () => Promise<void>
 }
 
-export type EditorAssetStoreSessionFactory =
-  () => EditorAssetStoreSession
+export type EditorAssetStoreSessionFactory = (
+  restore?: EditorAssetStoreRestore,
+) => EditorAssetStoreSession
 
 export interface CreateEditorSessionOptions {
   readonly sessionId: string
   readonly documentId: string
   readonly initialSnapshot?: TLEditorSnapshot
+
+  /**
+   * Present only when Native has transactionally restored resources while
+   * opening an existing v2 document.
+   */
+  readonly assetStoreRestore?: EditorAssetStoreRestore
+
   readonly extensions?: readonly HybridCanvasExtension[]
 }
 
@@ -89,6 +114,12 @@ export interface EditorSession {
    * editor/document's EditorDocumentPort.
    */
   readonly captureDocument: () => TLStoreSnapshot
+
+  /**
+   * Returns the settled Native resource capability for the same editor session
+   * whose TLStoreSnapshot is being persisted.
+   */
+  readonly captureAssetPersistenceToken: () => Promise<string | null>
 
   readonly subscribeDocumentEvents: (listener: (event: EditorDocumentEvent) => void) => () => void
 
@@ -279,6 +310,11 @@ export function createEditorSession(
     getSnapshot: captureLegacyEditorSnapshot,
     captureDocument,
 
+    captureAssetPersistenceToken() {
+      assertActive()
+      return assetStoreSession.getPersistenceToken()
+    },
+
     subscribeDocumentEvents(listener) {
       assertActive()
 
@@ -401,7 +437,9 @@ export function createEditorSessionRegistry(
         throw new Error('EDITOR_SESSION_DUPLICATE_ID')
       }
 
-      const assetStoreSession = assetStoreFactory()
+      const assetStoreSession = assetStoreFactory(
+        options.assetStoreRestore,
+      )
 
       let session: EditorSession
 
