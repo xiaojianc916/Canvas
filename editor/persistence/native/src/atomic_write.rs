@@ -14,6 +14,7 @@
 //! temporary file during drop.
 
 use crate::{Error, Result};
+#[cfg(unix)]
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
