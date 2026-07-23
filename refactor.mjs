@@ -1,22 +1,18 @@
 #!/usr/bin/env node
 /**
- * tools/patch-approved-path-registry.mjs
+ * tools/refactor-atomic-write.mjs
  *
- * 用途：
- * 1. 将“已批准路径”从纯词法路径比较升级为：
- *    - 目标存在：真实路径 canonicalize；
- *    - 目标不存在：真实父目录 canonicalize + 文件名；
- * 2. 在 approve 与 require 时均重新解析真实父目录。
- * 3. 父目录被符号链接 / junction / reparse point 替换后，require 将拒绝写入。
+ * 全量重构 editor/persistence/native/src/atomic_write.rs：
+ *
+ * - 删除 Windows “禁止覆盖已有文件”的特例；
+ * - 删除 replace_file 的平台双轨实现；
+ * - 统一使用 std::fs::rename 进行同目录替换；
+ * - 保持：临时文件、完整写入、文件 sync_all、替换、Unix 目录 sync；
+ * - 临时文件由 NamedTempFile 生命周期自动清理，失败不破坏原目标文件。
  *
  * 用法：
- *   node tools/patch-approved-path-registry.mjs
- *   node tools/patch-approved-path-registry.mjs --check
- *
- * 注意：
- * 此补丁缩小“对话框批准”到“实际写入”之间的路径替换窗口。
- * 对抗拥有同等本地文件系统权限的竞争攻击，还应在后续 native 后端中使用
- * 基于目录句柄的 no-follow 打开策略。
+ *   node tools/refactor-atomic-write.mjs
+ *   node tools/refactor-atomic-write.mjs --check
  */
 
 import { readFile, writeFile } from 'node:fs/promises'
@@ -25,265 +21,182 @@ import process from 'node:process'
 
 const checkOnly = process.argv.includes('--check')
 
-const target = resolve('apps/desktop/src-tauri/src/security/approved_paths.rs')
+const target = resolve('editor/persistence/native/src/atomic_write.rs')
 
-const source = await readFile(target, 'utf8')
+const replacement = `//! Crash-safe replacement of a document file.
+//!
+//! The persistence contract has one save path on every supported platform:
+//!
+//! 1. Create a uniquely named temporary file in the destination directory.
+//! 2. Write the complete document.
+//! 3. Synchronize the temporary file.
+//! 4. Rename the temporary file over the destination.
+//! 5. Synchronize the containing directory where the platform supports it.
+//!
+//! Keeping the temporary file in the destination directory guarantees that the
+//! replacement stays on one filesystem. If writing or replacement fails, the
+//! original destination is left untouched and NamedTempFile removes the
+//! temporary file during drop.
 
-const expectedMarker = `pub struct ApprovedPathRegistry {
-    paths: RwLock<HashSet<PathBuf>>,
-}`
+use crate::{Error, Result};
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
 
-if (!source.includes(expectedMarker)) {
-  throw new Error(
-    [
-      `无法匹配预期源码：${target}`,
-      '脚本已停止，未写入任何文件。',
-      '请确认 approved_paths.rs 仍是审查时版本，或更新本脚本。',
-    ].join('\n'),
-  )
-}
+const TEMPORARY_FILE_PREFIX: &str = ".hybrid-canvas-";
+const TEMPORARY_FILE_SUFFIX: &str = ".tmp";
 
-const replacement = `use crate::{Error, Result};
-use std::collections::HashSet;
-use std::path::{Component, Path, PathBuf};
-use std::sync::RwLock;
-
-/// Stores exact paths explicitly selected through a native file dialog.
-///
-/// Renderer-provided paths are never trusted on their own. A path must first
-/// be approved by file_open or file_save during the current application
-/// process.
-///
-/// For an existing target, the registry stores its canonical path. For a new
-/// target, it stores the canonical existing parent directory plus the target
-/// file name. This makes a later parent-directory symlink replacement visible
-/// when \`require\` resolves the path again.
-#[derive(Debug, Default)]
-pub struct ApprovedPathRegistry {
-    paths: RwLock<HashSet<PathBuf>>,
-}
-
-impl ApprovedPathRegistry {
-    pub fn approve(&self, path: &Path) -> Result<PathBuf> {
-        let resolved = resolve_approved_path(path)?;
-        let mut paths = self
-            .paths
-            .write()
-            .map_err(|_| Error::Internal("approved path registry write lock poisoned".into()))?;
-
-        paths.insert(resolved.clone());
-        Ok(resolved)
-    }
-
-    pub fn require(&self, path: &Path) -> Result<PathBuf> {
-        let resolved = resolve_approved_path(path)?;
-        let paths = self
-            .paths
-            .read()
-            .map_err(|_| Error::Internal("approved path registry read lock poisoned".into()))?;
-
-        if paths.contains(&resolved) {
-            return Ok(resolved);
-        }
-
-        Err(Error::PermissionDenied(
-            "path was not approved by a native file dialog".into(),
-        ))
-    }
-}
-
-/// Resolves a path without trusting lexical parent components.
-///
-/// Existing paths are canonicalized in full. New files cannot be canonicalized
-/// directly, so their nearest existing parent is canonicalized and the requested
-/// file name is appended afterwards. This preserves the distinction between:
-///
-/// - \`/safe/new.draw\`
-/// - \`/safe-link/new.draw\`, where \`safe-link\` points elsewhere.
-///
-/// A parent replacement between dialog approval and a later command invocation
-/// changes the resolved value and is rejected by \`ApprovedPathRegistry::require\`.
-fn resolve_approved_path(path: &Path) -> Result<PathBuf> {
-    let absolute = normalize_absolute_path(path)?;
-
-    if absolute.exists() {
-        return Ok(absolute.canonicalize()?);
-    }
-
-    let parent = absolute
+pub fn atomic_write(path: impl AsRef<Path>, content: &[u8]) -> Result<()> {
+    let destination = path.as_ref();
+    let parent = destination
         .parent()
-        .ok_or_else(|| Error::Validation("file path has no parent directory".into()))?;
+        .ok_or_else(|| Error::Internal("target path has no parent directory".into()))?;
 
-    let file_name = absolute
-        .file_name()
-        .ok_or_else(|| Error::Validation("file path must name a file".into()))?;
+    std::fs::create_dir_all(parent)?;
 
-    let canonical_parent = parent.canonicalize().map_err(|error| {
-        Error::Validation(format!(
-            "file parent directory must exist and be accessible: {error}"
-        ))
-    })?;
+    let mut temporary = tempfile::Builder::new()
+        .prefix(TEMPORARY_FILE_PREFIX)
+        .suffix(TEMPORARY_FILE_SUFFIX)
+        .tempfile_in(parent)?;
 
-    Ok(canonical_parent.join(file_name))
+    temporary.write_all(content)?;
+    temporary.as_file().sync_all()?;
+
+    replace_destination(temporary.path(), destination)?;
+    sync_directory(parent)?;
+
+    Ok(())
 }
 
-fn normalize_absolute_path(path: &Path) -> Result<PathBuf> {
-    if path.as_os_str().is_empty() {
-        return Err(Error::Validation("file path cannot be empty".into()));
+/// Replaces destination with source.
+///
+/// Both paths are in the same parent directory, therefore they are on the same
+/// filesystem. Rust's std::fs::rename is the single cross-platform replacement
+/// primitive used by this persistence backend.
+fn replace_destination(source: &Path, destination: &Path) -> Result<()> {
+    std::fs::rename(source, destination)?;
+    Ok(())
+}
+
+/// Synchronizes directory metadata after a successful rename where supported.
+///
+/// Windows does not provide a portable std::fs directory synchronization API.
+/// The file itself is already synchronized before replacement. The replacement
+/// remains a single operation; no backup/delete/copy fallback is used.
+fn sync_directory(directory: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        File::open(directory)?.sync_all()?;
     }
 
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()?.join(path)
-    };
-
-    let mut normalized = PathBuf::new();
-
-    for component in absolute.components() {
-        match component {
-            Component::Prefix(prefix) => {
-                normalized.push(prefix.as_os_str());
-            }
-            Component::RootDir => {
-                normalized.push(component.as_os_str());
-            }
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if !normalized.pop() {
-                    return Err(Error::Validation("file path escapes its root".into()));
-                }
-            }
-            Component::Normal(value) => {
-                normalized.push(value);
-            }
-        }
+    #[cfg(not(unix))]
+    {
+        let _ = directory;
     }
 
-    Ok(normalized)
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn rejects_unapproved_paths() {
-        let directory = tempfile::tempdir().unwrap();
-        let registry = ApprovedPathRegistry::default();
-        let path = directory.path().join("canvas.draw");
-
-        let error = registry.require(&path).unwrap_err();
-
-        assert!(matches!(error, Error::PermissionDenied(_)));
+    fn temporary_file_count(directory: &Path) -> usize {
+        std::fs::read_dir(directory)
+            .expect("temporary directory should be readable")
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(TEMPORARY_FILE_PREFIX)
+            })
+            .count()
     }
 
     #[test]
-    fn accepts_the_exact_approved_path() {
-        let directory = tempfile::tempdir().unwrap();
-        let registry = ApprovedPathRegistry::default();
-        let path = directory.path().join("canvas.draw");
+    fn creates_a_new_document() {
+        let directory = tempfile::tempdir().expect("temporary directory should be created");
+        let destination = directory.path().join("canvas.draw");
 
-        registry.approve(&path).unwrap();
-
-        assert_eq!(registry.require(&path).unwrap(), path);
-    }
-
-    #[test]
-    fn does_not_authorize_sibling_paths() {
-        let directory = tempfile::tempdir().unwrap();
-        let registry = ApprovedPathRegistry::default();
-        let approved = directory.path().join("one.draw");
-        let sibling = directory.path().join("two.draw");
-
-        registry.approve(&approved).unwrap();
-
-        assert!(matches!(
-            registry.require(&sibling),
-            Err(Error::PermissionDenied(_))
-        ));
-    }
-
-    #[test]
-    fn resolves_relative_segments_before_approval() {
-        let directory = tempfile::tempdir().unwrap();
-        let registry = ApprovedPathRegistry::default();
-        let path = directory
-            .path()
-            .join("folder")
-            .join("..")
-            .join("canvas.draw");
-
-        registry.approve(&path).unwrap();
+        atomic_write(&destination, b"first version").expect("first write should succeed");
 
         assert_eq!(
-            registry.require(&path).unwrap(),
-            directory.path().join("canvas.draw")
+            std::fs::read(&destination).expect("destination should be readable"),
+            b"first version",
         );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn rejects_new_file_when_parent_symlink_target_changes() {
-        use std::os::unix::fs::symlink;
-
-        let directory = tempfile::tempdir().unwrap();
-        let first_target = directory.path().join("first");
-        let second_target = directory.path().join("second");
-        let link = directory.path().join("selected-directory");
-
-        std::fs::create_dir(&first_target).unwrap();
-        std::fs::create_dir(&second_target).unwrap();
-        symlink(&first_target, &link).unwrap();
-
-        let registry = ApprovedPathRegistry::default();
-        let selected_path = link.join("canvas.draw");
-
-        registry.approve(&selected_path).unwrap();
-
-        std::fs::remove_file(&link).unwrap();
-        symlink(&second_target, &link).unwrap();
-
-        let error = registry.require(&selected_path).unwrap_err();
-
-        assert!(matches!(error, Error::PermissionDenied(_)));
-        assert!(!second_target.join("canvas.draw").exists());
+        assert_eq!(temporary_file_count(directory.path()), 0);
     }
 
     #[test]
-    fn canonicalizes_existing_file_targets() {
-        let directory = tempfile::tempdir().unwrap();
-        let nested = directory.path().join("nested");
-        std::fs::create_dir(&nested).unwrap();
+    fn replaces_an_existing_document() {
+        let directory = tempfile::tempdir().expect("temporary directory should be created");
+        let destination = directory.path().join("canvas.draw");
 
-        let file = nested.join("canvas.draw");
-        std::fs::write(&file, b"content").unwrap();
+        std::fs::write(&destination, b"old version").expect("fixture should be written");
 
-        let registry = ApprovedPathRegistry::default();
-        registry.approve(&file).unwrap();
+        atomic_write(&destination, b"new version").expect("replacement write should succeed");
 
         assert_eq!(
-            registry.require(&file).unwrap(),
-            file.canonicalize().unwrap()
+            std::fs::read(&destination).expect("destination should be readable"),
+            b"new version",
+        );
+        assert_eq!(temporary_file_count(directory.path()), 0);
+    }
+
+    #[test]
+    fn writes_empty_document_without_leaving_temporary_files() {
+        let directory = tempfile::tempdir().expect("temporary directory should be created");
+        let destination = directory.path().join("empty.draw");
+
+        atomic_write(&destination, b"").expect("empty write should succeed");
+
+        assert_eq!(
+            std::fs::read(&destination).expect("destination should be readable"),
+            b"",
+        );
+        assert_eq!(temporary_file_count(directory.path()), 0);
+    }
+
+    #[test]
+    fn fails_when_destination_parent_is_a_file() {
+        let directory = tempfile::tempdir().expect("temporary directory should be created");
+        let parent_file = directory.path().join("not-a-directory");
+
+        std::fs::write(&parent_file, b"fixture").expect("fixture should be written");
+
+        let destination = parent_file.join("canvas.draw");
+        let result = atomic_write(&destination, b"content");
+
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read(&parent_file).expect("parent fixture should remain readable"),
+            b"fixture",
         );
     }
 }
 `
 
+const current = await readFile(target, 'utf8')
+
 if (checkOnly) {
-  if (source === replacement) {
-    console.log('OK: ApprovedPathRegistry 路径规范化补丁已存在。')
+  if (current === replacement) {
+    console.log(`OK: ${target} 已是统一原子保存实现。`)
     process.exit(0)
   }
 
-  console.error('ERROR: ApprovedPathRegistry 路径规范化补丁尚未应用。')
+  console.error(`ERROR: ${target} 尚未应用统一原子保存重构。`)
   process.exit(1)
 }
 
 await writeFile(target, replacement, 'utf8')
 
-console.log(`已更新：${target}`)
-console.log('下一步建议执行：')
+console.log(`已全量替换：${target}`)
+console.log('')
+console.log('请执行：')
 console.log('  cargo fmt --check')
 console.log('  cargo test --workspace --all-features')
 console.log('  cargo clippy --workspace --all-targets --all-features -- -D warnings')
+console.log('')
+console.log('Windows 平台还应额外执行：')
+console.log('  cargo test -p hybrid-canvas-file-native atomic_write')
