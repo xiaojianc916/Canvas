@@ -4,6 +4,7 @@
 //! protocol never accepts filesystem paths, archive entry names or renderer
 //! supplied MIME response headers.
 
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tauri::http::{
@@ -228,6 +229,99 @@ impl AssetProtocolRegistry {
             state.total_bytes.saturating_sub(removed_bytes);
 
         Ok(true)
+    }
+
+    /// Restores one complete document-owned asset session atomically.
+    ///
+    /// Every asset is validated and materialized in private temporary state
+    /// before the registry write lock is acquired. The session becomes visible
+    /// only after the complete resource set and global byte budget have been
+    /// accepted.
+    ///
+    /// Failure never publishes an empty or partially restored session.
+    pub fn restore_session(
+        &self,
+        session_token: &str,
+        assets: Vec<AssetSessionSnapshotEntry>,
+    ) -> Result<(), AssetProtocolError> {
+        validate_token(session_token)?;
+
+        let mut restored_assets =
+            HashMap::<String, RegisteredAsset>::new();
+        let mut restored_bytes = 0_usize;
+
+        for asset in assets {
+            validate_content_hash(&asset.content_hash)?;
+            validate_content_type(&asset.content_type)?;
+
+            if asset.bytes.len() > MAX_ASSET_BYTES {
+                return Err(AssetProtocolError::AssetTooLarge);
+            }
+
+            let actual_hash =
+                hex::encode(Sha256::digest(asset.bytes.as_ref()));
+
+            if actual_hash != asset.content_hash {
+                return Err(AssetProtocolError::InvalidContentHash);
+            }
+
+            restored_bytes = restored_bytes
+                .checked_add(asset.bytes.len())
+                .ok_or(
+                    AssetProtocolError::RegistryBudgetExceeded,
+                )?;
+
+            if restored_bytes > MAX_REGISTRY_BYTES {
+                return Err(
+                    AssetProtocolError::RegistryBudgetExceeded,
+                );
+            }
+
+            let content_hash = asset.content_hash;
+
+            let registered = RegisteredAsset {
+                bytes: asset.bytes,
+                content_type: asset.content_type,
+                references: 1,
+            };
+
+            if restored_assets
+                .insert(content_hash, registered)
+                .is_some()
+            {
+                return Err(AssetProtocolError::DuplicateAsset);
+            }
+        }
+
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| AssetProtocolError::Internal)?;
+
+        if state.sessions.contains_key(session_token) {
+            return Err(AssetProtocolError::DuplicateAsset);
+        }
+
+        let next_total = state
+            .total_bytes
+            .checked_add(restored_bytes)
+            .ok_or(
+                AssetProtocolError::RegistryBudgetExceeded,
+            )?;
+
+        if next_total > MAX_REGISTRY_BYTES {
+            return Err(
+                AssetProtocolError::RegistryBudgetExceeded,
+            );
+        }
+
+        state
+            .sessions
+            .insert(session_token.to_owned(), restored_assets);
+
+        state.total_bytes = next_total;
+
+        Ok(())
     }
 
     pub fn snapshot_session(
@@ -683,6 +777,161 @@ mod tests {
         assert!(hashes.windows(2).all(|pair| {
             pair[0] < pair[1]
         }));
+    }
+
+    #[test]
+    fn restores_complete_content_addressed_session() {
+        let registry = AssetProtocolRegistry::default();
+
+        let first_bytes =
+            Arc::<[u8]>::from(vec![1, 2, 3]);
+        let second_bytes =
+            Arc::<[u8]>::from(vec![4, 5, 6]);
+
+        let first_hash = hash(first_bytes.as_ref());
+        let second_hash = hash(second_bytes.as_ref());
+
+        registry
+            .restore_session(
+                "restored-session",
+                vec![
+                    AssetSessionSnapshotEntry {
+                        content_hash: second_hash.clone(),
+                        content_type:
+                            "image/png".to_owned(),
+                        bytes: Arc::clone(&second_bytes),
+                    },
+                    AssetSessionSnapshotEntry {
+                        content_hash: first_hash.clone(),
+                        content_type:
+                            "image/png".to_owned(),
+                        bytes: Arc::clone(&first_bytes),
+                    },
+                ],
+            )
+            .expect("session should restore");
+
+        assert!(
+            registry
+                .contains(
+                    "restored-session",
+                    &first_hash,
+                )
+                .expect("first asset should resolve")
+        );
+
+        assert!(
+            registry
+                .contains(
+                    "restored-session",
+                    &second_hash,
+                )
+                .expect("second asset should resolve")
+        );
+
+        let snapshot = registry
+            .snapshot_session("restored-session")
+            .expect("restored session should snapshot");
+
+        assert_eq!(snapshot.len(), 2);
+
+        assert!(snapshot.windows(2).all(|pair| {
+            pair[0].content_hash < pair[1].content_hash
+        }));
+
+        let first_response =
+            registry.response(&request(&format!(
+                "hybrid-canvas-asset://asset/restored-session/{first_hash}"
+            )));
+
+        assert_eq!(
+            first_response.status(),
+            StatusCode::OK,
+        );
+
+        assert_eq!(
+            first_response.body(),
+            &first_bytes.as_ref().to_vec(),
+        );
+    }
+
+    #[test]
+    fn invalid_restore_does_not_publish_partial_session() {
+        let registry = AssetProtocolRegistry::default();
+
+        let valid_bytes =
+            Arc::<[u8]>::from(vec![1, 2, 3]);
+
+        let valid_hash = hash(valid_bytes.as_ref());
+
+        let result = registry.restore_session(
+            "failed-session",
+            vec![
+                AssetSessionSnapshotEntry {
+                    content_hash: valid_hash,
+                    content_type:
+                        "image/png".to_owned(),
+                    bytes: valid_bytes,
+                },
+                AssetSessionSnapshotEntry {
+                    content_hash: "0".repeat(64),
+                    content_type:
+                        "image/png".to_owned(),
+                    bytes: Arc::<[u8]>::from(
+                        vec![9, 9, 9],
+                    ),
+                },
+            ],
+        );
+
+        assert_eq!(
+            result,
+            Err(AssetProtocolError::InvalidContentHash),
+        );
+
+        assert!(matches!(
+            registry.snapshot_session("failed-session"),
+            Err(AssetProtocolError::NotFound),
+        ));
+    }
+
+    #[test]
+    fn duplicate_restore_hash_does_not_publish_session() {
+        let registry = AssetProtocolRegistry::default();
+
+        let bytes = Arc::<[u8]>::from(vec![1, 2, 3]);
+        let content_hash = hash(bytes.as_ref());
+
+        let result = registry.restore_session(
+            "duplicate-session",
+            vec![
+                AssetSessionSnapshotEntry {
+                    content_hash:
+                        content_hash.clone(),
+                    content_type:
+                        "image/png".to_owned(),
+                    bytes: Arc::clone(&bytes),
+                },
+                AssetSessionSnapshotEntry {
+                    content_hash,
+                    content_type:
+                        "image/png".to_owned(),
+                    bytes,
+                },
+            ],
+        );
+
+        assert_eq!(
+            result,
+            Err(AssetProtocolError::DuplicateAsset),
+        );
+
+        assert!(matches!(
+            registry.snapshot_session(
+                "duplicate-session",
+            ),
+            Err(AssetProtocolError::NotFound),
+        ));
     }
 
     #[test]
