@@ -1,23 +1,15 @@
 import { invoke } from '@hybrid-canvas/desktop-ipc'
+import type {
+  DocumentCloseRequest,
+  DocumentDescriptor,
+  DocumentId as NativeDocumentId,
+  DocumentOpenResponse,
+  DocumentSaveAsRequest,
+  DocumentSaveAsResult,
+  DocumentSaveRequest,
+} from '@hybrid-canvas/desktop-ipc/generated/ipc-bindings'
 
-export type DocumentId = string
-
-interface NativeDocumentDescriptor {
-  readonly documentId: DocumentId
-  readonly displayName: string
-}
-
-interface NativeOpenedDocument extends NativeDocumentDescriptor {
-  readonly content: string
-}
-
-interface DocumentOpenResponse {
-  readonly document: NativeOpenedDocument | null
-}
-
-interface DocumentSaveAsResponse {
-  readonly document: NativeDocumentDescriptor | null
-}
+export type DocumentId = NativeDocumentId
 
 export interface OpenedDocument {
   readonly id: DocumentId
@@ -56,6 +48,15 @@ export interface DocumentFileCommands {
   readonly close: (documentId: DocumentId) => Promise<void>
 }
 
+function toDocumentDescriptor(
+  descriptor: DocumentDescriptor,
+): { readonly id: DocumentId; readonly displayName: string } {
+  return {
+    id: descriptor.documentId,
+    displayName: descriptor.displayName,
+  }
+}
+
 export function createDocumentFileCommands(): DocumentFileCommands {
   return {
     async open() {
@@ -73,39 +74,36 @@ export function createDocumentFileCommands(): DocumentFileCommands {
     },
 
     async saveAs(content, options) {
-      const response = await invoke<DocumentSaveAsResponse>('document_save_as', {
-        request: {
-          documentId: options?.documentId ?? null,
-          content,
-          suggestedName: options?.suggestedName ?? null,
-        },
+      const request: DocumentSaveAsRequest = {
+        documentId: options?.documentId ?? null,
+        content,
+        suggestedName: options?.suggestedName ?? null,
+      }
+
+      const response = await invoke<DocumentSaveAsResult>('document_save_as', {
+        request,
       })
 
-      if (!response.document) {
-        return null
-      }
-
-      return {
-        id: response.document.documentId,
-        displayName: response.document.displayName,
-      }
+      return response.document
+        ? toDocumentDescriptor(response.document)
+        : null
     },
 
     save(documentId, content) {
-      return invoke<void>('document_save', {
-        request: {
-          documentId,
-          content,
-        },
-      })
+      const request: DocumentSaveRequest = {
+        documentId,
+        content,
+      }
+
+      return invoke<void>('document_save', { request })
     },
 
     close(documentId) {
-      return invoke<void>('document_close', {
-        request: {
-          documentId,
-        },
-      })
+      const request: DocumentCloseRequest = {
+        documentId,
+      }
+
+      return invoke<void>('document_close', { request })
     },
   }
 }
