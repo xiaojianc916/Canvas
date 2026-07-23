@@ -1,15 +1,22 @@
 #!/usr/bin/env node
 /**
- * tools/patch-ipc-error-redaction.mjs
+ * tools/patch-approved-path-registry.mjs
  *
  * 用途：
- * 1. 修复 Tauri IPC 将底层错误、绝对路径、系统错误文本直接返回前端的问题。
- * 2. 将 IPC message 改为稳定、脱敏、面向用户的文案。
- * 3. 保留 code / operation / recoverable 作为前端可用的机器可读字段。
+ * 1. 将“已批准路径”从纯词法路径比较升级为：
+ *    - 目标存在：真实路径 canonicalize；
+ *    - 目标不存在：真实父目录 canonicalize + 文件名；
+ * 2. 在 approve 与 require 时均重新解析真实父目录。
+ * 3. 父目录被符号链接 / junction / reparse point 替换后，require 将拒绝写入。
  *
  * 用法：
- *   node tools/patch-ipc-error-redaction.mjs
- *   node tools/patch-ipc-error-redaction.mjs --check
+ *   node tools/patch-approved-path-registry.mjs
+ *   node tools/patch-approved-path-registry.mjs --check
+ *
+ * 注意：
+ * 此补丁缩小“对话框批准”到“实际写入”之间的路径替换窗口。
+ * 对抗拥有同等本地文件系统权限的竞争攻击，还应在后续 native 后端中使用
+ * 基于目录句柄的 no-follow 打开策略。
  */
 
 import { readFile, writeFile } from 'node:fs/promises'
@@ -18,171 +25,262 @@ import process from 'node:process'
 
 const checkOnly = process.argv.includes('--check')
 
-const target = resolve('apps/desktop/src-tauri/src/error.rs')
+const target = resolve('apps/desktop/src-tauri/src/security/approved_paths.rs')
 
 const source = await readFile(target, 'utf8')
 
-const oldSerialize = `impl Serialize for Error {
-    fn serialize<S: serde::Serializer>(
-        &self,
-        serializer: S,
-    ) -> std::result::Result<S::Ok, S::Error> {
-        IpcError {
-            code: self.code(),
-            message: self.to_string(),
-            operation: self.operation(),
-            recoverable: self.recoverable(),
-        }
-        .serialize(serializer)
-    }
+const expectedMarker = `pub struct ApprovedPathRegistry {
+    paths: RwLock<HashSet<PathBuf>>,
 }`
 
-const newSerialize = `impl Error {
-    /// 返回给 WebView 的稳定、脱敏错误消息。
-    ///
-    /// 不得在这里使用 \`self.to_string()\`、底层 \`source\` 或文件路径：
-    /// Rust/Tauri/插件错误可能包含绝对路径、用户名、权限信息或系统细节。
-    fn public_message(&self) -> &'static str {
-        match self {
-            Self::Validation(_) => "请求参数无效",
-            Self::NotFound(_) => "请求的资源不存在",
-            Self::PermissionDenied(_) => "该操作未获授权",
-
-            Self::Io(_)
-            | Self::Persistence(_)
-            | Self::File(_)
-            | Self::Store(_)
-            | Self::Fs(_) => "文件操作失败",
-
-            Self::SerdeJson(_) => "数据格式无效",
-
-            Self::Import(_) => "导入失败",
-            Self::Export(_) => "导出失败",
-            Self::Asset(_) => "资源处理失败",
-
-            Self::Plugin(_) => "插件操作失败",
-            Self::Tauri(_)
-            | Self::Dialog(_)
-            | Self::Opener(_)
-            | Self::Updater(_)
-            | Self::Clipboard(_)
-            | Self::Shell(_)
-            | Self::Notification(_)
-            | Self::WindowState(_)
-            | Self::GlobalShortcut(_)
-            | Self::Log(_)
-            | Self::Internal(_)
-            | Self::Collaboration(_) => "应用操作失败",
-        }
-    }
-}
-
-impl Serialize for Error {
-    fn serialize<S: serde::Serializer>(
-        &self,
-        serializer: S,
-    ) -> std::result::Result<S::Ok, S::Error> {
-        IpcError {
-            code: self.code(),
-            message: self.public_message().to_owned(),
-            operation: self.operation(),
-            recoverable: self.recoverable(),
-        }
-        .serialize(serializer)
-    }
-}`
-
-if (!source.includes(oldSerialize)) {
+if (!source.includes(expectedMarker)) {
   throw new Error(
     [
       `无法匹配预期源码：${target}`,
       '脚本已停止，未写入任何文件。',
-      '请先确认 error.rs 尚未被手动修改，或更新本脚本中的 oldSerialize。',
+      '请确认 approved_paths.rs 仍是审查时版本，或更新本脚本。',
     ].join('\n'),
   )
 }
 
-let output = source.replace(oldSerialize, newSerialize)
+const replacement = `use crate::{Error, Result};
+use std::collections::HashSet;
+use std::path::{Component, Path, PathBuf};
+use std::sync::RwLock;
 
-const oldTest = `    #[test]
-    fn serialized_error_preserves_ipc_contract() {
-        let value = serde_json::to_value(Error::Validation("invalid settings".to_owned()))
-            .expect("error should serialize");
+/// Stores exact paths explicitly selected through a native file dialog.
+///
+/// Renderer-provided paths are never trusted on their own. A path must first
+/// be approved by file_open or file_save during the current application
+/// process.
+///
+/// For an existing target, the registry stores its canonical path. For a new
+/// target, it stores the canonical existing parent directory plus the target
+/// file name. This makes a later parent-directory symlink replacement visible
+/// when \`require\` resolves the path again.
+#[derive(Debug, Default)]
+pub struct ApprovedPathRegistry {
+    paths: RwLock<HashSet<PathBuf>>,
+}
 
-        assert_eq!(value["code"], "validation");
-        assert_eq!(value["operation"], "platform");
-        assert_eq!(value["message"], "Validation error: invalid settings");
-        assert_eq!(value["recoverable"], false);
-    }`
+impl ApprovedPathRegistry {
+    pub fn approve(&self, path: &Path) -> Result<PathBuf> {
+        let resolved = resolve_approved_path(path)?;
+        let mut paths = self
+            .paths
+            .write()
+            .map_err(|_| Error::Internal("approved path registry write lock poisoned".into()))?;
 
-const newTest = `    #[test]
-    fn serialized_error_preserves_ipc_contract() {
-        let value = serde_json::to_value(Error::Validation("invalid settings".to_owned()))
-            .expect("error should serialize");
+        paths.insert(resolved.clone());
+        Ok(resolved)
+    }
 
-        assert_eq!(value["code"], "validation");
-        assert_eq!(value["operation"], "platform");
-        assert_eq!(value["message"], "请求参数无效");
-        assert_eq!(value["recoverable"], false);
+    pub fn require(&self, path: &Path) -> Result<PathBuf> {
+        let resolved = resolve_approved_path(path)?;
+        let paths = self
+            .paths
+            .read()
+            .map_err(|_| Error::Internal("approved path registry read lock poisoned".into()))?;
+
+        if paths.contains(&resolved) {
+            return Ok(resolved);
+        }
+
+        Err(Error::PermissionDenied(
+            "path was not approved by a native file dialog".into(),
+        ))
+    }
+}
+
+/// Resolves a path without trusting lexical parent components.
+///
+/// Existing paths are canonicalized in full. New files cannot be canonicalized
+/// directly, so their nearest existing parent is canonicalized and the requested
+/// file name is appended afterwards. This preserves the distinction between:
+///
+/// - \`/safe/new.draw\`
+/// - \`/safe-link/new.draw\`, where \`safe-link\` points elsewhere.
+///
+/// A parent replacement between dialog approval and a later command invocation
+/// changes the resolved value and is rejected by \`ApprovedPathRegistry::require\`.
+fn resolve_approved_path(path: &Path) -> Result<PathBuf> {
+    let absolute = normalize_absolute_path(path)?;
+
+    if absolute.exists() {
+        return Ok(absolute.canonicalize()?);
+    }
+
+    let parent = absolute
+        .parent()
+        .ok_or_else(|| Error::Validation("file path has no parent directory".into()))?;
+
+    let file_name = absolute
+        .file_name()
+        .ok_or_else(|| Error::Validation("file path must name a file".into()))?;
+
+    let canonical_parent = parent.canonicalize().map_err(|error| {
+        Error::Validation(format!(
+            "file parent directory must exist and be accessible: {error}"
+        ))
+    })?;
+
+    Ok(canonical_parent.join(file_name))
+}
+
+fn normalize_absolute_path(path: &Path) -> Result<PathBuf> {
+    if path.as_os_str().is_empty() {
+        return Err(Error::Validation("file path cannot be empty".into()));
+    }
+
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+
+    let mut normalized = PathBuf::new();
+
+    for component in absolute.components() {
+        match component {
+            Component::Prefix(prefix) => {
+                normalized.push(prefix.as_os_str());
+            }
+            Component::RootDir => {
+                normalized.push(component.as_os_str());
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return Err(Error::Validation("file path escapes its root".into()));
+                }
+            }
+            Component::Normal(value) => {
+                normalized.push(value);
+            }
+        }
+    }
+
+    Ok(normalized)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_unapproved_paths() {
+        let directory = tempfile::tempdir().unwrap();
+        let registry = ApprovedPathRegistry::default();
+        let path = directory.path().join("canvas.draw");
+
+        let error = registry.require(&path).unwrap_err();
+
+        assert!(matches!(error, Error::PermissionDenied(_)));
     }
 
     #[test]
-    fn serialized_io_error_does_not_leak_path_or_native_error() {
-        let error = Error::Io(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            "permission denied for /Users/example/private/canvas.draw",
+    fn accepts_the_exact_approved_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let registry = ApprovedPathRegistry::default();
+        let path = directory.path().join("canvas.draw");
+
+        registry.approve(&path).unwrap();
+
+        assert_eq!(registry.require(&path).unwrap(), path);
+    }
+
+    #[test]
+    fn does_not_authorize_sibling_paths() {
+        let directory = tempfile::tempdir().unwrap();
+        let registry = ApprovedPathRegistry::default();
+        let approved = directory.path().join("one.draw");
+        let sibling = directory.path().join("two.draw");
+
+        registry.approve(&approved).unwrap();
+
+        assert!(matches!(
+            registry.require(&sibling),
+            Err(Error::PermissionDenied(_))
         ));
-
-        let value = serde_json::to_value(error).expect("error should serialize");
-        let message = value["message"]
-            .as_str()
-            .expect("serialized error message should be a string");
-
-        assert_eq!(message, "文件操作失败");
-        assert!(!message.contains("/Users/"));
-        assert!(!message.contains("canvas.draw"));
-        assert!(!message.contains("permission denied"));
     }
 
     #[test]
-    fn serialized_permission_error_does_not_leak_approved_path() {
-        let error = Error::PermissionDenied(
-            "path was not approved by a native file dialog: /tmp/private.draw".to_owned(),
+    fn resolves_relative_segments_before_approval() {
+        let directory = tempfile::tempdir().unwrap();
+        let registry = ApprovedPathRegistry::default();
+        let path = directory
+            .path()
+            .join("folder")
+            .join("..")
+            .join("canvas.draw");
+
+        registry.approve(&path).unwrap();
+
+        assert_eq!(
+            registry.require(&path).unwrap(),
+            directory.path().join("canvas.draw")
         );
+    }
 
-        let value = serde_json::to_value(error).expect("error should serialize");
-        let message = value["message"]
-            .as_str()
-            .expect("serialized error message should be a string");
+    #[cfg(unix)]
+    #[test]
+    fn rejects_new_file_when_parent_symlink_target_changes() {
+        use std::os::unix::fs::symlink;
 
-        assert_eq!(message, "该操作未获授权");
-        assert!(!message.contains("/tmp/"));
-        assert!(!message.contains("private.draw"));
-    }`
+        let directory = tempfile::tempdir().unwrap();
+        let first_target = directory.path().join("first");
+        let second_target = directory.path().join("second");
+        let link = directory.path().join("selected-directory");
 
-if (!output.includes(oldTest)) {
-  throw new Error(
-    [
-      `无法匹配预期测试代码：${target}`,
-      '脚本已停止，未写入任何文件。',
-      '请先确认 error.rs 中 serialized_error_preserves_ipc_contract 测试尚未被修改。',
-    ].join('\n'),
-  )
+        std::fs::create_dir(&first_target).unwrap();
+        std::fs::create_dir(&second_target).unwrap();
+        symlink(&first_target, &link).unwrap();
+
+        let registry = ApprovedPathRegistry::default();
+        let selected_path = link.join("canvas.draw");
+
+        registry.approve(&selected_path).unwrap();
+
+        std::fs::remove_file(&link).unwrap();
+        symlink(&second_target, &link).unwrap();
+
+        let error = registry.require(&selected_path).unwrap_err();
+
+        assert!(matches!(error, Error::PermissionDenied(_)));
+        assert!(!second_target.join("canvas.draw").exists());
+    }
+
+    #[test]
+    fn canonicalizes_existing_file_targets() {
+        let directory = tempfile::tempdir().unwrap();
+        let nested = directory.path().join("nested");
+        std::fs::create_dir(&nested).unwrap();
+
+        let file = nested.join("canvas.draw");
+        std::fs::write(&file, b"content").unwrap();
+
+        let registry = ApprovedPathRegistry::default();
+        registry.approve(&file).unwrap();
+
+        assert_eq!(
+            registry.require(&file).unwrap(),
+            file.canonicalize().unwrap()
+        );
+    }
 }
-
-output = output.replace(oldTest, newTest)
+`
 
 if (checkOnly) {
-  if (output === source) {
-    console.log('OK: IPC 错误脱敏补丁已存在。')
+  if (source === replacement) {
+    console.log('OK: ApprovedPathRegistry 路径规范化补丁已存在。')
     process.exit(0)
   }
 
-  console.error('ERROR: IPC 错误脱敏补丁尚未应用。')
+  console.error('ERROR: ApprovedPathRegistry 路径规范化补丁尚未应用。')
   process.exit(1)
 }
 
-await writeFile(target, output, 'utf8')
+await writeFile(target, replacement, 'utf8')
 
 console.log(`已更新：${target}`)
 console.log('下一步建议执行：')
