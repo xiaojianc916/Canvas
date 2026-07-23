@@ -25,6 +25,23 @@ export interface CreateEditorSessionOptions {
 
 export type EditorSessionState = 'created' | 'attached' | 'detached' | 'disposed'
 
+/**
+ * Stable application-level error for a persisted snapshot that tldraw cannot
+ * migrate, validate or load using the complete extension-aware store schema.
+ *
+ * The original error intentionally remains private: it can contain tldraw
+ * implementation details and record content that must not become a UI/API
+ * contract.
+ */
+export class PersistedSnapshotLoadError extends Error {
+  readonly code = 'DRAW_INVALID_SNAPSHOT'
+
+  constructor() {
+    super('DRAW_INVALID_SNAPSHOT')
+    this.name = 'PersistedSnapshotLoadError'
+  }
+}
+
 export type EditorDocumentEvent =
   | {
       readonly kind: 'ready'
@@ -87,16 +104,10 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
    * a second initialization path with subtly different migration and session
    * state semantics.
    */
-  const store = createTLStore({
-    shapeUtils: [
-      ...defaultShapeUtils,
-      ...registration.shapeUtils,
-    ] as unknown as readonly TLAnyShapeUtilConstructor[],
-    bindingUtils: [...defaultBindingUtils, ...registration.bindingUtils],
-    ...(options.initialSnapshot
-      ? { snapshot: options.initialSnapshot }
-      : {}),
-  })
+  const store = createValidatedEditorStore(
+    registration,
+    options.initialSnapshot,
+  )
 
   let attachedEditor: Editor | null = null
   let state: EditorSessionState = 'created'
@@ -302,6 +313,31 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
       attachedEditor = null
       state = 'disposed'
     },
+  }
+}
+
+function createValidatedEditorStore(
+  registration: ExtensionRegistration,
+  initialSnapshot: TLEditorSnapshot | undefined,
+): TLStore {
+  try {
+    return createTLStore({
+      shapeUtils: [
+        ...defaultShapeUtils,
+        ...registration.shapeUtils,
+      ] as unknown as readonly TLAnyShapeUtilConstructor[],
+      bindingUtils: [...defaultBindingUtils, ...registration.bindingUtils],
+      ...(initialSnapshot
+        ? { snapshot: initialSnapshot }
+        : {}),
+    })
+  } catch {
+    /*
+     * tldraw performs schema migration, record validation and store integrity
+     * checks here. A failed load must never expose a partially created store or
+     * leak library-specific error text across the application boundary.
+     */
+    throw new PersistedSnapshotLoadError()
   }
 }
 

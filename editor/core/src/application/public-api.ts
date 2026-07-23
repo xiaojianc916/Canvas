@@ -8,6 +8,7 @@ export {
   type EditorSessionRegistry,
   type EditorSessionSnapshot,
   type EditorSessionState,
+  PersistedSnapshotLoadError,
 } from '../runtime/editor-session'
 
 export {
