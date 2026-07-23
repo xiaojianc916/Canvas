@@ -551,14 +551,14 @@ mod tests {
             application_json: br#"{"title":"fixture"}"#,
             assets: &[second, first],
         })
-        .expect("v2 fixture should encode")
+        .expect("fixture should encode")
     }
 
     #[test]
     fn round_trips_draw_document_and_assets() {
         let encoded = encode_fixture_document();
 
-        let decoded = decode_draw_document(&encoded).expect("v2 fixture should decode");
+        let decoded = decode_draw_document(&encoded).expect("fixture should decode");
 
         assert_eq!(
             decoded.document,

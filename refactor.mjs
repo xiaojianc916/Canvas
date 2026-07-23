@@ -16,7 +16,8 @@ const paths = {
   lib: 'editor/persistence/native/src/lib.rs',
   oldCodec: 'editor/persistence/native/src/document_codec_v2.rs',
   newCodec: 'editor/persistence/native/src/draw_document_codec.rs',
-  removeCodec: 'editor/persistence/native/src/document_codec.rs',
+  deadCodec: 'editor/persistence/native/src/document_codec.rs',
+  deadLegacyCodec: 'editor/persistence/native/src/legacy_document_codec_v1.rs',
   documentRs: 'apps/desktop/src-tauri/src/commands/document.rs',
   toolbar: 'editor/core/src/react/CanvasToolbar.tsx',
 }
@@ -54,7 +55,7 @@ function renameCodecFile() {
   }
 
   if (!existsSync(abs(paths.newCodec))) {
-    throw new Error('Could not find current codec file to rename/use')
+    throw new Error('Could not find the current draw codec file')
   }
 }
 
@@ -62,14 +63,20 @@ function patchLibRs() {
   let source = read(paths.lib)
 
   source = source.replace(/^mod document_codec;\n/m, '')
+  source = source.replace(/^mod legacy_document_codec_v1;\n/m, '')
   source = replaceAllExact(source, 'mod document_codec_v2;', 'mod draw_document_codec;')
 
   source = source.replace(/^pub use document_codec::canonicalize_draw_document;\n/m, '')
-  source = replaceAllExact(
-    source,
-    'pub use document_codec_v2::{',
-    'pub use draw_document_codec::{',
+  source = source.replace(
+    /^pub use legacy_document_codec_v1::canonicalize_legacy_draw_document_v1;\n/m,
+    '',
   )
+
+  source = replaceAllExact(source, 'pub use document_codec_v2::{', 'pub use draw_document_codec::{')
+  source = replaceAllExact(source, 'decode_draw_document_v2', 'decode_draw_document')
+  source = replaceAllExact(source, 'encode_draw_document_v2', 'encode_draw_document')
+  source = replaceAllExact(source, 'DecodedDrawDocumentV2', 'DecodedDrawDocument')
+  source = replaceAllExact(source, 'DrawDocumentV2Input', 'DrawDocumentInput')
 
   source = replaceAllExact(
     source,
@@ -94,46 +101,46 @@ function patchCodecFile() {
     'pub struct DrawDocumentV2Input',
     'pub struct DrawDocumentInput',
   )
-
   source = replaceAllExact(
     source,
     'pub struct DecodedDrawDocumentV2',
     'pub struct DecodedDrawDocument',
   )
-
   source = replaceAllExact(
     source,
-    'pub fn encode_draw_document_v2(input: DrawDocumentV2Input',
-    'pub fn encode_draw_document(input: DrawDocumentInput',
+    'pub fn encode_draw_document_v2',
+    'pub fn encode_draw_document',
   )
-
   source = replaceAllExact(
     source,
-    'pub fn decode_draw_document_v2(bytes: &[u8]) -> Result<DecodedDrawDocumentV2>',
-    'pub fn decode_draw_document(bytes: &[u8]) -> Result<DecodedDrawDocument>',
+    'pub fn decode_draw_document_v2',
+    'pub fn decode_draw_document',
   )
 
-  source = replaceAllExact(source, 'DecodedDrawDocumentV2 {', 'DecodedDrawDocument {')
   source = replaceAllExact(source, 'DrawDocumentV2Input {', 'DrawDocumentInput {')
+  source = replaceAllExact(source, 'DecodedDrawDocumentV2 {', 'DecodedDrawDocument {')
   source = replaceAllExact(source, 'encode_draw_document_v2(', 'encode_draw_document(')
   source = replaceAllExact(source, 'decode_draw_document_v2(', 'decode_draw_document(')
 
-  source = replaceAllExact(
-    source,
-    'fn encode_fixture() -> Vec<u8> {',
-    'fn encode_fixture_document() -> Vec<u8> {',
-  )
-  source = replaceAllExact(source, 'encode_fixture();', 'encode_fixture_document();')
+  source = replaceAllExact(source, 'fn encode_fixture() -> Vec<u8> {', 'fn encode_fixture_document() -> Vec<u8> {')
+  source = replaceAllExact(source, 'let encoded = encode_fixture();', 'let encoded = encode_fixture_document();')
+  source = replaceAllExact(source, 'let encoded = encode_fixture();', 'let encoded = encode_fixture_document();')
 
   source = replaceAllExact(
     source,
     'fn round_trips_document_and_assets() {',
     'fn round_trips_draw_document_and_assets() {',
   )
+
   source = replaceAllExact(
     source,
-    'fn rejects_future_manifest_version() {',
-    'fn rejects_future_container_manifest_version() {',
+    'expect("v2 fixture should encode")',
+    'expect("fixture should encode")',
+  )
+  source = replaceAllExact(
+    source,
+    'expect("v2 fixture should decode")',
+    'expect("fixture should decode")',
   )
 
   write(paths.newCodec, source)
@@ -144,6 +151,8 @@ function patchDocumentRs() {
 
   source = source.replace(/,\s*canonicalize_draw_document/g, '')
   source = source.replace(/canonicalize_draw_document,\s*/g, '')
+  source = source.replace(/,\s*canonicalize_legacy_draw_document_v1/g, '')
+  source = source.replace(/canonicalize_legacy_draw_document_v1,\s*/g, '')
 
   source = replaceAllExact(source, 'decode_draw_document_v2', 'decode_draw_document')
   source = replaceAllExact(source, 'encode_draw_document_v2', 'encode_draw_document')
@@ -157,26 +166,42 @@ function patchDocumentRs() {
 
   source = replaceAllExact(
     source,
-    'fn v2_writer_always_emits_zip() {',
-    'fn writer_emits_draw_container() {',
-  )
-
-  source = replaceAllExact(
-    source,
     'fn rejects_legacy_non_zip_documents() {',
     'fn rejects_non_container_documents() {',
   )
 
   source = replaceAllExact(
     source,
-    'expect("v2 encode should succeed")',
-    'expect("encode should succeed")',
+    'fn v2_writer_always_emits_zip() {',
+    'fn writer_emits_draw_container() {',
   )
 
   source = replaceAllExact(
     source,
-    'expect("written v2 should decode")',
-    'expect("written document should decode")',
+    'fn cas_save_writes_v2_and_advances_revision() {',
+    'fn save_writes_draw_container_and_advances_revision() {',
+  )
+
+  source = replaceAllExact(
+    source,
+    '&logical_store_snapshot("v2")',
+    '&logical_store_snapshot("container")',
+  )
+  source = replaceAllExact(
+    source,
+    '"marker"], "v2"',
+    '"marker"], "container"',
+  )
+
+  source = replaceAllExact(
+    source,
+    '.expect("v2 encode should succeed")',
+    '.expect("encode should succeed")',
+  )
+  source = replaceAllExact(
+    source,
+    '.expect("written v2 should decode")',
+    '.expect("written document should decode")',
   )
 
   write(paths.documentRs, source)
@@ -185,17 +210,8 @@ function patchDocumentRs() {
 function patchToolbar() {
   let source = read(paths.toolbar)
 
-  if (source.includes('export function CanvasToolbar({ onSave }: CanvasToolbarProps)')) {
-    write(paths.toolbar, source)
-    return
-  }
-
   if (!source.includes('export interface CanvasToolbarProps')) {
     throw new Error('CanvasToolbarProps declaration is missing')
-  }
-
-  if (!source.includes('export function CanvasToolbar() {')) {
-    throw new Error('CanvasToolbar function signature was not found')
   }
 
   source = replaceAllExact(
@@ -256,15 +272,15 @@ function patchToolbar() {
   </>
 ) : null}`
 
-  if (source.includes(oldSaveBlock)) {
-    source = replaceAllExact(source, oldSaveBlock, newSaveBlock)
-  }
+  source = replaceAllExact(source, oldSaveBlock, newSaveBlock)
 
   write(paths.toolbar, source)
 }
 
-function deleteDeadCodec() {
-  removeIfExists(paths.removeCodec)
+function deleteDeadFiles() {
+  removeIfExists(paths.deadCodec)
+  removeIfExists(paths.deadLegacyCodec)
+  removeIfExists(paths.oldCodec)
 }
 
 function validate() {
@@ -273,27 +289,40 @@ function validate() {
   const documentRs = read(paths.documentRs)
   const toolbar = read(paths.toolbar)
 
-  const forbidden = [
+  const forbiddenMarkers = [
     'document_codec_v2',
     'encode_draw_document_v2',
     'decode_draw_document_v2',
     'DrawDocumentV2Input',
     'DecodedDrawDocumentV2',
     'supported v2 document',
+    'Strict v2',
   ]
 
-  for (const marker of forbidden) {
+  for (const marker of forbiddenMarkers) {
     if (lib.includes(marker) || codec.includes(marker) || documentRs.includes(marker)) {
       throw new Error(`Outdated naming still remains: ${marker}`)
     }
   }
 
-  if (existsSync(abs(paths.removeCodec))) {
+  if (existsSync(abs(paths.oldCodec))) {
+    throw new Error('Old codec file still exists: document_codec_v2.rs')
+  }
+
+  if (existsSync(abs(paths.deadCodec))) {
     throw new Error('Dead codec file still exists: document_codec.rs')
+  }
+
+  if (existsSync(abs(paths.deadLegacyCodec))) {
+    throw new Error('Dead codec file still exists: legacy_document_codec_v1.rs')
   }
 
   if (!toolbar.includes('export function CanvasToolbar({ onSave }: CanvasToolbarProps)')) {
     throw new Error('CanvasToolbarProps is still a dead API')
+  }
+
+  if (!documentRs.includes('selected .draw file uses an unsupported internal format')) {
+    throw new Error('document.rs error text was not updated')
   }
 }
 
@@ -303,7 +332,7 @@ function main() {
   patchCodecFile()
   patchDocumentRs()
   patchToolbar()
-  deleteDeadCodec()
+  deleteDeadFiles()
   validate()
 
   console.log('Final cleanup applied: canonical names restored and dead code removed.')

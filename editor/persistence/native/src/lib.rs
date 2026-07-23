@@ -24,8 +24,8 @@ mod revision;
 
 pub use atomic_write::atomic_write;
 pub use draw_document_codec::{
-    decode_draw_document_v2, encode_draw_document_v2, DecodedDrawDocumentV2, DrawAssetInput,
-    DrawAssetOutput, DrawDocumentV2Input,
+    decode_draw_document, encode_draw_document, DecodedDrawDocument, DrawAssetInput,
+    DrawAssetOutput, DrawDocumentInput,
 };
 pub use error::{Error, Result};
 pub use revision::{document_revision, DocumentRevision};

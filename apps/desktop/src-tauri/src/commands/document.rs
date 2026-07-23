@@ -752,7 +752,7 @@ mod tests {
     #[test]
     fn writer_emits_draw_container() {
         let bytes = encode_document(
-            &logical_store_snapshot("v2"),
+            &logical_store_snapshot("container"),
             "2026-07-23T00:00:00.000Z",
             &[],
         )
@@ -762,11 +762,11 @@ mod tests {
 
         let decoded = decode_draw_document(&bytes).expect("written document should decode");
 
-        assert_eq!(decoded.document["store"]["marker"], "v2");
+        assert_eq!(decoded.document["store"]["marker"], "container");
     }
 
     #[test]
-    fn cas_save_writes_v2_and_advances_revision() {
+    fn save_writes_draw_container_and_advances_revision() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let path = directory.path().join("cas.draw");
         let created_at = "2026-07-23T00:00:00.000Z";
