@@ -2,22 +2,15 @@
 
 //! Native file capability.
 //!
-//! Planned responsibilities:
-//! - atomic writes (write → fsync → rename)
-//! - .draw container archive (deflate, async zip)
-//! - file locking and conflict detection
-//! - file-system watcher
-//! - recovery from partial writes
+//! Current responsibility:
+//! - atomic replacement of an already-validated logical .draw payload
 //!
-//! @architecture-stub: Phase 1–2.
+//! Archive containers, binary asset storage, advisory locking, external-change
+//! watching and recovery journals are intentionally absent until they can be
+//! delivered as one complete, tested native DocumentCodec protocol.
 
 mod atomic_write;
-mod container;
 mod error;
-mod lock;
-mod recovery;
-mod watcher;
 
 pub use atomic_write::atomic_write;
 pub use error::{Error, Result};
-pub use recovery::{recover_directory, RecoveryAction};

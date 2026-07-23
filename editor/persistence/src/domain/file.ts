@@ -14,20 +14,18 @@ export interface DrawFileContainer {
 }
 
 /*
- * Format evolution:
+ * Physical persistence protocol — v1.
  *
- * v1 (current) — Pure JSON file containing DrawFileContainer.
- *   Pros: simple, human-readable, easy to debug.
- *   Cons: assets stored as base64 in TLStoreSnapshot (bloat).
+ * A .draw file is UTF-8 JSON containing DrawFileContainer. The renderer owns
+ * the logical tldraw snapshot; native code owns filesystem capability checks,
+ * document-size limits and atomic replacement.
  *
- * v2 (planned) — ZIP container:
- *   - manifest.json (DrawFileHeader + asset index)
- *   - snapshot.json (TLStoreSnapshot)
- *   - assets/ (binary files by asset id)
- *   .tmp atomic write pattern already implemented in Rust.
+ * There is deliberately no declared v2 archive protocol yet. ZIP containers,
+ * binary assets, journal recovery, locking and file watching must be introduced
+ * together as one native DocumentCodec transaction, with a real reader, writer,
+ * manifest schema, migration fixtures and platform tests.
  *
- * Migration: v1 files should be openable by v2 reader (check file header).
- *   v2 adds ZIP envelope, keeps inner snapshot.json identical.
+ * Do not add a partial archive reader, writer or compatibility fallback here.
  */
 
 export interface FileReference {
