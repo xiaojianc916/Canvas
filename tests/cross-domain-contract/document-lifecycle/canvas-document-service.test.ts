@@ -34,7 +34,9 @@ function createHarness() {
   let currentSnapshot = snapshot({ shapes: [] })
 
   const documentListeners = new Set<(event: EditorDocumentEvent) => void>()
-  const closeEditorSession = vi.fn()
+  const closeEditorSession = vi
+    .fn()
+    .mockResolvedValue(undefined)
 
   const persistence = {
     open: vi.fn(),
@@ -70,7 +72,7 @@ function createHarness() {
     editorSessions: {
       create: () => editor,
       close: closeEditorSession,
-      dispose: vi.fn(),
+      dispose: vi.fn().mockResolvedValue(undefined),
     },
     persistence,
     extensions: [],
@@ -100,7 +102,9 @@ function createHarness() {
 describe('Canvas document native-release contract', () => {
   it('releases a clean unsaved canvas without invoking native document_close', async () => {
     const harness = createHarness()
-    const opened = harness.service.create('未命名画布')
+    const opened = await harness.service.create(
+      '未命名画布',
+    )
 
     harness.ready()
 
@@ -117,7 +121,9 @@ describe('Canvas document native-release contract', () => {
 
   it('requires an explicit discard intent for dirty canvases', async () => {
     const harness = createHarness()
-    const opened = harness.service.create('未命名画布')
+    const opened = await harness.service.create(
+      '未命名画布',
+    )
 
     harness.ready()
     harness.change(snapshot({ shapes: [{ id: 'shape:1' }] }))
@@ -176,7 +182,9 @@ describe('Canvas document native-release contract', () => {
 
   it('uses Save As once and retains only an opaque native document ID', async () => {
     const harness = createHarness()
-    const opened = harness.service.create('未命名画布')
+    const opened = await harness.service.create(
+      '未命名画布',
+    )
 
     harness.ready()
     harness.change(snapshot({ shapes: [{ id: 'shape:1' }]}))

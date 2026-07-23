@@ -2,6 +2,8 @@ export {
   type CanvasPageSnapshot,
   type CreateEditorSessionOptions,
   createEditorSession,
+  type EditorAssetStoreSession,
+  type EditorAssetStoreSessionFactory,
   createEditorSessionRegistry,
   type EditorDocumentEvent,
   type EditorSession,

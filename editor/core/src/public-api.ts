@@ -6,6 +6,8 @@ export {
   type CanvasToolId,
   type CreateEditorSessionOptions,
   createEditorSession,
+  type EditorAssetStoreSession,
+  type EditorAssetStoreSessionFactory,
   createEditorSessionRegistry,
   type EditorSession,
   type EditorSessionRegistry,

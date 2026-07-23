@@ -4,6 +4,7 @@ import {
   defaultShapeUtils,
   type Editor,
   type TLAnyShapeUtilConstructor,
+  type TLAssetStore,
   type TLEditorSnapshot,
   type TLStore,
   type TLStoreSnapshot,
@@ -16,6 +17,14 @@ import {
 } from '../contracts/public-api'
 
 // Contract tests: tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts
+
+export interface EditorAssetStoreSession {
+  readonly assets: TLAssetStore
+  readonly dispose: () => Promise<void>
+}
+
+export type EditorAssetStoreSessionFactory =
+  () => EditorAssetStoreSession
 
 export interface CreateEditorSessionOptions {
   readonly sessionId: string
@@ -93,7 +102,10 @@ export interface EditorSession {
   readonly dispose: () => void
 }
 
-export function createEditorSession(options: CreateEditorSessionOptions): EditorSession {
+export function createEditorSession(
+  options: CreateEditorSessionOptions,
+  assetStoreSession: EditorAssetStoreSession,
+): EditorSession {
   const registration = buildExtensionRegistration(options.extensions)
 
   /*
@@ -108,6 +120,7 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
   const store = createValidatedEditorStore(
     registration,
     options.initialSnapshot,
+    assetStoreSession.assets,
   )
 
   let attachedEditor: Editor | null = null
@@ -334,9 +347,11 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
 function createValidatedEditorStore(
   registration: ExtensionRegistration,
   initialSnapshot: TLEditorSnapshot | undefined,
+  assets: TLAssetStore,
 ): TLStore {
   try {
     return createTLStore({
+      assets,
       shapeUtils: [
         ...defaultShapeUtils,
         ...registration.shapeUtils,
@@ -356,65 +371,111 @@ function createValidatedEditorStore(
   }
 }
 
+interface OwnedEditorSession {
+  readonly session: EditorSession
+  readonly assetStoreSession: EditorAssetStoreSession
+}
+
 export interface EditorSessionRegistry {
-  readonly create: (options: CreateEditorSessionOptions) => EditorSession
+  readonly create: (
+    options: CreateEditorSessionOptions,
+  ) => Promise<EditorSession>
 
   readonly get: (sessionId: string) => EditorSession | null
 
   readonly require: (sessionId: string) => EditorSession
 
-  readonly close: (sessionId: string) => void
+  readonly close: (sessionId: string) => Promise<void>
 
-  readonly dispose: () => void
+  readonly dispose: () => Promise<void>
 }
 
-export function createEditorSessionRegistry(): EditorSessionRegistry {
-  const sessions = new Map<string, EditorSession>()
+export function createEditorSessionRegistry(
+  assetStoreFactory: EditorAssetStoreSessionFactory,
+): EditorSessionRegistry {
+  const sessions = new Map<string, OwnedEditorSession>()
 
   return {
-    create(options) {
+    async create(options) {
       if (sessions.has(options.sessionId)) {
         throw new Error('EDITOR_SESSION_DUPLICATE_ID')
       }
 
-      const session = createEditorSession(options)
+      const assetStoreSession = assetStoreFactory()
 
-      sessions.set(options.sessionId, session)
+      let session: EditorSession
+
+      try {
+        session = createEditorSession(
+          options,
+          assetStoreSession,
+        )
+      } catch (creationError) {
+        try {
+          await assetStoreSession.dispose()
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [creationError, cleanupError],
+            'EDITOR_SESSION_CREATION_ROLLBACK_FAILED',
+          )
+        }
+
+        throw creationError
+      }
+
+      sessions.set(options.sessionId, {
+        session,
+        assetStoreSession,
+      })
 
       return session
     },
 
     get(sessionId) {
-      return sessions.get(sessionId) ?? null
+      return sessions.get(sessionId)?.session ?? null
     },
 
     require(sessionId) {
-      const session = sessions.get(sessionId)
+      const owned = sessions.get(sessionId)
 
-      if (!session) {
+      if (!owned) {
         throw new Error('EDITOR_SESSION_NOT_FOUND')
       }
 
-      return session
+      return owned.session
     },
 
-    close(sessionId) {
-      const session = sessions.get(sessionId)
+    async close(sessionId) {
+      const owned = sessions.get(sessionId)
 
-      if (!session) {
+      if (!owned) {
         return
       }
 
-      session.dispose()
+      /*
+       * Remove ownership before asynchronous disposal so callers cannot acquire
+       * a session that has already entered its closing lifecycle.
+       */
       sessions.delete(sessionId)
+      owned.session.dispose()
+
+      await owned.assetStoreSession.dispose()
     },
 
-    dispose() {
-      for (const session of sessions.values()) {
-        session.dispose()
-      }
+    async dispose() {
+      const ownedSessions = [...sessions.values()]
 
       sessions.clear()
+
+      for (const owned of ownedSessions) {
+        owned.session.dispose()
+      }
+
+      await Promise.all(
+        ownedSessions.map((owned) =>
+          owned.assetStoreSession.dispose(),
+        ),
+      )
     },
   }
 }

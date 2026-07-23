@@ -46,7 +46,7 @@ export interface CanvasWorkflow {
   ) => CanvasSessionSnapshot | null
   readonly getVersion: () => number
   readonly subscribe: (listener: () => void) => () => void
-  readonly dispose: () => void
+  readonly dispose: () => Promise<void>
 }
 
 export function createCanvasWorkflow(
@@ -101,7 +101,7 @@ export function createCanvasWorkflow(
   }
 
   async function create(title: string): Promise<void> {
-    const opened = documents.create(title)
+    const opened = await documents.create(title)
 
     try {
       workspace.createCanvas(opened)
@@ -269,13 +269,14 @@ export function createCanvasWorkflow(
       }
     },
 
-    dispose() {
+    async dispose() {
       stopDocumentSubscription()
       closeOperations.clear()
       closeStates.clear()
       closeSnapshot = EMPTY_CLOSE_SNAPSHOT
       listeners.clear()
-      documents.dispose()
+
+      await documents.dispose()
     },
   }
 }

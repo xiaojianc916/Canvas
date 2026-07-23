@@ -78,7 +78,9 @@ export interface CanvasDocumentLifecycleSnapshot {
 }
 
 export interface CanvasDocumentService {
-  readonly create: (title: string) => OpenedCanvasSession
+  readonly create: (
+    title: string,
+  ) => Promise<OpenedCanvasSession>
   readonly open: () => Promise<OpenedCanvasSession | null>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
   readonly releaseCanvas: (
@@ -92,7 +94,7 @@ export interface CanvasDocumentService {
   ) => CanvasSessionSnapshot | null
   readonly getVersion: () => number
   readonly subscribe: (listener: () => void) => () => void
-  readonly dispose: () => void
+  readonly dispose: () => Promise<void>
 }
 
 export interface CanvasEditorSessionRegistryPort {
@@ -163,11 +165,13 @@ export function createCanvasDocumentService({
     }
   }
 
-  function create(title: string): OpenedCanvasSession {
+  async function create(
+    title: string,
+  ): Promise<OpenedCanvasSession> {
     const canvasId = crypto.randomUUID()
     const sessionId = crypto.randomUUID()
 
-    const editor = editorSessions.create({
+    const editor = await editorSessions.create({
       documentId: canvasId,
       sessionId,
       extensions,
@@ -202,7 +206,7 @@ export function createCanvasDocumentService({
       const sessionId = crypto.randomUUID()
       const initialSnapshot = parseEditorSnapshot(opened.content)
 
-      const editor = editorSessions.create({
+      const editor = await editorSessions.create({
         documentId: canvasId,
         sessionId,
         initialSnapshot,
@@ -426,7 +430,7 @@ export function createCanvasDocumentService({
     owned.document.completeClosing()
     owned.stopObservingDocument()
     sessions.delete(sessionId)
-    editorSessions.close(sessionId)
+    await editorSessions.close(sessionId)
     emit()
 
     return { kind: 'released' }
@@ -529,17 +533,19 @@ export function createCanvasDocumentService({
       return () => listeners.delete(listener)
     },
 
-    dispose() {
-      for (const [sessionId, owned] of sessions) {
-        // dispose 只在应用运行时被销毁时执行。此时 native process 的退出会
-        // 统一释放 DocumentRegistry；不得在这里 fire-and-forget document_close。
+    async dispose() {
+      for (const owned of sessions.values()) {
+        /*
+         * Native DocumentRegistry remains process-owned during application
+         * teardown. Renderer asset sessions are still explicitly settled.
+         */
         owned.stopObservingDocument()
-        editorSessions.close(sessionId)
       }
 
       sessions.clear()
       listeners.clear()
-      editorSessions.dispose()
+
+      await editorSessions.dispose()
     },
   }
 }

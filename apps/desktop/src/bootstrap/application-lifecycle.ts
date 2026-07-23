@@ -3,7 +3,7 @@ import type { ApplicationRuntime } from './application'
 import type { MountedReactApplication } from './react-root'
 
 export interface ApplicationLifecycle {
-  readonly dispose: () => void
+  readonly dispose: () => Promise<void>
 }
 
 export function installApplicationLifecycle(
@@ -12,14 +12,35 @@ export function installApplicationLifecycle(
 ): ApplicationLifecycle {
   let disposed = false
 
-  const dispose = () => {
+  const dispose = async (): Promise<void> => {
     if (disposed) {
       return
     }
+
     disposed = true
-    window.removeEventListener('pagehide', dispose)
-    window.removeEventListener('beforeunload', handleBeforeUnload)
-    mounted.unmount()
+    window.removeEventListener(
+      'pagehide',
+      handlePageHide,
+    )
+    window.removeEventListener(
+      'beforeunload',
+      handleBeforeUnload,
+    )
+
+    await mounted.unmount()
+  }
+
+  const handlePageHide = () => {
+    void dispose().catch((cause: unknown) => {
+      reportError(
+        'application disposal failed during pagehide',
+        {
+          scope: 'application-lifecycle',
+          operation: 'dispose',
+          cause,
+        },
+      )
+    })
   }
 
   const handleBeforeUnload = () => {
@@ -32,7 +53,9 @@ export function installApplicationLifecycle(
     })
   }
 
-  window.addEventListener('pagehide', dispose, { once: true })
+  window.addEventListener('pagehide', handlePageHide, {
+    once: true,
+  })
   window.addEventListener('beforeunload', handleBeforeUnload)
 
   return { dispose }

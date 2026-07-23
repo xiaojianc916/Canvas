@@ -5,6 +5,7 @@ import { freehandExtension } from '@hybrid-canvas/freehand'
 import {
   createDesktopSettingsStore,
   createDocumentFileCommands,
+  createNativeTLAssetStoreSession,
   createMainWindowController,
   type MainWindowController,
   type SettingsStore,
@@ -37,7 +38,7 @@ export interface ApplicationRuntime {
   readonly mainWindow: MainWindowController
   readonly settings: SettingsStore
   readonly tldrawLicenseKey: string
-  readonly dispose: () => void
+  readonly dispose: () => Promise<void>
 }
 
 export function createApplicationRuntime({
@@ -48,7 +49,9 @@ export function createApplicationRuntime({
   const documentsGateway = createDocumentFileCommands()
   const mainWindow = createMainWindowController()
   const settings = createDesktopSettingsStore()
-  const editorSessions = createEditorSessionRegistry()
+  const editorSessions = createEditorSessionRegistry(
+    createNativeTLAssetStoreSession,
+  )
 
   const documents = createCanvasDocumentService({
     editorSessions,
@@ -75,9 +78,9 @@ export function createApplicationRuntime({
     settings,
     tldrawLicenseKey,
 
-    dispose() {
+    async dispose() {
       termination.dispose()
-      canvases.dispose()
+      await canvases.dispose()
     },
   }
 }

@@ -6,7 +6,7 @@ import { createApplicationRuntime } from './application'
 
 export interface MountedReactApplication {
   readonly runtime: ReturnType<typeof createApplicationRuntime>
-  readonly unmount: () => void
+  readonly unmount: () => Promise<void>
 }
 
 export function mountReactApplication(container: HTMLElement): MountedReactApplication {
@@ -23,9 +23,9 @@ export function mountReactApplication(container: HTMLElement): MountedReactAppli
 
   return {
     runtime,
-    unmount() {
+    async unmount() {
       root.unmount()
-      runtime.dispose()
+      await runtime.dispose()
     },
   }
 }
