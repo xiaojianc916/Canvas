@@ -10,6 +10,7 @@ const files = [
   'platforms/desktop-runtime/src/public-api.ts',
   'platforms/desktop-runtime/src/adapters/file/file-system.ts',
   'apps/desktop/src/application/canvas/canvas-workflow.ts',
+  'apps/desktop/src/application/termination/application-termination-coordinator.ts',
   'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
   'editor/document/src/application/canvas-document-service.ts',
   'apps/desktop/src-tauri/src/ipc/mod.rs',
@@ -29,6 +30,7 @@ const forbidden = [
   'CanvasCloseRequestResult',
   'pendingCloseSessionId',
   'void documents.releaseCanvas',
+  'wait-for-save',
   'wait-for-saves',
   'planApplicationClose: () => ApplicationClosePlan',
 ]
@@ -52,80 +54,28 @@ for (const { path, source } of sources) {
   }
 }
 
-const workflow = sources.find(
-  ({ path }) =>
-    path === 'apps/desktop/src/application/canvas/canvas-workflow.ts',
-)?.source
-
-if (!workflow?.includes('wait-for-settlement')) {
-  violations.push(
-    'CanvasWorkflow must own one application settlement phase for saves and releases',
-  )
+function sourceFor(path) {
+  return sources.find((entry) => entry.path === path)?.source
 }
 
-if (!workflow?.includes('documents.getLifecycleSnapshot()')) {
-  violations.push(
-    'CanvasWorkflow must own application close planning instead of delegating it',
-  )
-}
+const workflow = sourceFor(
+  'apps/desktop/src/application/canvas/canvas-workflow.ts',
+)
 
-if (documentService?.includes('planApplicationClose')) {
-  violations.push(
-    'Document service must not own a second application termination lifecycle',
-  )
-}
+const documentService = sourceFor(
+  'editor/document/src/application/canvas-document-service.ts',
+)
+
+const termination = sourceFor(
+  'apps/desktop/src/application/termination/application-termination-coordinator.ts',
+)
+
+const workspace = sourceFor(
+  'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+)
 
 if (!workflow?.includes('CanvasCloseSnapshot')) {
   violations.push('Canvas lifecycle coordinator snapshot is missing')
-}
-
-if (!documentSession.includes('phaseBeforeClosing')) {
-  violations.push(
-    'DocumentSession must retain the phase that existed before closing',
-  )
-}
-
-if (!documentSession.includes('phase = phaseBeforeClosing')) {
-  violations.push(
-    'DocumentSession close cancellation must restore the exact prior phase',
-  )
-}
-
-if (documentSession.includes("phase = 'ready'\n    },\n\n    completeClosing")) {
-  violations.push(
-    'DocumentSession close cancellation must not unconditionally restore ready',
-  )
-}
-
-const documentService = sources.find(
-  ({ path }) =>
-    path === 'editor/document/src/application/canvas-document-service.ts',
-)?.source
-
-if (!documentService?.includes('CanvasReleaseFailureCode')) {
-  violations.push(
-    'Document release failures must expose a stable, sanitized error code',
-  )
-}
-
-if (!documentService?.includes('toCanvasReleaseFailure')) {
-  violations.push(
-    'Document release failures must classify IPC errors without exposing raw messages',
-  )
-}
-
-if (!workflow?.includes('failure: result.failure')) {
-  violations.push(
-    'Canvas close state must preserve the classified release failure',
-  )
-}
-
-if (!workflow?.includes('closeCanvas')) {
-  violations.push('Canvas lifecycle coordinator entry point is missing')
-}
-
-if (!workflow?.includes('await documents.releaseCanvas')) {
-  violations.push('Canvas lifecycle rollback must await native release')
 }
 
 if (!workflow?.includes('const closeOperations = new Map')) {
@@ -146,16 +96,77 @@ if (workflow?.includes('let activeClose: Promise<void> | null')) {
   )
 }
 
+if (!workflow?.includes('wait-for-settlement')) {
+  violations.push(
+    'CanvasWorkflow must own one settlement phase for saves and releases',
+  )
+}
+
+if (!workflow?.includes('documents.getLifecycleSnapshot()')) {
+  violations.push(
+    'CanvasWorkflow must own application close planning',
+  )
+}
+
+if (workflow?.includes(`result.kind === 'wait-for-save'`)) {
+  violations.push(
+    'CanvasWorkflow must not retry a second release transaction after save',
+  )
+}
+
 if (!workflow?.includes('cancelCanvasClose(sessionId)')) {
   violations.push(
     'Canvas close cancellation must target one CanvasSessionId',
   )
 }
 
-const workspace = sources.find(
-  ({ path }) =>
-    path === 'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
-)?.source
+if (documentService?.includes('planApplicationClose')) {
+  violations.push(
+    'DocumentService must not own a second application termination lifecycle',
+  )
+}
+
+if (!documentService?.includes('getLifecycleSnapshot')) {
+  violations.push(
+    'DocumentService must expose lifecycle facts without owning termination',
+  )
+}
+
+if (documentService?.includes(`kind: 'wait-for-save'`)) {
+  violations.push(
+    'DocumentService must not expose a second-stage release result',
+  )
+}
+
+if (!documentService?.includes('while (owned.saveOperation)')) {
+  violations.push(
+    'DocumentService must settle active saves inside releaseCanvas',
+  )
+}
+
+if (!documentService?.includes('CanvasReleaseFailureCode')) {
+  violations.push(
+    'Document release failures must expose stable sanitized codes',
+  )
+}
+
+if (!documentService?.includes('toCanvasReleaseFailure')) {
+  violations.push(
+    'Document release failures must classify native failures safely',
+  )
+}
+
+if (!termination?.includes('waiting-for-settlement')) {
+  violations.push(
+    'Application termination must wait for lifecycle settlement',
+  )
+}
+
+if (termination?.includes('waiting-for-saves')) {
+  violations.push(
+    'Application termination must not retain a save-only waiting state',
+  )
+}
 
 if (workspace?.includes('../../application/canvas/')) {
   violations.push(
@@ -165,17 +176,29 @@ if (workspace?.includes('../../application/canvas/')) {
 
 if (!workspace?.includes('WorkspaceCanvasCloseSnapshot')) {
   violations.push(
-    'Workspace presentation must own a structural canvas close UI contract',
+    'Workspace presentation must own a structural close UI contract',
+  )
+}
+
+if (!documentSession.includes('phaseBeforeClosing')) {
+  violations.push(
+    'DocumentSession must retain its exact phase before native release',
+  )
+}
+
+if (!documentSession.includes('phase = phaseBeforeClosing')) {
+  violations.push(
+    'DocumentSession must restore the exact pre-close phase on failure',
   )
 }
 
 if (violations.length > 0) {
   console.error(
-    'Canvas legacy protocol removal check failed:\n' +
+    'Canvas lifecycle architecture check failed:\n' +
       violations.map((item) => '- ' + item).join('\n'),
   )
 
   process.exitCode = 1
 } else {
-  console.log('Canvas legacy protocol removal check passed.')
+  console.log('Canvas lifecycle architecture check passed.')
 }
