@@ -18,3 +18,5 @@ export {
   ScientificChartTypeStyle,
 } from './styles/chart-styles'
 export { ScientificChartTool } from './tools/ScientificChartTool'
+
+export { ScientificChartToolInspector } from './presentation/ScientificChartToolInspector'

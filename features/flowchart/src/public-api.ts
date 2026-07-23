@@ -8,3 +8,5 @@ export {
   FlowNodeShapeUtil,
   type FlowNodeType,
 } from './shapes/FlowNodeShapeUtil'
+
+export { ConnectorToolInspector } from './presentation/ConnectorToolInspector'
