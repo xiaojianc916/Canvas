@@ -1,785 +1,666 @@
 #!/usr/bin/env node
 
-/**
- * P0-C.6.4 — Wire Native asset persistence through EditorSession ownership.
- *
- * Required base:
- *   42f35852886f1af4bd867a6d41478fd2f8fd41ce
- *
- * Usage:
- *   node refactor.mjs --check
- *   node refactor.mjs --apply
- *   node refactor.mjs --check D:\xiaojianc\hybrid-canvas
- *   node refactor.mjs --apply D:\xiaojianc\hybrid-canvas
- */
-
 import {
-  access,
-  readFile,
-  writeFile,
-} from 'node:fs/promises'
-import { constants } from 'node:fs'
-import { join, resolve } from 'node:path'
-import process from 'node:process'
+  existsSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { relative, resolve } from 'node:path'
 
-const STEP_NAME =
-  'P0-C.6.4 EditorSession asset persistence ownership'
+const root = resolve(process.argv[2] ?? '.')
+const expectedHead =
+  process.env.EXPECTED_HEAD ??
+  '5e246c3abdf1f9ccf559bce1c7c2164783c5df0d'
 
-function fail(message) {
-  console.error(`\n${STEP_NAME} failed:\n${message}\n`)
-  process.exit(1)
-}
+const changedFiles = new Map()
 
-function parseArguments(argv) {
-  let mode = null
-  let rootArgument = null
+main().catch((error) => {
+  console.error(error)
 
-  for (const argument of argv) {
-    if (
-      argument === '--check' ||
-      argument === '--apply'
-    ) {
-      if (mode !== null) {
-        fail(
-          [
-            'Exactly one execution mode is required.',
-            `Received both "${mode}" and "${argument}".`,
-          ].join('\n'),
-        )
-      }
-
-      mode = argument
-      continue
-    }
-
-    if (argument.startsWith('--')) {
-      fail(`Unknown argument: ${argument}`)
-    }
-
-    if (rootArgument !== null) {
-      fail(
-        [
-          'Only one repository path may be supplied.',
-          `Unexpected argument: ${argument}`,
-        ].join('\n'),
-      )
-    }
-
-    rootArgument = argument
+  if (changedFiles.size > 0) {
+    console.error('\n验证失败，正在恢复脚本修改……')
+    rollback()
   }
 
-  if (mode === null) {
+  process.exit(1)
+})
+
+async function main() {
+  assertRepository()
+  assertCleanWorktree()
+  assertReviewedHead()
+
+  replaceFlowNodeImplementation()
+  quarantinePrototypeScientificPlot()
+  removePrototypeChartToolbarEntry()
+
+  formatChangedFiles()
+  verify()
+
+  console.log('\nP1 tldraw-first 修复已完成：')
+
+  for (const path of changedFiles.keys()) {
+    console.log(`- ${relative(root, path)}`)
+  }
+
+  console.log(`
+已完成：
+- FlowNode 使用统一的视觉、命中、Binding、Indicator 和导出几何
+- nodeType 使用真实运行时枚举校验
+- SVG 导出不再依赖 foreignObject
+- 未完成 Dataset/Worker 管线的科学图表已退出 production composition
+- 工具栏不再暴露固定演示数据功能
+
+科学图表重新启用前必须满足：
+- Shape 只保存 datasetId、datasetRevision 和轻量 ChartSpec
+- 大型 Dataset 位于 TLStore 外部
+- 计算进入 Worker
+- 结果带输入 revision，过期结果不可提交
+- 具备 LOD、取消、超时和资源预算
+- SVG/PNG 导出使用同一 ChartSpec 和 Dataset revision
+`)
+}
+
+/**
+ * 使用唯一的几何函数驱动：
+ *
+ * - tldraw hit testing
+ * - selection bounds
+ * - arrow binding
+ * - React rendering
+ * - selection indicator
+ * - SVG export
+ *
+ * 不再允许“CSS 看起来是菱形，但 tldraw 认为它是矩形”。
+ */
+function replaceFlowNodeImplementation() {
+  const path = resolve(
+    root,
+    'features/flowchart/src/shapes/FlowNodeShapeUtil.tsx',
+  )
+
+  const expectedMarker =
+    "nodeType: T.string as T.Validator<FlowNodeType>"
+
+  const current = read(path)
+
+  if (!current.includes(expectedMarker)) {
     fail(
       [
-        'Missing execution mode.',
-        'Use either --check or --apply.',
+        'FlowNodeShapeUtil 已发生变化，拒绝覆盖。',
+        `缺少审查时的源码标记：${expectedMarker}`,
+        '请重新审查该文件后再更新迁移脚本。',
       ].join('\n'),
     )
   }
 
-  return {
-    mode,
-    root: resolve(
-      rootArgument ?? process.cwd(),
+  const next = `import { T } from '@tldraw/validate'
+import type { ReactElement } from 'react'
+import {
+  Polygon2d,
+  ShapeUtil,
+  type TLBaseShape,
+  type TLIndicatorPath,
+  Vec,
+} from 'tldraw'
+
+declare module '@tldraw/tlschema' {
+  interface TLGlobalShapePropsMap {
+    'flow-node': FlowNodeShapeProps
+  }
+}
+
+export const FLOW_NODE_TYPES = [
+  'process',
+  'decision',
+  'start-end',
+  'input-output',
+] as const
+
+export type FlowNodeType = (typeof FLOW_NODE_TYPES)[number]
+
+export interface FlowNodeShapeProps {
+  readonly label: string
+  readonly nodeType: FlowNodeType
+  readonly w: number
+  readonly h: number
+  readonly color: string
+}
+
+export type FlowNodeShape = TLBaseShape<
+  'flow-node',
+  FlowNodeShapeProps
+>
+
+interface Point {
+  readonly x: number
+  readonly y: number
+}
+
+const MIN_FLOW_NODE_WIDTH = 32
+const MIN_FLOW_NODE_HEIGHT = 24
+const CAPSULE_SEGMENTS_PER_HALF = 12
+
+export class FlowNodeShapeUtil extends ShapeUtil<FlowNodeShape> {
+  static override type = 'flow-node' as const
+
+  static override props = {
+    label: T.string,
+    nodeType: T.literalEnum(...FLOW_NODE_TYPES),
+    w: T.number.refine(
+      (value) =>
+        Number.isFinite(value) &&
+        value >= MIN_FLOW_NODE_WIDTH,
     ),
+    h: T.number.refine(
+      (value) =>
+        Number.isFinite(value) &&
+        value >= MIN_FLOW_NODE_HEIGHT,
+    ),
+    color: T.string.refine(isSafeCssColor),
   }
-}
 
-const { mode, root } = parseArguments(
-  process.argv.slice(2),
-)
-
-const paths = {
-  packageJson: join(root, 'package.json'),
-
-  editorSession: join(
-    root,
-    'editor',
-    'core',
-    'src',
-    'runtime',
-    'editor-session.ts',
-  ),
-
-  publicApi: join(
-    root,
-    'editor',
-    'core',
-    'src',
-    'application',
-    'public-api.ts',
-  ),
-
-  registryTest: join(
-    root,
-    'tests',
-    'cross-domain-contract',
-    'document-lifecycle',
-    'editor-session-registry.test.ts',
-  ),
-
-  nativeAdapter: join(
-    root,
-    'platforms',
-    'desktop-runtime',
-    'src',
-    'adapters',
-    'assets',
-    'native-tl-asset-store.ts',
-  ),
-}
-
-async function exists(path) {
-  try {
-    await access(path, constants.F_OK)
-    return true
-  } catch {
-    return false
+  getDefaultProps(): FlowNodeShape['props'] {
+    return {
+      label: '节点',
+      nodeType: 'process',
+      w: 160,
+      h: 60,
+      color: '#3b82f6',
+    }
   }
-}
 
-function countOccurrences(source, fragment) {
-  if (fragment.length === 0) {
-    throw new Error(
-      'Cannot count an empty source fragment.',
+  getGeometry(shape: FlowNodeShape): Polygon2d {
+    const points = getFlowNodePoints(
+      shape.props.nodeType,
+      shape.props.w,
+      shape.props.h,
+    )
+
+    return new Polygon2d({
+      points: points.map(
+        ({ x, y }) => new Vec(x, y),
+      ),
+      isFilled: true,
+    })
+  }
+
+  override component(
+    shape: FlowNodeShape,
+  ): ReactElement {
+    const { label, nodeType, w, h, color } =
+      shape.props
+
+    const path = getClosedSvgPath(
+      getFlowNodePoints(nodeType, w, h),
+    )
+
+    return (
+      <svg
+        aria-label={label}
+        height={h}
+        role="img"
+        style={{
+          display: 'block',
+          overflow: 'visible',
+          pointerEvents: 'none',
+        }}
+        viewBox={\`0 0 \${w} \${h}\`}
+        width={w}
+      >
+        <path
+          d={path}
+          fill={color}
+          stroke="rgba(0, 0, 0, 0.18)"
+          strokeLinejoin="round"
+          strokeWidth={1}
+        />
+
+        <text
+          dominantBaseline="middle"
+          fill="#ffffff"
+          fontFamily="system-ui, sans-serif"
+          fontSize={13}
+          fontWeight={500}
+          textAnchor="middle"
+          x={w / 2}
+          y={h / 2}
+        >
+          {label}
+        </text>
+      </svg>
     )
   }
 
-  let count = 0
-  let offset = 0
-
-  while (true) {
-    const index = source.indexOf(
-      fragment,
-      offset,
+  override getIndicatorPath(
+    shape: FlowNodeShape,
+  ): TLIndicatorPath {
+    const points = getFlowNodePoints(
+      shape.props.nodeType,
+      shape.props.w,
+      shape.props.h,
     )
 
-    if (index < 0) {
-      return count
+    const path = new Path2D()
+
+    path.moveTo(points[0].x, points[0].y)
+
+    for (let index = 1; index < points.length; index += 1) {
+      path.lineTo(points[index].x, points[index].y)
     }
 
-    count += 1
-    offset = index + fragment.length
-  }
-}
+    path.closePath()
 
-function replaceExact(
-  source,
-  baseline,
-  final,
-  description,
-) {
-  const baselineCount =
-    countOccurrences(source, baseline)
-
-  const finalCount =
-    countOccurrences(source, final)
-
-  if (
-    baselineCount === 1 &&
-    finalCount === 0
-  ) {
-    return source.replace(baseline, final)
+    return path
   }
 
-  if (
-    baselineCount === 0 &&
-    finalCount === 1
-  ) {
-    return source
-  }
+  override toSvg(
+    shape: FlowNodeShape,
+  ): ReactElement {
+    const { label, nodeType, w, h, color } =
+      shape.props
 
-  throw new Error(
-    [
-      `Unexpected source state: ${description}`,
-      `Baseline count: ${baselineCount}`,
-      `Final count: ${finalCount}`,
-      'Expected one audited baseline or one final implementation.',
-      'Refusing an ambiguous or partial modification.',
-    ].join('\n'),
-  )
-}
+    return (
+      <g>
+        <path
+          d={getClosedSvgPath(
+            getFlowNodePoints(nodeType, w, h),
+          )}
+          fill={color}
+          stroke="rgba(0, 0, 0, 0.18)"
+          strokeLinejoin="round"
+          strokeWidth={1}
+        />
 
-const assetContractsBaseline = `export interface EditorAssetStoreSession {
-  readonly assets: TLAssetStore
-  readonly dispose: () => Promise<void>
-}
-
-export type EditorAssetStoreSessionFactory =
-  () => EditorAssetStoreSession`
-
-const assetContractsFinal = `/**
- * Process-local Native resource capability associated with an opened document.
- *
- * This value is an opaque lifecycle capability. It is never part of the .draw
- * format and must never be interpreted as a path, URL or archive entry.
- */
-export interface EditorAssetStoreRestore {
-  readonly persistenceToken: string
-}
-
-export interface EditorAssetStoreSession {
-  readonly assets: TLAssetStore
-
-  /**
-   * Settles accepted asset operations and returns the Native resource-session
-   * capability. Asset-free documents return null without allocating a session.
-   */
-  readonly getPersistenceToken: () => Promise<string | null>
-
-  readonly dispose: () => Promise<void>
-}
-
-export type EditorAssetStoreSessionFactory = (
-  restore?: EditorAssetStoreRestore,
-) => EditorAssetStoreSession`
-
-const createOptionsBaseline = `export interface CreateEditorSessionOptions {
-  readonly sessionId: string
-  readonly documentId: string
-  readonly initialSnapshot?: TLEditorSnapshot
-  readonly extensions?: readonly HybridCanvasExtension[]
-}`
-
-const createOptionsFinal = `export interface CreateEditorSessionOptions {
-  readonly sessionId: string
-  readonly documentId: string
-  readonly initialSnapshot?: TLEditorSnapshot
-
-  /**
-   * Present only when Native has transactionally restored resources while
-   * opening an existing v2 document.
-   */
-  readonly assetStoreRestore?: EditorAssetStoreRestore
-
-  readonly extensions?: readonly HybridCanvasExtension[]
-}`
-
-const sessionInterfaceBaseline = `  readonly captureDocument: () => TLStoreSnapshot
-
-  readonly subscribeDocumentEvents: (listener: (event: EditorDocumentEvent) => void) => () => void`
-
-const sessionInterfaceFinal = `  readonly captureDocument: () => TLStoreSnapshot
-
-  /**
-   * Returns the settled Native resource capability for the same editor session
-   * whose TLStoreSnapshot is being persisted.
-   */
-  readonly captureAssetPersistenceToken: () => Promise<string | null>
-
-  readonly subscribeDocumentEvents: (listener: (event: EditorDocumentEvent) => void) => () => void`
-
-const sessionReturnBaseline = `    getSnapshot: captureLegacyEditorSnapshot,
-    captureDocument,
-
-    subscribeDocumentEvents(listener) {`
-
-const sessionReturnFinal = `    getSnapshot: captureLegacyEditorSnapshot,
-    captureDocument,
-
-    captureAssetPersistenceToken() {
-      assertActive()
-      return assetStoreSession.getPersistenceToken()
-    },
-
-    subscribeDocumentEvents(listener) {`
-
-const factoryInvocationBaseline = `      const assetStoreSession = assetStoreFactory()`
-
-const factoryInvocationFinal = `      const assetStoreSession = assetStoreFactory(
-        options.assetStoreRestore,
-      )`
-
-function updateEditorSession(source) {
-  let result = source
-
-  result = replaceExact(
-    result,
-    assetContractsBaseline,
-    assetContractsFinal,
-    'define the EditorSession asset capability boundary',
-  )
-
-  result = replaceExact(
-    result,
-    createOptionsBaseline,
-    createOptionsFinal,
-    'accept a Native-restored asset session',
-  )
-
-  result = replaceExact(
-    result,
-    sessionInterfaceBaseline,
-    sessionInterfaceFinal,
-    'expose asset persistence capture',
-  )
-
-  result = replaceExact(
-    result,
-    sessionReturnBaseline,
-    sessionReturnFinal,
-    'delegate persistence capture to the owned asset session',
-  )
-
-  result = replaceExact(
-    result,
-    factoryInvocationBaseline,
-    factoryInvocationFinal,
-    'inject restoration into the asset factory',
-  )
-
-  return result
-}
-
-function updatePublicApi(source) {
-  const baseline = `  type EditorAssetStoreSession,
-  type EditorAssetStoreSessionFactory,`
-
-  const final = `  type EditorAssetStoreRestore,
-  type EditorAssetStoreSession,
-  type EditorAssetStoreSessionFactory,`
-
-  return replaceExact(
-    source,
-    baseline,
-    final,
-    'export the asset restoration contract',
-  )
-}
-
-const firstHarnessBaseline = `  const factory: EditorAssetStoreSessionFactory = () => ({
-    assets: {
-      upload: vi.fn(),
-    } as unknown as TLAssetStore,
-    dispose,
-  })`
-
-const firstHarnessFinal = `  const getPersistenceToken = vi
-    .fn()
-    .mockResolvedValue(null)
-
-  const factory: EditorAssetStoreSessionFactory = () => ({
-    assets: {
-      upload: vi.fn(),
-    } as unknown as TLAssetStore,
-    getPersistenceToken,
-    dispose,
-  })`
-
-const secondHarnessBaseline = `    const registry = createEditorSessionRegistry(() => ({
-      assets: {
-        upload: vi.fn(),
-      } as unknown as TLAssetStore,
-      dispose,
-    }))`
-
-const secondHarnessFinal = `    const registry = createEditorSessionRegistry(() => ({
-      assets: {
-        upload: vi.fn(),
-      } as unknown as TLAssetStore,
-      getPersistenceToken: vi
-        .fn()
-        .mockResolvedValue(null),
-      dispose,
-    }))`
-
-const finalTestAnchor = `  it('waits for owned asset disposal before close settles', async () => {`
-
-const capabilityTest = `  it('binds restored resources and persistence capture to the same session', async () => {
-    const persistenceToken =
-      'restored-native-session'
-
-    const getPersistenceToken = vi
-      .fn()
-      .mockResolvedValue(persistenceToken)
-
-    const factory: EditorAssetStoreSessionFactory =
-      vi.fn((restore) => ({
-        assets: {
-          upload: vi.fn(),
-        } as unknown as TLAssetStore,
-        getPersistenceToken,
-        dispose: vi.fn().mockResolvedValue(undefined),
-      }))
-
-    const registry =
-      createEditorSessionRegistry(factory)
-
-    const session = await registry.create({
-      sessionId: 'restored-editor-session',
-      documentId: 'restored-document',
-      assetStoreRestore: {
-        persistenceToken,
-      },
-      extensions: [],
-    })
-
-    expect(factory).toHaveBeenCalledWith({
-      persistenceToken,
-    })
-
-    await expect(
-      session.captureAssetPersistenceToken(),
-    ).resolves.toBe(persistenceToken)
-
-    expect(getPersistenceToken)
-      .toHaveBeenCalledTimes(1)
-
-    await registry.close(session.sessionId)
-  })
-
-${finalTestAnchor}`
-
-function updateRegistryTest(source) {
-  let result = source
-
-  result = replaceExact(
-    result,
-    firstHarnessBaseline,
-    firstHarnessFinal,
-    'add persistence capture to the primary asset harness',
-  )
-
-  result = replaceExact(
-    result,
-    secondHarnessBaseline,
-    secondHarnessFinal,
-    'add persistence capture to the disposal harness',
-  )
-
-  result = replaceExact(
-    result,
-    finalTestAnchor,
-    capabilityTest,
-    'test restored resource ownership',
-  )
-
-  return result
-}
-
-function validateRepository(packageJson) {
-  let parsed
-
-  try {
-    parsed = JSON.parse(
-      packageJson.replace(/^\uFEFF/u, ''),
-    )
-  } catch (error) {
-    throw new Error(
-      `Root package.json is invalid JSON: ${String(
-        error,
-      )}`,
-    )
-  }
-
-  if (parsed.name !== 'hybrid-canvas') {
-    throw new Error(
-      `Unexpected package name: ${String(
-        parsed.name,
-      )}`,
+        <text
+          dominantBaseline="middle"
+          fill="#ffffff"
+          fontFamily="system-ui, sans-serif"
+          fontSize={13}
+          fontWeight={500}
+          textAnchor="middle"
+          x={w / 2}
+          y={h / 2}
+        >
+          {label}
+        </text>
+      </g>
     )
   }
 }
 
-function validateAdapter(source) {
-  for (const fragment of [
-    'export interface NativeAssetStoreSessionRestore',
-    'readonly persistenceToken: string',
-    'readonly getPersistenceToken: () => Promise<string | null>',
-    'restore?: NativeAssetStoreSessionRestore',
-    `asset.meta?.['hybridCanvasAssetToken']`,
-    `asset.meta?.['hybridCanvasContentHash']`,
-  ]) {
-    if (!source.includes(fragment)) {
-      throw new Error(
-        `Native adapter prerequisite is missing: ${fragment}`,
+function getFlowNodePoints(
+  type: FlowNodeType,
+  width: number,
+  height: number,
+): readonly Point[] {
+  switch (type) {
+    case 'process':
+      return [
+        { x: 0, y: 0 },
+        { x: width, y: 0 },
+        { x: width, y: height },
+        { x: 0, y: height },
+      ]
+
+    case 'decision':
+      return [
+        { x: width / 2, y: 0 },
+        { x: width, y: height / 2 },
+        { x: width / 2, y: height },
+        { x: 0, y: height / 2 },
+      ]
+
+    case 'input-output': {
+      const inset = Math.min(
+        width * 0.12,
+        height * 0.45,
       )
+
+      return [
+        { x: inset, y: 0 },
+        { x: width - inset, y: 0 },
+        { x: width, y: height / 2 },
+        { x: width - inset, y: height },
+        { x: inset, y: height },
+        { x: 0, y: height / 2 },
+      ]
     }
+
+    case 'start-end':
+      return getCapsulePoints(width, height)
   }
 }
 
-function validateFinal(
-  editorSession,
-  publicApi,
-  registryTest,
-) {
-  const requiredSession = [
-    'export interface EditorAssetStoreRestore',
-    'readonly persistenceToken: string',
-    'readonly getPersistenceToken: () => Promise<string | null>',
-    'restore?: EditorAssetStoreRestore',
-    'readonly assetStoreRestore?: EditorAssetStoreRestore',
-    'readonly captureAssetPersistenceToken: () => Promise<string | null>',
-    'return assetStoreSession.getPersistenceToken()',
-    'options.assetStoreRestore',
+function getCapsulePoints(
+  width: number,
+  height: number,
+): readonly Point[] {
+  const radius = Math.min(height / 2, width / 2)
+  const leftCenterX = radius
+  const rightCenterX = width - radius
+  const centerY = height / 2
+
+  if (leftCenterX >= rightCenterX) {
+    return getEllipsePoints(
+      width / 2,
+      centerY,
+      width / 2,
+      height / 2,
+      CAPSULE_SEGMENTS_PER_HALF * 2,
+    )
+  }
+
+  const points = []
+
+  for (
+    let index = 0;
+    index <= CAPSULE_SEGMENTS_PER_HALF;
+    index += 1
+  ) {
+    const angle =
+      -Math.PI / 2 +
+      (Math.PI * index) /
+        CAPSULE_SEGMENTS_PER_HALF
+
+    points.push({
+      x: rightCenterX + Math.cos(angle) * radius,
+      y: centerY + Math.sin(angle) * radius,
+    })
+  }
+
+  for (
+    let index = 0;
+    index <= CAPSULE_SEGMENTS_PER_HALF;
+    index += 1
+  ) {
+    const angle =
+      Math.PI / 2 +
+      (Math.PI * index) /
+        CAPSULE_SEGMENTS_PER_HALF
+
+    points.push({
+      x: leftCenterX + Math.cos(angle) * radius,
+      y: centerY + Math.sin(angle) * radius,
+    })
+  }
+
+  return points
+}
+
+function getEllipsePoints(
+  centerX: number,
+  centerY: number,
+  radiusX: number,
+  radiusY: number,
+  segments: number,
+): readonly Point[] {
+  return Array.from(
+    { length: segments },
+    (_, index) => {
+      const angle =
+        (Math.PI * 2 * index) / segments
+
+      return {
+        x: centerX + Math.cos(angle) * radiusX,
+        y: centerY + Math.sin(angle) * radiusY,
+      }
+    },
+  )
+}
+
+function getClosedSvgPath(
+  points: readonly Point[],
+): string {
+  if (points.length < 3) {
+    throw new Error('FLOW_NODE_GEOMETRY_INVALID')
+  }
+
+  return [
+    \`M \${formatNumber(points[0].x)} \${formatNumber(points[0].y)}\`,
+    ...points
+      .slice(1)
+      .map(
+        ({ x, y }) =>
+          \`L \${formatNumber(x)} \${formatNumber(y)}\`,
+      ),
+    'Z',
+  ].join(' ')
+}
+
+function formatNumber(value: number): string {
+  return Number(value.toFixed(3)).toString()
+}
+
+function isSafeCssColor(value: string): boolean {
+  /*
+   * Persisted colors are intentionally restricted to deterministic,
+   * self-contained CSS colors. This rejects url(), var(), gradients and other
+   * context-dependent values entering from files or collaboration input.
+   */
+  return (
+    /^#[0-9a-f]{6}$/iu.test(value) ||
+    /^#[0-9a-f]{8}$/iu.test(value)
+  )
+}
+`
+
+  update(path, next)
+}
+
+/**
+ * 当前 scientific chart 使用固定数组渲染，不使用 Dataset/ChartSpec，
+ * 也没有 Worker、revision、取消或 LOD。
+ *
+ * 专业做法不是继续把演示数组包装成“图表系统”，而是在真实数据管线完成前
+ * 将其退出 production composition。
+ */
+function quarantinePrototypeScientificPlot() {
+  const path = resolve(
+    root,
+    'apps/desktop/src/bootstrap/application.ts',
+  )
+
+  let source = read(path)
+
+  source = replaceExactlyOnce(
+    source,
+    `import { scientificPlotExtension } from '@hybrid-canvas/scientific-plot'\n`,
+    '',
+    'scientific plot production import',
+  )
+
+  source = replaceExactlyOnce(
+    source,
+    `      flowchartExtension,
+      freehandExtension,
+      scientificPlotExtension,
+`,
+    `      flowchartExtension,
+      freehandExtension,
+`,
+    'scientific plot production registration',
+  )
+
+  update(path, source)
+}
+
+function removePrototypeChartToolbarEntry() {
+  const path = resolve(
+    root,
+    'editor/core/src/react/CanvasToolbar.tsx',
+  )
+
+  let source = read(path)
+
+  source = replaceExactlyOnce(
+    source,
+    `  ChartLine,
+`,
+    '',
+    'scientific chart toolbar icon',
+  )
+
+  source = replaceExactlyOnce(
+    source,
+    `  {
+    id: 'scientific-chart',
+    label: '图表',
+    shortcut: 'C',
+    icon: ChartLine,
+  },
+`,
+    '',
+    'scientific chart toolbar action',
+  )
+
+  update(path, source)
+}
+
+function formatChangedFiles() {
+  const paths = [...changedFiles.keys()].map((path) =>
+    relative(root, path),
+  )
+
+  run('pnpm', [
+    'exec',
+    'biome',
+    'format',
+    '--write',
+    ...paths,
+  ])
+}
+
+function verify() {
+  run('pnpm', ['typecheck'])
+  run('pnpm', ['lint'])
+  run('pnpm', ['test'])
+  run('pnpm', ['test:architecture'])
+  run('pnpm', ['build:desktop'])
+}
+
+function assertRepository() {
+  const required = [
+    '.git',
+    'package.json',
+    'apps/desktop/src/bootstrap/application.ts',
+    'editor/core/src/react/CanvasToolbar.tsx',
+    'features/flowchart/src/shapes/FlowNodeShapeUtil.tsx',
   ]
 
-  for (const fragment of requiredSession) {
-    if (!editorSession.includes(fragment)) {
-      throw new Error(
-        `EditorSession persistence boundary is missing: ${fragment}`,
-      )
-    }
-  }
-
-  if (
-    countOccurrences(
-      editorSession,
-      'captureAssetPersistenceToken()',
-    ) !== 1
-  ) {
-    throw new Error(
-      'Expected exactly one asset persistence capture implementation.',
-    )
-  }
-
-  if (
-    countOccurrences(
-      editorSession,
-      'assetStoreFactory(',
-    ) !== 1
-  ) {
-    throw new Error(
-      'Expected exactly one owned asset-store construction site.',
-    )
-  }
-
-  if (
-    !publicApi.includes(
-      'type EditorAssetStoreRestore,',
-    )
-  ) {
-    throw new Error(
-      'Editor asset restore contract is not exported.',
-    )
-  }
-
-  for (const fragment of [
-    'binds restored resources and persistence capture to the same session',
-    'assetStoreRestore: {',
-    'session.captureAssetPersistenceToken()',
-    'expect(factory).toHaveBeenCalledWith({',
-  ]) {
-    if (!registryTest.includes(fragment)) {
-      throw new Error(
-        `EditorSession contract test is missing: ${fragment}`,
-      )
-    }
-  }
-
-  for (const forbidden of [
-    'assetSessionToken: any',
-    'persistenceToken: any',
-    '// @ts-ignore',
-    '// @ts-expect-error',
-    'URL.createObjectURL',
-    'FileReader',
-  ]) {
-    if (
-      editorSession.includes(forbidden) ||
-      registryTest.includes(forbidden)
-    ) {
-      throw new Error(
-        `Forbidden compatibility or suppression remains: ${forbidden}`,
-      )
+  for (const item of required) {
+    if (!existsSync(resolve(root, item))) {
+      fail(`缺少必要路径：${item}`)
     }
   }
 }
 
-async function restoreFiles(originals) {
-  const results = await Promise.allSettled(
-    [...originals].map(
-      ([path, content]) =>
-        writeFile(path, content, 'utf8'),
-    ),
-  )
+function assertCleanWorktree() {
+  const status = capture('git', [
+    'status',
+    '--porcelain',
+  ])
 
-  const failures = results.filter(
-    (result) =>
-      result.status === 'rejected',
-  )
-
-  if (failures.length > 0) {
-    throw new AggregateError(
-      failures.map(
-        (failure) => failure.reason,
-      ),
-      'Apply failed and original files could not all be restored.',
+  if (status.trim()) {
+    fail(
+      [
+        '工作区不干净，拒绝执行迁移。',
+        '请先提交或暂存现有修改。',
+        '',
+        status,
+      ].join('\n'),
     )
   }
 }
 
-async function main() {
-  for (const path of Object.values(paths)) {
-    if (!(await exists(path))) {
-      throw new Error(
-        `Required file was not found: ${path}`,
-      )
-    }
-  }
+function assertReviewedHead() {
+  const actualHead = capture('git', [
+    'rev-parse',
+    'HEAD',
+  ]).trim()
 
-  const [
-    packageJson,
-    editorSessionOriginal,
-    publicApiOriginal,
-    registryTestOriginal,
-    nativeAdapter,
-  ] = await Promise.all([
-    readFile(paths.packageJson, 'utf8'),
-    readFile(paths.editorSession, 'utf8'),
-    readFile(paths.publicApi, 'utf8'),
-    readFile(paths.registryTest, 'utf8'),
-    readFile(paths.nativeAdapter, 'utf8'),
-  ])
-
-  validateRepository(packageJson)
-  validateAdapter(nativeAdapter)
-
-  const editorSessionFinal =
-    updateEditorSession(
-      editorSessionOriginal,
-    )
-
-  const publicApiFinal =
-    updatePublicApi(publicApiOriginal)
-
-  const registryTestFinal =
-    updateRegistryTest(
-      registryTestOriginal,
-    )
-
-  validateFinal(
-    editorSessionFinal,
-    publicApiFinal,
-    registryTestFinal,
-  )
-
-  const originals = new Map([
-    [
-      paths.editorSession,
-      editorSessionOriginal,
-    ],
-    [paths.publicApi, publicApiOriginal],
-    [
-      paths.registryTest,
-      registryTestOriginal,
-    ],
-  ])
-
-  const outputs = new Map([
-    [
-      paths.editorSession,
-      editorSessionFinal,
-    ],
-    [paths.publicApi, publicApiFinal],
-    [
-      paths.registryTest,
-      registryTestFinal,
-    ],
-  ])
-
-  const changed = [...outputs].filter(
-    ([path, content]) =>
-      originals.get(path) !== content,
-  )
-
-  if (changed.length === 0) {
-    console.log(
-      `${STEP_NAME} is already applied.`,
-    )
-    return
-  }
-
-  console.log(`${STEP_NAME} will update:`)
-
-  for (const [path] of changed) {
-    console.log(
-      `- ${path.slice(root.length + 1)}`,
+  if (actualHead !== expectedHead) {
+    fail(
+      [
+        '当前提交与审查基线不一致。',
+        `审查基线：${expectedHead}`,
+        `当前提交：${actualHead}`,
+        '',
+        '如已人工复核新提交，可通过 EXPECTED_HEAD 指定新 SHA。',
+      ].join('\n'),
     )
   }
-
-  console.log('')
-  console.log('It will:')
-  console.log(
-    '- make EditorSession own the Native resource capability;',
-  )
-  console.log(
-    '- inject restored resources into the official TLAssetStore factory;',
-  )
-  console.log(
-    '- expose one settled persistence capture boundary;',
-  )
-  console.log(
-    '- preserve lazy allocation for asset-free documents;',
-  )
-  console.log(
-    '- keep session tokens out of the physical document format;',
-  )
-  console.log(
-    '- add a cross-domain ownership contract test.',
-  )
-
-  if (mode === '--check') {
-    console.log('')
-    console.log(
-      'Check completed. No files were written.',
-    )
-    console.log('')
-    console.log('Apply with:')
-    console.log('  node refactor.mjs --apply')
-    return
-  }
-
-  try {
-    for (const [path, content] of changed) {
-      await writeFile(path, content, 'utf8')
-    }
-
-    const [
-      writtenEditorSession,
-      writtenPublicApi,
-      writtenRegistryTest,
-    ] = await Promise.all([
-      readFile(paths.editorSession, 'utf8'),
-      readFile(paths.publicApi, 'utf8'),
-      readFile(paths.registryTest, 'utf8'),
-    ])
-
-    validateFinal(
-      writtenEditorSession,
-      writtenPublicApi,
-      writtenRegistryTest,
-    )
-  } catch (error) {
-    console.error(
-      '\nApply failed. Restoring original files...',
-    )
-
-    await restoreFiles(originals)
-    throw error
-  }
-
-  console.log('')
-  console.log(`Applied ${STEP_NAME}.`)
-  console.log('')
-  console.log('Required verification:')
-  console.log('  pnpm format')
-  console.log('  pnpm lint')
-  console.log('  pnpm typecheck')
-  console.log('  pnpm test')
-  console.log(
-    '  cargo check --workspace --all-targets',
-  )
-  console.log(
-    '  cargo test --workspace --all-targets',
-  )
-  console.log('  pnpm tauri dev')
 }
 
-main().catch((error) => {
-  fail(
-    error instanceof Error
-      ? error.stack ?? error.message
-      : String(error),
+function read(path) {
+  return readFileSync(path, 'utf8')
+}
+
+function update(path, nextContent) {
+  if (!changedFiles.has(path)) {
+    changedFiles.set(path, read(path))
+  }
+
+  writeFileSync(path, nextContent, 'utf8')
+  console.log(`修改：${relative(root, path)}`)
+}
+
+function replaceExactlyOnce(
+  source,
+  oldText,
+  newText,
+  label,
+) {
+  const first = source.indexOf(oldText)
+
+  if (first < 0) {
+    fail(`没有找到预期源码：${label}`)
+  }
+
+  const second = source.indexOf(
+    oldText,
+    first + oldText.length,
   )
-})
+
+  if (second >= 0) {
+    fail(`预期源码不唯一：${label}`)
+  }
+
+  return (
+    source.slice(0, first) +
+    newText +
+    source.slice(first + oldText.length)
+  )
+}
+
+function rollback() {
+  for (const [path, original] of changedFiles) {
+    writeFileSync(path, original, 'utf8')
+    console.error(`已恢复：${relative(root, path)}`)
+  }
+}
+
+function run(command, args) {
+  console.log(`\n> ${command} ${args.join(' ')}`)
+
+  execFileSync(command, args, {
+    cwd: root,
+    env: process.env,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  })
+}
+
+function capture(command, args) {
+  return execFileSync(command, args, {
+    cwd: root,
+    env: process.env,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  })
+}
+
+function fail(message) {
+  throw new Error(message)
+}
