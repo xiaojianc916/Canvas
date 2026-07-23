@@ -10,7 +10,7 @@ function snapshot(documentValue: unknown): TLEditorSnapshot {
 }
 
 describe('DocumentSession', () => {
-  it('initializes a new document as clean', () => {
+  it('initializes a new unsaved document as clean', () => {
     const session = createDocumentSession(null)
 
     session.initialize(
@@ -26,50 +26,48 @@ describe('DocumentSession', () => {
     expect(session.getSnapshot()).toEqual({
       phase: 'ready',
       persistence: 'clean',
-      filePath: null,
+      documentId: null,
+    })
+  })
+
+  it('tracks an opaque document ID without storing a filesystem path', () => {
+    const session = createDocumentSession('document-native-1')
+
+    session.initialize(snapshot({ shapes: [] }))
+
+    expect(session.getDocumentId()).toBe('document-native-1')
+    expect(session.getSnapshot()).toEqual({
+      phase: 'ready',
+      persistence: 'clean',
+      documentId: 'document-native-1',
     })
   })
 
   it('becomes dirty after a document change', () => {
     const session = createDocumentSession(null)
 
-    session.initialize(
-      snapshot({
-        shapes: [],
-      }),
-    )
+    session.initialize(snapshot({ shapes: [] }))
 
     session.recordDocumentChange(
       snapshot({
-        shapes: [
-          {
-            id: 'shape:1',
-          },
-        ],
+        shapes: [{ id: 'shape:1' }],
       }),
     )
 
     expect(session.isDirty()).toBe(true)
-
     expect(session.getSnapshot().persistence).toBe('dirty')
   })
 
   it('returns to clean when undo restores the saved checkpoint', () => {
     const session = createDocumentSession(null)
 
-    const baseline = snapshot({
-      shapes: [],
-    })
+    const baseline = snapshot({ shapes: [] })
 
     session.initialize(baseline)
 
     session.recordDocumentChange(
       snapshot({
-        shapes: [
-          {
-            id: 'shape:1',
-          },
-        ],
+        shapes: [{ id: 'shape:1' }],
       }),
     )
 
@@ -78,7 +76,6 @@ describe('DocumentSession', () => {
     session.recordDocumentChange(baseline)
 
     expect(session.isDirty()).toBe(false)
-
     expect(session.getSnapshot().persistence).toBe('clean')
   })
 
@@ -105,84 +102,56 @@ describe('DocumentSession', () => {
   it('stays dirty when editing continues during save', () => {
     const session = createDocumentSession(null)
 
-    session.initialize(
-      snapshot({
-        shapes: [],
-      }),
-    )
+    session.initialize(snapshot({ shapes: [] }))
 
     const ticket = session.beginSave(
       snapshot({
-        shapes: [
-          {
-            id: 'shape:1',
-          },
-        ],
+        shapes: [{ id: 'shape:1' }],
       }),
     )
 
     session.recordDocumentChange(
       snapshot({
-        shapes: [
-          {
-            id: 'shape:1',
-          },
-          {
-            id: 'shape:2',
-          },
-        ],
+        shapes: [{ id: 'shape:1' }, { id: 'shape:2' }],
       }),
     )
 
-    session.completeSave(ticket, 'drawing.draw')
+    session.completeSave(ticket, 'document-native-1')
 
     expect(session.isDirty()).toBe(true)
-
     expect(session.getSnapshot()).toEqual({
       phase: 'ready',
       persistence: 'dirty',
-      filePath: 'drawing.draw',
+      documentId: 'document-native-1',
     })
   })
 
-  it('becomes clean after saving the current document', () => {
+  it('becomes clean after first Save As assigns a native document ID', () => {
     const session = createDocumentSession(null)
 
-    session.initialize(
-      snapshot({
-        shapes: [],
-      }),
-    )
-
     const current = snapshot({
-      shapes: [
-        {
-          id: 'shape:1',
-        },
-      ],
+      shapes: [{ id: 'shape:1' }],
     })
 
+    session.initialize(snapshot({ shapes: [] }))
     session.recordDocumentChange(current)
 
     const ticket = session.beginSave(current)
 
-    session.completeSave(ticket, 'drawing.draw')
+    session.completeSave(ticket, 'document-native-created')
 
     expect(session.isDirty()).toBe(false)
-
     expect(session.getSnapshot()).toEqual({
       phase: 'ready',
       persistence: 'clean',
-      filePath: 'drawing.draw',
+      documentId: 'document-native-created',
     })
   })
 
-  it('enters failed state after a save failure', () => {
-    const session = createDocumentSession(null)
+  it('enters failed state after a native save failure', () => {
+    const session = createDocumentSession('document-native-1')
 
-    const current = snapshot({
-      shapes: [],
-    })
+    const current = snapshot({ shapes: [] })
 
     session.initialize(current)
 
@@ -193,7 +162,7 @@ describe('DocumentSession', () => {
     expect(session.getSnapshot()).toEqual({
       phase: 'save-failed',
       persistence: 'failed',
-      filePath: null,
+      documentId: 'document-native-1',
     })
   })
 })
