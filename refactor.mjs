@@ -2,8 +2,20 @@
 
 import { readFile, writeFile } from 'node:fs/promises'
 
+const documentServicePath =
+  'editor/document/src/application/canvas-document-service.ts'
+
+const documentPublicApiPath =
+  'editor/document/src/public-api.ts'
+
+const workflowPath =
+  'apps/desktop/src/application/canvas/canvas-workflow.ts'
+
 const workspacePath =
   'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx'
+
+const lifecycleTestPath =
+  'tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts'
 
 const workflowTestPath =
   'apps/desktop/src/application/canvas/canvas-workflow.test.ts'
@@ -11,72 +23,253 @@ const workflowTestPath =
 const architectureCheckPath =
   'tests/architecture/check-canvas-lifecycle.mjs'
 
+let documentService = await readFile(documentServicePath, 'utf8')
+
+documentService = documentService.replace(
+  `export type CanvasCloseIntent = 'normal' | 'discard'
+
+export type CanvasReleaseResult =
+  | { readonly kind: 'released' }
+  | { readonly kind: 'confirmation-required' }
+  | {
+      readonly kind: 'wait-for-save'
+      readonly operation: Promise<void>
+    }
+  | { readonly kind: 'release-failed' }
+  | { readonly kind: 'not-found' }`,
+  `export type CanvasCloseIntent = 'normal' | 'discard'
+
+export type CanvasReleaseFailureCode =
+  | 'permission-denied'
+  | 'persistence'
+  | 'not-found'
+  | 'platform'
+
+export interface CanvasReleaseFailure {
+  readonly code: CanvasReleaseFailureCode
+  readonly recoverable: boolean
+}
+
+export type CanvasReleaseResult =
+  | { readonly kind: 'released' }
+  | { readonly kind: 'confirmation-required' }
+  | {
+      readonly kind: 'wait-for-save'
+      readonly operation: Promise<void>
+    }
+  | {
+      readonly kind: 'release-failed'
+      readonly failure: CanvasReleaseFailure
+    }
+  | { readonly kind: 'not-found' }`,
+)
+
+documentService = documentService.replace(
+  `    } catch {
+      owned.document.cancelClosing()
+      emit()
+
+      return { kind: 'release-failed' }
+    }`,
+  `    } catch (error) {
+      owned.document.cancelClosing()
+      emit()
+
+      return {
+        kind: 'release-failed',
+        failure: toCanvasReleaseFailure(error),
+      }
+    }`,
+)
+
+documentService = documentService.replace(
+  `  function planApplicationClose(): ApplicationClosePlan {`,
+  `  function toCanvasReleaseFailure(error: unknown): CanvasReleaseFailure {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'details' in error &&
+      typeof error.details === 'object' &&
+      error.details !== null
+    ) {
+      const details = error.details as Record<string, unknown>
+      const code = details['code']
+      const recoverable = details['recoverable']
+
+      if (
+        (code === 'permission-denied' ||
+          code === 'persistence' ||
+          code === 'not-found' ||
+          code === 'platform') &&
+        typeof recoverable === 'boolean'
+      ) {
+        return {
+          code,
+          recoverable,
+        }
+      }
+    }
+
+    return {
+      code: 'platform',
+      recoverable: false,
+    }
+  }
+
+  function planApplicationClose(): ApplicationClosePlan {`,
+)
+
+await writeFile(documentServicePath, documentService, 'utf8')
+
+let documentPublicApi = await readFile(documentPublicApiPath, 'utf8')
+
+documentPublicApi = documentPublicApi.replace(
+  `  type CanvasCloseIntent,
+  type CanvasReleaseResult,`,
+  `  type CanvasCloseIntent,
+  type CanvasReleaseFailure,
+  type CanvasReleaseFailureCode,
+  type CanvasReleaseResult,`,
+)
+
+await writeFile(documentPublicApiPath, documentPublicApi, 'utf8')
+
+let workflow = await readFile(workflowPath, 'utf8')
+
+workflow = workflow.replace(
+  `  CanvasCloseIntent,
+  CanvasDocumentService,`,
+  `  CanvasCloseIntent,
+  CanvasDocumentService,
+  CanvasReleaseFailure,`,
+)
+
+workflow = workflow.replace(
+  `  | {
+      readonly state: 'release-failed'
+      readonly intent: CanvasCloseIntent
+    }`,
+  `  | {
+      readonly state: 'release-failed'
+      readonly intent: CanvasCloseIntent
+      readonly failure: CanvasReleaseFailure
+    }`,
+)
+
+workflow = workflow.replace(
+  `      case 'release-failed':
+        setCloseState(sessionId, {
+          state: 'release-failed',
+          intent,
+        })
+        return`,
+  `      case 'release-failed':
+        setCloseState(sessionId, {
+          state: 'release-failed',
+          intent,
+          failure: result.failure,
+        })
+        return`,
+)
+
+workflow = workflow.replace(
+  `      case 'wait-for-save':
+        setCloseState(sessionId, {
+          state: 'release-failed',
+          intent,
+        })`,
+  `      case 'wait-for-save':
+        setCloseState(sessionId, {
+          state: 'release-failed',
+          intent,
+          failure: {
+            code: 'platform',
+            recoverable: false,
+          },
+        })`,
+)
+
+await writeFile(workflowPath, workflow, 'utf8')
+
 let workspace = await readFile(workspacePath, 'utf8')
 
 workspace = workspace.replace(
-  `export interface WorkspaceCanvasUIPort {
-  readonly create: (title: string) => Promise<void>`,
-  `export type WorkspaceCanvasCloseState =
-  | { readonly state: 'confirmation-required' }
-  | {
-      readonly state: 'releasing'
-      readonly intent: 'normal' | 'discard'
-    }
-  | {
+  `  | {
       readonly state: 'release-failed'
       readonly intent: 'normal' | 'discard'
-    }
-
-export interface WorkspaceCanvasCloseSnapshot {
-  readonly states: Readonly<
-    Record<CanvasSessionId, WorkspaceCanvasCloseState>
-  >
-}
-
-export interface WorkspaceCanvasUIPort {
-  readonly create: (title: string) => Promise<void>`,
-)
-
-workspace = workspace.replace(
-  `  readonly getCloseSnapshot: () => import('../../application/canvas/canvas-workflow').CanvasCloseSnapshot`,
-  `  readonly getCloseSnapshot: () => WorkspaceCanvasCloseSnapshot`,
+    }`,
+  `  | {
+      readonly state: 'release-failed'
+      readonly intent: 'normal' | 'discard'
+      readonly failure: {
+        readonly code:
+          | 'permission-denied'
+          | 'persistence'
+          | 'not-found'
+          | 'platform'
+        readonly recoverable: boolean
+      }
+    }`,
 )
 
 await writeFile(workspacePath, workspace, 'utf8')
 
-let workflowTest = await readFile(workflowTestPath, 'utf8')
+let lifecycleTest = await readFile(lifecycleTestPath, 'utf8')
 
-workflowTest = workflowTest.replace(
-  `  it('retains discard intent for a failed native release retry', async () => {`,
-  `  it('cancels only the selected canvas close state', async () => {
-    const documents = createDocumentPort(async () => ({
-      kind: 'confirmation-required',
-    }))
-
-    const workspace = createWorkspace()
-
-    const workflow = createCanvasWorkflow(
-      documents,
-      workspace as never,
+lifecycleTest = lifecycleTest.replace(
+  `    harness.persistence.close.mockRejectedValue(
+      new Error('native document_close rejected'),
     )
 
-    await workflow.closeCanvas('session-a', 'normal')
-    await workflow.closeCanvas('session-b', 'normal')
-
-    workflow.cancelCanvasClose('session-a')
-
-    expect(workflow.getCloseSnapshot()).toEqual({
-      states: {
-        'session-b': {
-          state: 'confirmation-required',
+    await expect(
+      harness.service.releaseCanvas(opened.sessionId, 'normal'),
+    ).resolves.toEqual({
+      kind: 'release-failed',
+    })`,
+  `    harness.persistence.close.mockRejectedValue(
+      Object.assign(new Error('native document_close rejected'), {
+        details: {
+          code: 'permission-denied',
+          recoverable: true,
         },
+      }),
+    )
+
+    await expect(
+      harness.service.releaseCanvas(opened.sessionId, 'normal'),
+    ).resolves.toEqual({
+      kind: 'release-failed',
+      failure: {
+        code: 'permission-denied',
+        recoverable: true,
       },
-    })
+    })`,
+)
 
-    expect(workspace.closeCanvas).not.toHaveBeenCalled()
-  })
+await writeFile(lifecycleTestPath, lifecycleTest, 'utf8')
 
-  it('retains discard intent for a failed native release retry', async () => {`,
+let workflowTest = await readFile(workflowTestPath, 'utf8')
+
+workflowTest = workflowTest.replaceAll(
+  `{ kind: 'release-failed' }`,
+  `{
+        kind: 'release-failed',
+        failure: {
+          code: 'persistence',
+          recoverable: true,
+        },
+      }`,
+)
+
+workflowTest = workflowTest.replaceAll(
+  `          intent: 'discard',
+        },`,
+  `          intent: 'discard',
+          failure: {
+            code: 'persistence',
+            recoverable: true,
+          },
+        },`,
 )
 
 await writeFile(workflowTestPath, workflowTest, 'utf8')
@@ -84,55 +277,37 @@ await writeFile(workflowTestPath, workflowTest, 'utf8')
 let architectureCheck = await readFile(architectureCheckPath, 'utf8')
 
 architectureCheck = architectureCheck.replace(
-  `if (!workflow?.includes('await documents.releaseCanvas')) {
-  violations.push('Canvas lifecycle rollback must await native release')
+  `if (!workflow?.includes('CanvasCloseSnapshot')) {
+  violations.push('Canvas lifecycle coordinator snapshot is missing')
 }`,
-  `if (!workflow?.includes('await documents.releaseCanvas')) {
-  violations.push('Canvas lifecycle rollback must await native release')
+  `if (!workflow?.includes('CanvasCloseSnapshot')) {
+  violations.push('Canvas lifecycle coordinator snapshot is missing')
 }
 
-if (!workflow?.includes('const closeOperations = new Map')) {
-  violations.push(
-    'Canvas lifecycle must store close operations per CanvasSessionId',
-  )
-}
-
-if (!workflow?.includes('const closeStates = new Map')) {
-  violations.push(
-    'Canvas lifecycle must store close state per CanvasSessionId',
-  )
-}
-
-if (workflow?.includes('let activeClose: Promise<void> | null')) {
-  violations.push(
-    'Global single canvas close transaction is forbidden',
-  )
-}
-
-if (!workflow?.includes('cancelCanvasClose(sessionId)')) {
-  violations.push(
-    'Canvas close cancellation must target one CanvasSessionId',
-  )
-}
-
-const workspace = sources.find(
+const documentService = sources.find(
   ({ path }) =>
-    path === 'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+    path === 'editor/document/src/application/canvas-document-service.ts',
 )?.source
 
-if (workspace?.includes('../../application/canvas/')) {
+if (!documentService?.includes('CanvasReleaseFailureCode')) {
   violations.push(
-    'Workspace presentation must not import canvas application implementation',
+    'Document release failures must expose a stable, sanitized error code',
   )
 }
 
-if (!workspace?.includes('WorkspaceCanvasCloseSnapshot')) {
+if (!documentService?.includes('toCanvasReleaseFailure')) {
   violations.push(
-    'Workspace presentation must own a structural canvas close UI contract',
+    'Document release failures must classify IPC errors without exposing raw messages',
+  )
+}
+
+if (!workflow?.includes('failure: result.failure')) {
+  violations.push(
+    'Canvas close state must preserve the classified release failure',
   )
 }`,
 )
 
 await writeFile(architectureCheckPath, architectureCheck, 'utf8')
 
-console.log('Canvas lifecycle UI contract and per-session architecture gate written.')
+console.log('Canvas native-release failure classification refactor written.')

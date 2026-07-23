@@ -1,6 +1,8 @@
 export {
   type ApplicationClosePlan,
   type CanvasCloseIntent,
+  type CanvasReleaseFailure,
+  type CanvasReleaseFailureCode,
   type CanvasReleaseResult,
   type CanvasDocumentService,
   type CanvasEditorSessionRegistryPort,

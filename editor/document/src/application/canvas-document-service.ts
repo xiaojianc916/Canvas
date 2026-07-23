@@ -34,6 +34,17 @@ export interface CanvasSessionSnapshot {
 
 export type CanvasCloseIntent = 'normal' | 'discard'
 
+export type CanvasReleaseFailureCode =
+  | 'permission-denied'
+  | 'persistence'
+  | 'not-found'
+  | 'platform'
+
+export interface CanvasReleaseFailure {
+  readonly code: CanvasReleaseFailureCode
+  readonly recoverable: boolean
+}
+
 export type CanvasReleaseResult =
   | { readonly kind: 'released' }
   | { readonly kind: 'confirmation-required' }
@@ -41,7 +52,10 @@ export type CanvasReleaseResult =
       readonly kind: 'wait-for-save'
       readonly operation: Promise<void>
     }
-  | { readonly kind: 'release-failed' }
+  | {
+      readonly kind: 'release-failed'
+      readonly failure: CanvasReleaseFailure
+    }
   | { readonly kind: 'not-found' }
 
 export type ApplicationClosePlan =
@@ -310,11 +324,14 @@ export function createCanvasDocumentService({
       if (documentId) {
         await persistence.close(documentId)
       }
-    } catch {
+    } catch (error) {
       owned.document.cancelClosing()
       emit()
 
-      return { kind: 'release-failed' }
+      return {
+        kind: 'release-failed',
+        failure: toCanvasReleaseFailure(error),
+      }
     }
 
     owned.document.completeClosing()
@@ -324,6 +341,38 @@ export function createCanvasDocumentService({
     emit()
 
     return { kind: 'released' }
+  }
+
+  function toCanvasReleaseFailure(error: unknown): CanvasReleaseFailure {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'details' in error &&
+      typeof error.details === 'object' &&
+      error.details !== null
+    ) {
+      const details = error.details as Record<string, unknown>
+      const code = details['code']
+      const recoverable = details['recoverable']
+
+      if (
+        (code === 'permission-denied' ||
+          code === 'persistence' ||
+          code === 'not-found' ||
+          code === 'platform') &&
+        typeof recoverable === 'boolean'
+      ) {
+        return {
+          code,
+          recoverable,
+        }
+      }
+    }
+
+    return {
+      code: 'platform',
+      recoverable: false,
+    }
   }
 
   function planApplicationClose(): ApplicationClosePlan {

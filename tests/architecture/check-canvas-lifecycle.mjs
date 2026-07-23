@@ -54,6 +54,29 @@ if (!workflow?.includes('CanvasCloseSnapshot')) {
   violations.push('Canvas lifecycle coordinator snapshot is missing')
 }
 
+const documentService = sources.find(
+  ({ path }) =>
+    path === 'editor/document/src/application/canvas-document-service.ts',
+)?.source
+
+if (!documentService?.includes('CanvasReleaseFailureCode')) {
+  violations.push(
+    'Document release failures must expose a stable, sanitized error code',
+  )
+}
+
+if (!documentService?.includes('toCanvasReleaseFailure')) {
+  violations.push(
+    'Document release failures must classify IPC errors without exposing raw messages',
+  )
+}
+
+if (!workflow?.includes('failure: result.failure')) {
+  violations.push(
+    'Canvas close state must preserve the classified release failure',
+  )
+}
+
 if (!workflow?.includes('closeCanvas')) {
   violations.push('Canvas lifecycle coordinator entry point is missing')
 }

@@ -39,6 +39,14 @@ export type WorkspaceCanvasCloseState =
   | {
       readonly state: 'release-failed'
       readonly intent: 'normal' | 'discard'
+      readonly failure: {
+        readonly code:
+          | 'permission-denied'
+          | 'persistence'
+          | 'not-found'
+          | 'platform'
+        readonly recoverable: boolean
+      }
     }
 
 export interface WorkspaceCanvasCloseSnapshot {

@@ -3,6 +3,7 @@ import type {
   ApplicationClosePlan,
   CanvasCloseIntent,
   CanvasDocumentService,
+  CanvasReleaseFailure,
   CanvasReleaseResult,
   CanvasSessionId,
   CanvasSessionSnapshot,
@@ -18,6 +19,7 @@ export type CanvasCloseState =
   | {
       readonly state: 'release-failed'
       readonly intent: CanvasCloseIntent
+      readonly failure: CanvasReleaseFailure
     }
 
 export interface CanvasCloseSnapshot {
@@ -217,6 +219,7 @@ export function createCanvasWorkflow(
         setCloseState(sessionId, {
           state: 'release-failed',
           intent,
+          failure: result.failure,
         })
         return
 
@@ -228,6 +231,10 @@ export function createCanvasWorkflow(
         setCloseState(sessionId, {
           state: 'release-failed',
           intent,
+          failure: {
+            code: 'platform',
+            recoverable: false,
+          },
         })
     }
   }

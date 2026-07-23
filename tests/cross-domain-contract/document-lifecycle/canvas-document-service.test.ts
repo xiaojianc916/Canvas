@@ -208,13 +208,22 @@ describe('Canvas document native-release contract', () => {
     harness.ready()
 
     harness.persistence.close.mockRejectedValue(
-      new Error('native document_close rejected'),
+      Object.assign(new Error('native document_close rejected'), {
+        details: {
+          code: 'permission-denied',
+          recoverable: true,
+        },
+      }),
     )
 
     await expect(
       harness.service.releaseCanvas(opened.sessionId, 'normal'),
     ).resolves.toEqual({
       kind: 'release-failed',
+      failure: {
+        code: 'permission-denied',
+        recoverable: true,
+      },
     })
 
     expect(harness.closeEditorSession).not.toHaveBeenCalled()

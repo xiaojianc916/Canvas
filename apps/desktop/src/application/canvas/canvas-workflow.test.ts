@@ -190,7 +190,13 @@ describe('CanvasWorkflow per-session close transactions', () => {
       attempts += 1
 
       return attempts === 1
-        ? { kind: 'release-failed' }
+        ? {
+        kind: 'release-failed',
+        failure: {
+          code: 'persistence',
+          recoverable: true,
+        },
+      }
         : { kind: 'released' }
     })
 
@@ -208,6 +214,10 @@ describe('CanvasWorkflow per-session close transactions', () => {
         'session-a': {
           state: 'release-failed',
           intent: 'discard',
+          failure: {
+            code: 'persistence',
+            recoverable: true,
+          },
         },
       },
     })
