@@ -115,7 +115,7 @@ proptest = "1.7.0"
 rstest = "0.25.0"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 missing_debug_implementations = "warn"
 missing_docs = "allow"
 non_ascii_idents = "forbid"

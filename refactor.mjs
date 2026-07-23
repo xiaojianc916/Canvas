@@ -1,27 +1,29 @@
 #!/usr/bin/env node
 
 /**
- * P0-B.1 — Confine Windows atomic-replacement FFI to the atomic_write module.
+ * P0-B.1 — Establish a single audited unsafe boundary for Windows atomic
+ * replacement.
  *
- * Current repository state uses:
+ * Supports all known local states:
  *
- *   #![forbid(unsafe_code)]
+ * 1. Original:
+ *      #![forbid(unsafe_code)]
+ *      mod atomic_write;
  *
- * while atomic_write.rs calls ReplaceFileW / MoveFileExW through unsafe FFI.
- * `forbid` cannot be lowered by a module-level allow, so Windows builds fail.
+ * 2. Previous intermediate script:
+ *      #![deny(unsafe_code)]
+ *      #[allow(unsafe_code)]
+ *      mod atomic_write;
  *
- * This refactor establishes:
- *
- *   crate default: deny unsafe
- *   atomic_write: explicitly allowed unsafe
- *   every other module: unsafe remains denied
- *
- * No compatibility path, fallback writer or second implementation is added.
+ * 3. Final state:
+ *      workspace unsafe_code = "deny"
+ *      crate unsafe_code = deny
+ *      only atomic_write may use unsafe
  *
  * Usage:
  *   node refactor.mjs --check
  *   node refactor.mjs --apply
- *   node refactor.mjs --apply /path/to/Canvas
+ *   node refactor.mjs --apply D:/xiaojianc/hybrid-canvas
  */
 
 import { access, readFile, writeFile } from 'node:fs/promises'
@@ -45,6 +47,7 @@ if (!apply && !check) {
 
 const paths = {
   packageJson: join(root, 'package.json'),
+  workspaceCargo: join(root, 'Cargo.toml'),
   nativeLib: join(
     root,
     'editor/persistence/native/src/lib.rs',
@@ -54,6 +57,15 @@ const paths = {
     'editor/persistence/native/src/atomic_write.rs',
   ),
 }
+
+const finalAtomicModuleDeclaration = `#[allow(
+    unsafe_code,
+    reason = "Win32 atomic file replacement requires audited FFI",
+)]
+mod atomic_write;`
+
+const safetyMarker =
+  'source_wide and destination_wide are NUL-terminated UTF-16 buffers'
 
 function fail(message) {
   console.error(
@@ -71,184 +83,329 @@ async function exists(path) {
   }
 }
 
-function replaceExactlyOnce(
-  source,
-  oldText,
-  newText,
-  description,
-) {
-  const firstIndex = source.indexOf(oldText)
-
-  if (firstIndex === -1) {
-    throw new Error(
-      [
-        `Expected source fragment was not found: ${description}`,
-        'The repository may differ from commit 72144a1.',
-        'Refusing fuzzy replacement.',
-      ].join('\n'),
-    )
-  }
-
-  const secondIndex = source.indexOf(
-    oldText,
-    firstIndex + oldText.length,
-  )
-
-  if (secondIndex !== -1) {
-    throw new Error(
-      `Expected exactly one source fragment: ${description}`,
-    )
-  }
-
-  return (
-    source.slice(0, firstIndex) +
-    newText +
-    source.slice(firstIndex + oldText.length)
-  )
+function countOccurrences(source, fragment) {
+  return source.split(fragment).length - 1
 }
 
-function updateNativeLib(source) {
-  const alreadyApplied =
-    source.startsWith('#![deny(unsafe_code)]') &&
-    source.includes(
-      '#[allow(unsafe_code)]\nmod atomic_write;',
-    ) &&
-    !source.includes('#![forbid(unsafe_code)]')
+function updateWorkspaceCargo(source) {
+  const forbidPattern =
+    /^unsafe_code\s*=\s*"forbid"\s*$/m
+  const denyPattern =
+    /^unsafe_code\s*=\s*"deny"\s*$/m
 
-  if (alreadyApplied) {
+  if (denyPattern.test(source)) {
+    if (forbidPattern.test(source)) {
+      throw new Error(
+        'Workspace Cargo.toml contains both deny and forbid unsafe policies.',
+      )
+    }
+
     return {
       changed: false,
       content: source,
     }
   }
 
-  let next = replaceExactlyOnce(
-    source,
-    '#![forbid(unsafe_code)]',
-    '#![deny(unsafe_code)]',
-    'replace unscopable crate-level unsafe prohibition',
-  )
-
-  next = replaceExactlyOnce(
-    next,
-    `mod atomic_write;
-mod document_codec;
-mod error;`,
-    `// Windows atomic replacement requires direct calls to ReplaceFileW and
-// MoveFileExW. Keep that unsafe boundary confined to this module.
-#[allow(unsafe_code)]
-mod atomic_write;
-
-mod document_codec;
-mod error;`,
-    'confine unsafe FFI to atomic_write',
-  )
-
-  if (next.includes('#![forbid(unsafe_code)]')) {
+  if (!forbidPattern.test(source)) {
     throw new Error(
-      'The unscopable forbid(unsafe_code) attribute was not removed.',
+      [
+        'Workspace unsafe lint declaration was not found.',
+        'Expected unsafe_code = "forbid" or unsafe_code = "deny".',
+      ].join('\n'),
     )
   }
 
-  const allowedModules = [
-    '#[allow(unsafe_code)]\nmod atomic_write;',
-  ]
+  const next = source.replace(
+    forbidPattern,
+    'unsafe_code = "deny"',
+  )
 
-  for (const allowedModule of allowedModules) {
-    if (!next.includes(allowedModule)) {
+  return {
+    changed: next !== source,
+    content: next,
+  }
+}
+
+function updateNativeLib(source) {
+  let next = source
+
+  const crateForbidPattern =
+    /^#!\[forbid\(unsafe_code\)\]\s*$/m
+
+  const crateDenyPattern =
+    /^#!\[deny\(unsafe_code\)\]\s*$/m
+
+  if (crateForbidPattern.test(next)) {
+    next = next.replace(
+      crateForbidPattern,
+      '#![deny(unsafe_code)]',
+    )
+  } else if (!crateDenyPattern.test(next)) {
+    throw new Error(
+      [
+        'Native persistence crate unsafe policy was not recognized.',
+        'Expected forbid(unsafe_code) or deny(unsafe_code).',
+      ].join('\n'),
+    )
+  }
+
+  const atomicModuleCount =
+    countOccurrences(next, 'mod atomic_write;')
+
+  if (atomicModuleCount !== 1) {
+    throw new Error(
+      [
+        'Unexpected atomic_write module declaration count.',
+        'Expected: 1',
+        `Actual: ${atomicModuleCount}`,
+      ].join('\n'),
+    )
+  }
+
+  if (!next.includes(finalAtomicModuleDeclaration)) {
+    /*
+     * Normalize either:
+     *
+     *   mod atomic_write;
+     *
+     * or:
+     *
+     *   #[allow(unsafe_code)]
+     *   mod atomic_write;
+     *
+     * or a previously formatted multiline allow attribute.
+     */
+    const atomicDeclarationPattern =
+      /(?:#\[allow\(\s*unsafe_code(?:\s*,\s*reason\s*=\s*"[^"]*")?\s*\)\]\s*)?mod atomic_write;/
+
+    if (!atomicDeclarationPattern.test(next)) {
       throw new Error(
-        'The atomic_write unsafe boundary was not installed.',
+        [
+          'Could not normalize the atomic_write module declaration.',
+          'The declaration exists but its surrounding attribute is unexpected.',
+        ].join('\n'),
       )
     }
+
+    next = next.replace(
+      atomicDeclarationPattern,
+      finalAtomicModuleDeclaration,
+    )
+  }
+
+  if (crateForbidPattern.test(next)) {
+    throw new Error(
+      'Native lib.rs still contains forbid(unsafe_code).',
+    )
+  }
+
+  if (!crateDenyPattern.test(next)) {
+    throw new Error(
+      'Native lib.rs does not deny unsafe code by default.',
+    )
   }
 
   if (
-    next.includes(
-      '#[allow(unsafe_code)]\nmod document_codec;',
-    ) ||
-    next.includes('#[allow(unsafe_code)]\nmod error;')
+    countOccurrences(next, 'mod atomic_write;') !== 1
   ) {
     throw new Error(
-      'Unsafe permission escaped the atomic_write module.',
+      'atomic_write must be declared exactly once.',
+    )
+  }
+
+  if (
+    !next.includes(finalAtomicModuleDeclaration)
+  ) {
+    throw new Error(
+      'The final scoped unsafe declaration was not installed.',
+    )
+  }
+
+  const unsafeAllowMatches =
+    next.match(
+      /#\[allow\([\s\S]*?unsafe_code[\s\S]*?\)\]/g,
+    ) ?? []
+
+  if (unsafeAllowMatches.length !== 1) {
+    throw new Error(
+      [
+        'Unexpected number of unsafe allow attributes in native lib.rs.',
+        'Expected: 1',
+        `Actual: ${unsafeAllowMatches.length}`,
+      ].join('\n'),
     )
   }
 
   return {
-    changed: true,
+    changed: next !== source,
     content: next,
   }
 }
 
 function updateAtomicWrite(source) {
-  if (!source.includes('let replaced = unsafe {')) {
+  if (!source.includes('ReplaceFileW(')) {
     throw new Error(
-      [
-        'Expected Windows FFI unsafe block was not found.',
-        'Apply the platform atomic replacement refactor first.',
-      ].join('\n'),
+      'ReplaceFileW implementation was not found.',
     )
   }
 
-  if (
-    source.includes(
-      '// SAFETY: source_wide and destination_wide are NUL-terminated',
+  if (!source.includes('MoveFileExW(')) {
+    throw new Error(
+      'MoveFileExW implementation was not found.',
     )
-  ) {
-    return {
-      changed: false,
-      content: source,
+  }
+
+  if (!source.includes('MOVEFILE_WRITE_THROUGH')) {
+    throw new Error(
+      'MOVEFILE_WRITE_THROUGH was not found.',
+    )
+  }
+
+  let next = source
+
+  if (!next.includes(safetyMarker)) {
+    const unsafeBoundaryPattern =
+      /^(\s*)let replaced = unsafe \{/m
+
+    const match = next.match(unsafeBoundaryPattern)
+
+    if (!match) {
+      throw new Error(
+        'Windows replacement unsafe block was not found.',
+      )
     }
+
+    const indentation = match[1]
+
+    const safetyContract = `${indentation}/*
+${indentation} * SAFETY:
+${indentation} *
+${indentation} * - source_wide and destination_wide are NUL-terminated UTF-16 buffers;
+${indentation} * - both buffers remain alive for the duration of the Win32 call;
+${indentation} * - both pointers refer to contiguous initialized memory;
+${indentation} * - the optional ReplaceFileW pointers are documented as nullable;
+${indentation} * - source is a same-directory temporary file owned by this save;
+${indentation} * - destination is retained by Native and never supplied by renderer IPC;
+${indentation} * - the Win32 return value is checked before reporting success.
+${indentation} */
+${indentation}let replaced = unsafe {`
+
+    next = next.replace(
+      unsafeBoundaryPattern,
+      safetyContract,
+    )
   }
 
-  const oldUnsafeBoundary = `    let replaced = unsafe {
-        if destination.exists() {`
+  const unsafeBlockCount =
+    countOccurrences(next, 'unsafe {')
 
-  const newUnsafeBoundary = `    /*
-     * SAFETY:
-     *
-     * - source_wide and destination_wide are NUL-terminated UTF-16 buffers;
-     * - both buffers remain alive for the complete FFI call;
-     * - source and destination are local paths selected or retained by Native;
-     * - the temporary source is created in the destination directory;
-     * - null backup/exclusion/reserved pointers are permitted by the APIs;
-     * - the return value is checked before reporting success;
-     * - no Rust reference aliases memory owned or mutated by Win32.
-     */
-    let replaced = unsafe {
-        if destination.exists() {`
-
-  const next = replaceExactlyOnce(
-    source,
-    oldUnsafeBoundary,
-    newUnsafeBoundary,
-    'document Windows atomic-replacement safety invariants',
-  )
-
-  const unsafeCount =
-    next.split('unsafe {').length - 1
-
-  if (unsafeCount !== 1) {
+  if (unsafeBlockCount !== 1) {
     throw new Error(
       [
         'Unexpected number of unsafe blocks in atomic_write.rs.',
-        `Expected: 1`,
-        `Actual: ${unsafeCount}`,
+        'Expected: 1',
+        `Actual: ${unsafeBlockCount}`,
       ].join('\n'),
     )
   }
 
-  if (
-    next.includes('std::fs::remove_file(destination)') ||
-    next.includes('std::fs::copy(source, destination)')
-  ) {
-    throw new Error(
-      'A forbidden non-atomic fallback was detected.',
-    )
+  const forbiddenPatterns = [
+    'remove_file(destination)',
+    'copy(source, destination)',
+    'truncate(true)',
+    'delete destination',
+  ]
+
+  for (const pattern of forbiddenPatterns) {
+    if (next.includes(pattern)) {
+      throw new Error(
+        `Forbidden non-atomic fallback detected: ${pattern}`,
+      )
+    }
   }
 
   return {
-    changed: true,
+    changed: next !== source,
     content: next,
+  }
+}
+
+function validateFinalState({
+  workspaceCargo,
+  nativeLib,
+  atomicWrite,
+}) {
+  if (
+    !/^unsafe_code\s*=\s*"deny"\s*$/m.test(
+      workspaceCargo,
+    )
+  ) {
+    throw new Error(
+      'Workspace unsafe policy is not deny.',
+    )
+  }
+
+  if (
+    /^unsafe_code\s*=\s*"forbid"\s*$/m.test(
+      workspaceCargo,
+    )
+  ) {
+    throw new Error(
+      'Workspace still contains unsafe_code = "forbid".',
+    )
+  }
+
+  if (
+    !/^#!\[deny\(unsafe_code\)\]\s*$/m.test(
+      nativeLib,
+    )
+  ) {
+    throw new Error(
+      'Native persistence crate does not deny unsafe by default.',
+    )
+  }
+
+  if (
+    !nativeLib.includes(finalAtomicModuleDeclaration)
+  ) {
+    throw new Error(
+      'atomic_write does not have the scoped unsafe permission.',
+    )
+  }
+
+  if (
+    countOccurrences(nativeLib, 'mod atomic_write;') !==
+    1
+  ) {
+    throw new Error(
+      'atomic_write module declaration is not unique.',
+    )
+  }
+
+  if (
+    !atomicWrite.includes(safetyMarker)
+  ) {
+    throw new Error(
+      'Windows FFI safety contract is missing.',
+    )
+  }
+
+  if (
+    countOccurrences(atomicWrite, 'unsafe {') !== 1
+  ) {
+    throw new Error(
+      'atomic_write must contain exactly one unsafe block.',
+    )
+  }
+
+  if (
+    !atomicWrite.includes('ReplaceFileW(') ||
+    !atomicWrite.includes('MoveFileExW(') ||
+    !atomicWrite.includes('MOVEFILE_WRITE_THROUGH')
+  ) {
+    throw new Error(
+      'Windows atomic replacement implementation is incomplete.',
+    )
   }
 }
 
@@ -268,49 +425,72 @@ async function main() {
 
   if (packageJson.name !== 'hybrid-canvas') {
     throw new Error(
-      `Unexpected repository package name: ${String(packageJson.name)}`,
+      `Unexpected package name: ${String(packageJson.name)}`,
     )
   }
 
   for (const path of [
+    paths.workspaceCargo,
     paths.nativeLib,
     paths.atomicWrite,
   ]) {
     if (!(await exists(path))) {
-      throw new Error(`Required file was not found: ${path}`)
+      throw new Error(
+        `Required file was not found: ${path}`,
+      )
     }
   }
 
-  const [nativeLibSource, atomicWriteSource] =
-    await Promise.all([
-      readFile(paths.nativeLib, 'utf8'),
-      readFile(paths.atomicWrite, 'utf8'),
-    ])
-
-  if (
-    !atomicWriteSource.includes('ReplaceFileW(') ||
-    !atomicWriteSource.includes('MoveFileExW(')
-  ) {
-    throw new Error(
-      [
-        'Platform atomic replacement is not present.',
-        'This script expects repository state after commit 72144a1.',
-      ].join('\n'),
-    )
-  }
-
-  const nativeLibChange = updateNativeLib(
+  const [
+    workspaceCargoSource,
     nativeLibSource,
-  )
-
-  const atomicWriteChange = updateAtomicWrite(
     atomicWriteSource,
+  ] = await Promise.all([
+    readFile(paths.workspaceCargo, 'utf8'),
+    readFile(paths.nativeLib, 'utf8'),
+    readFile(paths.atomicWrite, 'utf8'),
+  ])
+
+  const workspaceCargoChange =
+    updateWorkspaceCargo(workspaceCargoSource)
+
+  const nativeLibChange =
+    updateNativeLib(nativeLibSource)
+
+  const atomicWriteChange =
+    updateAtomicWrite(atomicWriteSource)
+
+  validateFinalState({
+    workspaceCargo: workspaceCargoChange.content,
+    nativeLib: nativeLibChange.content,
+    atomicWrite: atomicWriteChange.content,
+  })
+
+  const changes = [
+    {
+      path: paths.workspaceCargo,
+      label: 'Cargo.toml',
+      ...workspaceCargoChange,
+    },
+    {
+      path: paths.nativeLib,
+      label:
+        'editor/persistence/native/src/lib.rs',
+      ...nativeLibChange,
+    },
+    {
+      path: paths.atomicWrite,
+      label:
+        'editor/persistence/native/src/atomic_write.rs',
+      ...atomicWriteChange,
+    },
+  ]
+
+  const changed = changes.filter(
+    (change) => change.changed,
   )
 
-  if (
-    !nativeLibChange.changed &&
-    !atomicWriteChange.changed
-  ) {
+  if (changed.length === 0) {
     console.log(
       'P0-B.1 scoped Windows FFI boundary is already applied.',
     )
@@ -322,80 +502,64 @@ async function main() {
       'P0-B.1 scoped Windows FFI boundary is safe to apply.',
     )
     console.log('')
-    console.log('It will:')
+    console.log('Files to change:')
+
+    for (const change of changed) {
+      console.log(`- ${change.label}`)
+    }
+
+    console.log('')
+    console.log('Result:')
     console.log(
-      '- keep unsafe denied by default in the native persistence crate;',
+      '- unsafe remains denied workspace-wide;',
     )
     console.log(
-      '- allow unsafe only inside atomic_write;',
+      '- only atomic_write may call unsafe FFI;',
     )
     console.log(
-      '- document all Win32 pointer and lifetime invariants;',
+      '- exactly one unsafe block remains;',
     )
     console.log(
-      '- verify that atomic_write contains exactly one unsafe block;',
-    )
-    console.log(
-      '- reject delete/copy replacement fallbacks;',
+      '- no compatibility or fallback writer is added.',
     )
     console.log('')
-    console.log('It will not:')
-    console.log('- add a writer;')
-    console.log('- add a compatibility path;')
-    console.log('- change the .draw format;')
-    console.log('- change IPC contracts;')
-    console.log('- widen unsafe to DocumentCodec or errors;')
-    console.log('')
     console.log(
-      'Run again with --apply to write the changes.',
+      'Run again with --apply to write the files.',
     )
     return
   }
 
-  await Promise.all([
-    nativeLibChange.changed
-      ? writeFile(
-          paths.nativeLib,
-          nativeLibChange.content,
-          'utf8',
-        )
-      : Promise.resolve(),
-
-    atomicWriteChange.changed
-      ? writeFile(
-          paths.atomicWrite,
-          atomicWriteChange.content,
-          'utf8',
-        )
-      : Promise.resolve(),
-  ])
+  /*
+   * All transformations and validations have completed before this point.
+   * No file is written if any validation fails.
+   */
+  await Promise.all(
+    changed.map((change) =>
+      writeFile(change.path, change.content, 'utf8'),
+    ),
+  )
 
   console.log(
-    'Applied the scoped Windows FFI safety boundary.',
+    'Applied the complete scoped Windows FFI boundary.',
   )
   console.log('')
   console.log('Changed:')
-  console.log(
-    '- editor/persistence/native/src/lib.rs',
-  )
-  console.log(
-    '- editor/persistence/native/src/atomic_write.rs',
-  )
+
+  for (const change of changed) {
+    console.log(`- ${change.label}`)
+  }
+
   console.log('')
   console.log('Required verification:')
   console.log('  cargo fmt --all')
   console.log(
-    '  cargo check -p hybrid-canvas-file-native --all-targets',
+    '  cargo check --workspace --all-targets --all-features',
   )
   console.log(
-    '  cargo test -p hybrid-canvas-file-native',
+    '  cargo test --workspace --all-features',
   )
   console.log(
-    '  cargo clippy -p hybrid-canvas-file-native --all-targets -- -D warnings',
-  )
-  console.log('')
-  console.log(
-    'Also run the same check, test and clippy commands on Windows.',
+    '  cargo clippy --workspace --all-targets --all-features -- -D warnings',
   )
 }
 

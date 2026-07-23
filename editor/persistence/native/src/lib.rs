@@ -11,7 +11,10 @@
 
 // Windows atomic replacement requires direct calls to ReplaceFileW and
 // MoveFileExW. Keep that unsafe boundary confined to this module.
-#[allow(unsafe_code)]
+#[allow(
+    unsafe_code,
+    reason = "Win32 atomic file replacement requires audited FFI",
+)]
 mod atomic_write;
 
 mod document_codec;
