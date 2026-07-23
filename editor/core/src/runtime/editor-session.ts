@@ -139,12 +139,11 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
 
   function captureDocument(): TLEditorSnapshot {
     /*
-     * tldraw's complete editor snapshot includes TLSessionStateSnapshot.
-     * Session state is created by a live Editor, not by a detached TLStore.
+     * A complete TLEditorSnapshot includes TLSessionStateSnapshot. tldraw
+     * initializes session state through a live Editor, not a detached TLStore.
      *
-     * Persistable document capture is called only after the explicit
-     * attachEditor() readiness boundary. If a caller violates that contract,
-     * fail closed instead of synthesizing an incomplete snapshot.
+     * Persistable capture is valid only after attachEditor() has established
+     * the explicit mounted-editor readiness boundary.
      */
     return requireAttachedEditor().getSnapshot()
   }
