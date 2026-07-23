@@ -42,8 +42,7 @@ main().catch((error) => {
 
 async function main() {
   assertRepository()
-  assertCleanWorktree()
-  assertPreviousMigrationCompleted()
+  assertTargetFilesClean()
 
   console.log(`仓库：${root}`)
   console.log('迁移：tldraw Action / Tool / Shortcut 统一管线')
@@ -128,7 +127,7 @@ function findRepositoryRoot(startDirectory) {
         {
           encoding: 'utf8',
           env: process.env,
-          shell: process.platform === 'win32',
+          shell: false,
         },
       ).trim(),
     )
@@ -166,68 +165,48 @@ function assertRepository() {
   }
 }
 
-function assertCleanWorktree() {
-  const status = capture('git', [
-    'status',
-    '--porcelain',
-    '--untracked-files=normal',
-  ])
+function assertTargetFilesClean() {
+  const targets = [
+    'editor/core/src/react/EditorCanvas.tsx',
+    'editor/core/src/react/CanvasToolbar.tsx',
+  ]
 
-  if (status.trim()) {
-    fail(
+  for (const target of targets) {
+    assertGitCommandSucceeds(
+      ['ls-files', '--error-unmatch', '--', target],
+      `目标文件未被 Git 跟踪：${target}`,
+    )
+
+    assertGitCommandSucceeds(
+      ['diff', '--quiet', '--', target],
       [
-        'Git 工作区不干净。',
-        '请先提交上一个迁移，再执行本脚本。',
-        '',
-        status,
+        `目标文件存在未提交修改：${target}`,
+        '请先提交或恢复该文件，避免覆盖人工改动。',
+      ].join('\n'),
+    )
+
+    assertGitCommandSucceeds(
+      ['diff', '--cached', '--quiet', '--', target],
+      [
+        `目标文件存在已暂存但未提交的修改：${target}`,
+        '请先提交或取消暂存。',
       ].join('\n'),
     )
   }
 }
 
-function assertPreviousMigrationCompleted() {
-  const flowNode = read(
-    resolve(
-      root,
-      'features/flowchart/src/shapes/FlowNodeShapeUtil.tsx',
-    ),
-  )
-
-  const application = read(
-    resolve(
-      root,
-      'apps/desktop/src/bootstrap/application.ts',
-    ),
-  )
-
-  if (
-    !flowNode.includes(
-      'T.literalEnum(...FLOW_NODE_TYPES)',
-    )
-  ) {
-    fail(
-      [
-        '上一个 P1 迁移尚未应用。',
-        'FlowNode 仍未使用 T.literalEnum。',
-        '请先执行前一个 refactor.mjs。',
-      ].join('\n'),
-    )
-  }
-
-  if (
-    application.includes(
-      'scientificPlotExtension',
-    )
-  ) {
-    fail(
-      [
-        '上一个 P1 迁移尚未完成。',
-        '科学图表原型仍注册在 production composition root。',
-      ].join('\n'),
-    )
+function assertGitCommandSucceeds(arguments_, message) {
+  try {
+    execFileSync('git', arguments_, {
+      cwd: root,
+      env: process.env,
+      stdio: 'ignore',
+      shell: false,
+    })
+  } catch {
+    fail(message)
   }
 }
-
 function replaceEditorCanvas() {
   const path = resolve(
     root,
@@ -971,21 +950,29 @@ function run(command, arguments_) {
     `\n> ${command} ${arguments_.join(' ')}`,
   )
 
-  execFileSync(command, arguments_, {
+  execFileSync(resolveExecutable(command), arguments_, {
     cwd: root,
     env: process.env,
     stdio: 'inherit',
-    shell: process.platform === 'win32',
+    shell: false,
   })
 }
 
 function capture(command, arguments_) {
-  return execFileSync(command, arguments_, {
+  return execFileSync(resolveExecutable(command), arguments_, {
     cwd: root,
     env: process.env,
     encoding: 'utf8',
-    shell: process.platform === 'win32',
+    shell: false,
   })
+}
+
+function resolveExecutable(command) {
+  if (process.platform === 'win32' && command === 'pnpm') {
+    return 'pnpm.cmd'
+  }
+
+  return command
 }
 
 function fail(message) {
