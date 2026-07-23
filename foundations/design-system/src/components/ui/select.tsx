@@ -1,6 +1,5 @@
 import { Combobox as BaseCombobox } from '@base-ui/react/combobox'
-import { CheckIcon, ChevronsUpDownIcon, SearchIcon } from 'lucide-react'
-import {
+import { Check, ChevronsUpDown, Search } from '@mynaui/icons-react'import {
   type ComponentPropsWithoutRef,
   createContext,
   forwardRef,
@@ -151,7 +150,7 @@ export const SelectTrigger = forwardRef<HTMLButtonElement, SelectTriggerProps>(
           <>
             <span className="min-w-0 flex-1 truncate">{selectedItem?.label ?? `选择${type}…`}</span>
 
-            <ChevronsUpDownIcon
+            <ChevronsUpDown
               aria-hidden="true"
               className="size-4 shrink-0 text-muted-foreground"
             />
@@ -214,7 +213,7 @@ export const ComboboxInput = forwardRef<HTMLInputElement, ComboboxInputProps>(
 
     return (
       <div className="flex items-center gap-2 border-b border-divider px-3">
-        <SearchIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+        <Search aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
 
         <BaseCombobox.Input
           aria-label={props['aria-label'] ?? `搜索${type}`}
@@ -306,7 +305,7 @@ export const SelectItem = forwardRef<HTMLDivElement, SelectItemProps>(function S
       <span className="min-w-0 flex-1 truncate">{children}</span>
 
       <BaseCombobox.ItemIndicator className="ml-auto shrink-0">
-        <CheckIcon aria-hidden="true" className="size-4" />
+        <Check aria-hidden="true" className="size-4" />
       </BaseCombobox.ItemIndicator>
     </BaseCombobox.Item>
   )

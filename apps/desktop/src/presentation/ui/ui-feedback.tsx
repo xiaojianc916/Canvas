@@ -1,6 +1,5 @@
 import { error as reportError } from '@hybrid-canvas/foundations-observability'
-import { AlertCircle, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { DangerCircle, X } from '@mynaui/icons-react'import { useEffect, useState } from 'react'
 
 const EVENT_NAME = 'hybrid-canvas:ui-feedback'
 
@@ -118,7 +117,7 @@ export function UiFeedbackRegion() {
           key={notice.id}
           role="alert"
         >
-          <AlertCircle
+          <DangerCircle
             aria-hidden="true"
             className={['mt-0.5 size-4', 'shrink-0', 'text-destructive'].join(' ')}
           />

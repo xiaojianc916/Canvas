@@ -1,7 +1,5 @@
 import { Button } from '@hybrid-canvas/design-system'
-import { FilePlus2, FolderOpen } from 'lucide-react'
-
-export interface NoCanvasSurfaceProps {
+import { FilePlus, Folder } from '@mynaui/icons-react'export interface NoCanvasSurfaceProps {
   readonly onCreateDocument: () => void
   readonly onOpenDocument: () => void
 }
@@ -15,7 +13,7 @@ export function NoCanvasSurface({ onCreateDocument, onOpenDocument }: NoCanvasSu
       />
       <section className="relative text-center">
         <div className="mx-auto grid size-10 place-items-center rounded-lg border border-divider bg-background shadow-sm">
-          <FilePlus2 className="size-4 text-muted-foreground" />
+          <FilePlus className="size-4 text-muted-foreground" />
         </div>
         <h1 className="mt-4 text-base font-semibold tracking-tight">开始创作</h1>
         <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
@@ -23,11 +21,11 @@ export function NoCanvasSurface({ onCreateDocument, onOpenDocument }: NoCanvasSu
         </p>
         <div className="mt-5 flex justify-center gap-2">
           <Button onClick={onCreateDocument} size="sm" type="button">
-            <FilePlus2 className="size-3.5" />
+            <FilePlus className="size-3.5" />
             新建画布
           </Button>
           <Button onClick={onOpenDocument} size="sm" type="button" variant="outline">
-            <FolderOpen className="size-3.5" />
+            <Folder className="size-3.5" />
             打开文件
           </Button>
         </div>

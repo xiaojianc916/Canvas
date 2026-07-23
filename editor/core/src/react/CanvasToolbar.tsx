@@ -7,37 +7,36 @@ import {
   TooltipTrigger,
 } from '@hybrid-canvas/design-system'
 import {
-  ArrowDownToLine,
-  ArrowLeftToLine,
+  AlignBottom,
+  AlignLeft,
+  AlignRight,
+  AlignTop,
+  ArrowLeftRight,
   ArrowRight,
-  ArrowRightToLine,
-  ArrowUpToLine,
-  BringToFront,
-  Eraser,
-  FlipHorizontal2,
-  FlipVertical2,
+  ArrowUpDown,
+  ChartLine,
+  Component,
+  Delete,
+  Exclude,
+  FileText,
   Frame,
-  Group,
   Hand,
-  Highlighter,
-  LineChart,
+  LayersOne,
+  LayersThree,
   Lock,
+  LockOpen,
   Menu,
-  MousePointer2,
+  MousePointer,
+  Paint,
   Pencil,
-  Redo2,
+  Redo,
   Save,
   Scan,
-  SendToBack,
-  Shapes,
-  StickyNote,
-  Type,
-  Undo2,
-  Ungroup,
-  Unlock,
-  ZoomIn,
-} from 'lucide-react'
-import { type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react'
+  SearchPlus,
+  TypeText,
+  Undo,
+  Union,
+} from '@mynaui/icons-react'import { type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react'
 import { useValue } from 'tldraw'
 
 import type { CanvasToolId } from '../application/model/canvas-session-view-model'
@@ -56,7 +55,7 @@ const CORE_CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     id: 'select',
     label: '选择',
     shortcut: 'V',
-    icon: MousePointer2,
+    icon: MousePointer,
   },
   {
     id: 'hand',
@@ -68,7 +67,7 @@ const CORE_CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     id: 'geo',
     label: '形状',
     shortcut: 'R',
-    icon: Shapes,
+    icon: Component,
     separatorBefore: true,
   },
   {
@@ -81,13 +80,13 @@ const CORE_CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     id: 'scientific-chart',
     label: '图表',
     shortcut: 'C',
-    icon: LineChart,
+    icon: ChartLine,
   },
   {
     id: 'text',
     label: '文本',
     shortcut: 'T',
-    icon: Type,
+    icon: TypeText,
   },
   {
     id: 'draw',
@@ -99,19 +98,19 @@ const CORE_CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     id: 'highlight',
     label: '高亮',
     shortcut: 'Shift+D',
-    icon: Highlighter,
+    icon: Paint,
   },
   {
     id: 'eraser',
     label: '橡皮擦',
     shortcut: 'E',
-    icon: Eraser,
+    icon: Delete,
   },
   {
     id: 'note',
     label: '便签',
     shortcut: 'N',
-    icon: StickyNote,
+    icon: FileText,
   },
   {
     id: 'frame',
@@ -242,10 +241,10 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
 
         <Separator className="mx-1 h-5 shrink-0" orientation="vertical" />
 
-        <ToolbarButton icon={Undo2} label="撤销" onClick={() => editor?.undo()} shortcut="Ctrl+Z" />
+        <ToolbarButton icon={Undo} label="撤销" onClick={() => editor?.undo()} shortcut="Ctrl+Z" />
 
         <ToolbarButton
-          icon={Redo2}
+          icon={Redo}
           label="重做"
           onClick={() => editor?.redo()}
           shortcut="Ctrl+Shift+Z"
@@ -282,7 +281,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
 
               <MenuAction
                 disabled={!hasMultipleSelection}
-                icon={Group}
+                icon={Union}
                 label="编组"
                 onClick={() => execute(() => editor?.groupShapes(selectedIds))}
                 shortcut="Ctrl+G"
@@ -290,7 +289,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
 
               <MenuAction
                 disabled={!containsGroup}
-                icon={Ungroup}
+                icon={Exclude}
                 label="取消编组"
                 onClick={() => execute(() => editor?.ungroupShapes(selectedIds))}
                 shortcut="Ctrl+Shift+G"
@@ -298,7 +297,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
 
               <MenuAction
                 disabled={!hasSelection}
-                icon={allLocked ? Unlock : Lock}
+                icon={allLocked ? LockOpen : Lock}
                 label={allLocked ? '解除锁定' : '锁定对象'}
                 onClick={toggleLock}
               />
@@ -309,28 +308,28 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
             <MenuSection title="层级">
               <MenuAction
                 disabled={!hasSelection}
-                icon={BringToFront}
+                icon={LayersThree}
                 label="置于顶层"
                 onClick={() => execute(() => editor?.bringToFront(selectedIds))}
               />
 
               <MenuAction
                 disabled={!hasSelection}
-                icon={ArrowUpToLine}
+                icon={AlignTop}
                 label="上移一层"
                 onClick={() => execute(() => editor?.bringForward(selectedIds))}
               />
 
               <MenuAction
                 disabled={!hasSelection}
-                icon={ArrowDownToLine}
+                icon={AlignBottom}
                 label="下移一层"
                 onClick={() => execute(() => editor?.sendBackward(selectedIds))}
               />
 
               <MenuAction
                 disabled={!hasSelection}
-                icon={SendToBack}
+                icon={LayersOne}
                 label="置于底层"
                 onClick={() => execute(() => editor?.sendToBack(selectedIds))}
               />
@@ -341,14 +340,14 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
             <MenuSection title="变换">
               <MenuAction
                 disabled={!hasSelection}
-                icon={FlipHorizontal2}
+                icon={ArrowLeftRight}
                 label="水平翻转"
                 onClick={() => execute(() => editor?.flipShapes(selectedIds, 'horizontal'))}
               />
 
               <MenuAction
                 disabled={!hasSelection}
-                icon={FlipVertical2}
+                icon={ArrowUpDown}
                 label="垂直翻转"
                 onClick={() => execute(() => editor?.flipShapes(selectedIds, 'vertical'))}
               />
@@ -359,19 +358,19 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
             <MenuSection title="视图">
               <MenuAction
                 disabled={!hasSelection}
-                icon={ZoomIn}
+                icon={SearchPlus}
                 label="缩放至选区"
                 onClick={() => execute(() => editor?.zoomToSelection())}
               />
 
               <MenuAction
-                icon={ArrowLeftToLine}
+                icon={AlignLeft}
                 label="适应全部内容"
                 onClick={() => execute(() => editor?.zoomToFit())}
               />
 
               <MenuAction
-                icon={ArrowRightToLine}
+                icon={AlignRight}
                 label="恢复 100%"
                 onClick={() => execute(() => editor?.resetZoom())}
               />

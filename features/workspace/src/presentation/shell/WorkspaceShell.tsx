@@ -1,6 +1,5 @@
 import { Button, TooltipProvider } from '@hybrid-canvas/design-system'
-import { PanelLeftClose, PanelRightClose, PanelRightOpen } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { PanelLeftClose, PanelRightClose, PanelRightOpen } from '@mynaui/icons-react'import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WorkspaceShellProps } from '../../contracts/shell-contract'
 import type { WorkspaceSurfaceId } from '../../contracts/workbench-contract'

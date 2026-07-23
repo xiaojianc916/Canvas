@@ -14,21 +14,20 @@ import {
 } from '@hybrid-canvas/design-system'
 import {
   BookOpen,
-  Boxes,
+  Box,
+  ChartNetwork,
   ChartNoAxesCombined,
-  CircleHelp,
-  Code2,
+  Code,
+  Cog,
   ExternalLink,
-  Files,
-  Grid2X2,
+  FolderTwo,
+  Grid,
   Image,
-  MessageCircle,
-  Network,
-  RefreshCcw,
+  Message,
+  QuestionCircle,
+  RefreshAlt,
   Search,
-  Settings,
-} from 'lucide-react'
-import type { ComponentType } from 'react'
+} from '@mynaui/icons-react'import type { ComponentType } from 'react'
 
 type NavigationIcon = ComponentType<{
   className?: string
@@ -67,7 +66,7 @@ const DEFAULT_NAVIGATION: readonly CanvasNavigationItem[] = [
   {
     id: 'pages',
     label: '画布',
-    icon: Grid2X2,
+    icon: Grid,
   },
   {
     id: 'search',
@@ -77,7 +76,7 @@ const DEFAULT_NAVIGATION: readonly CanvasNavigationItem[] = [
   {
     id: 'relations',
     label: '关系',
-    icon: Network,
+    icon: ChartNetwork,
   },
   {
     id: 'assets',
@@ -87,7 +86,7 @@ const DEFAULT_NAVIGATION: readonly CanvasNavigationItem[] = [
   {
     id: 'extensions',
     label: '插件',
-    icon: Boxes,
+    icon: Box,
   },
   {
     id: 'data',
@@ -97,7 +96,7 @@ const DEFAULT_NAVIGATION: readonly CanvasNavigationItem[] = [
   {
     id: 'documents',
     label: '恢复',
-    icon: Files,
+    icon: FolderTwo,
   },
 ]
 
@@ -130,7 +129,7 @@ export function ActivityRail({
       <div className="flex-1" />
 
       <div className="flex flex-col gap-1">
-        <RailButton icon={Settings} label="设置" onClick={onSettingsOpen} />
+        <RailButton icon={Cog} label="设置" onClick={onSettingsOpen} />
 
         <HelpMenu
           onDeveloperToolsOpen={onDeveloperToolsOpen}
@@ -207,7 +206,7 @@ function HelpMenu({
           'data-[popup-open]:text-foreground',
         ].join(' ')}
       >
-        <CircleHelp
+        <QuestionCircle
           aria-hidden="true"
           className="size-4"
         />
@@ -229,7 +228,7 @@ function HelpMenu({
 
           <HelpMenuItem
             external
-            icon={RefreshCcw}
+            icon={RefreshAlt}
             label="更新日志"
           />
         </DropdownMenuGroup>
@@ -239,12 +238,12 @@ function HelpMenu({
         <DropdownMenuGroup>
           <HelpMenuItem
             external
-            icon={MessageCircle}
+            icon={Message}
             label="Discord"
           />
 
           <HelpMenuItem
-            icon={Code2}
+            icon={Code}
             label="开发者工具"
             onClick={onDeveloperToolsOpen}
           />

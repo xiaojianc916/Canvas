@@ -1,6 +1,5 @@
 import { Menu } from '@base-ui/react/menu'
-import { ChevronRight } from 'lucide-react'
-import { type ComponentPropsWithoutRef, forwardRef } from 'react'
+import { ChevronRight } from '@mynaui/icons-react'import { type ComponentPropsWithoutRef, forwardRef } from 'react'
 import { cn } from '../../lib/utils'
 
 export const DropdownMenu = Menu.Root

@@ -1,7 +1,6 @@
 import { Button } from '@hybrid-canvas/design-system'
 import { error as reportError } from '@hybrid-canvas/foundations-observability'
-import { AlertTriangle, ClipboardCopy, RotateCcw } from 'lucide-react'
-import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Copy, DangerTriangle, Refresh } from '@mynaui/icons-react'import { Component, type ErrorInfo, type ReactNode } from 'react'
 
 interface ApplicationErrorBoundaryProps {
   readonly children: ReactNode
@@ -101,7 +100,7 @@ export class ApplicationErrorBoundary extends Component<
       >
         <section className="w-full max-w-3xl rounded-2xl border bg-surface p-6 shadow-xl">
           <div className="grid size-10 place-items-center rounded-xl bg-destructive/10 text-destructive">
-            <AlertTriangle className="size-5" />
+            <DangerTriangle className="size-5" />
           </div>
 
           <h1 className="mt-5 text-lg font-semibold">应用遇到严重错误</h1>
@@ -120,7 +119,7 @@ export class ApplicationErrorBoundary extends Component<
 
           <div className="mt-5 flex flex-wrap gap-2">
             <Button onClick={() => window.location.reload()} type="button">
-              <RotateCcw className="size-4" />
+              <Refresh className="size-4" />
               重新加载
             </Button>
 
@@ -131,7 +130,7 @@ export class ApplicationErrorBoundary extends Component<
               type="button"
               variant="outline"
             >
-              <ClipboardCopy className="size-4" />
+              <Copy className="size-4" />
               {copied ? '已复制' : '复制诊断信息'}
             </Button>
           </div>

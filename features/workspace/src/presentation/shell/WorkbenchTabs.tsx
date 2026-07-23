@@ -1,18 +1,17 @@
 import {
-  Boxes,
+  Box,
+  ChartNetwork,
   ChartNoAxesCombined,
-  FilePlus2,
-  Files,
+  FilePlus,
   FileText,
-  Grid2X2,
+  FolderTwo,
+  Grid,
   Image,
-  Layers3,
-  Network,
+  LayersThree,
   Plus,
   Search,
   X,
-} from 'lucide-react'
-import { type ComponentType, type DragEvent, type KeyboardEvent, useEffect, useLayoutEffect, useRef } from 'react'
+} from '@mynaui/icons-react'import { type ComponentType, type DragEvent, type KeyboardEvent, useEffect, useLayoutEffect, useRef } from 'react'
 
 import type { WorkbenchTabId, WorkbenchTabViewModel } from '../../contracts/workbench-contract'
 
@@ -415,7 +414,7 @@ function TabEndAction({
 
 function resolveTabIcon(model: WorkbenchTabViewModel): TabIcon {
   if (model.kind === 'start') {
-    return FilePlus2
+    return FilePlus
   }
 
   if (model.kind === 'canvas') {
@@ -424,21 +423,21 @@ function resolveTabIcon(model: WorkbenchTabViewModel): TabIcon {
 
   switch (model.surfaceId) {
     case 'pages':
-      return Grid2X2
+      return Grid
     case 'documents':
-      return Files
+      return FolderTwo
     case 'search':
       return Search
     case 'layers':
-      return Layers3
+      return LayersThree
     case 'relations':
-      return Network
+      return ChartNetwork
     case 'data':
       return ChartNoAxesCombined
     case 'assets':
       return Image
     case 'extensions':
-      return Boxes
+      return Box
   }
 }
 

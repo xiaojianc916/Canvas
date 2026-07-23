@@ -1,12 +1,11 @@
-import { AlertCircle, Inbox, LoaderCircle } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { DangerCircle, Inbox, Spinner } from '@mynaui/icons-react'import type { ReactNode } from 'react'
 import { Button } from './button'
 
 export function LoadingState({ label = '正在加载…' }: { readonly label?: string }) {
   return (
     <div className="grid min-h-32 place-items-center text-sm text-muted-foreground" role="status">
       <span className="flex items-center gap-2">
-        <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+        <Spinner aria-hidden="true" className="size-4 animate-spin" />
         {label}
       </span>
     </div>
@@ -49,7 +48,7 @@ export function ErrorState({
   return (
     <section className="grid min-h-40 place-items-center px-6 text-center" role="alert">
       <div>
-        <AlertCircle aria-hidden="true" className="mx-auto size-5 text-destructive" />
+        <DangerCircle aria-hidden="true" className="mx-auto size-5 text-destructive" />
 
         <h3 className="mt-3 text-sm font-semibold">{title}</h3>
 

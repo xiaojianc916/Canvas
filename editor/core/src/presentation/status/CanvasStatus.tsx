@@ -1,5 +1,4 @@
-import { Grid2X2, Link2, MousePointer2 } from 'lucide-react'
-import { useValue } from 'tldraw'
+import { Grid, LinkTwo, MousePointer } from '@mynaui/icons-react'import { useValue } from 'tldraw'
 
 import { useEditor, useExtensionRegistration } from '../../react/editor-context'
 
@@ -23,7 +22,7 @@ export function CanvasStatusLeft() {
   return (
     <>
       <span className="flex items-center gap-1.5 font-medium text-foreground">
-        <MousePointer2 className="size-3" />
+        <MousePointer className="size-3" />
         {selectedShapes.length === 0
           ? '未选择对象'
           : selectedShapes.length === 1
@@ -51,11 +50,11 @@ export function CanvasStatusRight() {
   return (
     <>
       <span className="flex items-center gap-1.5">
-        <Grid2X2 className="size-3" />
+        <Grid className="size-3" />
         网格 22 px
       </span>
       <span className="flex items-center gap-1.5">
-        <Link2 className="size-3" />
+        <LinkTwo className="size-3" />
         自动吸附：开
       </span>
       <span>{zoomPercentage}%</span>

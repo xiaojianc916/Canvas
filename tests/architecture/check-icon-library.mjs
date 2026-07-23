@@ -5,7 +5,12 @@ import {
   readdirSync,
   statSync,
 } from 'node:fs'
-import { extname, join, relative, resolve } from 'node:path'
+import {
+  extname,
+  join,
+  relative,
+  resolve,
+} from 'node:path'
 
 const root = resolve(process.cwd())
 
@@ -61,7 +66,9 @@ if (violations.length > 0) {
 
   console.error('')
   console.error(
-    '产品 UI 只能直接使用 ' + allowedIconPackage + '。',
+    '产品 UI 只能直接使用 ' +
+      allowedIconPackage +
+      '。',
   )
 
   process.exit(1)
@@ -173,6 +180,7 @@ function isForbiddenPackage(packageName) {
 
 function parseJson(file) {
   const content = readFileSync(file, 'utf8')
+
   const normalized =
     content.charCodeAt(0) === 0xfeff
       ? content.slice(1)

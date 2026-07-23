@@ -1,14 +1,13 @@
 import {
-  Boxes,
+  Box,
+  ChartNetwork,
   ChartNoAxesCombined,
-  Files,
-  Grid2X2,
+  FolderTwo,
+  Grid,
   Image,
-  Layers3,
-  Network,
+  LayersThree,
   Search,
-} from 'lucide-react'
-import type { ComponentType } from 'react'
+} from '@mynaui/icons-react'import type { ComponentType } from 'react'
 
 import type { WorkspaceSurfaceId } from '../../contracts/workbench-contract'
 
@@ -22,7 +21,7 @@ const SURFACES: Record<WorkspaceSurfaceId, WorkspaceSurfaceDefinition> = {
   pages: {
     title: '画布',
     description: '浏览当前文档中的画布页面。',
-    icon: Grid2X2,
+    icon: Grid,
   },
   search: {
     title: '搜索',
@@ -32,12 +31,12 @@ const SURFACES: Record<WorkspaceSurfaceId, WorkspaceSurfaceDefinition> = {
   layers: {
     title: '图层',
     description: '浏览、选择和组织当前画布中的对象层级。',
-    icon: Layers3,
+    icon: LayersThree,
   },
   relations: {
     title: '关系',
     description: '查看并维护画布内容之间的结构化关系。',
-    icon: Network,
+    icon: ChartNetwork,
   },
   assets: {
     title: '素材',
@@ -47,7 +46,7 @@ const SURFACES: Record<WorkspaceSurfaceId, WorkspaceSurfaceDefinition> = {
   extensions: {
     title: '插件',
     description: '管理为编辑器提供能力的扩展。',
-    icon: Boxes,
+    icon: Box,
   },
   data: {
     title: '自动化',
@@ -57,7 +56,7 @@ const SURFACES: Record<WorkspaceSurfaceId, WorkspaceSurfaceDefinition> = {
   documents: {
     title: '恢复',
     description: '恢复最近打开的画布和本地文件。',
-    icon: Files,
+    icon: FolderTwo,
   },
 }
 

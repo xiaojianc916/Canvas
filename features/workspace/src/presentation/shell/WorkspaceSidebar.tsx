@@ -1,18 +1,16 @@
 import { Button, cn, ScrollArea } from '@hybrid-canvas/design-system'
 import {
-  Boxes,
+  Box,
+  ChartNetwork,
   ChartNoAxesCombined,
-  Files,
   FileText,
-  Grid2X2,
+  FolderTwo,
+  Grid,
   Image,
-  Layers3,
-  Network,
+  LayersThree,
   Plus,
   Search,
-} from 'lucide-react'
-
-import type { CanvasPageViewModel } from '../../contracts/shell-contract'
+} from '@mynaui/icons-react'import type { CanvasPageViewModel } from '../../contracts/shell-contract'
 import type { CanvasNavigationItemId } from './ActivityRail'
 
 export interface WorkspaceSidebarProps {
@@ -78,7 +76,7 @@ export function WorkspaceSidebar({
           ) : (
             <div className="px-3 py-10 text-center">
               <div className="mx-auto grid size-9 place-items-center rounded-lg border border-divider bg-background">
-                <Grid2X2 className="size-4 text-muted-foreground" />
+                <Grid className="size-4 text-muted-foreground" />
               </div>
               <p className="mt-3 text-xs font-medium">还没有页面</p>
               <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
@@ -104,19 +102,19 @@ export function WorkspaceSidebar({
 
 const PANEL_DETAILS: Record<
   Exclude<CanvasNavigationItemId, 'pages'>,
-  { title: string; description: string; icon: typeof Files }
+  { title: string; description: string; icon: typeof FolderTwo }
 > = {
   search: { title: '搜索', description: '搜索当前工作区中的页面、对象和文本内容。', icon: Search },
-  layers: { title: '图层', description: '选择页面后，可在这里浏览和整理图层。', icon: Layers3 },
-  relations: { title: '关系', description: '连接画布中的内容，建立可视化关系。', icon: Network },
+  layers: { title: '图层', description: '选择页面后，可在这里浏览和整理图层。', icon: LayersThree },
+  relations: { title: '关系', description: '连接画布中的内容，建立可视化关系。', icon: ChartNetwork },
   data: {
     title: '自动化',
     description: '把重复操作和流程编排成可执行的自动化。',
     icon: ChartNoAxesCombined,
   },
   assets: { title: '素材', description: '集中管理图片、附件和可复用素材。', icon: Image },
-  extensions: { title: '插件', description: '探索能够增强画布工作流的扩展能力。', icon: Boxes },
-  documents: { title: '恢复', description: '在这里恢复最近打开的画布与本地文件。', icon: Files },
+  extensions: { title: '插件', description: '探索能够增强画布工作流的扩展能力。', icon: Box },
+  documents: { title: '恢复', description: '在这里恢复最近打开的画布与本地文件。', icon: FolderTwo },
 }
 
 function WorkspacePanel({ kind }: { readonly kind: Exclude<CanvasNavigationItemId, 'pages'> }) {
@@ -136,7 +134,7 @@ function WorkspacePanel({ kind }: { readonly kind: Exclude<CanvasNavigationItemI
 
 function PageIcon({ model }: { readonly model: CanvasPageViewModel }) {
   return model.isActive ? (
-    <Grid2X2 className="size-3.5 shrink-0" />
+    <Grid className="size-3.5 shrink-0" />
   ) : (
     <FileText className="size-3.5 shrink-0" />
   )

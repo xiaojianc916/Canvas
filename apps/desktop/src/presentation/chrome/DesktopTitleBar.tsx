@@ -1,6 +1,11 @@
-import { Copy, Minus, PanelLeftClose, PanelLeftOpen, Square, X } from 'lucide-react'
-
-const WINDOW_DRAG_EXCLUSION_SELECTOR = [
+import {
+  Copy,
+  Minus,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Square,
+  X,
+} from '@mynaui/icons-react'const WINDOW_DRAG_EXCLUSION_SELECTOR = [
   'button',
   'a',
   'input',

@@ -1,6 +1,5 @@
 import { Separator } from '@hybrid-canvas/design-system'
-import { Box, Component, Move, Shapes } from 'lucide-react'
-import { useValue } from 'tldraw'
+import { Box, Component, Move } from '@mynaui/icons-react'import { useValue } from 'tldraw'
 
 import { useEditor, useExtensionRegistration } from '../../react/editor-context'
 
@@ -51,7 +50,7 @@ export function CanvasInspector() {
         <PropertyRow label="约束" value="左侧 · 顶部" />
       </InspectorSection>
       <Separator />
-      <InspectorSection icon={<Shapes className="size-3.5" />} title="外观">
+      <InspectorSection icon={<Component className="size-3.5" />} title="外观">
         <PropertyRow label="对象类型" value={shapeLabel ?? '对象'} />
         <PropertyRow label="旋转" value="0°" />
         <div className="rounded-lg border bg-muted/30 px-3 py-2 text-[10px] leading-4 text-muted-foreground">
