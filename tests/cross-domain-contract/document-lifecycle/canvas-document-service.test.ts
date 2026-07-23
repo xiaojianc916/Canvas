@@ -230,6 +230,113 @@ describe('Canvas document native-release contract', () => {
     )
   })
 
+  it('advances the owned revision after every successful save', async () => {
+    const harness = createHarness()
+
+    harness.persistence.open.mockResolvedValue({
+      id: 'native-document-revision-advance',
+      displayName: 'revision-advance.draw',
+      revision: 'revision-current',
+      content: serializeDrawDocument(snapshot({ shapes: [] })),
+    })
+
+    const opened = await harness.service.open()
+
+    if (!opened) {
+      throw new Error('expected native document')
+    }
+
+    harness.ready()
+
+    harness.persistence.save
+      .mockResolvedValueOnce({
+        revision: 'revision-second',
+      })
+      .mockResolvedValueOnce({
+        revision: 'revision-third',
+      })
+
+    await harness.service.save(opened.sessionId)
+    await harness.service.save(opened.sessionId)
+
+    expect(harness.persistence.save).toHaveBeenNthCalledWith(
+      1,
+      'native-document-revision-advance',
+      'revision-current',
+      expect.any(String),
+    )
+
+    expect(harness.persistence.save).toHaveBeenNthCalledWith(
+      2,
+      'native-document-revision-advance',
+      'revision-second',
+      expect.any(String),
+    )
+
+    expect(
+      harness.service.getSessionSnapshot(opened.sessionId),
+    ).toEqual({
+      sessionId: opened.sessionId,
+      persistence: 'clean',
+    })
+  })
+
+  it('keeps a file-conflict save failed and requires close confirmation', async () => {
+    const harness = createHarness()
+
+    harness.persistence.open.mockResolvedValue({
+      id: 'native-document-conflict',
+      displayName: 'conflict.draw',
+      revision: 'revision-current',
+      content: serializeDrawDocument(snapshot({ shapes: [] })),
+    })
+
+    const opened = await harness.service.open()
+
+    if (!opened) {
+      throw new Error('expected native document')
+    }
+
+    harness.ready()
+    harness.change(snapshot({ shapes: [{ id: 'shape:conflict' }] }))
+
+    const conflict = Object.assign(
+      new Error('document save conflict'),
+      {
+        details: {
+          code: 'file-conflict',
+          operation: 'file',
+          recoverable: true,
+        },
+      },
+    )
+
+    harness.persistence.save.mockRejectedValue(conflict)
+
+    await expect(
+      harness.service.save(opened.sessionId),
+    ).rejects.toBe(conflict)
+
+    expect(
+      harness.service.getSessionSnapshot(opened.sessionId),
+    ).toEqual({
+      sessionId: opened.sessionId,
+      persistence: 'failed',
+    })
+
+    await expect(
+      harness.service.releaseCanvas(
+        opened.sessionId,
+        'normal',
+      ),
+    ).resolves.toEqual({
+      kind: 'confirmation-required',
+    })
+
+    expect(harness.persistence.close).not.toHaveBeenCalled()
+    expect(harness.closeEditorSession).not.toHaveBeenCalled()
+  })
+
   it('settles an active save inside the same release transaction', async () => {
     const harness = createHarness()
 

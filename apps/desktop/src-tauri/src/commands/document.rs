@@ -123,7 +123,23 @@ impl DocumentRegistry {
 
         ensure_draw_document_path(&handle.path)?;
 
-        let disk_bytes = std::fs::read(&handle.path)?;
+        let disk_bytes = match std::fs::read(&handle.path) {
+            Ok(bytes) => bytes,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound =>
+            {
+                /*
+                 * An opened document disappearing from disk is an external
+                 * state change. Recreating it through ordinary Save would
+                 * silently discard the deletion decision.
+                 */
+                return Err(Error::FileConflict(
+                    "document was removed outside Canvas".into(),
+                ));
+            }
+            Err(error) => return Err(error.into()),
+        };
+
         ensure_document_size(disk_bytes.len() as u64)?;
 
         let actual_revision = document_revision(&disk_bytes);
@@ -488,6 +504,23 @@ fn display_name(path: &Path) -> String {
 mod tests {
     use super::*;
 
+    fn valid_document(marker: &str) -> String {
+        format!(
+            r#"{{
+                "header": {{
+                    "format": "hybrid-canvas/draw",
+                    "version": 1,
+                    "createdAt": "2026-07-23T00:00:00.000Z"
+                }},
+                "content": {{
+                    "document": {{}},
+                    "session": {{}},
+                    "marker": "{marker}"
+                }}
+            }}"#,
+        )
+    }
+
     #[test]
     fn registry_keeps_path_private_behind_document_id() {
         let registry = DocumentRegistry::default();
@@ -519,6 +552,140 @@ mod tests {
         registry.remove(document_id).expect("document should close");
 
         assert!(matches!(registry.path(document_id), Err(Error::NotFound(_))));
+    }
+
+    #[test]
+    fn rejects_stale_renderer_revision_before_writing() {
+        let directory =
+            tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("stale.draw");
+        let original = valid_document("original");
+
+        std::fs::write(&path, &original)
+            .expect("fixture should be written");
+
+        let current_revision =
+            document_revision(original.as_bytes());
+
+        let registry = DocumentRegistry::default();
+        let document_id = registry
+            .insert(path.clone(), current_revision)
+            .expect("document should register");
+
+        let replacement = valid_document("replacement");
+
+        let result = registry.save_existing(
+            document_id,
+            "stale-renderer-revision",
+            &replacement,
+        );
+
+        assert!(matches!(result, Err(Error::FileConflict(_))));
+        assert_eq!(
+            std::fs::read_to_string(&path)
+                .expect("original file should remain readable"),
+            original,
+        );
+    }
+
+    #[test]
+    fn rejects_save_when_document_was_removed_externally() {
+        let directory =
+            tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("removed.draw");
+        let original = valid_document("original");
+
+        std::fs::write(&path, &original)
+            .expect("fixture should be written");
+
+        let current_revision =
+            document_revision(original.as_bytes());
+
+        let registry = DocumentRegistry::default();
+        let document_id = registry
+            .insert(
+                path.clone(),
+                current_revision.clone(),
+            )
+            .expect("document should register");
+
+        std::fs::remove_file(&path)
+            .expect("external deletion should succeed");
+
+        let replacement = valid_document("replacement");
+
+        let result = registry.save_existing(
+            document_id,
+            &current_revision,
+            &replacement,
+        );
+
+        assert!(matches!(result, Err(Error::FileConflict(_))));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn successful_save_advances_revision_and_rejects_old_revision() {
+        let directory =
+            tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("advance.draw");
+        let original = valid_document("original");
+
+        std::fs::write(&path, &original)
+            .expect("fixture should be written");
+
+        let original_revision =
+            document_revision(original.as_bytes());
+
+        let registry = DocumentRegistry::default();
+        let document_id = registry
+            .insert(
+                path.clone(),
+                original_revision.clone(),
+            )
+            .expect("document should register");
+
+        let replacement = valid_document("replacement");
+
+        let next_revision = registry
+            .save_existing(
+                document_id,
+                &original_revision,
+                &replacement,
+            )
+            .expect("first CAS save should succeed");
+
+        assert_ne!(next_revision, original_revision);
+
+        let stored_bytes = std::fs::read(&path)
+            .expect("saved file should be readable");
+
+        assert_eq!(
+            document_revision(&stored_bytes),
+            next_revision,
+        );
+
+        let second_replacement =
+            valid_document("second-replacement");
+
+        let stale_result = registry.save_existing(
+            document_id,
+            &original_revision,
+            &second_replacement,
+        );
+
+        assert!(matches!(
+            stale_result,
+            Err(Error::FileConflict(_)),
+        ));
+
+        assert_eq!(
+            document_revision(
+                &std::fs::read(&path)
+                    .expect("saved file should remain readable"),
+            ),
+            next_revision,
+        );
     }
 
     #[test]
