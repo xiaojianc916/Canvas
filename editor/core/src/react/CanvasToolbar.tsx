@@ -38,11 +38,14 @@ import {
   Union,
 } from '@mynaui/icons-react'
 import { type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react'
-import { useValue } from 'tldraw'
-
+import {
+  type TLUiActionsContextType,
+  useActions,
+  useEditor,
+  useTools,
+  useValue,
+} from 'tldraw'
 import type { CanvasToolId } from '../application/model/canvas-session-view-model'
-import { useEditor } from './editor-context'
-
 interface CanvasToolDefinition {
   readonly id: CanvasToolId
   readonly label: string
@@ -121,12 +124,10 @@ const CORE_CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   },
 ]
 
-export interface CanvasToolbarProps {
-  readonly onSave?: () => void
-}
-
-export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
+export function CanvasToolbar() {
   const editor = useEditor()
+  const actions = useActions()
+  const tools = useTools()
   const [isMoreOpen, setMoreOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
@@ -176,35 +177,28 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
     }
   }, [isMoreOpen])
 
-  const selectedIds = selectedShapes.map((shape) => shape.id)
+    const activateTool = (
+    toolId: CanvasToolId,
+  ) => {
+    const tool = tools[toolId]
 
-  const activateTool = (toolId: CanvasToolId) => {
-    editor?.setCurrentTool(toolId)
-    setMoreOpen(false)
-  }
-
-  const toggleLock = () => {
-    if (!editor || !hasSelection) {
-      return
+    if (!tool) {
+      throw new Error('TLDRAW_TOOL_NOT_REGISTERED:' + toolId)
     }
 
-    const shouldLock = !selectedShapes.every((shape) => shape.isLocked)
-
-    editor.updateShapes(
-      selectedShapes.map((shape) => ({
-        id: shape.id,
-        type: shape.type,
-        isLocked: shouldLock,
-      })) as never,
-    )
-
+    void tool.onSelect('toolbar')
     setMoreOpen(false)
   }
 
-  const execute = (action: () => void) => {
-    action()
+  const execute = (
+    actionId: string,
+  ) => {
+    invokeAction(actions, actionId)
     setMoreOpen(false)
   }
+
+  const saveAction =
+    actions['hybrid-canvas.save']
 
   return (
     <div
@@ -242,12 +236,12 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
 
         <Separator className="mx-1 h-5 shrink-0" orientation="vertical" />
 
-        <ToolbarButton icon={Undo} label="撤销" onClick={() => editor?.undo()} shortcut="Ctrl+Z" />
+        <ToolbarButton icon={Undo} label="撤销" onClick={() => execute('undo')} shortcut="Ctrl+Z" />
 
         <ToolbarButton
           icon={Redo}
           label="重做"
-          onClick={() => editor?.redo()}
+          onClick={() => execute('redo')}
           shortcut="Ctrl+Shift+Z"
         />
       </div>
@@ -276,7 +270,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
               <MenuAction
                 icon={Scan}
                 label="选择全部"
-                onClick={() => execute(() => editor?.selectAll())}
+                onClick={() => execute('select-all')}
                 shortcut="Ctrl+A"
               />
 
@@ -284,7 +278,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
                 disabled={!hasMultipleSelection}
                 icon={Union}
                 label="编组"
-                onClick={() => execute(() => editor?.groupShapes(selectedIds))}
+                onClick={() => execute('group')}
                 shortcut="Ctrl+G"
               />
 
@@ -292,7 +286,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
                 disabled={!containsGroup}
                 icon={Exclude}
                 label="取消编组"
-                onClick={() => execute(() => editor?.ungroupShapes(selectedIds))}
+                onClick={() => execute('ungroup')}
                 shortcut="Ctrl+Shift+G"
               />
 
@@ -300,7 +294,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
                 disabled={!hasSelection}
                 icon={allLocked ? LockOpen : Lock}
                 label={allLocked ? '解除锁定' : '锁定对象'}
-                onClick={toggleLock}
+                onClick={() => execute('toggle-lock')}
               />
             </MenuSection>
 
@@ -311,28 +305,28 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
                 disabled={!hasSelection}
                 icon={LayersThree}
                 label="置于顶层"
-                onClick={() => execute(() => editor?.bringToFront(selectedIds))}
+                onClick={() => execute('bring-to-front')}
               />
 
               <MenuAction
                 disabled={!hasSelection}
                 icon={AlignTop}
                 label="上移一层"
-                onClick={() => execute(() => editor?.bringForward(selectedIds))}
+                onClick={() => execute('bring-forward')}
               />
 
               <MenuAction
                 disabled={!hasSelection}
                 icon={AlignBottom}
                 label="下移一层"
-                onClick={() => execute(() => editor?.sendBackward(selectedIds))}
+                onClick={() => execute('send-backward')}
               />
 
               <MenuAction
                 disabled={!hasSelection}
                 icon={LayersOne}
                 label="置于底层"
-                onClick={() => execute(() => editor?.sendToBack(selectedIds))}
+                onClick={() => execute('send-to-back')}
               />
             </MenuSection>
 
@@ -343,14 +337,14 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
                 disabled={!hasSelection}
                 icon={ArrowLeftRight}
                 label="水平翻转"
-                onClick={() => execute(() => editor?.flipShapes(selectedIds, 'horizontal'))}
+                onClick={() => execute('flip-horizontal')}
               />
 
               <MenuAction
                 disabled={!hasSelection}
                 icon={ArrowUpDown}
                 label="垂直翻转"
-                onClick={() => execute(() => editor?.flipShapes(selectedIds, 'vertical'))}
+                onClick={() => execute('flip-vertical')}
               />
             </MenuSection>
 
@@ -361,32 +355,42 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
                 disabled={!hasSelection}
                 icon={SearchPlus}
                 label="缩放至选区"
-                onClick={() => execute(() => editor?.zoomToSelection())}
+                onClick={() => execute('zoom-to-selection')}
               />
 
               <MenuAction
                 icon={AlignLeft}
                 label="适应全部内容"
-                onClick={() => execute(() => editor?.zoomToFit())}
+                onClick={() => execute('zoom-to-fit')}
               />
 
               <MenuAction
                 icon={AlignRight}
                 label="恢复 100%"
-                onClick={() => execute(() => editor?.resetZoom())}
+                onClick={() => execute('zoom-to-100')}
               />
             </MenuSection>
           </div>
         ) : null}
       </div>
 
-      {onSave ? (
-        <>
-          <Separator className="mx-1 h-5 shrink-0" orientation="vertical" />
+      {saveAction ? (
+  <>
+    <Separator
+      className="mx-1 h-5 shrink-0"
+      orientation="vertical"
+    />
 
-          <ToolbarButton icon={Save} label="保存" onClick={onSave} shortcut="Ctrl+S" />
-        </>
-      ) : null}
+    <ToolbarButton
+      icon={Save}
+      label="保存"
+      onClick={() =>
+        void saveAction.onSelect('toolbar')
+      }
+      shortcut="Ctrl+S"
+    />
+  </>
+) : null}
     </div>
   )
 }
@@ -485,4 +489,17 @@ function MenuAction({ icon: Icon, label, onClick, shortcut, disabled = false }: 
 
 function MenuDivider() {
   return <Separator className="my-1" />
+}
+
+function invokeAction(
+  actions: TLUiActionsContextType,
+  actionId: string,
+): void {
+  const action = actions[actionId]
+
+  if (!action) {
+    throw new Error('TLDRAW_ACTION_NOT_REGISTERED:' + actionId)
+  }
+
+  void action.onSelect('toolbar')
 }

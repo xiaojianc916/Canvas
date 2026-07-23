@@ -1,10 +1,34 @@
 import { Minus, Plus } from '@mynaui/icons-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { type Editor, Tldraw, type TldrawProps, useValue } from 'tldraw'
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
+import {
+  type Editor,
+  type TLComponents,
+  type TLUiActionsContextType,
+  type TLUiOverrides,
+  Tldraw,
+  type TldrawProps,
+  useActions,
+  useEditor as useTldrawEditor,
+  useValue,
+} from 'tldraw'
 
 import type { EditorSession } from '../runtime/editor-session'
 import { CanvasToolbar } from './CanvasToolbar'
-import { useBindEditorSession, useEditor, useTldrawLicenseKey } from './editor-context'
+import {
+  useBindEditorSession,
+  useTldrawLicenseKey,
+} from './editor-context'
+
+export const HYBRID_CANVAS_SAVE_ACTION_ID =
+  'hybrid-canvas.save'
+
+const CANVAS_COMPONENTS: TLComponents = {
+  InFrontOfTheCanvas: CanvasUiOverlay,
+}
 
 export interface EditorCanvasProps {
   readonly session: EditorSession
@@ -12,39 +36,70 @@ export interface EditorCanvasProps {
   readonly onSave?: () => void
 }
 
-export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasProps) {
+export function EditorCanvas({
+  session,
+  isActive = true,
+  onSave,
+}: EditorCanvasProps) {
   const licenseKey = useTldrawLicenseKey()
-  const [editor, setEditor] = useState<Editor | null>(null)
-  const { registration, store } = session
-  useBindEditorSession(isActive ? editor : null, isActive ? registration : null)
-  const hasTools = registration.tools.length > 0
+  const [editor, setEditor] =
+    useState<Editor | null>(null)
 
-  const tldrawProps = useMemo((): TldrawProps => {
-    const base: TldrawProps = {
-      hideUi: true,
-      licenseKey,
+  const { registration, store } = session
+
+  useBindEditorSession(
+    isActive ? editor : null,
+    isActive ? registration : null,
+  )
+
+  const hasTools =
+    registration.tools.length > 0
+
+  const overrides = useMemo<TLUiOverrides>(
+    () => createCanvasUiOverrides(onSave),
+    [onSave],
+  )
+
+  const tldrawProps =
+    useMemo((): TldrawProps => {
+      const base: TldrawProps = {
+        hideUi: true,
+        licenseKey,
+        store,
+        onMount: setEditor,
+        overrides,
+        components: CANVAS_COMPONENTS,
+        options: {
+          maxPages: 100,
+        },
+        shapeUtils:
+          registration.shapeUtils,
+        bindingUtils:
+          registration.bindingUtils,
+      }
+
+      if (hasTools) {
+        base.tools = registration.tools
+      }
+
+      return base
+    }, [
       store,
-      onMount: setEditor,
-      options: {
-        maxPages: 100,
-      },
-      shapeUtils: registration.shapeUtils,
-      bindingUtils: registration.bindingUtils,
-    }
-    if (hasTools) {
-      base.tools = registration.tools
-    }
-    return base
-  }, [store, registration, hasTools, licenseKey])
+      registration,
+      hasTools,
+      licenseKey,
+      overrides,
+    ])
 
   useEffect(() => {
     if (!editor) {
       return
     }
+
     if (isActive) {
       editor.setCameraOptions({
         ...editor.getCameraOptions(),
-        wheelBehavior: 'zoom' as const,
+        wheelBehavior: 'zoom',
         zoomSpeed: 1,
       })
 
@@ -52,31 +107,17 @@ export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasP
         isGridMode: false,
         isToolLocked: true,
       })
+
       session.attachEditor(editor)
-      return () => session.detachEditor(editor)
+
+      return () =>
+        session.detachEditor(editor)
     }
+
     session.detachEditor(editor)
+
     return undefined
   }, [editor, isActive, session])
-
-  const handleSave = useCallback(() => {
-    onSave?.()
-  }, [onSave])
-
-  useEffect(() => {
-    if (!isActive || !onSave) {
-      return
-    }
-    const save = onSave
-    function onKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault()
-        save()
-      }
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [isActive, onSave])
 
   return (
     <div
@@ -85,46 +126,91 @@ export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasP
       data-session-id={session.sessionId}
     >
       <Tldraw {...tldrawProps} />
-      <CanvasToolbar onSave={handleSave} />
-      {editor ? <CanvasZoomControl /> : null}
     </div>
   )
 }
 
+function createCanvasUiOverrides(
+  onSave: (() => void) | undefined,
+): TLUiOverrides {
+  return {
+    actions(
+      _editor,
+      actions,
+    ): TLUiActionsContextType {
+      if (!onSave) {
+        return actions
+      }
+
+      return {
+        ...actions,
+
+        [HYBRID_CANVAS_SAVE_ACTION_ID]: {
+          id: HYBRID_CANVAS_SAVE_ACTION_ID,
+          label: '保存',
+          kbd: 'cmd+s,ctrl+s',
+
+          onSelect() {
+            onSave()
+          },
+        },
+      }
+    },
+  }
+}
+
+function CanvasUiOverlay() {
+  return (
+    <>
+      <CanvasToolbar />
+      <CanvasZoomControl />
+    </>
+  )
+}
+
 function CanvasZoomControl() {
-  const editor = useEditor()
+  const editor = useTldrawEditor()
+  const actions = useActions()
+
   const zoomPercentage = useValue(
     'canvas zoom',
-    () => (editor ? Math.round(editor.getZoomLevel() * 100) : 100),
+    () =>
+      Math.round(
+        editor.getZoomLevel() * 100,
+      ),
     [editor],
   )
-
-  if (!editor) {
-    return null
-  }
 
   return (
     <div className="absolute bottom-3 right-3 z-20 flex h-8 items-center rounded-lg border bg-background/95 shadow-sm backdrop-blur-xl">
       <button
         aria-label="缩小"
         className="grid size-8 place-items-center rounded-l-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-        onClick={() => editor.zoomOut()}
+        onClick={() =>
+          invokeAction(actions, 'zoom-out')
+        }
         type="button"
       >
         <Minus className="size-3.5" />
       </button>
+
       <button
         aria-label="重置缩放"
         className="h-8 min-w-12 border-x px-2 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-        onClick={() => editor.resetZoom()}
+        onClick={() =>
+          invokeAction(actions, 'zoom-to-100')
+        }
         type="button"
       >
         {zoomPercentage}%
       </button>
+
       <button
         aria-label="放大"
         className="grid size-8 place-items-center rounded-r-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-        onClick={() => editor.zoomIn()}
+        onClick={() =>
+          invokeAction(actions, 'zoom-in')
+        }
         type="button"
       >
         <Plus className="size-3.5" />
@@ -133,5 +219,17 @@ function CanvasZoomControl() {
   )
 }
 
-// Re-export for use by external components
+function invokeAction(
+  actions: TLUiActionsContextType,
+  actionId: string,
+): void {
+  const action = actions[actionId]
+
+  if (!action) {
+    throw new Error('TLDRAW_ACTION_NOT_REGISTERED:' + actionId)
+  }
+
+  void action.onSelect('toolbar')
+}
+
 export { useEditor } from './editor-context'
