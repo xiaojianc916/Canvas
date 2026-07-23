@@ -121,6 +121,23 @@ describe('Canvas document native-release contract', () => {
     expect(harness.closeEditorSession).toHaveBeenCalledWith(opened.sessionId)
   })
 
+  it('rejects an unwrapped tldraw snapshot instead of guessing a legacy format', async () => {
+    const harness = createHarness()
+
+    harness.persistence.open.mockResolvedValue({
+      id: 'native-document-unwrapped-snapshot',
+      displayName: 'legacy.draw',
+      content: JSON.stringify({
+        document: {
+          shapes: [],
+        },
+        session: {},
+      }),
+    })
+
+    await expect(harness.service.open()).rejects.toThrow('DRAW_INVALID_HEADER')
+  })
+
   it('opens through the native gateway without exposing a filesystem path', async () => {
     const harness = createHarness()
 

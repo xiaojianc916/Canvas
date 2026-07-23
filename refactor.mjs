@@ -1,34 +1,24 @@
 #!/usr/bin/env node
 /**
- * P0 — 删除未经版本化和 schema 验证的裸 tldraw snapshot fallback
+ * P0 regression guard:
+ * Reject unwrapped tldraw snapshots at the document-open boundary.
  *
- * 问题：
- * canvas-document-service.ts 当前在 parseDrawDocument() 失败后，
- * 会接受任意带 { document, session } 顶层字段的 JSON，并强制断言为
- * TLEditorSnapshot。这绕过了：
+ * Why:
+ * The persisted .draw contract must have exactly one reader:
  *
- * - .draw 容器 header 校验
- * - 文件版本策略
- * - 文件大小、对象数量和嵌套预算
- * - future-version 只读策略
- * - 真实 snapshot schema 验证边界
+ *   versioned Hybrid Canvas DrawFileContainer
  *
- * 修复：
- * - 删除“猜测旧格式”的 fallback；
- * - .draw 文件只能经 parseDrawDocument() 读取；
- * - 旧裸 JSON 必须由后续显式 migration/import 流程处理，
- *   而不能作为无期限运行时兼容层保留在主打开路径中。
+ * A raw JSON value shaped like { document, session } is NOT a supported .draw
+ * file. Accepting it after container parsing fails creates an unversioned,
+ * unvalidated compatibility lane that can silently return in later refactors.
  *
- * 特性：
- * - fail-closed：目标源码不完全匹配时拒绝修改；
- * - 幂等：已修复时不会重复写入；
- * - 不使用模糊正则替换；
- * - 不生成 backup / 不保留旧逻辑副本；
- * - 修改后输出必须执行的验证命令。
+ * This script adds a cross-domain contract test. It does not alter production
+ * behavior: production code must already reject raw snapshots before applying.
  *
- * 用法：
- *   node fix-p0-remove-raw-snapshot-fallback.mjs .
- *   node fix-p0-remove-raw-snapshot-fallback.mjs /absolute/path/to/Canvas
+ * Usage:
+ *   node fix-p0-add-raw-snapshot-rejection-test.mjs --check
+ *   node fix-p0-add-raw-snapshot-rejection-test.mjs --apply
+ *   node fix-p0-add-raw-snapshot-rejection-test.mjs --apply /path/to/Canvas
  */
 
 import { access, readFile, writeFile } from 'node:fs/promises'
@@ -36,50 +26,44 @@ import { constants } from 'node:fs'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
 
-const repositoryRoot = resolve(process.argv[2] ?? process.cwd())
+const args = process.argv.slice(2)
+const apply = args.includes('--apply')
+const check = args.includes('--check') || !apply
+const rootArgument = args.find((argument) => !argument.startsWith('--'))
+const repositoryRoot = resolve(rootArgument ?? process.cwd())
 
-const targetRelativePath =
-  'editor/document/src/application/canvas-document-service.ts'
+const relativePath =
+  'tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts'
 
-const targetPath = join(repositoryRoot, targetRelativePath)
+const targetPath = join(repositoryRoot, relativePath)
 
-const oldImplementation = `function parseEditorSnapshot(json: string): TLEditorSnapshot {
-  try {
-    return parseDrawDocument(json).content
-  } catch (containerError) {
-    try {
-      const parsed: unknown = JSON.parse(json)
+const anchor = `  it('opens through the native gateway without exposing a filesystem path', async () => {`
 
-      if (
-        typeof parsed === 'object' &&
-        parsed !== null &&
-        'document' in parsed &&
-        'session' in parsed
-      ) {
-        return parsed as TLEditorSnapshot
-      }
-    } catch {
-      // Preserve the validated container error.
-    }
+const regressionTest = `  it('rejects an unwrapped tldraw snapshot instead of guessing a legacy format', async () => {
+    const harness = createHarness()
 
-    throw containerError
-  }
-}`
+    harness.persistence.open.mockResolvedValue({
+      id: 'native-document-unwrapped-snapshot',
+      displayName: 'legacy.draw',
+      content: JSON.stringify({
+        document: {
+          shapes: [],
+        },
+        session: {},
+      }),
+    })
 
-const newImplementation = `function parseEditorSnapshot(json: string): TLEditorSnapshot {
-  /*
-   * The application has exactly one supported persisted-document wire format:
-   * the versioned Hybrid Canvas .draw container.
-   *
-   * Do not add a fallback that guesses whether arbitrary JSON is a tldraw
-   * snapshot. Legacy formats must be recognized by an explicit importer or
-   * migration pipeline with a bounded compatibility policy; they must never
-   * bypass the canonical file-format validation path.
-   */
-  return parseDrawDocument(json).content
-}`
+    await expect(harness.service.open()).rejects.toThrow('DRAW_INVALID_HEADER')
+  })
 
-async function fileExists(path) {
+`
+
+function fail(message) {
+  console.error(`\\nP0 regression-guard failure: ${message}\\n`)
+  process.exitCode = 1
+}
+
+async function exists(path) {
   try {
     await access(path, constants.F_OK)
     return true
@@ -88,72 +72,61 @@ async function fileExists(path) {
   }
 }
 
-function fail(message) {
-  console.error(`\nP0 修复失败：${message}\n`)
-  process.exitCode = 1
-}
-
 async function main() {
   const packageJsonPath = join(repositoryRoot, 'package.json')
 
-  if (!(await fileExists(packageJsonPath))) {
+  if (!(await exists(packageJsonPath))) {
     fail(
       [
-        `未找到仓库根 package.json：${packageJsonPath}`,
-        '请在 Hybrid Canvas 仓库根目录运行，或把仓库根目录作为第一个参数传入。',
-      ].join('\n'),
+        `Repository root was not found: ${repositoryRoot}`,
+        'Run this script from the Hybrid Canvas repository root,',
+        'or pass the root directory as the final argument.',
+      ].join('\\n'),
     )
     return
   }
 
-  if (!(await fileExists(targetPath))) {
-    fail(`未找到目标文件：${targetRelativePath}`)
+  if (!(await exists(targetPath))) {
+    fail(`Target test file was not found: ${relativePath}`)
     return
   }
 
   const source = await readFile(targetPath, 'utf8')
 
-  if (source.includes(newImplementation)) {
-    console.log(`已是单一容器读取路径，跳过：${targetRelativePath}`)
+  if (source.includes(regressionTest)) {
+    console.log(`Already guarded: ${relativePath}`)
     return
   }
 
-  if (!source.includes(oldImplementation)) {
+  if (!source.includes(anchor)) {
     fail(
       [
-        `目标文件与已审查版本不匹配：${targetRelativePath}`,
-        '拒绝进行模糊替换。',
-        '请人工检查当前 parseEditorSnapshot()，重新确认兼容策略后再修改。',
-      ].join('\n'),
+        `Expected insertion anchor was not found in: ${relativePath}`,
+        'Refusing a fuzzy test edit.',
+        'Inspect the current lifecycle test manually before changing it.',
+      ].join('\\n'),
     )
     return
   }
 
-  const nextSource = source.replace(oldImplementation, newImplementation)
+  const nextSource = source.replace(anchor, regressionTest + anchor)
 
-  if (nextSource === source) {
-    fail('替换未产生变化。')
+  if (check) {
+    console.log(`Regression test can be added safely: ${relativePath}`)
+    console.log('Run again with --apply to write the change.')
     return
   }
 
   await writeFile(targetPath, nextSource, 'utf8')
 
-  console.log(`已修复：${targetRelativePath}`)
+  console.log(`Added P0 regression test: ${relativePath}`)
   console.log('')
-  console.log('结果：')
-  console.log('- .draw 打开路径不再猜测或强制断言裸 JSON snapshot。')
-  console.log('- 所有持久化输入必须经过 versioned DrawFileContainer 校验。')
-  console.log('- 历史裸 JSON 文件需要后续显式迁移工具处理。')
-  console.log('')
-  console.log('必须验证：')
-  console.log('  pnpm format:check')
-  console.log('  pnpm lint')
-  console.log('  pnpm typecheck')
-  console.log('  pnpm test')
+  console.log('Required verification:')
+  console.log('  pnpm --filter @hybrid-canvas/test-cross-domain-contract test')
   console.log('  pnpm test:architecture')
-  console.log('  cargo fmt --check')
-  console.log('  cargo clippy --workspace --all-targets --all-features -- -D warnings')
-  console.log('  cargo test --workspace --all-features')
+  console.log('  pnpm typecheck')
+  console.log('  pnpm lint')
+  console.log('  pnpm test')
 }
 
 await main()
