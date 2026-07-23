@@ -41,7 +41,7 @@ struct RegistryState {
 
 /// Process-local delivery registry for opened document sessions.
 ///
-/// The v2 DocumentCodec owns durable bytes. This registry owns only the bounded
+/// The DocumentCodec owns durable bytes. This registry owns only the bounded
 /// runtime delivery cache used by the WebView custom protocol.
 #[derive(Clone, Debug, Default)]
 pub struct AssetProtocolRegistry {

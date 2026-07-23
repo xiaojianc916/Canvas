@@ -52,24 +52,17 @@ function replaceBetween(source, startMarker, endMarker, replacement, label) {
 function patchLibRs() {
   let source = read(paths.lib)
 
-  source = source.replace('mod document_codec;\n', '')
-  source = source.replace('mod legacy_document_codec_v1;\n', '')
+  source = source.replace(/^mod document_codec;\n/m, '')
+  source = source.replace(/^mod legacy_document_codec_v1;\n/m, '')
 
   source = source.replace(
-    'pub use document_codec::canonicalize_draw_document;\n',
+    /^pub use document_codec::canonicalize_draw_document;\n/m,
     '',
   )
   source = source.replace(
-    'pub use legacy_document_codec_v1::canonicalize_legacy_draw_document_v1;\n',
+    /^pub use legacy_document_codec_v1::canonicalize_legacy_draw_document_v1;\n/m,
     '',
   )
-
-  if (
-    source.includes('canonicalize_draw_document') ||
-    source.includes('canonicalize_legacy_draw_document_v1')
-  ) {
-    throw new Error('lib.rs still exports legacy document codec symbols')
-  }
 
   write(paths.lib, source)
 }
@@ -152,17 +145,6 @@ function patchDocumentRs() {
     )
   }
 
-  if (
-    source.includes('canonicalize_draw_document') ||
-    source.includes('canonicalize_legacy_draw_document_v1')
-  ) {
-    throw new Error('document.rs still references legacy canonicalization')
-  }
-
-  if (!source.includes('selected .draw file is not a supported v2 document')) {
-    throw new Error('document.rs did not switch to v2-only decode')
-  }
-
   write(paths.documentRs, source)
 }
 
@@ -175,19 +157,36 @@ function validateResult() {
   const lib = read(paths.lib)
   const documentRs = read(paths.documentRs)
 
-  if (
-    lib.includes('document_codec') ||
-    lib.includes('canonicalize_draw_document') ||
-    lib.includes('canonicalize_legacy_draw_document_v1')
-  ) {
-    throw new Error('legacy codec references still remain in lib.rs')
+  const forbiddenLibMarkers = [
+    'mod document_codec;\n',
+    'mod legacy_document_codec_v1;\n',
+    'pub use document_codec::canonicalize_draw_document;\n',
+    'pub use legacy_document_codec_v1::canonicalize_legacy_draw_document_v1;\n',
+  ]
+
+  for (const marker of forbiddenLibMarkers) {
+    if (lib.includes(marker)) {
+      throw new Error(`legacy codec references still remain in lib.rs: ${marker.trim()}`)
+    }
   }
 
-  if (
-    documentRs.includes('canonicalize_draw_document') ||
-    documentRs.includes('canonicalize_legacy_draw_document_v1')
-  ) {
-    throw new Error('legacy codec references still remain in document.rs')
+  const forbiddenDocumentMarkers = [
+    'canonicalize_draw_document(',
+    'canonicalize_legacy_draw_document_v1(',
+    ' canonicalize_draw_document,',
+    ' canonicalize_legacy_draw_document_v1,',
+  ]
+
+  for (const marker of forbiddenDocumentMarkers) {
+    if (documentRs.includes(marker)) {
+      throw new Error(
+        `legacy codec references still remain in document.rs: ${marker.trim()}`,
+      )
+    }
+  }
+
+  if (!documentRs.includes('selected .draw file is not a supported v2 document')) {
+    throw new Error('document.rs did not switch to v2-only decode')
   }
 
   if (existsSync(abs(paths.legacyCodec)) || existsSync(abs(paths.legacyCodecRenamed))) {
