@@ -20,7 +20,7 @@ export interface CanvasWorkflow {
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
   readonly requestClose: (sessionId: CanvasSessionId) => Promise<CanvasCloseRequestResult>
-  readonly discardAndClose: (sessionId: CanvasSessionId) => void
+  readonly discardAndClose: (sessionId: CanvasSessionId) => Promise<void>
   readonly planApplicationClose: () => ApplicationClosePlan
   readonly discardAllAndClose: (sessionIds: readonly CanvasSessionId[]) => void
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
@@ -72,6 +72,7 @@ export function createCanvasWorkflow(
 
     switch (decision.kind) {
       case 'close-now':
+        await documents.close(sessionId)
         workspace.closeCanvas(sessionId)
         return { kind: 'closed' }
 
@@ -94,14 +95,14 @@ export function createCanvasWorkflow(
     }
   }
 
-  function discardAndClose(sessionId: CanvasSessionId): void {
-    documents.discardAndClose(sessionId)
+  async function discardAndClose(sessionId: CanvasSessionId): Promise<void> {
+    await documents.discardAndClose(sessionId)
     workspace.closeCanvas(sessionId)
   }
 
   function discardAllAndClose(sessionIds: readonly CanvasSessionId[]): void {
     for (const sessionId of sessionIds) {
-      discardAndClose(sessionId)
+      void discardAndClose(sessionId)
     }
   }
 

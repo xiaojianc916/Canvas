@@ -60,7 +60,8 @@ export interface CanvasDocumentService {
   readonly open: () => Promise<OpenedCanvasSession | null>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
   readonly requestClose: (sessionId: CanvasSessionId) => CanvasCloseDecision
-  readonly discardAndClose: (sessionId: CanvasSessionId) => void
+  readonly close: (sessionId: CanvasSessionId) => Promise<void>
+  readonly discardAndClose: (sessionId: CanvasSessionId) => Promise<void>
   readonly planApplicationClose: () => ApplicationClosePlan
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (
@@ -296,31 +297,55 @@ export function createCanvasDocumentService({
       }
     }
 
-    closeNow(sessionId, owned)
-
     return { kind: 'close-now' }
   }
 
-  function discardAndClose(sessionId: CanvasSessionId) {
+  async function close(sessionId: CanvasSessionId): Promise<void> {
     const owned = requireSession(sessionId)
 
     if (owned.saveOperation) {
       throw new Error('CANVAS_SESSION_SAVE_IN_PROGRESS')
     }
 
-    closeNow(sessionId, owned)
+    const state = owned.document.getSnapshot().persistence
+
+    if (state === 'dirty' || state === 'failed') {
+      throw new Error('CANVAS_SESSION_DISCARD_CONFIRMATION_REQUIRED')
+    }
+
+    await closeNow(sessionId, owned)
   }
 
-  function closeNow(sessionId: CanvasSessionId, owned: OwnedCanvasSession) {
+  async function discardAndClose(sessionId: CanvasSessionId): Promise<void> {
+    const owned = requireSession(sessionId)
+
+    if (owned.saveOperation) {
+      throw new Error('CANVAS_SESSION_SAVE_IN_PROGRESS')
+    }
+
+    await closeNow(sessionId, owned)
+  }
+
+  async function closeNow(
+    sessionId: CanvasSessionId,
+    owned: OwnedCanvasSession,
+  ): Promise<void> {
     owned.document.beginClosing()
-    owned.document.completeClosing()
+    emit()
 
     const documentId = owned.document.getDocumentId()
 
-    if (documentId) {
-      void persistence.close(documentId)
+    try {
+      if (documentId) {
+        await persistence.close(documentId)
+      }
+    } catch (error) {
+      owned.document.cancelClosing()
+      emit()
+      throw error
     }
 
+    owned.document.completeClosing()
     owned.stopObservingDocument()
     sessions.delete(sessionId)
     editorSessions.close(sessionId)
@@ -370,6 +395,7 @@ export function createCanvasDocumentService({
     open,
     save,
     requestClose,
+    close,
     discardAndClose,
     planApplicationClose,
 
@@ -400,12 +426,8 @@ export function createCanvasDocumentService({
 
     dispose() {
       for (const [sessionId, owned] of sessions) {
-        const documentId = owned.document.getDocumentId()
-
-        if (documentId) {
-          void persistence.close(documentId)
-        }
-
+        // dispose 只在应用运行时被销毁时执行。此时 native process 的退出会
+        // 统一释放 DocumentRegistry；不得在这里 fire-and-forget document_close。
         owned.stopObservingDocument()
         editorSessions.close(sessionId)
       }

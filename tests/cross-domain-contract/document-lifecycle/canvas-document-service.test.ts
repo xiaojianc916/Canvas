@@ -224,10 +224,48 @@ describe('CanvasDocumentService document-ID lifecycle contract', () => {
       kind: 'close-now',
     })
 
-    await Promise.resolve()
+    await harness.service.close(opened.sessionId)
 
     expect(harness.persistence.close).toHaveBeenCalledWith(
       'document-native-close',
     )
+
+    expect(harness.closeEditorSession).toHaveBeenCalledWith(opened.sessionId)
+  })
+
+  it('keeps the canvas session alive when native document_close fails', async () => {
+    const harness = createHarness()
+
+    harness.persistence.open.mockResolvedValue({
+      id: 'document-native-close-failure',
+      displayName: 'close-failure.draw',
+      content: serializeDrawDocument(snapshot({ shapes: [] })),
+    })
+
+    const opened = await harness.service.open()
+
+    if (!opened) {
+      throw new Error('expected document to open')
+    }
+
+    harness.ready()
+
+    const closeError = new Error('native document close failed')
+    harness.persistence.close.mockRejectedValue(closeError)
+
+    await expect(harness.service.close(opened.sessionId)).rejects.toBe(closeError)
+
+    expect(harness.closeEditorSession).not.toHaveBeenCalled()
+    expect(harness.service.getEditorSession(opened.sessionId)).not.toBeNull()
+    expect(harness.service.getSessionSnapshot(opened.sessionId)).toEqual({
+      sessionId: opened.sessionId,
+      persistence: 'clean',
+    })
+
+    harness.persistence.close.mockResolvedValue(undefined)
+
+    await harness.service.close(opened.sessionId)
+
+    expect(harness.closeEditorSession).toHaveBeenCalledWith(opened.sessionId)
   })
 })

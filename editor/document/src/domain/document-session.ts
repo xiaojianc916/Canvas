@@ -37,6 +37,7 @@ export interface DocumentSession {
   ) => void
   readonly failSave: (ticket: DocumentSaveTicket) => void
   readonly beginClosing: () => void
+  readonly cancelClosing: () => void
   readonly completeClosing: () => void
   readonly isInitialized: () => boolean
   readonly isDirty: () => boolean
@@ -160,6 +161,14 @@ export function createDocumentSession(
       }
 
       phase = 'closing'
+    },
+
+    cancelClosing() {
+      if (phase !== 'closing') {
+        throw new Error('DOCUMENT_SESSION_NOT_CLOSING')
+      }
+
+      phase = 'ready'
     },
 
     completeClosing() {

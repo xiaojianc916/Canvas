@@ -43,7 +43,7 @@ export interface WorkspaceCanvasUIPort {
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
   readonly requestClose: (sessionId: CanvasSessionId) => Promise<WorkspaceCanvasCloseResult>
-  readonly discardAndClose: (sessionId: CanvasSessionId) => void
+  readonly discardAndClose: (sessionId: CanvasSessionId) => Promise<void>
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (
     sessionId: CanvasSessionId,
@@ -318,20 +318,21 @@ export function WorkspaceContainer({
               return
             }
 
-            try {
-              port.canvases.discardAndClose(pendingCloseSessionId)
-            } catch (cause) {
-              reportError('discard and close canvas failed', {
-                scope: 'workspace',
-                operation: 'discard-and-close-canvas',
-                sessionId: pendingCloseSessionId,
-                cause,
-              })
+            const sessionId = pendingCloseSessionId
 
-              return
-            }
-
-            setPendingCloseSessionId(null)
+            void port.canvases.discardAndClose(sessionId).then(
+              () => {
+                setPendingCloseSessionId(null)
+              },
+              (cause: unknown) => {
+                reportError('discard and close canvas failed', {
+                  scope: 'workspace',
+                  operation: 'discard-and-close-canvas',
+                  sessionId,
+                  cause,
+                })
+              },
+            )
           }}
           open={pendingCloseSessionId !== null}
           title="放弃未保存的更改？"
