@@ -480,7 +480,7 @@ pub fn decode_draw_document_v2(
         decoded_assets.push(DrawAssetOutput {
             content_hash: asset.content_hash.clone(),
             content_type: asset.content_type.clone(),
-            bytes: content.clone(),
+            bytes: content.to_vec(),
         });
     }
 

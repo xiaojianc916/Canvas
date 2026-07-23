@@ -1,554 +1,406 @@
 #!/usr/bin/env node
 
 /**
- * 修复已经完成 Myna UI 迁移后产生的 import 语句粘连问题。
+ * P0-B.1.1 — Fix decoded v2 asset byte ownership.
  *
- * 当前问题示例：
+ * Required base:
+ *   f8218a4e604bab5cc83f8c91bf85931c09d44793
  *
- * import { X } from '@mynaui/icons-react'
-import { useState } from 'react'
+ * This fixes the Rust type mismatch:
  *
- * 修复为：
+ *   expected Vec<u8>, found &[u8]
  *
- * import { X } from '@mynaui/icons-react'
- * import { useState } from 'react'
- *
- * 正式执行：
+ * Usage:
+ *   node refactor.mjs --check
  *   node refactor.mjs --apply
- *
- * 跳过后续完整验证：
- *   node refactor.mjs --apply --skip-checks
- *
- * 仅预览：
- *   node refactor.mjs
+ *   node refactor.mjs --check D:\xiaojianc\hybrid-canvas
+ *   node refactor.mjs --apply D:\xiaojianc\hybrid-canvas
  */
 
-import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { extname, join, relative, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import {
+  access,
+  readFile,
+  writeFile,
+} from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { join, resolve } from 'node:path'
+import process from 'node:process'
 
-const ROOT = process.cwd()
-const CURRENT_SCRIPT = resolve(fileURLToPath(import.meta.url))
+const STEP_NAME =
+  'P0-B.1.1 v2 decoded asset ownership repair'
 
-const APPLY = process.argv.includes('--apply')
-const SKIP_CHECKS = process.argv.includes('--skip-checks')
-
-const LEGACY_PACKAGE = 'lucide-react'
-const TARGET_PACKAGE = '@mynaui/icons-react'
-
-const IGNORED_DIRECTORIES = new Set([
-  '.git',
-  '.turbo',
-  '.vite',
-  'coverage',
-  'dist',
-  'node_modules',
-  'target',
-])
-
-const SOURCE_EXTENSIONS = new Set(['.cjs', '.js', '.jsx', '.mjs', '.ts', '.tsx'])
-
-const changedFiles = new Set()
-
-main().catch((error) => {
-  console.error('\n修复失败：')
-
-  if (error instanceof Error) {
-    console.error(error.stack ?? error.message)
-  } else {
-    console.error(String(error))
-  }
-
-  process.exitCode = 1
-})
-
-function main() {
-  assertRepositoryRoot()
-
-  console.log('修复 Myna UI import 语句粘连问题')
-
-  if (!APPLY) {
-    console.log('\n当前为预览模式，不会写入文件。')
-    console.log('正式执行：')
-    console.log('\n  node refactor.mjs --apply\n')
-  }
-
-  repairConcatenatedMynaImports()
-  assertNoMalformedMynaImports()
-
-  if (!APPLY) {
-    console.log('\n预览完成。')
-    printChangedFiles()
-    return
-  }
-
-  formatRepairedFiles()
-
-  assertNoMalformedMynaImports()
-  assertNoLegacySourceImports()
-  assertNoLegacyDirectDependencies()
-  assertMynaDirectDependencies()
-
-  if (!SKIP_CHECKS) {
-    runChecks()
-  }
-
-  console.log('\n修复完成。')
-  printChangedFiles()
+function fail(message) {
+  console.error(`\n${STEP_NAME} failed:\n${message}\n`)
+  process.exit(1)
 }
 
-function assertRepositoryRoot() {
-  const requiredFiles = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']
+function parseArguments(argv) {
+  let mode = null
+  let rootArgument = null
 
-  for (const file of requiredFiles) {
-    if (!existsSync(join(ROOT, file))) {
-      throw new Error(`请在仓库根目录运行脚本，缺少：${file}`)
-    }
-  }
-}
-
-function repairConcatenatedMynaImports() {
-  const sourceFiles = findSourceFiles()
-
-  /**
-   * 只处理 Myna UI 静态 import。
-   *
-   * 捕获：
-   *   from '@mynaui/icons-react'
-   *
-   * 当结束引号后直接跟着标识符时插入换行。
-   *
-   * 可修复：
-   *   ...icons-react'import
-   *   ...icons-react'export
-   *   ...icons-react'const
-   *   ...icons-react'interface
-   *   ...icons-react'type
-   */
-  const concatenatedPattern = /(from\s+['"]@mynaui\/icons-react['"];?)(?=[A-Za-z_$])/g
-
-  for (const file of sourceFiles) {
-    const content = readText(file)
-
-    if (!content.includes(TARGET_PACKAGE)) {
-      continue
-    }
-
-    const repaired = content.replace(concatenatedPattern, '$1\n')
-
-    writeTextIfChanged(file, repaired)
-  }
-}
-
-function assertNoMalformedMynaImports() {
-  const violations = []
-
-  const malformedPattern = /from\s+['"]@mynaui\/icons-react['"];?(?=[A-Za-z_$])/g
-
-  for (const file of findSourceFiles()) {
-    const content = readTextForCurrentMode(file)
-
-    malformedPattern.lastIndex = 0
-
-    for (
-      let match = malformedPattern.exec(content);
-      match;
-      match = malformedPattern.exec(content)
-    ) {
-      violations.push({
-        file: relative(ROOT, file),
-        line: lineNumberAt(content, match.index),
-        snippet: getLineAt(content, match.index),
-      })
-    }
-  }
-
-  if (violations.length === 0) {
-    return
-  }
-
-  const lines = ['仍然存在 Myna UI import 粘连：', '']
-
-  for (const violation of violations) {
-    lines.push(`- ${violation.file}:${violation.line}`, `  ${violation.snippet.trim()}`)
-  }
-
-  throw new Error(lines.join('\n'))
-}
-
-function assertNoLegacySourceImports() {
-  const violations = []
-
-  const legacyPatterns = [
-    new RegExp(`\\bfrom\\s+['"]${escapeRegExp(LEGACY_PACKAGE)}['"]`, 'g'),
-
-    new RegExp(`\\bimport\\s+['"]${escapeRegExp(LEGACY_PACKAGE)}['"]`, 'g'),
-
-    new RegExp(`\\bimport\\s*\\(\\s*['"]${escapeRegExp(LEGACY_PACKAGE)}['"]\\s*\\)`, 'g'),
-
-    new RegExp(`\\brequire\\s*\\(\\s*['"]${escapeRegExp(LEGACY_PACKAGE)}['"]\\s*\\)`, 'g'),
-  ]
-
-  for (const file of findSourceFiles()) {
-    if (resolve(file) === CURRENT_SCRIPT) {
-      continue
-    }
-
-    const content = readTextForCurrentMode(file)
-
-    for (const pattern of legacyPatterns) {
-      pattern.lastIndex = 0
-
-      for (let match = pattern.exec(content); match; match = pattern.exec(content)) {
-        violations.push({
-          file: relative(ROOT, file),
-          line: lineNumberAt(content, match.index),
-        })
-      }
-    }
-  }
-
-  if (violations.length === 0) {
-    return
-  }
-
-  throw new Error(
-    [
-      `仍然存在 ${LEGACY_PACKAGE} import：`,
-      '',
-      ...violations.map((violation) => `- ${violation.file}:${violation.line}`),
-    ].join('\n'),
-  )
-}
-
-function assertNoLegacyDirectDependencies() {
-  const violations = []
-
-  for (const file of findPackageJsonFiles()) {
-    const json = readJson(file)
-
-    for (const sectionName of [
-      'dependencies',
-      'devDependencies',
-      'optionalDependencies',
-      'peerDependencies',
-    ]) {
-      const section = json[sectionName]
-
-      if (!section || typeof section !== 'object' || Array.isArray(section)) {
-        continue
+  for (const argument of argv) {
+    if (argument === '--check' || argument === '--apply') {
+      if (mode !== null) {
+        fail(
+          `Exactly one execution mode is required.\n` +
+            `Received both "${mode}" and "${argument}".`,
+        )
       }
 
-      if (LEGACY_PACKAGE in section) {
-        violations.push(`${relative(ROOT, file)} -> ${sectionName}`)
-      }
-    }
-  }
-
-  if (violations.length === 0) {
-    return
-  }
-
-  throw new Error(
-    [
-      `仍然存在 ${LEGACY_PACKAGE} 直接依赖：`,
-      '',
-      ...violations.map((violation) => `- ${violation}`),
-    ].join('\n'),
-  )
-}
-
-function assertMynaDirectDependencies() {
-  const packagesUsingMyna = new Set()
-
-  for (const file of findSourceFiles()) {
-    if (resolve(file) === CURRENT_SCRIPT) {
+      mode = argument
       continue
     }
 
-    const content = readTextForCurrentMode(file)
-
-    if (!content.includes(TARGET_PACKAGE)) {
-      continue
+    if (argument.startsWith('--')) {
+      fail(`Unknown argument: ${argument}`)
     }
 
-    const packageJsonFile = findNearestPackageJson(file)
-
-    if (!packageJsonFile) {
-      throw new Error(`无法为源码找到所属 package.json：${relative(ROOT, file)}`)
+    if (rootArgument !== null) {
+      fail(
+        `Only one repository path may be supplied.\n` +
+          `Unexpected argument: ${argument}`,
+      )
     }
 
-    packagesUsingMyna.add(packageJsonFile)
+    rootArgument = argument
   }
 
-  const violations = []
-
-  for (const packageJsonFile of packagesUsingMyna) {
-    const json = readJson(packageJsonFile)
-
-    const hasDependency =
-      json.dependencies?.[TARGET_PACKAGE] !== undefined ||
-      json.devDependencies?.[TARGET_PACKAGE] !== undefined ||
-      json.optionalDependencies?.[TARGET_PACKAGE] !== undefined ||
-      json.peerDependencies?.[TARGET_PACKAGE] !== undefined
-
-    if (!hasDependency) {
-      violations.push(relative(ROOT, packageJsonFile))
-    }
-  }
-
-  if (violations.length === 0) {
-    return
-  }
-
-  throw new Error(
-    [
-      `以下包使用了 ${TARGET_PACKAGE}，但没有声明依赖：`,
-      '',
-      ...violations.map((violation) => `- ${violation}`),
-    ].join('\n'),
-  )
-}
-
-function findNearestPackageJson(sourceFile) {
-  let currentDirectory = resolve(sourceFile, '..')
-
-  while (currentDirectory.startsWith(ROOT) && currentDirectory !== ROOT) {
-    const candidate = join(currentDirectory, 'package.json')
-
-    if (existsSync(candidate)) {
-      return candidate
-    }
-
-    const parent = resolve(currentDirectory, '..')
-
-    if (parent === currentDirectory) {
-      break
-    }
-
-    currentDirectory = parent
-  }
-
-  const rootPackageJson = join(ROOT, 'package.json')
-
-  return existsSync(rootPackageJson) ? rootPackageJson : null
-}
-
-function formatRepairedFiles() {
-  const files = new Set([CURRENT_SCRIPT, ...changedFiles])
-
-  const formattableFiles = [...files].filter(
-    (file) =>
-      existsSync(file) && (SOURCE_EXTENSIONS.has(extname(file)) || extname(file) === '.json'),
-  )
-
-  if (formattableFiles.length === 0) {
-    return
-  }
-
-  console.log('\n格式化修复后的文件...')
-
-  run('pnpm', [
-    'exec',
-    'biome',
-    'format',
-    '--write',
-    '--max-diagnostics=200',
-    ...formattableFiles.map((file) => relative(ROOT, file)),
-  ])
-}
-
-function runChecks() {
-  console.log('\n检查残留的 Lucide 引用...')
-
-  assertNoLegacySourceImports()
-  assertNoLegacyDirectDependencies()
-
-  console.log('\n运行图标库架构检查...')
-
-  run('node', ['tests/architecture/check-icon-library.mjs'])
-
-  console.log('\n运行格式检查...')
-
-  run('pnpm', ['format:check'])
-
-  console.log('\n运行 lint...')
-
-  run('pnpm', ['lint'])
-
-  console.log('\n运行 TypeScript 类型检查...')
-
-  run('pnpm', ['typecheck'])
-
-  console.log('\n运行架构测试...')
-
-  run('pnpm', ['test:architecture'])
-
-  console.log('\n运行测试...')
-
-  run('pnpm', ['test'])
-
-  console.log('\n构建桌面应用...')
-
-  run('pnpm', ['build:desktop'])
-
-  console.log('\n检查 Bundle Budget...')
-
-  run('pnpm', ['analyze:bundle:check'])
-}
-
-function run(command, args) {
-  console.log(`\n> ${command} ${args.join(' ')}`)
-
-  const options = {
-    cwd: ROOT,
-    env: process.env,
-    stdio: 'inherit',
-    shell: false,
-  }
-
-  if (process.platform === 'win32') {
-    const commandLine = [
-      quoteWindowsCommandArgument(command),
-      ...args.map(quoteWindowsCommandArgument),
-    ].join(' ')
-
-    execFileSync(
-      process.env.ComSpec ?? 'C:\\Windows\\System32\\cmd.exe',
-      ['/d', '/s', '/c', commandLine],
-      options,
+  if (mode === null) {
+    fail(
+      'Missing execution mode.\n' +
+        'Use either --check or --apply.',
     )
-
-    return
   }
 
-  execFileSync(command, args, options)
+  return {
+    mode,
+    root: resolve(rootArgument ?? process.cwd()),
+  }
 }
 
-function quoteWindowsCommandArgument(value) {
-  const stringValue = String(value)
+const { mode, root } = parseArguments(
+  process.argv.slice(2),
+)
 
-  if (stringValue.length === 0) {
-    return '""'
+const paths = {
+  packageJson: join(root, 'package.json'),
+  codec: join(
+    root,
+    'editor',
+    'persistence',
+    'native',
+    'src',
+    'document_codec_v2.rs',
+  ),
+}
+
+async function exists(path) {
+  try {
+    await access(path, constants.F_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function countOccurrences(source, fragment) {
+  if (fragment.length === 0) {
+    throw new Error(
+      'Internal error: cannot count an empty fragment.',
+    )
   }
 
-  if (!/[\s"&|<>^()]/.test(stringValue)) {
-    return stringValue
-  }
+  let count = 0
+  let offset = 0
 
-  return `"${stringValue.replace(/"/g, '""').replace(/%/g, '%%')}"`
-}
+  while (true) {
+    const index = source.indexOf(fragment, offset)
 
-function findSourceFiles() {
-  return findFiles(ROOT, (file) => SOURCE_EXTENSIONS.has(extname(file)))
-}
-
-function findPackageJsonFiles() {
-  return findFiles(ROOT, (file) => file.endsWith('package.json'))
-}
-
-function findFiles(directory, predicate) {
-  const files = []
-
-  walk(directory)
-
-  return files
-
-  function walk(currentDirectory) {
-    for (const entry of readdirSync(currentDirectory)) {
-      if (IGNORED_DIRECTORIES.has(entry)) {
-        continue
-      }
-
-      const absolutePath = join(currentDirectory, entry)
-
-      const stats = statSync(absolutePath)
-
-      if (stats.isDirectory()) {
-        walk(absolutePath)
-        continue
-      }
-
-      if (predicate(absolutePath)) {
-        files.push(absolutePath)
-      }
+    if (index < 0) {
+      return count
     }
+
+    count += 1
+    offset = index + fragment.length
   }
 }
 
-function readText(file) {
-  const content = readFileSync(file, 'utf8')
+const baselineFragment = `        decoded_assets.push(DrawAssetOutput {
+            content_hash: asset.content_hash.clone(),
+            content_type: asset.content_type.clone(),
+            bytes: content.clone(),
+        });`
 
-  return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content
+const finalFragment = `        decoded_assets.push(DrawAssetOutput {
+            content_hash: asset.content_hash.clone(),
+            content_type: asset.content_type.clone(),
+            bytes: content.to_vec(),
+        });`
+
+function updateCodec(source) {
+  const baselineCount = countOccurrences(
+    source,
+    baselineFragment,
+  )
+
+  const finalCount = countOccurrences(
+    source,
+    finalFragment,
+  )
+
+  if (baselineCount === 1 && finalCount === 0) {
+    return source.replace(
+      baselineFragment,
+      finalFragment,
+    )
+  }
+
+  if (baselineCount === 0 && finalCount === 1) {
+    return source
+  }
+
+  throw new Error(
+    [
+      'Unexpected v2 decoder state.',
+      '',
+      'Expected exactly one of:',
+      '- the audited content.clone() baseline; or',
+      '- the already-fixed content.to_vec() implementation.',
+      '',
+      `content.clone() baseline count: ${baselineCount}`,
+      `content.to_vec() final count: ${finalCount}`,
+      '',
+      'Refusing an ambiguous or partial modification.',
+    ].join('\n'),
+  )
 }
 
-function readTextForCurrentMode(file) {
-  return readText(file)
-}
-
-function readJson(file) {
-  const content = readText(file)
+function validateRepository(packageJson) {
+  let parsed
 
   try {
-    return JSON.parse(content)
+    parsed = JSON.parse(
+      packageJson.replace(/^\uFEFF/, ''),
+    )
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `Root package.json is invalid JSON: ${String(error)}`,
+    )
+  }
 
-    throw new SyntaxError(`无法解析 JSON 文件：${relative(ROOT, file)}` + `\n${message}`, {
-      cause: error,
-    })
+  if (parsed.name !== 'hybrid-canvas') {
+    throw new Error(
+      `Unexpected root package name: ${String(
+        parsed.name,
+      )}`,
+    )
   }
 }
 
-function writeTextIfChanged(file, content) {
-  const absolutePath = resolve(file)
-  const previous = readText(absolutePath)
+function validateCodecPrerequisites(source) {
+  const requiredFragments = [
+    'pub struct DrawAssetOutput',
+    'pub bytes: Vec<u8>',
+    'pub fn decode_draw_document_v2',
+    'let content = require_entry(&entries, &asset.path)?;',
+    'decoded_assets.push(DrawAssetOutput {',
+    'sha256(content) != asset.content_hash',
+  ]
 
-  if (previous === content) {
+  for (const fragment of requiredFragments) {
+    if (!source.includes(fragment)) {
+      throw new Error(
+        `Required v2 codec prerequisite is missing: ${fragment}`,
+      )
+    }
+  }
+}
+
+function validateFinal(source) {
+  const finalCount = countOccurrences(
+    source,
+    finalFragment,
+  )
+
+  if (finalCount !== 1) {
+    throw new Error(
+      [
+        'Final decoded asset conversion is invalid.',
+        `Expected occurrence count: 1`,
+        `Actual occurrence count: ${finalCount}`,
+      ].join('\n'),
+    )
+  }
+
+  if (source.includes('bytes: content.clone(),')) {
+    throw new Error(
+      'Obsolete &[u8] clone remains in decoded asset output.',
+    )
+  }
+
+  const outputDeclaration =
+    /pub struct DrawAssetOutput\s*\{[\s\S]*?pub bytes: Vec<u8>,[\s\S]*?\}/u
+
+  if (!outputDeclaration.test(source)) {
+    throw new Error(
+      'DrawAssetOutput no longer owns its decoded bytes.',
+    )
+  }
+
+  const decodeFunction =
+    /pub fn decode_draw_document_v2\s*\(/u
+
+  if (!decodeFunction.test(source)) {
+    throw new Error(
+      'The v2 decoder entry point is missing.',
+    )
+  }
+
+  for (const forbidden of [
+    'bytes: content.as_ptr()',
+    'bytes: unsafe',
+    'std::mem::transmute',
+    'Vec::from_raw_parts',
+  ]) {
+    if (source.includes(forbidden)) {
+      throw new Error(
+        `Unsafe decoded-byte workaround detected: ${forbidden}`,
+      )
+    }
+  }
+}
+
+async function restoreFile(path, original) {
+  try {
+    await writeFile(path, original, 'utf8')
+  } catch (restoreError) {
+    throw new AggregateError(
+      [restoreError],
+      'The codec update failed and the original file could not be restored.',
+    )
+  }
+}
+
+async function main() {
+  for (const path of Object.values(paths)) {
+    if (!(await exists(path))) {
+      throw new Error(
+        `Required file was not found: ${path}`,
+      )
+    }
+  }
+
+  const [packageJson, codecOriginal] =
+    await Promise.all([
+      readFile(paths.packageJson, 'utf8'),
+      readFile(paths.codec, 'utf8'),
+    ])
+
+  validateRepository(packageJson)
+  validateCodecPrerequisites(codecOriginal)
+
+  const codecFinal = updateCodec(codecOriginal)
+
+  validateFinal(codecFinal)
+
+  if (codecFinal === codecOriginal) {
+    console.log(
+      `${STEP_NAME} is already applied.`,
+    )
     return
   }
 
-  changedFiles.add(absolutePath)
+  const relativeCodec = paths.codec.slice(
+    root.length + 1,
+  )
 
-  if (!APPLY) {
-    console.log(`[预览] 修复 ${relative(ROOT, absolutePath)}`)
+  console.log(`${STEP_NAME} will update:`)
+  console.log(`- ${relativeCodec}`)
+  console.log('')
+  console.log('It will:')
+  console.log(
+    '- convert decoded ZIP asset bytes from &[u8] to an owned Vec<u8>;',
+  )
+  console.log(
+    '- preserve the validated ZIP entry buffer as the copy source;',
+  )
+  console.log(
+    '- avoid unsafe lifetime or raw-pointer workarounds;',
+  )
+  console.log(
+    '- leave the v2 container format unchanged;',
+  )
+  console.log(
+    '- leave the existing file untouched if validation fails.',
+  )
 
+  if (mode === '--check') {
+    console.log('')
+    console.log(
+      'Check completed. No files were written.',
+    )
+    console.log('')
+    console.log('Apply with:')
+    console.log('  node refactor.mjs --apply')
     return
   }
 
-  writeFileSync(absolutePath, content, 'utf8')
+  try {
+    await writeFile(
+      paths.codec,
+      codecFinal,
+      'utf8',
+    )
 
-  console.log(`修复 ${relative(ROOT, absolutePath)}`)
-}
+    const writtenCodec = await readFile(
+      paths.codec,
+      'utf8',
+    )
 
-function lineNumberAt(content, index) {
-  return content.slice(0, index).split('\n').length
-}
+    if (writtenCodec !== codecFinal) {
+      throw new Error(
+        'The written codec does not match the validated output.',
+      )
+    }
 
-function getLineAt(content, index) {
-  const lineStart = content.lastIndexOf('\n', index - 1) + 1
+    validateFinal(writtenCodec)
+  } catch (error) {
+    console.error(
+      '\nApply failed. Restoring the original codec...',
+    )
 
-  const nextLineBreak = content.indexOf('\n', index)
+    await restoreFile(
+      paths.codec,
+      codecOriginal,
+    )
 
-  const lineEnd = nextLineBreak === -1 ? content.length : nextLineBreak
-
-  return content.slice(lineStart, lineEnd)
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function printChangedFiles() {
-  if (changedFiles.size === 0) {
-    console.log('没有需要修复的文件。')
-    return
+    throw error
   }
 
-  console.log('\n修复文件：')
-
-  for (const file of [...changedFiles].sort()) {
-    console.log(`- ${relative(ROOT, file)}`)
-  }
+  console.log('')
+  console.log(`Applied ${STEP_NAME}.`)
+  console.log('')
+  console.log('Required verification:')
+  console.log(
+    '  cargo fmt --all -- --check',
+  )
+  console.log(
+    '  cargo check --workspace --all-targets',
+  )
+  console.log(
+    '  cargo test --workspace --all-targets',
+  )
+  console.log(
+    '  cargo clippy --workspace --all-targets -- -D warnings',
+  )
+  console.log('  pnpm typecheck')
+  console.log('  pnpm tauri dev')
 }
+
+main().catch((error) => {
+  fail(
+    error instanceof Error
+      ? error.stack ?? error.message
+      : String(error),
+  )
+})
