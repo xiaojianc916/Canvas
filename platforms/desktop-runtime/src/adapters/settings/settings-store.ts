@@ -30,7 +30,7 @@ function fromDto(dto: AppSettingsDto): AppSettings {
     language: dto.language,
     autoSave: dto.auto_save,
     autoSaveIntervalMs: dto.auto_save_interval,
-    shortcuts: dto.shortcuts,
+    shortcuts: normalizeShortcuts(dto.shortcuts),
     canvas: {
       defaultZoom: dto.canvas.default_zoom,
       showGrid: dto.canvas.show_grid,
@@ -60,6 +60,16 @@ function fromDto(dto: AppSettingsDto): AppSettings {
       updateCheck: dto.privacy.update_check,
     },
   }
+}
+
+function normalizeShortcuts(
+  shortcuts: Partial<Record<string, string>>,
+): Readonly<Record<string, string>> {
+  return Object.fromEntries(
+    Object.entries(shortcuts).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    ),
+  )
 }
 
 function toDto(settings: AppSettings): AppSettingsDto {
