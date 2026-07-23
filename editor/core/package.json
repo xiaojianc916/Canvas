@@ -33,15 +33,17 @@
   "dependencies": {
     "@hybrid-canvas/design-system": "workspace:*",
     "@tldraw/editor": "catalog:",
-    "lucide-react": "catalog:",
-    "tldraw": "catalog:"
+    "lucide-react": "catalog:"
   },
   "devDependencies": {
     "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "tldraw": "catalog:",
     "typescript": "catalog:"
   },
   "peerDependencies": {
     "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react-dom": "19.2.7",
+    "tldraw": "5.2.5"
   }
 }

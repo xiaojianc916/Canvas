@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "@hybrid-canvas/flowchart",
   "version": "0.1.0",
   "private": true,
@@ -20,20 +20,25 @@
     "@hybrid-canvas/foundations-test-kit": "workspace:*",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "tldraw": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
   "dependencies": {
     "@dagrejs/dagre": "catalog:",
+    "@hybrid-canvas/canvas": "workspace:*",
+    "@hybrid-canvas/foundations-geometry": "workspace:*",
+    "@hybrid-canvas/foundations-kernel": "workspace:*",
     "@tldraw/tlschema": "catalog:",
     "@tldraw/validate": "catalog:",
     "elkjs": "catalog:",
-    "valibot": "catalog:",
-    "@hybrid-canvas/foundations-kernel": "workspace:*",
-    "@hybrid-canvas/foundations-geometry": "workspace:*",
-    "@hybrid-canvas/canvas": "workspace:*",
-    "tldraw": "catalog:",
-    "react": "catalog:",
-    "react-dom": "catalog:"
+    "valibot": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "tldraw": "5.2.5"
   }
 }
