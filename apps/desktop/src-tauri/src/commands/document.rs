@@ -2,7 +2,7 @@ use crate::asset_protocol::{AssetProtocolError, AssetProtocolRegistry, AssetSess
 use crate::error::{Error, IpcError, Result};
 use hybrid_canvas_file_native::{
     DocumentRevision, DrawAssetInput, DrawDocumentV2Input, atomic_write,
-    canonicalize_draw_document, decode_draw_document_v2, document_revision,
+    canonicalize_legacy_draw_document_v1, decode_draw_document_v2, document_revision,
     encode_draw_document_v2,
 };
 use serde::{Deserialize, Serialize};
@@ -568,7 +568,7 @@ fn decode_document(bytes: &[u8]) -> Result<DecodedDocument> {
 
     ensure_logical_document_size(bytes.len() as u64)?;
 
-    let canonical = canonicalize_draw_document(bytes)?;
+    let canonical = canonicalize_legacy_draw_document_v1(bytes)?;
     let legacy: serde_json::Value = serde_json::from_str(&canonical)?;
 
     let created_at = legacy

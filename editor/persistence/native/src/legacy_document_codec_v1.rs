@@ -1,4 +1,4 @@
-//! Native logical-document boundary.
+//! Explicit legacy v1 logical-document migration boundary.
 //!
 //! Renderer code may supply a .draw payload only as a logical JSON document.
 //! This module validates the native file envelope before it reaches disk and
@@ -20,7 +20,7 @@ const MAX_LOGICAL_DOCUMENT_BYTES: usize = 32 * 1024 * 1024;
 /// This does not validate tldraw records. Extension-aware tldraw validation
 /// remains at the renderer's actual `loadSnapshot` boundary, where the complete
 /// shape and binding schema is available.
-pub fn canonicalize_draw_document(input: &[u8]) -> Result<String> {
+pub fn canonicalize_legacy_draw_document_v1(input: &[u8]) -> Result<String> {
     if input.len() > MAX_LOGICAL_DOCUMENT_BYTES {
         return Err(Error::CorruptedContainer(
             "logical document exceeds byte budget".into(),
@@ -85,7 +85,7 @@ fn validate_draw_envelope(value: &Value) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::canonicalize_draw_document;
+    use super::canonicalize_legacy_draw_document_v1;
 
     fn valid_document() -> Vec<u8> {
         br#"{
@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn canonicalizes_a_valid_logical_document() {
-        let document = canonicalize_draw_document(&valid_document())
+        let document = canonicalize_legacy_draw_document_v1(&valid_document())
             .expect("valid logical document should be accepted");
 
         assert!(!document.contains('\n'));
@@ -114,21 +114,21 @@ mod tests {
 
     #[test]
     fn rejects_a_non_json_payload() {
-        let result = canonicalize_draw_document(b"not-json");
+        let result = canonicalize_legacy_draw_document_v1(b"not-json");
 
         assert!(result.is_err());
     }
 
     #[test]
     fn rejects_a_raw_tldraw_snapshot_without_envelope() {
-        let result = canonicalize_draw_document(br#"{ "document": {}, "session": {} }"#);
+        let result = canonicalize_legacy_draw_document_v1(br#"{ "document": {}, "session": {} }"#);
 
         assert!(result.is_err());
     }
 
     #[test]
     fn rejects_future_logical_versions() {
-        let result = canonicalize_draw_document(
+        let result = canonicalize_legacy_draw_document_v1(
             br#"{
                 "header": {
                     "format": "hybrid-canvas/draw",
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn rejects_non_object_content() {
-        let result = canonicalize_draw_document(
+        let result = canonicalize_legacy_draw_document_v1(
             br#"{
                 "header": {
                     "format": "hybrid-canvas/draw",
