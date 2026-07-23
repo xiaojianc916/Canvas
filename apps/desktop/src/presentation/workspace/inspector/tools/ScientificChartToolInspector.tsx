@@ -2,6 +2,7 @@ import {
   type ScientificChartType,
   ScientificChartTypeStyle,
 } from '@hybrid-canvas/scientific-plot'
+import { useValue } from 'tldraw'
 import {
   InspectorHint,
   ShapeInspectorSection,
@@ -15,6 +16,15 @@ import type { ToolInspectorProps } from './types'
 export function ScientificChartToolInspector({
   editor,
 }: ToolInspectorProps) {
+  const currentChartType = useValue(
+    'inspector next scientific chart type',
+    () =>
+      editor.getStyleForNextShape(
+        ScientificChartTypeStyle,
+      ),
+    [editor],
+  )
+
   return (
     <ToolPanelHeader
       description="选择图表类型并拖动创建；创建后可配置数据、系列和坐标轴。"
@@ -35,7 +45,7 @@ export function ScientificChartToolInspector({
             { value: 'area', label: '面积' },
             { value: 'scatter', label: '散点' },
           ]}
-          value={null}
+          value={currentChartType}
         />
       </ShapeInspectorSection>
 

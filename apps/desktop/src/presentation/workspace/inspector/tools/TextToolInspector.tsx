@@ -1,6 +1,7 @@
 import {
   DefaultFontStyle,
   DefaultTextAlignStyle,
+  useValue,
 } from 'tldraw'
 import {
   InspectorHint,
@@ -15,6 +16,18 @@ import type { ToolInspectorProps } from './types'
 export function TextToolInspector({
   editor,
 }: ToolInspectorProps) {
+  const currentFont = useValue(
+    'inspector next text font',
+    () => editor.getStyleForNextShape(DefaultFontStyle),
+    [editor],
+  )
+
+  const currentTextAlign = useValue(
+    'inspector next text alignment',
+    () => editor.getStyleForNextShape(DefaultTextAlignStyle),
+    [editor],
+  )
+
   return (
     <ToolPanelHeader
       description="单击创建自动宽度文本，拖动创建固定宽度文本框。"
@@ -37,7 +50,7 @@ export function TextToolInspector({
             { value: 'serif', label: '衬线' },
             { value: 'mono', label: '等宽' },
           ]}
-          value={null}
+          value={currentFont}
         />
       </ShapeInspectorSection>
 
@@ -57,7 +70,7 @@ export function TextToolInspector({
             { value: 'middle', label: '中' },
             { value: 'end', label: '右' },
           ]}
-          value={null}
+          value={currentTextAlign}
         />
       </ShapeInspectorSection>
 

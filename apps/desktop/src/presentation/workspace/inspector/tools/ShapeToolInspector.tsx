@@ -1,4 +1,4 @@
-import { GeoShapeGeoStyle } from 'tldraw'
+import { GeoShapeGeoStyle, useValue } from 'tldraw'
 import {
   GEO_SHAPE_OPTIONS,
   ShapeInspectorSection,
@@ -14,6 +14,12 @@ import type { ToolInspectorProps } from './types'
 export function ShapeToolInspector({
   editor,
 }: ToolInspectorProps) {
+  const currentGeo = useValue(
+    'inspector next geo shape',
+    () => editor.getStyleForNextShape(GeoShapeGeoStyle),
+    [editor],
+  )
+
   return (
     <ToolPanelHeader
       description="在画布中拖动创建形状；以下参数用于下一个新形状。"
@@ -29,7 +35,7 @@ export function ShapeToolInspector({
           }
           options={GEO_SHAPE_OPTIONS}
           type="形状"
-          value="rectangle"
+          value={currentGeo}
         />
       </ShapeInspectorSection>
 

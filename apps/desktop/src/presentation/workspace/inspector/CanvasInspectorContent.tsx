@@ -1,3 +1,4 @@
+import { useEditor } from '@hybrid-canvas/canvas/react'
 import {
   type ScientificChartType,
   ScientificChartTypeStyle,

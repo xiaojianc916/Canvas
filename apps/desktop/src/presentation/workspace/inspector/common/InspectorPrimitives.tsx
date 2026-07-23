@@ -14,6 +14,7 @@ import {
   DefaultFillStyle,
   DefaultSizeStyle,
   type Editor,
+  useValue,
 } from 'tldraw'
 
 export const GEO_SHAPE_OPTIONS = [
@@ -251,13 +252,27 @@ export function ToolColorSection({
 }: {
   readonly editor: Editor
 }) {
+  const currentColor = useValue(
+    'inspector next shape color',
+    () => editor.getStyleForNextShape(DefaultColorStyle),
+    [editor],
+  )
+
   return (
     <ShapeInspectorSection title="颜色">
       <div className="grid grid-cols-6 gap-1.5">
         {SHAPE_COLORS.map((color) => (
           <button
             aria-label={'设置默认颜色为' + color.label}
-            className="size-7 rounded-md border border-divider transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            aria-pressed={currentColor === color.value}
+            className={
+              'size-7 rounded-md border border-divider transition-transform ' +
+              'hover:scale-105 focus-visible:outline-none ' +
+              'focus-visible:ring-2 focus-visible:ring-primary ' +
+              (currentColor === color.value
+                ? 'ring-2 ring-primary ring-offset-1'
+                : '')
+            }
             key={color.value}
             onClick={() =>
               editor.setStyleForNextShapes(
@@ -280,6 +295,12 @@ export function ToolStrokeSizeSection({
 }: {
   readonly editor: Editor
 }) {
+  const currentSize = useValue(
+    'inspector next shape size',
+    () => editor.getStyleForNextShape(DefaultSizeStyle),
+    [editor],
+  )
+
   return (
     <ShapeInspectorSection
       description="快捷档位；后续阶段增加精确数值与滑杆。"
@@ -296,7 +317,7 @@ export function ToolStrokeSizeSection({
           { value: 'l', label: '粗' },
           { value: 'xl', label: '特粗' },
         ]}
-        value={null}
+        value={currentSize}
       />
     </ShapeInspectorSection>
   )
@@ -307,6 +328,12 @@ export function ToolDashSection({
 }: {
   readonly editor: Editor
 }) {
+  const currentDash = useValue(
+    'inspector next shape dash',
+    () => editor.getStyleForNextShape(DefaultDashStyle),
+    [editor],
+  )
+
   return (
     <ShapeInspectorSection title="线型">
       <ShapeInspectorSegmentedControl
@@ -320,7 +347,7 @@ export function ToolDashSection({
           { value: 'dashed', label: '虚线' },
           { value: 'dotted', label: '点线' },
         ]}
-        value={null}
+        value={currentDash}
       />
     </ShapeInspectorSection>
   )
@@ -333,6 +360,12 @@ export function ToolFillSection({
   readonly editor: Editor
   readonly includeNone?: boolean
 }) {
+  const currentFill = useValue(
+    'inspector next shape fill',
+    () => editor.getStyleForNextShape(DefaultFillStyle),
+    [editor],
+  )
+
   const options = includeNone
     ? [
         { value: 'none', label: '无' },
@@ -354,7 +387,7 @@ export function ToolFillSection({
           editor.setStyleForNextShapes(DefaultFillStyle, value as never)
         }
         options={options}
-        value={null}
+        value={currentFill}
       />
     </ShapeInspectorSection>
   )

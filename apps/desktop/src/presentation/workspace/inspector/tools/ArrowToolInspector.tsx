@@ -1,6 +1,7 @@
 import {
   ArrowShapeArrowheadEndStyle,
   ArrowShapeArrowheadStartStyle,
+  useValue,
 } from 'tldraw'
 import {
   InspectorHint,
@@ -17,6 +18,24 @@ import type { ToolInspectorProps } from './types'
 export function ArrowToolInspector({
   editor,
 }: ToolInspectorProps) {
+  const currentArrowheadStart = useValue(
+    'inspector next arrowhead start',
+    () =>
+      editor.getStyleForNextShape(
+        ArrowShapeArrowheadStartStyle,
+      ),
+    [editor],
+  )
+
+  const currentArrowheadEnd = useValue(
+    'inspector next arrowhead end',
+    () =>
+      editor.getStyleForNextShape(
+        ArrowShapeArrowheadEndStyle,
+      ),
+    [editor],
+  )
+
   return (
     <ToolPanelHeader
       description="在对象之间创建可绑定的连接线。"
@@ -52,7 +71,7 @@ export function ArrowToolInspector({
               value as never,
             )
           }
-          value="none"
+          value={currentArrowheadStart}
         />
       </ShapeInspectorSection>
 
@@ -64,7 +83,7 @@ export function ArrowToolInspector({
               value as never,
             )
           }
-          value="arrow"
+          value={currentArrowheadEnd}
         />
       </ShapeInspectorSection>
 

@@ -1,4 +1,4 @@
-import { DefaultFontStyle } from 'tldraw'
+import { DefaultFontStyle, useValue } from 'tldraw'
 import {
   InspectorHint,
   ShapeInspectorSection,
@@ -13,6 +13,12 @@ import type { ToolInspectorProps } from './types'
 export function NoteToolInspector({
   editor,
 }: ToolInspectorProps) {
+  const currentFont = useValue(
+    'inspector next note font',
+    () => editor.getStyleForNextShape(DefaultFontStyle),
+    [editor],
+  )
+
   return (
     <ToolPanelHeader
       description="在画布中创建便签并立即输入内容。"
@@ -36,7 +42,7 @@ export function NoteToolInspector({
             { value: 'serif', label: '衬线' },
             { value: 'mono', label: '等宽' },
           ]}
-          value={null}
+          value={currentFont}
         />
       </ShapeInspectorSection>
 
