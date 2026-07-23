@@ -38,7 +38,7 @@ export interface WorkspaceCanvasUIPort {
     sessionId: CanvasSessionId,
     intent: 'normal' | 'discard',
   ) => Promise<void>
-  readonly cancelCanvasClose: () => void
+  readonly cancelCanvasClose: (sessionId: CanvasSessionId) => void
   readonly getCloseSnapshot: () => import('../../application/canvas/canvas-workflow').CanvasCloseSnapshot
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
   readonly getSessionSnapshot: (
@@ -110,6 +110,14 @@ export function WorkspaceContainer({
     port.canvases.subscribe,
     port.canvases.getCloseSnapshot,
     port.canvases.getCloseSnapshot,
+  )
+
+  const confirmationClose = Object.entries(closeSnapshot.states).find(
+    ([, state]) => state.state === 'confirmation-required',
+  )
+
+  const failedClose = Object.entries(closeSnapshot.states).find(
+    ([, state]) => state.state === 'release-failed',
   )
 
   const activeSessionId =
@@ -314,13 +322,17 @@ export function WorkspaceContainer({
             confirmLabel="放弃并关闭"
             description="关闭画布会丢失自上次保存后的更改，此操作无法撤销。"
             destructive
-            onCancel={port.canvases.cancelCanvasClose}
-            onConfirm={() => {
-              if (closeSnapshot.state === 'confirmation-required') {
-                handleCloseCanvas(closeSnapshot.sessionId, 'discard')
+            onCancel={() => {
+              if (confirmationClose) {
+                port.canvases.cancelCanvasClose(confirmationClose[0])
               }
             }}
-            open={closeSnapshot.state === 'confirmation-required'}
+            onConfirm={() => {
+              if (confirmationClose) {
+                handleCloseCanvas(confirmationClose[0], 'discard')
+              }
+            }}
+            open={confirmationClose !== undefined}
             title="放弃未保存的更改？"
           />
 
@@ -328,16 +340,20 @@ export function WorkspaceContainer({
             cancelLabel="保留画布"
             confirmLabel="重试关闭"
             description="无法释放本地文档会话。画布仍保持打开状态，您可以重试关闭。"
-            onCancel={port.canvases.cancelCanvasClose}
+            onCancel={() => {
+              if (failedClose) {
+                port.canvases.cancelCanvasClose(failedClose[0])
+              }
+            }}
             onConfirm={() => {
-              if (closeSnapshot.state === 'release-failed') {
+              if (failedClose && failedClose[1].state === 'release-failed') {
                 handleCloseCanvas(
-                  closeSnapshot.sessionId,
-                  closeSnapshot.intent,
+                  failedClose[0],
+                  failedClose[1].intent,
                 )
               }
             }}
-            open={closeSnapshot.state === 'release-failed'}
+            open={failedClose !== undefined}
             title="关闭画布失败"
           />
         </>
