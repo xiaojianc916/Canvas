@@ -48,15 +48,74 @@ export function parseDrawDocument(json: string): DrawFileContainer {
     )
   }
 
-  if (typeof header['createdAt'] !== 'string' || Number.isNaN(Date.parse(header['createdAt']))) {
+  const createdAt = header['createdAt']
+
+  if (typeof createdAt !== 'string' || Number.isNaN(Date.parse(createdAt))) {
     throw new Error('DRAW_INVALID_CREATED_AT')
   }
 
-  if (!isRecord(parsed['content'])) {
-    throw new Error('DRAW_INVALID_CONTENT')
+  const content = parsePersistedEditorSnapshot(parsed['content'])
+
+  return {
+    header: {
+      format: 'hybrid-canvas/draw',
+      version: CURRENT_FILE_VERSION,
+      createdAt,
+    },
+    content,
+  }
+}
+
+interface PersistedEditorSnapshotWire {
+  readonly document: {
+    readonly schema: Record<string, unknown>
+    readonly store: Record<string, unknown>
+  }
+  readonly session: Record<string, unknown>
+}
+
+/**
+ * This validates only the stable file wire envelope.
+ *
+ * It intentionally does not duplicate tldraw's record schema, migration,
+ * custom-shape, binding, or integrity rules. The configured tldraw store is
+ * the sole authority for those rules when createTLStore({ snapshot }) runs.
+ */
+function parsePersistedEditorSnapshot(
+  value: unknown,
+): DrawFileContainer['content'] {
+  if (!isRecord(value)) {
+    throw new Error('DRAW_INVALID_SNAPSHOT')
   }
 
-  return parsed as unknown as DrawFileContainer
+  const document = value['document']
+  const session = value['session']
+
+  if (!isRecord(document) || !isRecord(session)) {
+    throw new Error('DRAW_INVALID_SNAPSHOT')
+  }
+
+  const schema = document['schema']
+  const store = document['store']
+
+  if (!isRecord(schema) || !isRecord(store)) {
+    throw new Error('DRAW_INVALID_SNAPSHOT')
+  }
+
+  const wire: PersistedEditorSnapshotWire = {
+    document: {
+      schema,
+      store,
+    },
+    session,
+  }
+
+  /*
+   * TypeScript cannot derive a complete third-party record schema from JSON.
+   * This assertion is confined to the validated wire boundary. The next
+   * boundary, createTLStore({ snapshot }), performs authoritative validation.
+   */
+  return wire as DrawFileContainer['content']
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

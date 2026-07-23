@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 /**
- * P0.1 — 将 tldraw snapshot load / migration / schema failure 收敛为稳定错误。
+ * P0.1 — Validate the persisted TLEditorSnapshot wire envelope.
  *
- * createTLStore({ snapshot }) 是唯一真实的 extension-aware validation path：
- * - tldraw schema migration
- * - record validation
- * - custom shape / binding registration validation
- * - store integrity check
- *
- * 这些异常不能泄漏为 tldraw 内部错误，也不能让上层依赖错误文本。
+ * This refactor:
+ * 1. Removes the raw `parsed as unknown as DrawFileContainer` assertion.
+ * 2. Requires a real editor snapshot envelope:
+ *      content.document.schema: object
+ *      content.document.store: object
+ *      content.session: object
+ * 3. Keeps authoritative tldraw schema / migration / custom-shape validation
+ *    exclusively in createTLStore({ snapshot }).
+ * 4. Replaces persistence test fixtures that incorrectly used
+ *    `{ document: {}, session: {} }`.
  *
  * Usage:
- *   node refactor-p0-stabilize-tldraw-snapshot-failure.mjs --check
- *   node refactor-p0-stabilize-tldraw-snapshot-failure.mjs --apply
- *   node refactor-p0-stabilize-tldraw-snapshot-failure.mjs --apply D:\xiaojianc\hybrid-canvas
+ *   node refactor.mjs --check
+ *   node refactor.mjs --apply
+ *   node refactor.mjs --apply D:\xiaojianc\hybrid-canvas
  */
 
 import { access, readFile, writeFile } from 'node:fs/promises'
@@ -28,15 +31,22 @@ const root = resolve(rootArgument ?? process.cwd())
 
 const paths = {
   packageJson: join(root, 'package.json'),
-  editorSession: join(root, 'editor/core/src/runtime/editor-session.ts'),
-  applicationPublicApi: join(
+  snapshotService: join(
     root,
-    'editor/core/src/application/public-api.ts',
+    'editor/persistence/src/application/snapshot-service.ts',
+  ),
+  snapshotServiceTest: join(
+    root,
+    'editor/persistence/src/application/snapshot-service.test.ts',
+  ),
+  documentLifecycleTest: join(
+    root,
+    'tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts',
   ),
 }
 
 function fail(message) {
-  console.error(`\nPersisted snapshot failure-boundary refactor failed:\n${message}\n`)
+  console.error(`\nP0 snapshot wire-envelope refactor failed:\n${message}\n`)
   process.exitCode = 1
 }
 
@@ -49,23 +59,34 @@ async function exists(path) {
   }
 }
 
-function replaceExactly(source, oldText, newText, description) {
-  if (!source.includes(oldText)) {
+function replaceExactlyOnce(source, oldText, newText, description) {
+  const firstIndex = source.indexOf(oldText)
+
+  if (firstIndex === -1) {
     throw new Error(
       [
         `Expected source fragment was not found: ${description}`,
-        'Refusing fuzzy replacement.',
+        'Refusing fuzzy replacement because the source is not the audited version.',
       ].join('\n'),
     )
   }
 
-  const next = source.replace(oldText, newText)
+  const secondIndex = source.indexOf(
+    oldText,
+    firstIndex + oldText.length,
+  )
 
-  if (next === source) {
-    throw new Error(`Replacement made no change: ${description}`)
+  if (secondIndex !== -1) {
+    throw new Error(
+      `Expected one source fragment but found multiple matches: ${description}`,
+    )
   }
 
-  return next
+  return (
+    source.slice(0, firstIndex) +
+    newText +
+    source.slice(firstIndex + oldText.length)
+  )
 }
 
 async function main() {
@@ -73,167 +94,357 @@ async function main() {
     fail(
       [
         `Repository root was not found: ${root}`,
-        'Run from the Hybrid Canvas repository root or pass its path explicitly.',
+        'Run this script from the Hybrid Canvas repository root.',
       ].join('\n'),
     )
     return
   }
 
-  for (const path of [
-    paths.editorSession,
-    paths.applicationPublicApi,
-  ]) {
+  for (const [label, path] of Object.entries(paths)) {
+    if (label === 'packageJson') {
+      continue
+    }
+
     if (!(await exists(path))) {
-      fail(`Required path does not exist: ${path}`)
+      fail(`Required source file was not found: ${path}`)
       return
     }
   }
 
-  const [editorSession, applicationPublicApi] = await Promise.all([
-    readFile(paths.editorSession, 'utf8'),
-    readFile(paths.applicationPublicApi, 'utf8'),
+  const [
+    snapshotServiceSource,
+    snapshotServiceTestSource,
+    documentLifecycleTestSource,
+  ] = await Promise.all([
+    readFile(paths.snapshotService, 'utf8'),
+    readFile(paths.snapshotServiceTest, 'utf8'),
+    readFile(paths.documentLifecycleTest, 'utf8'),
   ])
 
   if (
-    editorSession.includes('class PersistedSnapshotLoadError') &&
-    applicationPublicApi.includes('PersistedSnapshotLoadError')
+    snapshotServiceSource.includes(
+      'function parsePersistedEditorSnapshot(',
+    ) &&
+    snapshotServiceTestSource.includes(
+      "it('rejects an incomplete editor snapshot envelope'",
+    ) &&
+    documentLifecycleTestSource.includes('function validSnapshotWire()')
   ) {
-    console.log('Persisted snapshot failure boundary is already present.')
+    console.log('P0 snapshot wire-envelope validation is already applied.')
     return
   }
 
   try {
-    const errorClassAnchor = `export type EditorSessionState = 'created' | 'attached' | 'detached' | 'disposed'
+    const oldSnapshotServiceTail = `  if (!isRecord(parsed['content'])) {
+    throw new Error('DRAW_INVALID_CONTENT')
+  }
 
-`
+  return parsed as unknown as DrawFileContainer
+}`
 
-    const errorClass = `export type EditorSessionState = 'created' | 'attached' | 'detached' | 'disposed'
+    const newSnapshotServiceTail = `  const content = parsePersistedEditorSnapshot(parsed['content'])
+
+  return {
+    header: {
+      format: 'hybrid-canvas/draw',
+      version: CURRENT_FILE_VERSION,
+      createdAt,
+    },
+    content,
+  }
+}
+
+interface PersistedEditorSnapshotWire {
+  readonly document: {
+    readonly schema: Record<string, unknown>
+    readonly store: Record<string, unknown>
+  }
+  readonly session: Record<string, unknown>
+}
 
 /**
- * Stable application-level error for a persisted snapshot that tldraw cannot
- * migrate, validate or load using the complete extension-aware store schema.
+ * This validates only the stable file wire envelope.
  *
- * The original error intentionally remains private: it can contain tldraw
- * implementation details and record content that must not become a UI/API
- * contract.
+ * It intentionally does not duplicate tldraw's record schema, migration,
+ * custom-shape, binding, or integrity rules. The configured tldraw store is
+ * the sole authority for those rules when createTLStore({ snapshot }) runs.
  */
-export class PersistedSnapshotLoadError extends Error {
-  readonly code = 'DRAW_INVALID_SNAPSHOT'
+function parsePersistedEditorSnapshot(
+  value: unknown,
+): DrawFileContainer['content'] {
+  if (!isRecord(value)) {
+    throw new Error('DRAW_INVALID_SNAPSHOT')
+  }
 
-  constructor() {
-    super('DRAW_INVALID_SNAPSHOT')
-    this.name = 'PersistedSnapshotLoadError'
+  const document = value['document']
+  const session = value['session']
+
+  if (!isRecord(document) || !isRecord(session)) {
+    throw new Error('DRAW_INVALID_SNAPSHOT')
+  }
+
+  const schema = document['schema']
+  const store = document['store']
+
+  if (!isRecord(schema) || !isRecord(store)) {
+    throw new Error('DRAW_INVALID_SNAPSHOT')
+  }
+
+  const wire: PersistedEditorSnapshotWire = {
+    document: {
+      schema,
+      store,
+    },
+    session,
+  }
+
+  /*
+   * TypeScript cannot derive a complete third-party record schema from JSON.
+   * This assertion is confined to the validated wire boundary. The next
+   * boundary, createTLStore({ snapshot }), performs authoritative validation.
+   */
+  return wire as DrawFileContainer['content']
+}`
+
+    let nextSnapshotService = replaceExactlyOnce(
+      snapshotServiceSource,
+      oldSnapshotServiceTail,
+      newSnapshotServiceTail,
+      'replace raw DrawFileContainer assertion',
+    )
+
+    const oldCreatedAtValidation = `  if (typeof header['createdAt'] !== 'string' || Number.isNaN(Date.parse(header['createdAt']))) {
+    throw new Error('DRAW_INVALID_CREATED_AT')
+  }
+
+  const content = parsePersistedEditorSnapshot(parsed['content'])`
+
+    const newCreatedAtValidation = `  const createdAt = header['createdAt']
+
+  if (typeof createdAt !== 'string' || Number.isNaN(Date.parse(createdAt))) {
+    throw new Error('DRAW_INVALID_CREATED_AT')
+  }
+
+  const content = parsePersistedEditorSnapshot(parsed['content'])`
+
+    nextSnapshotService = replaceExactlyOnce(
+      nextSnapshotService,
+      oldCreatedAtValidation,
+      newCreatedAtValidation,
+      'preserve narrowed createdAt value for typed file reconstruction',
+    )
+
+    const nextSnapshotServiceTest = `import { describe, expect, it } from 'vitest'
+
+import {
+  createDrawFileHeader,
+  parseDrawDocument,
+  serializeDrawDocument,
+} from './snapshot-service'
+
+function createValidSnapshotWire() {
+  return {
+    document: {
+      schema: {
+        schemaVersion: 2,
+        sequences: {},
+      },
+      store: {
+        'document:document': {
+          id: 'document:document',
+          typeName: 'document',
+          name: 'Untitled',
+          meta: {},
+        },
+      },
+    },
+    session: {},
   }
 }
 
-`
+function createValidJson(): string {
+  return JSON.stringify({
+    header: createDrawFileHeader('2026-01-01T00:00:00.000Z'),
+    content: createValidSnapshotWire(),
+  })
+}
 
-    let nextEditorSession = replaceExactly(
-      editorSession,
-      errorClassAnchor,
-      errorClass,
-      'add stable persisted snapshot failure type',
-    )
+describe('draw snapshot service', () => {
+  it('parses and serializes a valid draw container', () => {
+    const parsed = parseDrawDocument(createValidJson())
 
-    const oldStoreBlock = `  const store = createTLStore({
-    shapeUtils: [
-      ...defaultShapeUtils,
-      ...registration.shapeUtils,
-    ] as unknown as readonly TLAnyShapeUtilConstructor[],
-    bindingUtils: [...defaultBindingUtils, ...registration.bindingUtils],
-    ...(options.initialSnapshot
-      ? { snapshot: options.initialSnapshot }
-      : {}),
-  })`
+    const serialized = serializeDrawDocument(parsed.content)
 
-    const newStoreBlock = `  const store = createValidatedEditorStore(
-    registration,
-    options.initialSnapshot,
-  )`
+    const reparsed = parseDrawDocument(serialized)
 
-    nextEditorSession = replaceExactly(
-      nextEditorSession,
-      oldStoreBlock,
-      newStoreBlock,
-      'route store construction through persisted snapshot failure boundary',
-    )
+    expect(reparsed.header.format).toBe('hybrid-canvas/draw')
+    expect(reparsed.header.version).toBe(1)
+    expect(reparsed.content).toEqual(parsed.content)
+  })
 
-    const registryAnchor = `export interface EditorSessionRegistry {
-`
-
-    const storeFactory = `function createValidatedEditorStore(
-  registration: ExtensionRegistration,
-  initialSnapshot: TLEditorSnapshot | undefined,
-): TLStore {
-  try {
-    return createTLStore({
-      shapeUtils: [
-        ...defaultShapeUtils,
-        ...registration.shapeUtils,
-      ] as unknown as readonly TLAnyShapeUtilConstructor[],
-      bindingUtils: [...defaultBindingUtils, ...registration.bindingUtils],
-      ...(initialSnapshot
-        ? { snapshot: initialSnapshot }
-        : {}),
+  it('rejects a future file version before snapshot validation', () => {
+    const json = JSON.stringify({
+      header: {
+        format: 'hybrid-canvas/draw',
+        version: 999,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      content: {},
     })
-  } catch {
-    /*
-     * tldraw performs schema migration, record validation and store integrity
-     * checks here. A failed load must never expose a partially created store or
-     * leak library-specific error text across the application boundary.
-     */
-    throw new PersistedSnapshotLoadError()
-  }
-}
 
+    expect(() => parseDrawDocument(json)).toThrow('DRAW_FUTURE_VERSION')
+  })
+
+  it('rejects an incomplete editor snapshot envelope', () => {
+    const json = JSON.stringify({
+      header: createDrawFileHeader('2026-01-01T00:00:00.000Z'),
+      content: {
+        document: {},
+        session: {},
+      },
+    })
+
+    expect(() => parseDrawDocument(json)).toThrow('DRAW_INVALID_SNAPSHOT')
+  })
+
+  it('rejects a snapshot without session state', () => {
+    const json = JSON.stringify({
+      header: createDrawFileHeader('2026-01-01T00:00:00.000Z'),
+      content: {
+        document: {
+          schema: {
+            schemaVersion: 2,
+            sequences: {},
+          },
+          store: {},
+        },
+      },
+    })
+
+    expect(() => parseDrawDocument(json)).toThrow('DRAW_INVALID_SNAPSHOT')
+  })
+
+  it('rejects an invalid format identifier', () => {
+    const json = JSON.stringify({
+      header: {
+        format: 'unknown/draw',
+        version: 1,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      content: {},
+    })
+
+    expect(() => parseDrawDocument(json)).toThrow('DRAW_INVALID_HEADER')
+  })
+
+  it('rejects invalid creation timestamps', () => {
+    const json = JSON.stringify({
+      header: {
+        format: 'hybrid-canvas/draw',
+        version: 1,
+        createdAt: 'not-a-date',
+      },
+      content: {},
+    })
+
+    expect(() => parseDrawDocument(json)).toThrow('DRAW_INVALID_CREATED_AT')
+  })
+
+  it('rejects excessive nesting', () => {
+    let value = {}
+
+    for (let index = 0; index < 140; index += 1) {
+      value = { child: value }
+    }
+
+    const json = JSON.stringify({
+      header: createDrawFileHeader(),
+      content: value,
+    })
+
+    expect(() => parseDrawDocument(json)).toThrow('DRAW_DEPTH_EXCEEDED')
+  })
+})
 `
 
-    nextEditorSession = replaceExactly(
-      nextEditorSession,
-      registryAnchor,
-      storeFactory + registryAnchor,
-      'add validated editor store factory',
-    )
+    const oldLifecycleSnapshotFunction = `function snapshot(documentValue: unknown): TLEditorSnapshot {
+  return {
+    document: documentValue,
+    session: {},
+  } as unknown as TLEditorSnapshot
+}`
 
-    const oldPublicApiFragment = `  type EditorSessionSnapshot,
-  type EditorSessionState,
-} from '../runtime/editor-session'`
+    const newLifecycleSnapshotFunction = `function validSnapshotWire(): TLEditorSnapshot {
+  /*
+   * Lifecycle tests cross the actual file parser but use a mocked editor
+   * session. They must therefore provide a valid persisted snapshot envelope,
+   * without pretending to reimplement live tldraw record validation.
+   */
+  return {
+    document: {
+      schema: {
+        schemaVersion: 2,
+        sequences: {},
+      },
+      store: {
+        'document:document': {
+          id: 'document:document',
+          typeName: 'document',
+          name: 'Untitled',
+          meta: {},
+        },
+      },
+    },
+    session: {},
+  } as TLEditorSnapshot
+}
 
-    const newPublicApiFragment = `  type EditorSessionSnapshot,
-  type EditorSessionState,
-  PersistedSnapshotLoadError,
-} from '../runtime/editor-session'`
+function snapshot(documentValue: unknown): TLEditorSnapshot {
+  /*
+   * These lifecycle tests invoke change listeners explicitly. The snapshot
+   * contents are not interpreted by their mocked editor, so retain a valid
+   * parser fixture instead of injecting invalid pseudo tldraw records.
+   */
+  void documentValue
 
-    const nextApplicationPublicApi = replaceExactly(
-      applicationPublicApi,
-      oldPublicApiFragment,
-      newPublicApiFragment,
-      'export stable persisted snapshot failure type',
+  return validSnapshotWire()
+}`
+
+    const nextDocumentLifecycleTest = replaceExactlyOnce(
+      documentLifecycleTestSource,
+      oldLifecycleSnapshotFunction,
+      newLifecycleSnapshotFunction,
+      'replace fake cross-domain TLEditorSnapshot fixture',
     )
 
     if (!apply) {
-      console.log('P0.1 snapshot failure boundary can be added safely:')
-      console.log('- tldraw schema/migration errors become DRAW_INVALID_SNAPSHOT.')
-      console.log('- No tldraw internal message becomes an application contract.')
-      console.log('- Failed loads cannot return a partially initialized EditorSession.')
+      console.log('P0.1 snapshot wire-envelope validation is safe to apply.')
       console.log('')
-      console.log('Run again with --apply to write the refactor.')
+      console.log('Changes:')
+      console.log('- rejects incomplete { document: {}, session: {} } snapshots;')
+      console.log('- requires document.schema, document.store and session objects;')
+      console.log('- removes the raw parsed as unknown as DrawFileContainer assertion;')
+      console.log('- updates persistence and lifecycle fixtures to valid wire envelopes;')
+      console.log('')
+      console.log('Run again with --apply to write the changes.')
       return
     }
 
     await Promise.all([
-      writeFile(paths.editorSession, nextEditorSession, 'utf8'),
+      writeFile(paths.snapshotService, nextSnapshotService, 'utf8'),
+      writeFile(paths.snapshotServiceTest, nextSnapshotServiceTest, 'utf8'),
       writeFile(
-        paths.applicationPublicApi,
-        nextApplicationPublicApi,
+        paths.documentLifecycleTest,
+        nextDocumentLifecycleTest,
         'utf8',
       ),
     ])
 
-    console.log('Applied stable persisted snapshot failure boundary.')
+    console.log('Applied P0.1 snapshot wire-envelope validation.')
     console.log('')
-    console.log('Required verification:')
-    console.log('  pnpm --filter @hybrid-canvas/canvas typecheck')
+    console.log('Verify:')
+    console.log('  pnpm --filter @hybrid-canvas/file test')
+    console.log('  pnpm --filter @hybrid-canvas/file typecheck')
     console.log('  pnpm --filter @hybrid-canvas/test-cross-domain-contract test')
     console.log('  pnpm typecheck')
     console.log('  pnpm lint')

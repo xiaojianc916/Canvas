@@ -1,14 +1,35 @@
 import { describe, expect, it } from 'vitest'
 
-import { createDrawFileHeader, parseDrawDocument, serializeDrawDocument } from './snapshot-service'
+import {
+  createDrawFileHeader,
+  parseDrawDocument,
+  serializeDrawDocument,
+} from './snapshot-service'
+
+function createValidSnapshotWire() {
+  return {
+    document: {
+      schema: {
+        schemaVersion: 2,
+        sequences: {},
+      },
+      store: {
+        'document:document': {
+          id: 'document:document',
+          typeName: 'document',
+          name: 'Untitled',
+          meta: {},
+        },
+      },
+    },
+    session: {},
+  }
+}
 
 function createValidJson(): string {
   return JSON.stringify({
     header: createDrawFileHeader('2026-01-01T00:00:00.000Z'),
-    content: {
-      document: {},
-      session: {},
-    },
+    content: createValidSnapshotWire(),
   })
 }
 
@@ -21,26 +42,50 @@ describe('draw snapshot service', () => {
     const reparsed = parseDrawDocument(serialized)
 
     expect(reparsed.header.format).toBe('hybrid-canvas/draw')
-
     expect(reparsed.header.version).toBe(1)
-
     expect(reparsed.content).toEqual(parsed.content)
   })
 
-  it('rejects a future file version', () => {
+  it('rejects a future file version before snapshot validation', () => {
     const json = JSON.stringify({
       header: {
         format: 'hybrid-canvas/draw',
         version: 999,
         createdAt: '2026-01-01T00:00:00.000Z',
       },
+      content: {},
+    })
+
+    expect(() => parseDrawDocument(json)).toThrow('DRAW_FUTURE_VERSION')
+  })
+
+  it('rejects an incomplete editor snapshot envelope', () => {
+    const json = JSON.stringify({
+      header: createDrawFileHeader('2026-01-01T00:00:00.000Z'),
       content: {
         document: {},
         session: {},
       },
     })
 
-    expect(() => parseDrawDocument(json)).toThrow('DRAW_FUTURE_VERSION')
+    expect(() => parseDrawDocument(json)).toThrow('DRAW_INVALID_SNAPSHOT')
+  })
+
+  it('rejects a snapshot without session state', () => {
+    const json = JSON.stringify({
+      header: createDrawFileHeader('2026-01-01T00:00:00.000Z'),
+      content: {
+        document: {
+          schema: {
+            schemaVersion: 2,
+            sequences: {},
+          },
+          store: {},
+        },
+      },
+    })
+
+    expect(() => parseDrawDocument(json)).toThrow('DRAW_INVALID_SNAPSHOT')
   })
 
   it('rejects an invalid format identifier', () => {

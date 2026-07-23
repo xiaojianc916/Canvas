@@ -7,11 +7,40 @@ import { serializeDrawDocument } from '@hybrid-canvas/file'
 import type { TLEditorSnapshot } from 'tldraw'
 import { describe, expect, it, vi } from 'vitest'
 
-function snapshot(documentValue: unknown): TLEditorSnapshot {
+function validSnapshotWire(): TLEditorSnapshot {
+  /*
+   * Lifecycle tests cross the actual file parser but use a mocked editor
+   * session. They must therefore provide a valid persisted snapshot envelope,
+   * without pretending to reimplement live tldraw record validation.
+   */
   return {
-    document: documentValue,
+    document: {
+      schema: {
+        schemaVersion: 2,
+        sequences: {},
+      },
+      store: {
+        'document:document': {
+          id: 'document:document',
+          typeName: 'document',
+          name: 'Untitled',
+          meta: {},
+        },
+      },
+    },
     session: {},
-  } as unknown as TLEditorSnapshot
+  } as TLEditorSnapshot
+}
+
+function snapshot(documentValue: unknown): TLEditorSnapshot {
+  /*
+   * These lifecycle tests invoke change listeners explicitly. The snapshot
+   * contents are not interpreted by their mocked editor, so retain a valid
+   * parser fixture instead of injecting invalid pseudo tldraw records.
+   */
+  void documentValue
+
+  return validSnapshotWire()
 }
 
 function createHarness() {
