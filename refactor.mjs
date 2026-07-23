@@ -1,91 +1,183 @@
 #!/usr/bin/env node
 /**
- * Document IPC contract generation refactor.
+ * 完成 document IPC command generation：
  *
- * Rust DTOs are the source of truth.
- * The desktop runtime adapter imports generated TypeScript types.
- *
- * This does not add compatibility aliases and does not restore path-based IPC.
+ * - Rust command 使用 #[specta::specta]
+ * - command error 使用可导出的 IpcError
+ * - tauri-specta 收集实际 document commands
+ * - 生成 commands.documentOpen / documentSaveAs / documentSave / documentClose
+ * - desktop runtime 删除 document command 字符串与手写 invoke 泛型
  */
 
-import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
 
-const exportBindingsPath = resolve(
-  'apps/desktop/src-tauri/src/ipc/export_bindings.rs',
-)
+const documentCommandsPath = 'apps/desktop/src-tauri/src/commands/document.rs'
+const errorPath = 'apps/desktop/src-tauri/src/error.rs'
+const exporterPath = 'apps/desktop/src-tauri/src/ipc/export_bindings.rs'
+const adapterPath =
+  'platforms/desktop-runtime/src/adapters/file/file-system.ts'
 
-const exportBinaryPath = resolve(
-  'apps/desktop/src-tauri/src/bin/export-ipc-bindings.rs',
-)
-
-const fileSystemAdapterPath = resolve(
-  'platforms/desktop-runtime/src/adapters/file/file-system.ts',
-)
-
-async function write(path, content) {
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, content, 'utf8')
+async function rewrite(path, transform) {
+  const source = await readFile(path, 'utf8')
+  await writeFile(path, transform(source), 'utf8')
 }
 
-const exportBindings = `//! Build-time TypeScript binding exporter for document IPC.
-//!
-//! Rust command DTOs are the source of truth. The generated file is consumed by
-//! @hybrid-canvas/desktop-runtime; renderer code must not redefine native DTOs.
+await rewrite(documentCommandsPath, (source) => {
+  let next = source.replace(
+    'use crate::error::{Error, Result};',
+    'use crate::error::{Error, IpcError, Result};',
+  )
 
-use specta_typescript::Typescript;
-use tauri::Wry;
-use tauri_specta::Builder;
+  next = next.replace(
+    'const DEFAULT_DOCUMENT_NAME: &str = "untitled.draw";',
+    `const DEFAULT_DOCUMENT_NAME: &str = "untitled.draw";
 
-use crate::commands::document::{
-    DocumentCloseRequest, DocumentDescriptor, DocumentId, DocumentOpenResponse,
-    DocumentOpenResult, DocumentSaveAsRequest, DocumentSaveAsResult,
-    DocumentSaveRequest,
-};
+type DocumentCommandResult<T> = std::result::Result<T, IpcError>;`,
+  )
 
-const OUTPUT_PATH: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../platforms/desktop-ipc/src/generated/ipc-bindings.ts"
-);
+  next = next.replaceAll(
+    '#[command]\npub ',
+    '#[command]\n#[specta::specta]\npub ',
+  )
 
-/// Exports the document IPC DTO surface consumed by the TypeScript runtime.
-///
-/// This function is intentionally called by the dedicated
-/// \`export-ipc-bindings\` binary, never on desktop application startup.
-pub fn export_document_bindings() {
-    Builder::<Wry>::new()
-        .typ::<DocumentId>()
-        .typ::<DocumentDescriptor>()
-        .typ::<DocumentOpenResult>()
-        .typ::<DocumentOpenResponse>()
-        .typ::<DocumentSaveRequest>()
-        .typ::<DocumentSaveAsRequest>()
-        .typ::<DocumentSaveAsResult>()
-        .typ::<DocumentCloseRequest>()
-        .export(Typescript::default(), OUTPUT_PATH)
-        .expect("failed to export document IPC TypeScript bindings");
+  next = next.replace(
+    `pub async fn document_open(
+    app: AppHandle,
+    documents: State<'_, DocumentRegistry>,
+) -> Result<DocumentOpenResponse> {`,
+    `pub async fn document_open(
+    app: AppHandle,
+    documents: State<'_, DocumentRegistry>,
+) -> DocumentCommandResult<DocumentOpenResponse> {`,
+  )
+
+  next = next.replace(
+    `pub async fn document_save_as(
+    app: AppHandle,
+    documents: State<'_, DocumentRegistry>,
+    request: DocumentSaveAsRequest,
+) -> Result<DocumentSaveAsResult> {`,
+    `pub async fn document_save_as(
+    app: AppHandle,
+    documents: State<'_, DocumentRegistry>,
+    request: DocumentSaveAsRequest,
+) -> DocumentCommandResult<DocumentSaveAsResult> {`,
+  )
+
+  next = next.replace(
+    `pub async fn document_save(
+    documents: State<'_, DocumentRegistry>,
+    request: DocumentSaveRequest,
+) -> Result<()> {`,
+    `pub async fn document_save(
+    documents: State<'_, DocumentRegistry>,
+    request: DocumentSaveRequest,
+) -> DocumentCommandResult<()> {`,
+  )
+
+  next = next.replace(
+    `pub fn document_close(
+    documents: State<'_, DocumentRegistry>,
+    request: DocumentCloseRequest,
+) -> Result<()> {`,
+    `pub fn document_close(
+    documents: State<'_, DocumentRegistry>,
+    request: DocumentCloseRequest,
+) -> DocumentCommandResult<()> {`,
+  )
+
+  return next
+})
+
+await rewrite(errorPath, (source) => {
+  let next = source
+
+  next = next.replace(
+    `impl Error {
+    fn code(&self) -> IpcErrorCode {`,
+    `impl Error {
+    fn to_ipc_error(&self) -> IpcError {
+        IpcError {
+            code: self.code(),
+            message: self.public_message().to_owned(),
+            operation: self.operation(),
+            recoverable: self.recoverable(),
+        }
+    }
+
+    fn code(&self) -> IpcErrorCode {`,
+  )
+
+  next = next.replace(
+    `impl Serialize for Error {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        IpcError {
+            code: self.code(),
+            message: self.public_message().to_owned(),
+            operation: self.operation(),
+            recoverable: self.recoverable(),
+        }
+        .serialize(serializer)
+    }
+}`,
+    `impl From<Error> for IpcError {
+    fn from(error: Error) -> Self {
+        error.to_ipc_error()
+    }
 }
-`
 
-const exportBinary = `//! Regenerates TypeScript DTO bindings from Rust document IPC contracts.
-//!
-//! Usage:
-//! cargo run -p hybrid-canvas-desktop --bin export-ipc-bindings
+impl Serialize for Error {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        self.to_ipc_error().serialize(serializer)
+    }
+}`,
+  )
 
-fn main() {
-    hybrid_canvas_desktop_lib::ipc::export_bindings::export_document_bindings();
-}
-`
+  return next
+})
 
-const fileSystemAdapter = `import { invoke } from '@hybrid-canvas/desktop-ipc'
-import type {
-  DocumentCloseRequest,
-  DocumentDescriptor,
-  DocumentId as NativeDocumentId,
-  DocumentOpenResponse,
-  DocumentSaveAsRequest,
-  DocumentSaveAsResult,
-  DocumentSaveRequest,
+await rewrite(exporterPath, (source) => {
+  let next = source.replace(
+    'use tauri_specta::Builder;',
+    'use tauri_specta::{Builder, ErrorHandlingMode};',
+  )
+
+  next = next.replace(
+    `Builder::<Wry>::new()
+        .typ::<DocumentId>()`,
+    `Builder::<Wry>::new()
+        .error_handling(ErrorHandlingMode::Throw)
+        .commands(tauri_specta::collect_commands![
+            crate::commands::document::document_open,
+            crate::commands::document::document_save_as,
+            crate::commands::document::document_save,
+            crate::commands::document::document_close,
+        ])
+        .typ::<DocumentId>()`,
+  )
+
+  return next
+})
+
+const adapter = `import {
+  IpcInvocationError,
+  isIpcError,
+} from '@hybrid-canvas/desktop-ipc'
+import {
+  commands,
+  type DocumentCloseRequest,
+  type DocumentDescriptor,
+  type DocumentId as NativeDocumentId,
+  type DocumentOpenResponse,
+  type DocumentSaveAsRequest,
+  type DocumentSaveAsResult,
+  type DocumentSaveRequest,
 } from '@hybrid-canvas/desktop-ipc/generated/ipc-bindings'
 
 export type DocumentId = NativeDocumentId
@@ -97,17 +189,8 @@ export interface OpenedDocument {
 }
 
 export interface DocumentFileCommands {
-  /**
-   * Opens one local .draw document through the native picker.
-   *
-   * The renderer never receives the selected filesystem path.
-   */
   readonly open: () => Promise<OpenedDocument | null>
 
-  /**
-   * Creates a new native document session, or moves an existing session through
-   * the native Save As picker. No filesystem path can be supplied.
-   */
   readonly saveAs: (
     content: string,
     options?: {
@@ -116,15 +199,23 @@ export interface DocumentFileCommands {
     },
   ) => Promise<{ readonly id: DocumentId; readonly displayName: string } | null>
 
-  /**
-   * Saves content to a document selected earlier by a native picker.
-   */
   readonly save: (documentId: DocumentId, content: string) => Promise<void>
 
-  /**
-   * Releases the native document session.
-   */
   readonly close: (documentId: DocumentId) => Promise<void>
+}
+
+async function invokeDocumentCommand<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    if (isIpcError(error)) {
+      throw new IpcInvocationError(error)
+    }
+
+    throw error
+  }
 }
 
 function toDocumentDescriptor(
@@ -139,7 +230,8 @@ function toDocumentDescriptor(
 export function createDocumentFileCommands(): DocumentFileCommands {
   return {
     async open() {
-      const response = await invoke<DocumentOpenResponse>('document_open')
+      const response: DocumentOpenResponse =
+        await invokeDocumentCommand(() => commands.documentOpen())
 
       if (!response.document) {
         return null
@@ -159,48 +251,37 @@ export function createDocumentFileCommands(): DocumentFileCommands {
         suggestedName: options?.suggestedName ?? null,
       }
 
-      const response = await invoke<DocumentSaveAsResult>('document_save_as', {
-        request,
-      })
+      const response: DocumentSaveAsResult =
+        await invokeDocumentCommand(() => commands.documentSaveAs(request))
 
       return response.document
         ? toDocumentDescriptor(response.document)
         : null
     },
 
-    save(documentId, content) {
+    async save(documentId, content) {
       const request: DocumentSaveRequest = {
         documentId,
         content,
       }
 
-      return invoke<void>('document_save', { request })
+      await invokeDocumentCommand(() => commands.documentSave(request))
     },
 
-    close(documentId) {
+    async close(documentId) {
       const request: DocumentCloseRequest = {
         documentId,
       }
 
-      return invoke<void>('document_close', { request })
+      await invokeDocumentCommand(() => commands.documentClose(request))
     },
   }
 }
 `
 
-await Promise.all([
-  write(exportBindingsPath, exportBindings),
-  write(exportBinaryPath, exportBinary),
-  write(fileSystemAdapterPath, fileSystemAdapter),
-])
+await writeFile(adapterPath, adapter, 'utf8')
 
-console.log('Document IPC contract generation refactor written:')
-console.log('- Rust Specta DTO exporter')
-console.log('- Dedicated export-ipc-bindings binary')
-console.log('- Desktop adapter now imports generated DTO types')
+console.log('Document IPC command generation refactor written.')
 console.log('')
-console.log('Next commands:')
+console.log('Generate bindings with:')
 console.log('  cargo run -p hybrid-canvas-desktop --bin export-ipc-bindings')
-console.log('  pnpm typecheck')
-console.log('  pnpm test')
-console.log('  cargo test --workspace --all-features')

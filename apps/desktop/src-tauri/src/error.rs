@@ -113,6 +113,15 @@ pub struct IpcError {
 }
 
 impl Error {
+    fn to_ipc_error(&self) -> IpcError {
+        IpcError {
+            code: self.code(),
+            message: self.public_message().to_owned(),
+            operation: self.operation(),
+            recoverable: self.recoverable(),
+        }
+    }
+
     fn code(&self) -> IpcErrorCode {
         match self {
             Self::Validation(_) => IpcErrorCode::Validation,
@@ -188,18 +197,18 @@ impl Error {
     }
 }
 
+impl From<Error> for IpcError {
+    fn from(error: Error) -> Self {
+        error.to_ipc_error()
+    }
+}
+
 impl Serialize for Error {
     fn serialize<S: serde::Serializer>(
         &self,
         serializer: S,
     ) -> std::result::Result<S::Ok, S::Error> {
-        IpcError {
-            code: self.code(),
-            message: self.public_message().to_owned(),
-            operation: self.operation(),
-            recoverable: self.recoverable(),
-        }
-        .serialize(serializer)
+        self.to_ipc_error().serialize(serializer)
     }
 }
 

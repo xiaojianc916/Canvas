@@ -5,7 +5,7 @@
 
 use specta_typescript::Typescript;
 use tauri::Wry;
-use tauri_specta::Builder;
+use tauri_specta::{Builder, ErrorHandlingMode};
 
 use crate::commands::document::{
     DocumentCloseRequest, DocumentDescriptor, DocumentId, DocumentOpenResponse,
@@ -24,6 +24,13 @@ const OUTPUT_PATH: &str = concat!(
 /// `export-ipc-bindings` binary, never on desktop application startup.
 pub fn export_document_bindings() {
     Builder::<Wry>::new()
+        .error_handling(ErrorHandlingMode::Throw)
+        .commands(tauri_specta::collect_commands![
+            crate::commands::document::document_open,
+            crate::commands::document::document_save_as,
+            crate::commands::document::document_save,
+            crate::commands::document::document_close,
+        ])
         .typ::<DocumentId>()
         .typ::<DocumentDescriptor>()
         .typ::<DocumentOpenResult>()

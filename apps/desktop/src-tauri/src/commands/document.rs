@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::{Error, IpcError, Result};
 use hybrid_canvas_file_native::atomic_write;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -12,6 +12,8 @@ use uuid::Uuid;
 const MAX_DOCUMENT_BYTES: u64 = 32 * 1024 * 1024;
 const DRAW_EXTENSION: &str = "draw";
 const DEFAULT_DOCUMENT_NAME: &str = "untitled.draw";
+
+type DocumentCommandResult<T> = std::result::Result<T, IpcError>;
 
 /// Opaque document identity exposed to the renderer.
 ///
@@ -148,10 +150,11 @@ pub struct DocumentCloseRequest {
 ///
 /// No caller-controlled path is accepted.
 #[command]
+#[specta::specta]
 pub async fn document_open(
     app: AppHandle,
     documents: State<'_, DocumentRegistry>,
-) -> Result<DocumentOpenResponse> {
+) -> DocumentCommandResult<DocumentOpenResponse> {
     let selected = app
         .dialog()
         .file()
@@ -180,11 +183,12 @@ pub async fn document_open(
 /// Creates a new document session or moves an existing session through a native
 /// Save As dialog. No filesystem path is accepted from the renderer.
 #[command]
+#[specta::specta]
 pub async fn document_save_as(
     app: AppHandle,
     documents: State<'_, DocumentRegistry>,
     request: DocumentSaveAsRequest,
-) -> Result<DocumentSaveAsResult> {
+) -> DocumentCommandResult<DocumentSaveAsResult> {
     ensure_document_size(request.content.len() as u64)?;
 
     if let Some(document_id) = request.document_id {
@@ -231,10 +235,11 @@ pub async fn document_save_as(
 ///
 /// The renderer supplies an opaque document ID, never a local path.
 #[command]
+#[specta::specta]
 pub async fn document_save(
     documents: State<'_, DocumentRegistry>,
     request: DocumentSaveRequest,
-) -> Result<()> {
+) -> DocumentCommandResult<()> {
     ensure_document_size(request.content.len() as u64)?;
 
     let path = documents.path(request.document_id)?;
@@ -245,10 +250,11 @@ pub async fn document_save(
 
 /// Ends the native document session and releases its private file handle.
 #[command]
+#[specta::specta]
 pub fn document_close(
     documents: State<'_, DocumentRegistry>,
     request: DocumentCloseRequest,
-) -> Result<()> {
+) -> DocumentCommandResult<()> {
     documents.remove(request.document_id)
 }
 
