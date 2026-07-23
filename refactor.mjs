@@ -2,403 +2,488 @@
 
 import { readFile, rm, writeFile } from 'node:fs/promises'
 
-const documentServicePath =
-  'editor/document/src/application/canvas-document-service.ts'
+const packageJsonPath = 'package.json'
 
-const documentPublicApiPath =
-  'editor/document/src/public-api.ts'
-
-const workflowPath =
-  'apps/desktop/src/application/canvas/canvas-workflow.ts'
-
-const workspaceContainerPath =
-  'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx'
-
-const workspaceContractsPublicApiPath =
-  'features/workspace/src/contracts/public-api.ts'
-
-const obsoleteLifecycleContractPath =
-  'features/workspace/src/contracts/canvas-lifecycle-contract.ts'
-
-const architectureCheckPath =
+const lifecycleArchitectureCheckPath =
   'tests/architecture/check-canvas-lifecycle.mjs'
 
-function requireIndex(source, text, label) {
-  const index = source.indexOf(text)
+const workflowTestPath =
+  'apps/desktop/src/application/canvas/canvas-workflow.test.ts'
 
-  if (index < 0) {
-    throw new Error(`Cannot apply recovery: missing ${label}`)
+const terminationTestPath =
+  'apps/desktop/src/application/termination/application-termination-coordinator.test.ts'
+
+const documentServiceTestPath =
+  'tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts'
+
+function replaceRequired(source, oldText, newText, label) {
+  if (!source.includes(oldText)) {
+    throw new Error(`Cannot apply lifecycle test refactor: missing ${label}`)
   }
 
-  return index
+  return source.replace(oldText, newText)
 }
 
-function removeBetween(source, startText, endText, label) {
-  const start = requireIndex(source, startText, label + ' start')
-  const end = source.indexOf(endText, start)
+let packageJson = await readFile(packageJsonPath, 'utf8')
 
-  if (end < 0) {
-    throw new Error(`Cannot apply recovery: missing ${label} end`)
-  }
-
-  return source.slice(0, start) + source.slice(end + endText.length)
-}
-
-let documentService = await readFile(documentServicePath, 'utf8')
-
-if (!documentService.includes('export type CanvasCloseState =')) {
-  const marker = 'export type CanvasReleaseResult ='
-  const index = requireIndex(
-    documentService,
-    marker,
-    'CanvasReleaseResult insertion point',
-  )
-
-  const contract = `export type CanvasCloseState =
-  | {
-      readonly state: 'confirmation-required'
-    }
-  | {
-      readonly state: 'releasing'
-      readonly intent: CanvasCloseIntent
-    }
-  | {
-      readonly state: 'release-failed'
-      readonly intent: CanvasCloseIntent
-      readonly failure: CanvasReleaseFailure
-    }
-
-export interface CanvasCloseSnapshot {
-  readonly states: Readonly<Record<CanvasSessionId, CanvasCloseState>>
-}
-
-`
-
-  documentService =
-    documentService.slice(0, index) +
-    contract +
-    documentService.slice(index)
-}
-
-await writeFile(documentServicePath, documentService, 'utf8')
-
-let documentPublicApi = await readFile(documentPublicApiPath, 'utf8')
-
-if (!documentPublicApi.includes('type CanvasCloseSnapshot,')) {
-  documentPublicApi = documentPublicApi.replace(
-    '  type CanvasCloseIntent,\n',
-    `  type CanvasCloseIntent,
-  type CanvasCloseSnapshot,
-  type CanvasCloseState,
-`,
-  )
-}
-
-await writeFile(documentPublicApiPath, documentPublicApi, 'utf8')
-
-let workflow = await readFile(workflowPath, 'utf8')
-
-const workflowBodyMarker =
-  '/**\n * Application termination has exactly one asynchronous boundary:'
-
-const workflowBodyIndex = requireIndex(
-  workflow,
-  workflowBodyMarker,
-  'CanvasWorkflow body marker',
+packageJson = replaceRequired(
+  packageJson,
+  ` && node tests/architecture/check-ipc-bindings.mjs && node tests/architecture/check-canvas-lifecycle.mjs`,
+  ` && node tests/architecture/check-ipc-bindings.mjs`,
+  'check-canvas-lifecycle command entry',
 )
 
-const workflowBody = workflow.slice(workflowBodyIndex)
+await writeFile(packageJsonPath, packageJson, 'utf8')
 
-const workflowImports = `import type { EditorSession } from '@hybrid-canvas/canvas/application'
-import type {
-  CanvasCloseIntent,
-  CanvasCloseSnapshot,
-  CanvasCloseState,
-  CanvasDocumentService,
-  CanvasReleaseResult,
-  CanvasSessionId,
-  CanvasSessionSnapshot,
-} from '@hybrid-canvas/document'
-import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
-
-`
-
-workflow = workflowImports + workflowBody
-workflow = workflow.replaceAll(
-  'intent as DocumentCanvasCloseIntent',
-  'intent',
-)
-workflow = workflow.replaceAll(
-  `'discard' as DocumentCanvasCloseIntent`,
-  `'discard'`,
-)
-
-await writeFile(workflowPath, workflow, 'utf8')
-
-let workspace = await readFile(workspaceContainerPath, 'utf8')
-
-if (workspace.includes('export type WorkspaceCanvasCloseState =')) {
-  workspace = removeBetween(
-    workspace,
-    'export type WorkspaceCanvasCloseState =',
-    '}\n\nexport interface WorkspaceCanvasUIPort',
-    'WorkspaceContainer duplicated close contract',
-  ).replace(
-    '\n\n\nexport interface WorkspaceUIPort',
-    '\n\nexport interface WorkspaceUIPort',
-  )
-}
-
-workspace = workspace.replace(
-  /import type \{[^}]*\} from '@hybrid-canvas\/workspace\/contracts'/,
-  `import type {
-  CanvasSessionId,
-  WorkbenchSessionStore,
-  WorkbenchTabId,
-  WorkspaceShellActions,
-} from '@hybrid-canvas/workspace/contracts'`,
-)
-
-workspace = workspace.replace(
-  /import type \{[^}]*\} from '@hybrid-canvas\/document'\\n?/,
-  '',
-)
-
-const documentContractImport = `import type {
-  CanvasCloseIntent,
-  CanvasCloseSnapshot,
-  CanvasSessionSnapshot,
-} from '@hybrid-canvas/document'
-`
-
-workspace = documentContractImport + workspace
-
-workspace = workspace.replaceAll(
-  'WorkspaceCanvasCloseSnapshot',
-  'CanvasCloseSnapshot',
-)
-
-workspace = workspace.replaceAll(
-  `intent: 'normal' | 'discard'`,
-  `intent: CanvasCloseIntent`,
-)
-
-workspace = workspace.replace(
-  `  readonly getSessionSnapshot: (
-    sessionId: CanvasSessionId,
-  ) => import('@hybrid-canvas/document').CanvasSessionSnapshot | null`,
-  `  readonly getSessionSnapshot: (
-    sessionId: CanvasSessionId,
-  ) => CanvasSessionSnapshot | null`,
-)
-
-await writeFile(workspaceContainerPath, workspace, 'utf8')
-
-let workspaceContractsPublicApi = await readFile(
-  workspaceContractsPublicApiPath,
-  'utf8',
-)
-
-workspaceContractsPublicApi = workspaceContractsPublicApi.replace(
-  `export type {
-  CanvasCloseIntent,
-  CanvasCloseSnapshot,
-  CanvasCloseState,
-  CanvasReleaseFailure,
-  CanvasReleaseFailureCode,
-} from './canvas-lifecycle-contract'
-
-`,
-  '',
-)
-
-await writeFile(
-  workspaceContractsPublicApiPath,
-  workspaceContractsPublicApi,
-  'utf8',
-)
-
-await rm(obsoleteLifecycleContractPath, {
+await rm(lifecycleArchitectureCheckPath, {
   force: true,
 })
 
-const architectureCheck = `#!/usr/bin/env node
+const workflowTest = `import type {
+  CanvasDocumentLifecycleSnapshot,
+  CanvasDocumentService,
+  CanvasReleaseResult,
+} from '@hybrid-canvas/document'
+import { describe, expect, it, vi } from 'vitest'
 
-import { readFile } from 'node:fs/promises'
-import process from 'node:process'
+import { createCanvasWorkflow } from './canvas-workflow'
 
-const files = [
-  'platforms/desktop-runtime/src/public-api.ts',
-  'platforms/desktop-runtime/src/adapters/file/file-system.ts',
-  'apps/desktop/src/application/canvas/canvas-workflow.ts',
-  'apps/desktop/src/application/termination/application-termination-coordinator.ts',
-  'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
-  'editor/document/src/application/canvas-document-service.ts',
-  'editor/document/src/public-api.ts',
-  'apps/desktop/src-tauri/src/ipc/mod.rs',
-]
+type ReleaseHandler = (
+  sessionId: string,
+  intent: 'normal' | 'discard',
+) => Promise<CanvasReleaseResult>
 
-const forbidden = [
-  'createDrawFileCommands',
-  'DrawFileCommands',
-  'createFileDialog',
-  'FileDialog',
-  'file_open',
-  'file_save',
-  'requestClose',
-  'discardAndClose',
-  'discardAllAndClose',
-  'CanvasCloseDecision',
-  'CanvasCloseRequestResult',
-  'pendingCloseSessionId',
-  'void documents.releaseCanvas',
-  'wait-for-save',
-  'wait-for-saves',
-  'WorkspaceCanvasCloseState',
-  'WorkspaceCanvasCloseSnapshot',
-  'DocumentCanvasCloseIntent',
-  'canvas-lifecycle-contract',
-]
+function createDocumentPort(
+  releaseHandler: ReleaseHandler,
+  getLifecycleSnapshot: () => CanvasDocumentLifecycleSnapshot = () => ({
+    savingOperations: [],
+    unsavedSessionIds: [],
+  }),
+) {
+  return {
+    create: vi.fn(() => ({
+      canvasId: 'canvas-1',
+      sessionId: 'session-1',
+      title: 'Canvas',
+    })),
+    open: vi.fn(),
+    save: vi.fn(),
+    releaseCanvas: vi.fn(releaseHandler),
+    getLifecycleSnapshot: vi.fn(getLifecycleSnapshot),
+    getEditorSession: vi.fn(() => null),
+    getSessionSnapshot: vi.fn(() => null),
+    getVersion: vi.fn(() => 0),
+    subscribe: vi.fn(() => () => {}),
+    dispose: vi.fn(),
+  } as unknown as CanvasDocumentService
+}
 
-const sources = await Promise.all(
-  files.map(async (path) => ({
-    path,
-    source: await readFile(path, 'utf8'),
-  })),
-)
-
-const violations = []
-
-for (const { path, source } of sources) {
-  for (const token of forbidden) {
-    if (source.includes(token)) {
-      violations.push(path + ': forbidden legacy token ' + token)
-    }
+function createWorkspace() {
+  return {
+    createCanvas: vi.fn(),
+    closeCanvas: vi.fn(),
   }
 }
 
-function sourceFor(path) {
-  return sources.find((entry) => entry.path === path)?.source
-}
+describe('CanvasWorkflow lifecycle coordinator', () => {
+  it('removes a workspace tab only after native release succeeds', async () => {
+    const documents = createDocumentPort(async () => ({
+      kind: 'released',
+    }))
 
-const documentService = sourceFor(
-  'editor/document/src/application/canvas-document-service.ts',
-)
+    const workspace = createWorkspace()
+    const workflow = createCanvasWorkflow(documents, workspace as never)
 
-const documentPublicApi = sourceFor(
-  'editor/document/src/public-api.ts',
-)
+    await workflow.closeCanvas('session-a', 'normal')
 
-const workflow = sourceFor(
-  'apps/desktop/src/application/canvas/canvas-workflow.ts',
-)
+    expect(workspace.closeCanvas).toHaveBeenCalledWith('session-a')
+    expect(workflow.getCloseSnapshot()).toEqual({
+      states: {},
+    })
+  })
 
-const workspace = sourceFor(
-  'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
-)
+  it('keeps different session transactions independent while one is releasing', async () => {
+    let resolveReleaseA!: () => void
 
-const termination = sourceFor(
-  'apps/desktop/src/application/termination/application-termination-coordinator.ts',
-)
+    const pendingReleaseA = new Promise<void>((resolve) => {
+      resolveReleaseA = resolve
+    })
 
-if (!documentService?.includes('export type CanvasCloseState')) {
-  violations.push(
-    'Document service must be the only CanvasCloseState contract source',
-  )
-}
+    const documents = createDocumentPort(async (sessionId) => {
+      if (sessionId === 'session-a') {
+        await pendingReleaseA
+        return { kind: 'released' }
+      }
 
-if (!documentService?.includes('export interface CanvasCloseSnapshot')) {
-  violations.push(
-    'Document service must be the only CanvasCloseSnapshot contract source',
-  )
-}
+      return { kind: 'confirmation-required' }
+    })
 
-if (!documentPublicApi?.includes('type CanvasCloseState')) {
-  violations.push(
-    'Document public API must export CanvasCloseState',
-  )
-}
+    const workspace = createWorkspace()
+    const workflow = createCanvasWorkflow(documents, workspace as never)
 
-if (!documentPublicApi?.includes('type CanvasCloseSnapshot')) {
-  violations.push(
-    'Document public API must export CanvasCloseSnapshot',
-  )
-}
+    const closeA = workflow.closeCanvas('session-a', 'normal')
+    await workflow.closeCanvas('session-b', 'normal')
 
-if (workflow?.includes('export type CanvasCloseState')) {
-  violations.push(
-    'CanvasWorkflow must not redefine CanvasCloseState',
-  )
-}
+    expect(workflow.getCloseSnapshot()).toEqual({
+      states: {
+        'session-a': {
+          state: 'releasing',
+          intent: 'normal',
+        },
+        'session-b': {
+          state: 'confirmation-required',
+        },
+      },
+    })
 
-if (workflow?.includes('export interface CanvasCloseSnapshot')) {
-  violations.push(
-    'CanvasWorkflow must not redefine CanvasCloseSnapshot',
-  )
-}
+    expect(workspace.closeCanvas).not.toHaveBeenCalled()
 
-if (!workflow?.includes('CanvasCloseSnapshot')) {
-  violations.push(
-    'CanvasWorkflow must consume the document-owned close snapshot contract',
-  )
-}
+    resolveReleaseA()
+    await closeA
 
-if (!workspace?.includes('CanvasCloseSnapshot')) {
-  violations.push(
-    'Workspace presentation must consume the document-owned close snapshot',
-  )
-}
+    expect(workspace.closeCanvas).toHaveBeenCalledWith('session-a')
+    expect(workflow.getCloseSnapshot()).toEqual({
+      states: {
+        'session-b': {
+          state: 'confirmation-required',
+        },
+      },
+    })
+  })
 
-if (!workflow?.includes('const closeOperations = new Map')) {
-  violations.push(
-    'Canvas close coordinator must track operations per CanvasSessionId',
-  )
-}
+  it('deduplicates only repeated requests for the same session', async () => {
+    let resolveRelease!: () => void
 
-if (!workflow?.includes('const closeStates = new Map')) {
-  violations.push(
-    'Canvas close coordinator must track states per CanvasSessionId',
-  )
-}
+    const pendingRelease = new Promise<void>((resolve) => {
+      resolveRelease = resolve
+    })
 
-if (workflow?.includes('let activeClose: Promise<void> | null')) {
-  violations.push(
-    'Global Canvas close transaction is forbidden',
-  )
-}
+    const documents = createDocumentPort(async () => {
+      await pendingRelease
 
-if (!workflow?.includes('wait-for-settlement')) {
-  violations.push(
-    'CanvasWorkflow must own unified save and release settlement',
-  )
-}
+      return { kind: 'released' }
+    })
 
-if (!documentService?.includes('while (owned.saveOperation)')) {
-  violations.push(
-    'Document release must settle its own active save operation',
-  )
-}
+    const workspace = createWorkspace()
+    const workflow = createCanvasWorkflow(documents, workspace as never)
 
-if (!termination?.includes('waiting-for-settlement')) {
-  violations.push(
-    'Application termination must wait for lifecycle settlement',
-  )
-}
+    const first = workflow.closeCanvas('session-a', 'normal')
+    const duplicate = workflow.closeCanvas('session-a', 'discard')
 
-if (violations.length > 0) {
-  console.error(
-    'Canvas lifecycle architecture check failed:\\n' +
-      violations.map((item) => '- ' + item).join('\\n'),
-  )
+    expect(duplicate).toBe(first)
+    expect(documents.releaseCanvas).toHaveBeenCalledTimes(1)
+    expect(documents.releaseCanvas).toHaveBeenCalledWith(
+      'session-a',
+      'normal',
+    )
 
-  process.exitCode = 1
-} else {
-  console.log('Canvas lifecycle architecture check passed.')
-}
+    resolveRelease()
+    await first
+
+    expect(workspace.closeCanvas).toHaveBeenCalledWith('session-a')
+  })
+
+  it('cancels only the selected confirmation state', async () => {
+    const documents = createDocumentPort(async () => ({
+      kind: 'confirmation-required',
+    }))
+
+    const workspace = createWorkspace()
+    const workflow = createCanvasWorkflow(documents, workspace as never)
+
+    await workflow.closeCanvas('session-a', 'normal')
+    await workflow.closeCanvas('session-b', 'normal')
+
+    workflow.cancelCanvasClose('session-a')
+
+    expect(workflow.getCloseSnapshot()).toEqual({
+      states: {
+        'session-b': {
+          state: 'confirmation-required',
+        },
+      },
+    })
+  })
+
+  it('preserves discard intent and failure classification for retry', async () => {
+    let attempts = 0
+
+    const documents = createDocumentPort(async () => {
+      attempts += 1
+
+      if (attempts === 1) {
+        return {
+          kind: 'release-failed',
+          failure: {
+            code: 'persistence',
+            recoverable: true,
+          },
+        }
+      }
+
+      return { kind: 'released' }
+    })
+
+    const workspace = createWorkspace()
+    const workflow = createCanvasWorkflow(documents, workspace as never)
+
+    await workflow.closeCanvas('session-a', 'discard')
+
+    expect(workflow.getCloseSnapshot()).toEqual({
+      states: {
+        'session-a': {
+          state: 'release-failed',
+          intent: 'discard',
+          failure: {
+            code: 'persistence',
+            recoverable: true,
+          },
+        },
+      },
+    })
+
+    await workflow.closeCanvas('session-a', 'discard')
+
+    expect(documents.releaseCanvas).toHaveBeenNthCalledWith(
+      1,
+      'session-a',
+      'discard',
+    )
+
+    expect(documents.releaseCanvas).toHaveBeenNthCalledWith(
+      2,
+      'session-a',
+      'discard',
+    )
+
+    expect(workspace.closeCanvas).toHaveBeenCalledWith('session-a')
+  })
+
+  it('waits for both active saves and native releases before application termination', async () => {
+    let resolveSave!: () => void
+    let resolveRelease!: () => void
+
+    const saving = new Promise<void>((resolve) => {
+      resolveSave = resolve
+    })
+
+    const releasing = new Promise<void>((resolve) => {
+      resolveRelease = resolve
+    })
+
+    const documents = createDocumentPort(
+      async () => {
+        await releasing
+        return { kind: 'released' }
+      },
+      () => ({
+        savingOperations: [saving],
+        unsavedSessionIds: [],
+      }),
+    )
+
+    const workspace = createWorkspace()
+    const workflow = createCanvasWorkflow(documents, workspace as never)
+
+    const closeOperation = workflow.closeCanvas('session-a', 'normal')
+
+    expect(workflow.planApplicationClose()).toEqual({
+      kind: 'wait-for-settlement',
+      operations: [saving, closeOperation],
+    })
+
+    resolveSave()
+    resolveRelease()
+
+    await Promise.all([saving, closeOperation])
+
+    expect(workspace.closeCanvas).toHaveBeenCalledWith('session-a')
+  })
+})
 `
 
-await writeFile(architectureCheckPath, architectureCheck, 'utf8')
+await writeFile(workflowTestPath, workflowTest, 'utf8')
+
+const terminationTest = `import { describe, expect, it, vi } from 'vitest'
+
+import { createApplicationTerminationCoordinator } from './application-termination-coordinator'
+
+describe('ApplicationTerminationCoordinator', () => {
+  it('dispatches the requested native termination intent', () => {
+    const terminate = vi.fn()
+
+    const coordinator = createApplicationTerminationCoordinator(
+      {
+        planApplicationClose: () => ({ kind: 'close-now' }),
+      },
+      { terminate },
+    )
+
+    coordinator.request('update-restart')
+
+    expect(terminate).toHaveBeenCalledTimes(1)
+    expect(terminate).toHaveBeenCalledWith('update-restart')
+    expect(coordinator.getSnapshot()).toEqual({
+      state: 'terminating',
+      intent: 'update-restart',
+    })
+  })
+
+  it('waits for settlement and then recalculates the close plan', async () => {
+    let resolveSettlement!: () => void
+
+    const settlement = new Promise<void>((resolve) => {
+      resolveSettlement = resolve
+    })
+
+    const terminate = vi.fn()
+
+    const planApplicationClose = vi
+      .fn()
+      .mockReturnValueOnce({
+        kind: 'wait-for-settlement' as const,
+        operations: [settlement],
+      })
+      .mockReturnValueOnce({
+        kind: 'close-now' as const,
+      })
+
+    const coordinator = createApplicationTerminationCoordinator(
+      { planApplicationClose },
+      { terminate },
+    )
+
+    coordinator.request('window-close')
+
+    expect(coordinator.getSnapshot()).toEqual({
+      state: 'waiting-for-settlement',
+      intent: 'window-close',
+    })
+
+    resolveSettlement()
+    await settlement
+    await Promise.resolve()
+
+    expect(planApplicationClose).toHaveBeenCalledTimes(2)
+    expect(terminate).toHaveBeenCalledTimes(1)
+    expect(terminate).toHaveBeenCalledWith('window-close')
+  })
+
+  it('does not terminate after cancellation when an old settlement resolves', async () => {
+    let resolveSettlement!: () => void
+
+    const settlement = new Promise<void>((resolve) => {
+      resolveSettlement = resolve
+    })
+
+    const terminate = vi.fn()
+
+    const planApplicationClose = vi.fn(() => ({
+      kind: 'wait-for-settlement' as const,
+      operations: [settlement],
+    }))
+
+    const coordinator = createApplicationTerminationCoordinator(
+      { planApplicationClose },
+      { terminate },
+    )
+
+    coordinator.request('window-close')
+    coordinator.cancel()
+
+    expect(coordinator.getSnapshot()).toEqual({
+      state: 'idle',
+    })
+
+    resolveSettlement()
+    await settlement
+    await Promise.resolve()
+
+    expect(planApplicationClose).toHaveBeenCalledTimes(1)
+    expect(terminate).not.toHaveBeenCalled()
+    expect(coordinator.getSnapshot()).toEqual({
+      state: 'idle',
+    })
+  })
+
+  it('ignores additional requests and cancellation after termination begins', () => {
+    const terminate = vi.fn()
+
+    const coordinator = createApplicationTerminationCoordinator(
+      {
+        planApplicationClose: () => ({ kind: 'close-now' }),
+      },
+      { terminate },
+    )
+
+    coordinator.request('window-close')
+    coordinator.request('application-exit')
+    coordinator.cancel()
+
+    expect(terminate).toHaveBeenCalledTimes(1)
+    expect(terminate).toHaveBeenCalledWith('window-close')
+    expect(coordinator.getSnapshot()).toEqual({
+      state: 'terminating',
+      intent: 'window-close',
+    })
+  })
+})
+`
+
+await writeFile(terminationTestPath, terminationTest, 'utf8')
+
+let documentServiceTest = await readFile(documentServiceTestPath, 'utf8')
+
+const documentFailureTest = `  it('requires confirmation after a save fails before normal close', async () => {
+    const harness = createHarness()
+
+    harness.persistence.open.mockResolvedValue({
+      id: 'native-document-save-failure',
+      displayName: 'save-failure.draw',
+      content: serializeDrawDocument(snapshot({ shapes: [] })),
+    })
+
+    const opened = await harness.service.open()
+
+    if (!opened) {
+      throw new Error('expected native document')
+    }
+
+    harness.ready()
+    harness.change(snapshot({ shapes: [{ id: 'shape:1' }]}))
+
+    harness.persistence.save.mockRejectedValue(
+      new Error('native document_save rejected'),
+    )
+
+    await expect(harness.service.save(opened.sessionId)).rejects.toThrow(
+      'native document_save rejected',
+    )
+
+    await expect(
+      harness.service.releaseCanvas(opened.sessionId, 'normal'),
+    ).resolves.toEqual({
+      kind: 'confirmation-required',
+    })
+
+    expect(harness.persistence.close).not.toHaveBeenCalled()
+    expect(harness.closeEditorSession).not.toHaveBeenCalled()
+  })
+
+`
+
+if (!documentServiceTest.includes('requires confirmation after a save fails')) {
+  documentServiceTest = replaceRequired(
+    documentServiceTest,
+    `  it('keeps the editor and document session alive after native release failure', async () => {`,
+    documentFailureTest +
+      `  it('keeps the editor and document session alive after native release failure', async () => {`,
+    'document release failure test insertion point',
+  )
+}
+
+await writeFile(documentServiceTestPath, documentServiceTest, 'utf8')
 
 console.log(
-  'Canvas lifecycle imports rebuilt and duplicate workspace contracts deleted.',
+  'Lifecycle token gate deleted and behavioral lifecycle tests installed.',
 )

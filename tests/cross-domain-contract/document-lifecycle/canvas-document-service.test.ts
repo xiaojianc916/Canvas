@@ -237,6 +237,42 @@ describe('Canvas document native-release contract', () => {
     )
   })
 
+  it('requires confirmation after a save fails before normal close', async () => {
+    const harness = createHarness()
+
+    harness.persistence.open.mockResolvedValue({
+      id: 'native-document-save-failure',
+      displayName: 'save-failure.draw',
+      content: serializeDrawDocument(snapshot({ shapes: [] })),
+    })
+
+    const opened = await harness.service.open()
+
+    if (!opened) {
+      throw new Error('expected native document')
+    }
+
+    harness.ready()
+    harness.change(snapshot({ shapes: [{ id: 'shape:1' }]}))
+
+    harness.persistence.save.mockRejectedValue(
+      new Error('native document_save rejected'),
+    )
+
+    await expect(harness.service.save(opened.sessionId)).rejects.toThrow(
+      'native document_save rejected',
+    )
+
+    await expect(
+      harness.service.releaseCanvas(opened.sessionId, 'normal'),
+    ).resolves.toEqual({
+      kind: 'confirmation-required',
+    })
+
+    expect(harness.persistence.close).not.toHaveBeenCalled()
+    expect(harness.closeEditorSession).not.toHaveBeenCalled()
+  })
+
   it('keeps the editor and document session alive after native release failure', async () => {
     const harness = createHarness()
 

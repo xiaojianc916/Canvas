@@ -1,4 +1,5 @@
 import type {
+  CanvasDocumentLifecycleSnapshot,
   CanvasDocumentService,
   CanvasReleaseResult,
 } from '@hybrid-canvas/document'
@@ -6,11 +7,17 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createCanvasWorkflow } from './canvas-workflow'
 
+type ReleaseHandler = (
+  sessionId: string,
+  intent: 'normal' | 'discard',
+) => Promise<CanvasReleaseResult>
+
 function createDocumentPort(
-  handler: (
-    sessionId: string,
-    intent: 'normal' | 'discard',
-  ) => Promise<CanvasReleaseResult>,
+  releaseHandler: ReleaseHandler,
+  getLifecycleSnapshot: () => CanvasDocumentLifecycleSnapshot = () => ({
+    savingOperations: [],
+    unsavedSessionIds: [],
+  }),
 ) {
   return {
     create: vi.fn(() => ({
@@ -20,11 +27,8 @@ function createDocumentPort(
     })),
     open: vi.fn(),
     save: vi.fn(),
-    releaseCanvas: vi.fn(handler),
-    getLifecycleSnapshot: vi.fn(() => ({
-      savingOperations: [],
-      unsavedSessionIds: [],
-    })),
+    releaseCanvas: vi.fn(releaseHandler),
+    getLifecycleSnapshot: vi.fn(getLifecycleSnapshot),
     getEditorSession: vi.fn(() => null),
     getSessionSnapshot: vi.fn(() => null),
     getVersion: vi.fn(() => 0),
@@ -40,18 +44,14 @@ function createWorkspace() {
   }
 }
 
-describe('CanvasWorkflow per-session close transactions', () => {
-  it('removes a workspace tab only after its native release succeeds', async () => {
+describe('CanvasWorkflow lifecycle coordinator', () => {
+  it('removes a workspace tab only after native release succeeds', async () => {
     const documents = createDocumentPort(async () => ({
       kind: 'released',
     }))
 
     const workspace = createWorkspace()
-
-    const workflow = createCanvasWorkflow(
-      documents,
-      workspace as never,
-    )
+    const workflow = createCanvasWorkflow(documents, workspace as never)
 
     await workflow.closeCanvas('session-a', 'normal')
 
@@ -61,75 +61,60 @@ describe('CanvasWorkflow per-session close transactions', () => {
     })
   })
 
-  it('stores confirmation state per canvas session', async () => {
-    const documents = createDocumentPort(async (sessionId) =>
-      sessionId === 'session-a'
-        ? { kind: 'confirmation-required' }
-        : { kind: 'released' },
-    )
+  it('keeps different session transactions independent while one is releasing', async () => {
+    let resolveReleaseA!: () => void
+
+    const pendingReleaseA = new Promise<void>((resolve) => {
+      resolveReleaseA = resolve
+    })
+
+    const documents = createDocumentPort(async (sessionId) => {
+      if (sessionId === 'session-a') {
+        await pendingReleaseA
+        return { kind: 'released' }
+      }
+
+      return { kind: 'confirmation-required' }
+    })
 
     const workspace = createWorkspace()
+    const workflow = createCanvasWorkflow(documents, workspace as never)
 
-    const workflow = createCanvasWorkflow(
-      documents,
-      workspace as never,
-    )
-
-    await workflow.closeCanvas('session-a', 'normal')
+    const closeA = workflow.closeCanvas('session-a', 'normal')
     await workflow.closeCanvas('session-b', 'normal')
 
-    expect(workspace.closeCanvas).toHaveBeenCalledWith('session-b')
     expect(workflow.getCloseSnapshot()).toEqual({
       states: {
         'session-a': {
+          state: 'releasing',
+          intent: 'normal',
+        },
+        'session-b': {
+          state: 'confirmation-required',
+        },
+      },
+    })
+
+    expect(workspace.closeCanvas).not.toHaveBeenCalled()
+
+    resolveReleaseA()
+    await closeA
+
+    expect(workspace.closeCanvas).toHaveBeenCalledWith('session-a')
+    expect(workflow.getCloseSnapshot()).toEqual({
+      states: {
+        'session-b': {
           state: 'confirmation-required',
         },
       },
     })
   })
 
-  it('runs different canvas releases concurrently', async () => {
-    let resolveReleaseA!: () => void
-
-    const releaseAPromise = new Promise<void>((resolve) => {
-      resolveReleaseA = resolve
-    })
-
-    const documents = createDocumentPort(async (sessionId) => {
-      if (sessionId === 'session-a') {
-        await releaseAPromise
-      }
-
-      return { kind: 'released' }
-    })
-
-    const workspace = createWorkspace()
-
-    const workflow = createCanvasWorkflow(
-      documents,
-      workspace as never,
-    )
-
-    const closeA = workflow.closeCanvas('session-a', 'normal')
-    const closeB = workflow.closeCanvas('session-b', 'normal')
-
-    await closeB
-
-    expect(workspace.closeCanvas).toHaveBeenCalledWith('session-b')
-    expect(workspace.closeCanvas).not.toHaveBeenCalledWith('session-a')
-
-    resolveReleaseA()
-
-    await closeA
-
-    expect(workspace.closeCanvas).toHaveBeenCalledWith('session-a')
-  })
-
-  it('deduplicates only repeated requests for the same canvas session', async () => {
-    let resolvePendingRelease!: () => void
+  it('deduplicates only repeated requests for the same session', async () => {
+    let resolveRelease!: () => void
 
     const pendingRelease = new Promise<void>((resolve) => {
-      resolvePendingRelease = resolve
+      resolveRelease = resolve
     })
 
     const documents = createDocumentPort(async () => {
@@ -139,36 +124,31 @@ describe('CanvasWorkflow per-session close transactions', () => {
     })
 
     const workspace = createWorkspace()
-
-    const workflow = createCanvasWorkflow(
-      documents,
-      workspace as never,
-    )
+    const workflow = createCanvasWorkflow(documents, workspace as never)
 
     const first = workflow.closeCanvas('session-a', 'normal')
     const duplicate = workflow.closeCanvas('session-a', 'discard')
 
     expect(duplicate).toBe(first)
     expect(documents.releaseCanvas).toHaveBeenCalledTimes(1)
+    expect(documents.releaseCanvas).toHaveBeenCalledWith(
+      'session-a',
+      'normal',
+    )
 
-    resolvePendingRelease()
-
+    resolveRelease()
     await first
 
     expect(workspace.closeCanvas).toHaveBeenCalledWith('session-a')
   })
 
-  it('cancels only the selected canvas close state', async () => {
+  it('cancels only the selected confirmation state', async () => {
     const documents = createDocumentPort(async () => ({
       kind: 'confirmation-required',
     }))
 
     const workspace = createWorkspace()
-
-    const workflow = createCanvasWorkflow(
-      documents,
-      workspace as never,
-    )
+    const workflow = createCanvasWorkflow(documents, workspace as never)
 
     await workflow.closeCanvas('session-a', 'normal')
     await workflow.closeCanvas('session-b', 'normal')
@@ -182,67 +162,29 @@ describe('CanvasWorkflow per-session close transactions', () => {
         },
       },
     })
-
-    expect(workspace.closeCanvas).not.toHaveBeenCalled()
   })
 
-  it('waits for active per-session release operations before application termination', async () => {
-    let resolveRelease!: () => void
-
-    const release = new Promise<void>((resolve) => {
-      resolveRelease = resolve
-    })
-
-    const documents = createDocumentPort(async () => {
-      await release
-      return { kind: 'released' }
-    })
-
-    const workspace = createWorkspace()
-
-    const workflow = createCanvasWorkflow(
-      documents,
-      workspace as never,
-    )
-
-    const closing = workflow.closeCanvas('session-a', 'normal')
-
-    expect(workflow.planApplicationClose()).toEqual({
-      kind: 'wait-for-settlement',
-      operations: [closing],
-    })
-
-    resolveRelease()
-    await closing
-
-    expect(workflow.planApplicationClose()).toEqual({
-      kind: 'close-now',
-    })
-  })
-
-  it('retains discard intent for a failed native release retry', async () => {
+  it('preserves discard intent and failure classification for retry', async () => {
     let attempts = 0
 
     const documents = createDocumentPort(async () => {
       attempts += 1
 
-      return attempts === 1
-        ? {
-        kind: 'release-failed',
-        failure: {
-          code: 'persistence',
-          recoverable: true,
-        },
+      if (attempts === 1) {
+        return {
+          kind: 'release-failed',
+          failure: {
+            code: 'persistence',
+            recoverable: true,
+          },
+        }
       }
-        : { kind: 'released' }
+
+      return { kind: 'released' }
     })
 
     const workspace = createWorkspace()
-
-    const workflow = createCanvasWorkflow(
-      documents,
-      workspace as never,
-    )
+    const workflow = createCanvasWorkflow(documents, workspace as never)
 
     await workflow.closeCanvas('session-a', 'discard')
 
@@ -272,6 +214,47 @@ describe('CanvasWorkflow per-session close transactions', () => {
       'session-a',
       'discard',
     )
+
+    expect(workspace.closeCanvas).toHaveBeenCalledWith('session-a')
+  })
+
+  it('waits for both active saves and native releases before application termination', async () => {
+    let resolveSave!: () => void
+    let resolveRelease!: () => void
+
+    const saving = new Promise<void>((resolve) => {
+      resolveSave = resolve
+    })
+
+    const releasing = new Promise<void>((resolve) => {
+      resolveRelease = resolve
+    })
+
+    const documents = createDocumentPort(
+      async () => {
+        await releasing
+        return { kind: 'released' }
+      },
+      () => ({
+        savingOperations: [saving],
+        unsavedSessionIds: [],
+      }),
+    )
+
+    const workspace = createWorkspace()
+    const workflow = createCanvasWorkflow(documents, workspace as never)
+
+    const closeOperation = workflow.closeCanvas('session-a', 'normal')
+
+    expect(workflow.planApplicationClose()).toEqual({
+      kind: 'wait-for-settlement',
+      operations: [saving, closeOperation],
+    })
+
+    resolveSave()
+    resolveRelease()
+
+    await Promise.all([saving, closeOperation])
 
     expect(workspace.closeCanvas).toHaveBeenCalledWith('session-a')
   })

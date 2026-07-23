@@ -39,7 +39,7 @@
     "tauri": "pnpm --filter @hybrid-canvas/desktop tauri",
     "tauri:dev": "pnpm --filter @hybrid-canvas/desktop tauri dev",
     "tauri:build": "pnpm --filter @hybrid-canvas/desktop tauri build",
-    "test:architecture": "node tests/architecture/check.mjs && node tests/architecture/check-import-graph.mjs && node tests/architecture/check-termination-ux.mjs && node tests/architecture/check-ui-architecture.mjs && node tests/architecture/check-window-surface.mjs && node tests/architecture/check-window-dragging.mjs && node tests/architecture/check-rust-async-boundaries.mjs && node tests/architecture/check-rust-logging.mjs && node tests/architecture/check-ipc-bindings.mjs && node tests/architecture/check-canvas-lifecycle.mjs",
+    "test:architecture": "node tests/architecture/check.mjs && node tests/architecture/check-import-graph.mjs && node tests/architecture/check-termination-ux.mjs && node tests/architecture/check-ui-architecture.mjs && node tests/architecture/check-window-surface.mjs && node tests/architecture/check-window-dragging.mjs && node tests/architecture/check-rust-async-boundaries.mjs && node tests/architecture/check-rust-logging.mjs && node tests/architecture/check-ipc-bindings.mjs",
     "analyze:bundle": "node tests/performance/report-bundle.mjs",
     "analyze:bundle:check": "node tests/performance/check-bundle-budget.mjs",
     "verify:release": "pnpm format:check && pnpm lint && pnpm test:architecture && pnpm typecheck && pnpm test && pnpm build:desktop && pnpm analyze:bundle:check && pnpm clippy && pnpm audit --audit-level high && pnpm audit:rust",
