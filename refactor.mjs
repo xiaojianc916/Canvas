@@ -5,8 +5,6 @@ import {
   copyFile,
   mkdir,
   readFile,
-  readdir,
-  unlink,
   writeFile,
 } from 'node:fs/promises'
 import path from 'node:path'
@@ -20,73 +18,202 @@ const ROOT_DIR = path.dirname(
 const DRY_RUN =
   process.argv.includes('--dry-run')
 
-const TOOLS_DIRECTORY = path.join(
+const FRAME_INSPECTOR_PATH = path.join(
   ROOT_DIR,
-  'apps/desktop/src/presentation/workspace/inspector/tools',
+  'apps/desktop/src/presentation/workspace/inspector/tools/FrameToolInspector.tsx',
 )
 
-const DESKTOP_SOURCE_DIRECTORY = path.join(
+const PACKAGE_JSON_PATH = path.join(
   ROOT_DIR,
-  'apps/desktop/src',
+  'package.json',
 )
 
-const PATHS = {
-  packageJson: path.join(
-    ROOT_DIR,
-    'package.json',
-  ),
+const FRAME_INSPECTOR_SOURCE = `import {
+  createShapeId,
+  DefaultColorStyle,
+  useValue,
+} from 'tldraw'
+import {
+  InspectorHint,
+  ShapeInspectorSection,
+  ToolColorSection,
+  ToolPanelHeader,
+} from '../common/InspectorPrimitives'
+import type { ToolInspectorProps } from './types'
 
-  registry: path.join(
-    TOOLS_DIRECTORY,
-    'ToolInspectorRegistry.tsx',
-  ),
+const FRAME_PRESETS = [
+  {
+    id: 'presentation',
+    label: '演示',
+    description: '16:9',
+    width: 1920,
+    height: 1080,
+  },
+  {
+    id: 'desktop',
+    label: '桌面',
+    description: '1440 × 900',
+    width: 1440,
+    height: 900,
+  },
+  {
+    id: 'mobile',
+    label: '移动',
+    description: '390 × 844',
+    width: 390,
+    height: 844,
+  },
+  {
+    id: 'a4-landscape',
+    label: 'A4 横向',
+    description: '1123 × 794',
+    width: 1123,
+    height: 794,
+  },
+] as const
 
-  index: path.join(
-    TOOLS_DIRECTORY,
-    'index.ts',
-  ),
+export function FrameToolInspector({
+  editor,
+}: ToolInspectorProps) {
+  const currentColor = useValue(
+    'inspector next frame color',
+    () =>
+      editor.getStyleForNextShape(
+        DefaultColorStyle,
+      ),
+    [editor],
+  )
 
-  legacyArrow: path.join(
-    TOOLS_DIRECTORY,
-    'ArrowToolInspector.tsx',
-  ),
+  const createPresetFrame = (
+    preset:
+      (typeof FRAME_PRESETS)[number],
+  ) => {
+    const id = createShapeId()
+    const viewport =
+      editor.getViewportPageBounds()
 
-  legacyDraw: path.join(
-    TOOLS_DIRECTORY,
-    'DrawToolInspector.tsx',
-  ),
+    const x =
+      viewport.center.x -
+      preset.width / 2
 
-  legacyScientificChart: path.join(
-    TOOLS_DIRECTORY,
-    'ScientificChartToolInspector.tsx',
-  ),
+    const y =
+      viewport.center.y -
+      preset.height / 2
 
-  freehandExtension: path.join(
-    ROOT_DIR,
-    'features/freehand/src/extension.ts',
-  ),
+    editor.markHistoryStoppingPoint(
+      'create frame from preset',
+    )
 
-  flowchartExtension: path.join(
-    ROOT_DIR,
-    'features/flowchart/src/extension.ts',
-  ),
+    editor.createShape({
+      id,
+      type: 'frame',
+      x,
+      y,
+      props: {
+        w: preset.width,
+        h: preset.height,
+        name: preset.label,
+        color: currentColor,
+      },
+    } as never)
 
-  scientificPlotExtension: path.join(
-    ROOT_DIR,
-    'features/scientific-plot/src/extension.ts',
-  ),
+    editor.select(id)
+    editor.setCurrentTool('select')
+  }
+
+  return (
+    <ToolPanelHeader
+      description="拖动创建自定义画框，或使用预设快速创建标准尺寸。"
+      title="画框"
+    >
+      <ShapeInspectorSection
+        description="点击预设后，会在当前视口中心创建并选中画框。"
+        title="快速创建"
+      >
+        <div className="grid grid-cols-2 gap-2">
+          {FRAME_PRESETS.map((preset) => (
+            <button
+              className="group min-h-20 rounded-md border border-divider bg-background p-2 text-left transition-colors hover:border-primary/50 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              key={preset.id}
+              onClick={() => {
+                createPresetFrame(preset)
+              }}
+              type="button"
+            >
+              <FramePresetPreview
+                height={preset.height}
+                width={preset.width}
+              />
+
+              <span className="mt-2 block text-[11px] font-medium">
+                {preset.label}
+              </span>
+
+              <span className="mt-0.5 block font-mono text-[9px] tabular-nums text-muted-foreground">
+                {preset.description}
+              </span>
+            </button>
+          ))}
+        </div>
+      </ShapeInspectorSection>
+
+      <ToolColorSection editor={editor} />
+
+      <ShapeInspectorSection title="自定义尺寸">
+        <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
+          在画布中拖动以创建任意尺寸的画框。
+          创建后可在底部状态栏双击 W 或 H 输入精确尺寸。
+        </div>
+      </ShapeInspectorSection>
+
+      <InspectorHint>
+        预设创建是一次完整的文档操作，可以通过撤销命令恢复。
+        画框名称、位置和尺寸创建后仍可继续编辑。
+      </InspectorHint>
+    </ToolPanelHeader>
+  )
 }
 
-const LEGACY_FILES = [
-  PATHS.legacyArrow,
-  PATHS.legacyDraw,
-  PATHS.legacyScientificChart,
-]
+function FramePresetPreview({
+  width,
+  height,
+}: {
+  readonly width: number
+  readonly height: number
+}) {
+  const maximumWidth = 72
+  const maximumHeight = 34
+  const ratio = width / height
+
+  let previewWidth = maximumWidth
+  let previewHeight =
+    previewWidth / ratio
+
+  if (previewHeight > maximumHeight) {
+    previewHeight = maximumHeight
+    previewWidth =
+      previewHeight * ratio
+  }
+
+  return (
+    <div className="flex h-9 items-center justify-center rounded bg-canvas/70">
+      <span
+        aria-hidden="true"
+        className="block rounded-sm border border-current text-muted-foreground/50 transition-colors group-hover:text-primary/70"
+        style={{
+          width: previewWidth,
+          height: previewHeight,
+        }}
+      />
+    </div>
+  )
+}
+`
 
 async function main() {
   console.log('')
   console.log(
-    'Hybrid Canvas — Remove Legacy Feature Tool Inspectors',
+    'Hybrid Canvas — Implement Frame Presets',
   )
   console.log(`Repository: ${ROOT_DIR}`)
   console.log(
@@ -96,32 +223,10 @@ async function main() {
 
   await validateRepository()
 
-  const registrySource =
-    await readUtf8(PATHS.registry)
-
-  const indexSource =
-    await readUtf8(PATHS.index)
-
-  const transformedRegistry =
-    transformRegistry(registrySource)
-
-  const transformedIndex =
-    transformIndex(indexSource)
-
-  validateTransformedSources(
-    transformedRegistry,
-    transformedIndex,
-  )
-
   if (DRY_RUN) {
-    console.log('✓ Freehand Feature contribution detected')
-    console.log('✓ Flowchart Feature contribution detected')
-    console.log('✓ Scientific Plot contribution detected')
-    console.log('✓ Legacy Arrow inspector detected')
-    console.log('✓ Legacy Draw inspector detected')
-    console.log('✓ Legacy Chart inspector detected')
-    console.log('✓ Registry can be cleaned safely')
-    console.log('✓ Barrel exports can be cleaned safely')
+    console.log('✓ Existing Frame inspector detected')
+    console.log('✓ Legacy no-op presets detected')
+    console.log('✓ Functional preset implementation ready')
     console.log('✓ No files were changed')
     console.log('')
     return
@@ -130,536 +235,81 @@ async function main() {
   const backupDirectory =
     await createBackupDirectory()
 
-  for (const filePath of [
-    PATHS.registry,
-    PATHS.index,
-    ...LEGACY_FILES,
-  ]) {
-    await backupFile(
-      filePath,
-      path.join(
-        backupDirectory,
-        path.relative(ROOT_DIR, filePath),
-      ),
-    )
-  }
-
-  await writeUtf8(
-    PATHS.registry,
-    transformedRegistry,
+  await backupFile(
+    FRAME_INSPECTOR_PATH,
+    path.join(
+      backupDirectory,
+      'FrameToolInspector.tsx',
+    ),
   )
 
   await writeUtf8(
-    PATHS.index,
-    transformedIndex,
+    FRAME_INSPECTOR_PATH,
+    FRAME_INSPECTOR_SOURCE,
   )
-
-  const remainingReferences =
-    await findLegacyReferences()
-
-  if (remainingReferences.length > 0) {
-    throw new Error(
-      'Legacy inspectors are still referenced after registry cleanup:\n' +
-        remainingReferences
-          .map(
-            (reference) =>
-              '  - ' + reference,
-          )
-          .join('\n'),
-    )
-  }
-
-  for (const filePath of LEGACY_FILES) {
-    await unlink(filePath)
-
-    console.log(
-      `Deleted: ${relative(filePath)}`,
-    )
-  }
 
   console.log('')
   console.log(
     `Backup: ${relative(backupDirectory)}`,
   )
   console.log('')
-  console.log('Legacy cleanup complete:')
-  console.log('  ✓ App ArrowToolInspector deleted')
-  console.log('  ✓ App DrawToolInspector deleted')
-  console.log(
-    '  ✓ App ScientificChartToolInspector deleted',
-  )
-  console.log(
-    '  ✓ Core feature-owned contributions removed',
-  )
-  console.log(
-    '  ✓ Legacy barrel exports removed',
-  )
-  console.log(
-    '  ✓ Feature extensions are now the sole owners',
-  )
+  console.log('Frame preset implementation complete:')
+  console.log('  ✓ Presentation preset implemented')
+  console.log('  ✓ Desktop preset implemented')
+  console.log('  ✓ Mobile preset implemented')
+  console.log('  ✓ A4 landscape preset implemented')
+  console.log('  ✓ Frames created at viewport center')
+  console.log('  ✓ Current frame color preserved')
+  console.log('  ✓ Created frame selected automatically')
+  console.log('  ✓ History support added')
+  console.log('  ✓ Legacy no-op controls removed')
   console.log('')
   console.log('Run validation:')
   console.log(
-    '  pnpm exec biome check --write apps/desktop/src/presentation/workspace/inspector/tools',
+    '  pnpm exec biome check --write apps/desktop/src/presentation/workspace/inspector/tools/FrameToolInspector.tsx',
   )
   console.log('  pnpm typecheck')
   console.log('  pnpm test')
   console.log('')
 }
 
-function transformRegistry(source) {
-  let next = source
-
-  const obsoleteImports = [
-    `import { ArrowToolInspector } from './ArrowToolInspector'
-`,
-    `import { DrawToolInspector } from './DrawToolInspector'
-`,
-    `import { ScientificChartToolInspector } from './ScientificChartToolInspector'
-`,
-    `import type { ToolInspectorProps } from './types'
-`,
-  ]
-
-  for (const obsoleteImport of obsoleteImports) {
-    next = replaceRequired(
-      next,
-      obsoleteImport,
-      '',
-      'obsolete Registry import',
-    )
-  }
-
-  next = removeBlock(
-    next,
-    'function DrawInspector(',
-    '/**',
-    'legacy Draw/Highlight wrappers',
-  )
-
-  const oldCommentStart = next.indexOf(
-    '/**',
-  )
-
-  const contributionStart = next.indexOf(
-    'export const CORE_TOOL_INSPECTOR_CONTRIBUTIONS:',
-    oldCommentStart,
-  )
-
-  if (
-    oldCommentStart === -1 ||
-    contributionStart === -1
-  ) {
-    throw new Error(
-      'Could not locate the legacy Core contribution comment.',
-    )
-  }
-
-  const newComment = `/**
- * App-owned inspectors for generic tldraw tools only.
- *
- * Feature-owned tools are intentionally absent:
- *
- * - draw/highlight are owned by @hybrid-canvas/freehand
- * - arrow is owned by @hybrid-canvas/flowchart
- * - scientific-chart is owned by @hybrid-canvas/scientific-plot
- *
- * Missing Feature contributions must resolve to UnknownToolInspector.
- * Do not add duplicate App fallbacks.
- */
-`
-
-  next =
-    next.slice(0, oldCommentStart) +
-    newComment +
-    next.slice(contributionStart)
-
-  for (const toolId of [
-    'arrow',
-    'draw',
-    'highlight',
-    'scientific-chart',
-  ]) {
-    next = removeContribution(
-      next,
-      toolId,
-    )
-  }
-
-  next = next.replace(/\n{3,}/g, '\n\n')
-
-  return next.trimEnd() + '\n'
-}
-
-function transformIndex(source) {
-  let next = source
-
-  const obsoleteExports = [
-    `export { ArrowToolInspector } from './ArrowToolInspector'
-`,
-    `export { DrawToolInspector } from './DrawToolInspector'
-`,
-    `export { ScientificChartToolInspector } from './ScientificChartToolInspector'
-`,
-  ]
-
-  for (const obsoleteExport of obsoleteExports) {
-    next = replaceRequired(
-      next,
-      obsoleteExport,
-      '',
-      'obsolete tools barrel export',
-    )
-  }
-
-  return next.trimEnd() + '\n'
-}
-
-function removeContribution(
-  source,
-  toolId,
-) {
-  const marker =
-    `      toolId: '${toolId}',`
-
-  const markerIndex =
-    source.indexOf(marker)
-
-  if (markerIndex === -1) {
-    throw new Error(
-      `Core contribution not found: ${toolId}`,
-    )
-  }
-
-  const blockStart =
-    source.lastIndexOf(
-      '    {',
-      markerIndex,
-    )
-
-  const blockEndMarker = '\n    },'
-  const blockEnd =
-    source.indexOf(
-      blockEndMarker,
-      markerIndex,
-    )
-
-  if (
-    blockStart === -1 ||
-    blockEnd === -1
-  ) {
-    throw new Error(
-      `Could not determine contribution block: ${toolId}`,
-    )
-  }
-
-  return (
-    source.slice(0, blockStart) +
-    source.slice(
-      blockEnd +
-        blockEndMarker.length,
-    )
-  )
-}
-
-function removeBlock(
-  source,
-  startMarker,
-  endMarker,
-  label,
-) {
-  const startIndex =
-    source.indexOf(startMarker)
-
-  const endIndex =
-    source.indexOf(
-      endMarker,
-      startIndex,
-    )
-
-  if (
-    startIndex === -1 ||
-    endIndex === -1 ||
-    endIndex <= startIndex
-  ) {
-    throw new Error(
-      `Could not remove ${label}.`,
-    )
-  }
-
-  return (
-    source.slice(0, startIndex) +
-    source.slice(endIndex)
-  )
-}
-
-function validateTransformedSources(
-  registry,
-  index,
-) {
-  const forbiddenRegistryValues = [
-    'ArrowToolInspector',
-    'DrawToolInspector',
-    'ScientificChartToolInspector',
-    "toolId: 'arrow'",
-    "toolId: 'draw'",
-    "toolId: 'highlight'",
-    "toolId: 'scientific-chart'",
-    'function DrawInspector',
-    'function HighlightInspector',
-  ]
-
-  for (
-    const forbiddenValue of
-    forbiddenRegistryValues
-  ) {
-    if (
-      registry.includes(forbiddenValue)
-    ) {
-      throw new Error(
-        'Registry cleanup was incomplete: ' +
-          forbiddenValue,
-      )
-    }
-  }
-
-  const forbiddenIndexValues = [
-    './ArrowToolInspector',
-    './DrawToolInspector',
-    './ScientificChartToolInspector',
-  ]
-
-  for (
-    const forbiddenValue of
-    forbiddenIndexValues
-  ) {
-    if (
-      index.includes(forbiddenValue)
-    ) {
-      throw new Error(
-        'Barrel cleanup was incomplete: ' +
-          forbiddenValue,
-      )
-    }
-  }
-
-  const requiredCoreTools = [
-    "toolId: 'select'",
-    "toolId: 'hand'",
-    "toolId: 'geo'",
-    "toolId: 'line'",
-    "toolId: 'eraser'",
-    "toolId: 'text'",
-    "toolId: 'note'",
-    "toolId: 'frame'",
-  ]
-
-  for (
-    const requiredTool of
-    requiredCoreTools
-  ) {
-    if (!registry.includes(requiredTool)) {
-      throw new Error(
-        'Required Core inspector was removed unexpectedly: ' +
-          requiredTool,
-      )
-    }
-  }
-}
-
 async function validateRepository() {
-  for (
-    const filePath of
-    Object.values(PATHS)
-  ) {
-    await assertFile(filePath)
-  }
+  await assertFile(PACKAGE_JSON_PATH)
+  await assertFile(FRAME_INSPECTOR_PATH)
 
-  const freehandExtension =
+  const source =
     await readUtf8(
-      PATHS.freehandExtension,
+      FRAME_INSPECTOR_PATH,
     )
 
-  const flowchartExtension =
-    await readUtf8(
-      PATHS.flowchartExtension,
-    )
-
-  const scientificExtension =
-    await readUtf8(
-      PATHS.scientificPlotExtension,
-    )
-
-  assertFeatureContribution(
-    freehandExtension,
-    'draw',
-    '@hybrid-canvas/freehand',
-  )
-
-  assertFeatureContribution(
-    freehandExtension,
-    'highlight',
-    '@hybrid-canvas/freehand',
-  )
-
-  assertFeatureContribution(
-    flowchartExtension,
-    'arrow',
-    '@hybrid-canvas/flowchart',
-  )
-
-  assertFeatureContribution(
-    scientificExtension,
-    'scientific-chart',
-    '@hybrid-canvas/scientific-plot',
-  )
-
-  const registry =
-    await readUtf8(PATHS.registry)
-
-  for (const toolId of [
-    'arrow',
-    'draw',
-    'highlight',
-    'scientific-chart',
-  ]) {
-    if (
-      !registry.includes(
-        `toolId: '${toolId}'`,
-      )
-    ) {
-      throw new Error(
-        `Legacy Core contribution is already missing: ${toolId}`,
-      )
-    }
-  }
-}
-
-function assertFeatureContribution(
-  source,
-  toolId,
-  owner,
-) {
-  if (
-    !source.includes(
-      `toolId: '${toolId}'`,
-    ) ||
-    !source.includes(
-      `owner: '${owner}'`,
-    )
-  ) {
-    throw new Error(
-      `Required Feature contribution is missing: ${owner}/${toolId}`,
-    )
-  }
-}
-
-async function findLegacyReferences() {
-  const sourceFiles =
-    await collectSourceFiles(
-      DESKTOP_SOURCE_DIRECTORY,
-    )
-
-  const legacyNames = [
-    'ArrowToolInspector',
-    'DrawToolInspector',
-    'ScientificChartToolInspector',
+  const requiredMarkers = [
+    'export function FrameToolInspector',
+    '画框尺寸预设',
+    '后续接入画框尺寸预设',
+    '后续接入 frame clipping',
   ]
 
-  const legacyPaths = new Set(
-    LEGACY_FILES.map(
-      (filePath) =>
-        path.resolve(filePath),
-    ),
-  )
-
-  const references = []
-
-  for (const filePath of sourceFiles) {
-    if (
-      legacyPaths.has(
-        path.resolve(filePath),
+  for (
+    const marker of requiredMarkers
+  ) {
+    if (!source.includes(marker)) {
+      throw new Error(
+        'Expected legacy Frame inspector marker not found: ' +
+          marker +
+          '\\nThe Frame inspector may already have been changed.',
       )
-    ) {
-      continue
-    }
-
-    const source =
-      await readUtf8(filePath)
-
-    for (const legacyName of legacyNames) {
-      if (source.includes(legacyName)) {
-        references.push(
-          relative(filePath) +
-            ': ' +
-            legacyName,
-        )
-      }
     }
   }
 
-  return references
-}
-
-async function collectSourceFiles(
-  directory,
-) {
-  const entries = await readdir(
-    directory,
-    {
-      withFileTypes: true,
-    },
-  )
-
-  const files = []
-
-  for (const entry of entries) {
-    const entryPath = path.join(
-      directory,
-      entry.name,
+  if (
+    source.includes(
+      'createPresetFrame',
     )
-
-    if (entry.isDirectory()) {
-      files.push(
-        ...await collectSourceFiles(
-          entryPath,
-        ),
-      )
-
-      continue
-    }
-
-    if (
-      entry.isFile() &&
-      (
-        entry.name.endsWith('.ts') ||
-        entry.name.endsWith('.tsx')
-      )
-    ) {
-      files.push(entryPath)
-    }
-  }
-
-  return files
-}
-
-function replaceRequired(
-  source,
-  oldValue,
-  newValue,
-  label,
-) {
-  if (!source.includes(oldValue)) {
+  ) {
     throw new Error(
-      `Could not update ${label}.\n` +
-        'The source differs from the expected remote version.',
+      'Functional Frame presets appear to be already installed.',
     )
   }
-
-  return source.replace(
-    oldValue,
-    newValue,
-  )
 }
 
 async function assertFile(filePath) {
@@ -681,7 +331,7 @@ async function createBackupDirectory() {
   const backupDirectory = path.join(
     ROOT_DIR,
     '.refactor-backup',
-    `remove-legacy-tool-inspectors-${timestamp}`,
+    `frame-presets-${timestamp}`,
   )
 
   await mkdir(
@@ -752,7 +402,7 @@ function relative(filePath) {
 main().catch((error) => {
   console.error('')
   console.error(
-    'Legacy tool inspector cleanup failed.',
+    'Frame preset implementation failed.',
   )
   console.error(
     error instanceof Error
