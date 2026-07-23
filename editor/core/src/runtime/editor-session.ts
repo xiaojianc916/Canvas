@@ -1,4 +1,4 @@
-import { createTLStore, getSnapshot as getStoreEditorSnapshot } from '@tldraw/editor'
+import { createTLStore } from '@tldraw/editor'
 import {
   defaultBindingUtils,
   defaultShapeUtils,
@@ -138,9 +138,15 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
   }
 
   function captureDocument(): TLEditorSnapshot {
-    assertActive()
-
-    return attachedEditor?.getSnapshot() ?? getStoreEditorSnapshot(store)
+    /*
+     * tldraw's complete editor snapshot includes TLSessionStateSnapshot.
+     * Session state is created by a live Editor, not by a detached TLStore.
+     *
+     * Persistable document capture is called only after the explicit
+     * attachEditor() readiness boundary. If a caller violates that contract,
+     * fail closed instead of synthesizing an incomplete snapshot.
+     */
+    return requireAttachedEditor().getSnapshot()
   }
 
   function createSessionSnapshot(): EditorSessionSnapshot {
