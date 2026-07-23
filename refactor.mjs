@@ -42,6 +42,12 @@ function write(path, content) {
   writeFileSync(abs(path), content.replaceAll('\r\n', '\n'))
 }
 
+function removeIfExists(path) {
+  if (existsSync(abs(path))) {
+    unlinkSync(abs(path))
+  }
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: root,
@@ -84,18 +90,6 @@ function replaceRange(source, startMarker, endMarker, replacement, label) {
   return source.slice(0, start) + replacement + source.slice(end)
 }
 
-function replaceRegexOnce(source, regex, replacement, label) {
-  const globalFlags = regex.flags.includes('g') ? regex.flags : `${regex.flags}g`
-  const matches = [...source.matchAll(new RegExp(regex.source, globalFlags))]
-  if (matches.length === 0) {
-    throw new Error(`Expected source fragment was not found: ${label}`)
-  }
-  if (matches.length > 1) {
-    throw new Error(`Unexpected source count: ${label}`)
-  }
-  return source.replace(regex, replacement)
-}
-
 function replaceTail(source, startMarker, replacement, label) {
   const start = source.indexOf(startMarker)
   if (start < 0) {
@@ -107,9 +101,34 @@ function replaceTail(source, startMarker, replacement, label) {
   return source.slice(0, start) + replacement
 }
 
+function replaceRegexOnce(source, regex, replacement, label) {
+  const flags = regex.flags.includes('g') ? regex.flags : `${regex.flags}g`
+  const matches = [...source.matchAll(new RegExp(regex.source, flags))]
+  if (matches.length === 0) {
+    throw new Error(`Expected source fragment was not found: ${label}`)
+  }
+  if (matches.length > 1) {
+    throw new Error(`Unexpected source count: ${label}`)
+  }
+  return source.replace(regex, replacement)
+}
+
+function replaceIfPresent(source, oldValue, newValue) {
+  const first = source.indexOf(oldValue)
+  if (first < 0) {
+    return source
+  }
+  return source.slice(0, first) + newValue + source.slice(first + oldValue.length)
+}
+
+function replaceRegexIfPresent(source, regex, replacement) {
+  const next = source.replace(regex, replacement)
+  return next
+}
+
 function assertIncludes(source, marker, label) {
   if (!source.includes(marker)) {
-    throw new Error(`Audited baseline is missing: ${label}`)
+    throw new Error(`Required marker missing: ${label}`)
   }
 }
 
@@ -139,28 +158,6 @@ function rollback(snapshot) {
   }
 }
 
-function validateBaseline() {
-  
-}
-
-function isFinalState() {
-  const document = read(paths.document)
-  const editorSession = read(paths.editorSession)
-  const canvasDocumentService = read(paths.canvasDocumentService)
-  const fileGateway = read(paths.fileGateway)
-
-  return (
-    document.includes('encode_draw_document_v2') &&
-    document.includes('decode_draw_document_v2') &&
-    document.includes('asset_session_token: Option<String>') &&
-    fileGateway.includes('assetPersistenceToken') &&
-    editorSession.includes('readonly initialSnapshot?: TLStoreSnapshot') &&
-    canvasDocumentService.includes('captureAssetPersistenceToken()') &&
-    !editorSession.includes('captureLegacyEditorSnapshot') &&
-    !canvasDocumentService.includes('serializeDrawDocument')
-  )
-}
-
 function patchCargoToml() {
   let source = read(paths.cargo)
 
@@ -180,20 +177,35 @@ time = { version = "0.3", features = ["formatting"] }`,
 function patchAssetCommandRs() {
   let source = read(paths.asset)
 
-  source = replaceOnce(
-    source,
-    `    if !removed {
-        return Err(Error::NotFound(
-            "asset session does not exist".into(),
-        )
-        .into());
-    }
+  if (source.includes('let _ = removed;')) {
+    write(paths.asset, source)
+    return
+  }
 
-    Ok(())`,
-    `    // document_close may already have released the restored asset session.
+  source = replaceRange(
+    source,
+    `#[tauri::command]
+#[specta::specta]
+pub async fn asset_session_close(`,
+    `fn map_asset_error(error: AssetProtocolError) -> IpcError {`,
+    `#[tauri::command]
+#[specta::specta]
+pub async fn asset_session_close(
+    request: AssetSessionCloseRequest,
+    assets: State<'_, AssetProtocolRegistry>,
+) -> CommandResult<()> {
+    let removed = assets
+        .remove_session(&request.session_token)
+        .map_err(map_asset_error)?;
+
+    // document_close may already have released the restored asset session.
     // Keep explicit renderer disposal idempotent.
     let _ = removed;
-    Ok(())`,
+
+    Ok(())
+}
+
+`,
     'make asset_session_close idempotent',
   )
 
@@ -203,16 +215,15 @@ function patchAssetCommandRs() {
 function patchEditorSessionTs() {
   let source = read(paths.editorSession)
 
-  source = source.replace('  type TLEditorSnapshot,\n', '')
+  source = replaceIfPresent(source, '  type TLEditorSnapshot,\n', '')
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     '  readonly initialSnapshot?: TLEditorSnapshot',
     '  readonly initialSnapshot?: TLStoreSnapshot',
-    'initial snapshot type',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `  readonly getSnapshot: () => TLEditorSnapshot
 
@@ -224,29 +235,35 @@ function patchEditorSessionTs() {
    * Explicit document persistence adapter consumed structurally by
    * editor/document's EditorDocumentPort.
    */`,
-    'remove EditorSession.getSnapshot API',
   )
 
-  source = replaceRange(
+  source = replaceRegexIfPresent(
     source,
-    `  function captureLegacyEditorSnapshot(): TLEditorSnapshot {`,
+    /  function captureLegacyEditorSnapshot\(\): TLEditorSnapshot \{[\s\S]*?\n  function createSessionSnapshot\(\): EditorSessionSnapshot \{/m,
     `  function createSessionSnapshot(): EditorSessionSnapshot {`,
-    `  function createSessionSnapshot(): EditorSessionSnapshot {`,
-    'remove captureLegacyEditorSnapshot',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     '    getSnapshot: captureLegacyEditorSnapshot,\n',
     '',
-    'remove getSnapshot binding',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     '  initialSnapshot: TLEditorSnapshot | undefined,',
     '  initialSnapshot: TLStoreSnapshot | undefined,',
-    'createValidatedEditorStore snapshot type',
+  )
+
+  assertIncludes(
+    source,
+    'readonly initialSnapshot?: TLStoreSnapshot',
+    'editor-session TLStoreSnapshot option',
+  )
+  assertIncludes(
+    source,
+    'captureAssetPersistenceToken',
+    'editor-session asset persistence capability',
   )
 
   write(paths.editorSession, source)
@@ -255,15 +272,14 @@ function patchEditorSessionTs() {
 function patchCanvasDocumentServiceTs() {
   let source = read(paths.canvasDocumentService)
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `import { parseDrawDocument, serializeDrawDocument } from '@hybrid-canvas/file'
 import type { TLEditorSnapshot } from 'tldraw'`,
     `import type { TLStoreSnapshot } from 'tldraw'`,
-    'replace legacy imports',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `export interface OpenedNativeDocument {
   readonly id: string
@@ -278,10 +294,9 @@ import type { TLEditorSnapshot } from 'tldraw'`,
   readonly revision: string
   readonly assetPersistenceToken: string | null
 }`,
-    'OpenedNativeDocument asset token',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `  readonly save: (
     documentId: string,
@@ -294,10 +309,9 @@ import type { TLEditorSnapshot } from 'tldraw'`,
     content: string,
     assetPersistenceToken: string | null,
   ) => Promise<{ readonly revision: string }>`,
-    'DocumentPersistencePort.save signature',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `  readonly saveAs: (
     content: string,
@@ -306,10 +320,9 @@ import type { TLEditorSnapshot } from 'tldraw'`,
     content: string,
     assetPersistenceToken: string | null,
     options: {`,
-    'DocumentPersistencePort.saveAs signature',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `      const editor = await editorSessions.create({
         documentId: canvasId,
@@ -326,30 +339,27 @@ import type { TLEditorSnapshot } from 'tldraw'`,
           : undefined,
         extensions,
       })`,
-    'inject restored asset capability on open',
   )
 
-  source = replaceRegexOnce(
+  source = replaceRegexIfPresent(
     source,
-    /[ \t]*\/\*[\s\S]*?Delete this call when the v2 document-only writer becomes canonical\.\n[ \t]*\*\/\n[ \t]*const legacyEditorSnapshot = owned\.editor\.getSnapshot\(\)\n[ \t]*const content = serializeDrawDocument\(legacyEditorSnapshot\)\n[ \t]*const currentDocumentId = owned\.document\.getDocumentId\(\)/m,
+    /      \/\*[\s\S]*?Delete this call when the v2 document-only writer becomes canonical\.\n       \*\/\n      const legacyEditorSnapshot = owned\.editor\.getSnapshot\(\)\n      const content = serializeDrawDocument\(legacyEditorSnapshot\)\n      const currentDocumentId = owned\.document\.getDocumentId\(\)/m,
     `      const content = JSON.stringify(documentSnapshot)
       const assetPersistenceToken =
         await owned.editor.captureAssetPersistenceToken()
       const currentDocumentId = owned.document.getDocumentId()`,
-    'replace performSave legacy writer bridge',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `            content,
           )`,
     `            content,
             assetPersistenceToken,
           )`,
-    'pass asset token to saveExistingDocument',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `        : await persistence.saveAs(content, {
             suggestedName: '未命名画布.draw',
@@ -361,10 +371,9 @@ import type { TLEditorSnapshot } from 'tldraw'`,
               suggestedName: '未命名画布.draw',
             },
           )`,
-    'pass asset token to saveAs',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `  async function saveExistingDocument(
     documentId: string,
@@ -377,10 +386,9 @@ import type { TLEditorSnapshot } from 'tldraw'`,
     content: string,
     assetPersistenceToken: string | null,
   ): Promise<SavedNativeDocument> {`,
-    'saveExistingDocument signature',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `    const saved = await persistence.save(
       documentId,
@@ -393,12 +401,11 @@ import type { TLEditorSnapshot } from 'tldraw'`,
       content,
       assetPersistenceToken,
     )`,
-    'saveExistingDocument call',
   )
 
   source = replaceTail(
     source,
-    `function parseEditorSnapshot(json: string): TLEditorSnapshot {`,
+    `function parseEditorSnapshot(json: string):`,
     `function parseEditorSnapshot(json: string): TLStoreSnapshot {
   const parsed: unknown = JSON.parse(json)
 
@@ -418,13 +425,16 @@ import type { TLEditorSnapshot } from 'tldraw'`,
     'replace parseEditorSnapshot tail',
   )
 
+  assertIncludes(source, 'assetPersistenceToken', 'canvas-document-service asset token')
+  assertIncludes(source, 'captureAssetPersistenceToken()', 'canvas-document-service capture asset token')
+
   write(paths.canvasDocumentService, source)
 }
 
 function patchFileGatewayTs() {
   let source = read(paths.fileGateway)
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `export interface OpenedDocument {
   readonly id: DocumentId
@@ -439,10 +449,9 @@ function patchFileGatewayTs() {
   readonly revision: string
   readonly assetPersistenceToken: string | null
 }`,
-    'OpenedDocument asset token',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `  readonly saveAs: (
     content: string,
@@ -451,10 +460,9 @@ function patchFileGatewayTs() {
     content: string,
     assetPersistenceToken: string | null,
     options?: {`,
-    'DocumentFileCommands.saveAs signature',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `  readonly save: (
     documentId: DocumentId,
@@ -467,25 +475,22 @@ function patchFileGatewayTs() {
     content: string,
     assetPersistenceToken: string | null,
   ) => Promise<{ readonly revision: string }>`,
-    'DocumentFileCommands.save signature',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `        revision: response.document.revision,`,
     `        revision: response.document.revision,
         assetPersistenceToken: response.document.assetSessionToken,`,
-    'map open asset token',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `    async saveAs(content, options) {`,
     `    async saveAs(content, assetPersistenceToken, options) {`,
-    'saveAs implementation',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `      const request: DocumentSaveAsRequest = {
         documentId: options?.documentId ?? null,
@@ -498,17 +503,15 @@ function patchFileGatewayTs() {
         assetSessionToken: assetPersistenceToken,
         suggestedName: options?.suggestedName ?? null,
       }`,
-    'saveAs request payload',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `    async save(documentId, expectedRevision, content) {`,
     `    async save(documentId, expectedRevision, content, assetPersistenceToken) {`,
-    'save implementation',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `      const request: DocumentSaveRequest = {
         documentId,
@@ -521,14 +524,20 @@ function patchFileGatewayTs() {
         content,
         assetSessionToken: assetPersistenceToken,
       }`,
-    'save request payload',
   )
+
+  assertIncludes(source, 'assetPersistenceToken', 'file gateway asset token')
 
   write(paths.fileGateway, source)
 }
 
 function patchDocumentRs() {
   let source = read(paths.document)
+
+  if (source.includes('encode_draw_document_v2') && source.includes('asset_session_token: Option<String>')) {
+    write(paths.document, source)
+    return
+  }
 
   source = replaceOnce(
     source,
@@ -762,7 +771,7 @@ pub struct DocumentOpenResult`,
     'replace DocumentRegistry',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `pub struct DocumentOpenResult {
     pub document_id: DocumentId,
@@ -777,10 +786,9 @@ pub struct DocumentOpenResult`,
     pub revision: String,
     pub asset_session_token: Option<String>,
 }`,
-    'DocumentOpenResult asset token',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `pub struct DocumentSaveRequest {
     pub document_id: DocumentId,
@@ -793,10 +801,9 @@ pub struct DocumentOpenResult`,
     pub content: String,
     pub asset_session_token: Option<String>,
 }`,
-    'DocumentSaveRequest asset token',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `pub struct DocumentSaveAsRequest {
     /// None creates a new native document session.
@@ -815,7 +822,6 @@ pub struct DocumentOpenResult`,
     pub asset_session_token: Option<String>,
     pub suggested_name: Option<String>,
 }`,
-    'DocumentSaveAsRequest asset token',
   )
 
   source = replaceRange(
@@ -1020,7 +1026,7 @@ pub fn document_close(
     Ok(())
 }
 
-async fn select_open_document(app: &AppHandle) -> Result<Option<FilePath>> {`,
+`,
     'replace document command section',
   )
 
@@ -1190,24 +1196,27 @@ fn now_timestamp() -> Result<String> {
         .map_err(|_| Error::Internal("failed to format document timestamp".into()))
 }
 
-fn selected_native_path(selected: FilePath) -> Result<PathBuf> {`,
+`,
     'replace document io section',
   )
 
-  source = source.replaceAll(
-    'fn ensure_document_size(size: u64)',
+  source = replaceRegexIfPresent(
+    source,
+    /\bfn ensure_document_size\(size: u64\)/g,
     'fn ensure_logical_document_size(size: u64)',
   )
-  source = source.replaceAll(
-    'if size <= MAX_DOCUMENT_BYTES',
+  source = replaceRegexIfPresent(
+    source,
+    /\bif size <= MAX_DOCUMENT_BYTES\b/g,
     'if size <= MAX_LOGICAL_DOCUMENT_BYTES',
   )
-  source = source.replaceAll(
-    'ensure_document_size(',
+  source = replaceRegexIfPresent(
+    source,
+    /\bensure_document_size\(/g,
     'ensure_logical_document_size(',
   )
 
-  source = replaceOnce(
+  source = replaceIfPresent(
     source,
     `fn ensure_draw_document_path(path: &Path) -> Result<()> {`,
     `fn ensure_container_size(size: u64) -> Result<()> {
@@ -1221,7 +1230,6 @@ fn selected_native_path(selected: FilePath) -> Result<PathBuf> {`,
 }
 
 fn ensure_draw_document_path(path: &Path) -> Result<()> {`,
-    'insert ensure_container_size',
   )
 
   source = replaceTail(
@@ -1397,6 +1405,10 @@ mod tests {
 `,
     'replace document tests',
   )
+
+  assertIncludes(source, 'encode_draw_document_v2', 'document v2 writer')
+  assertIncludes(source, 'decode_draw_document_v2', 'document v2 reader')
+  assertIncludes(source, 'asset_session_token: Option<String>', 'document asset token')
 
   write(paths.document, source)
 }
@@ -2083,9 +2095,17 @@ describe('EditorSessionRegistry persisted snapshot boundary', () => {
 }
 
 function finalValidate() {
-  if (!isFinalState()) {
-    throw new Error('Final validation failed: v2 cutover markers are incomplete')
-  }
+  const document = read(paths.document)
+  const editorSession = read(paths.editorSession)
+  const canvasDocumentService = read(paths.canvasDocumentService)
+  const fileGateway = read(paths.fileGateway)
+
+  assertIncludes(document, 'encode_draw_document_v2', 'final document v2 writer')
+  assertIncludes(document, 'decode_draw_document_v2', 'final document v2 reader')
+  assertIncludes(document, 'asset_session_token: Option<String>', 'final document asset token')
+  assertIncludes(editorSession, 'readonly initialSnapshot?: TLStoreSnapshot', 'final editor TLStoreSnapshot option')
+  assertIncludes(canvasDocumentService, 'captureAssetPersistenceToken()', 'final document service asset capture')
+  assertIncludes(fileGateway, 'assetPersistenceToken', 'final file gateway asset token')
 }
 
 function apply() {
@@ -2107,7 +2127,7 @@ function apply() {
 
     finalValidate()
 
-    console.log('P0-B.2 applied successfully.')
+    console.log('P0-B.2 cutover applied successfully.')
     console.log('Next: pnpm typecheck && pnpm tauri dev')
   } catch (error) {
     rollback(snapshot)

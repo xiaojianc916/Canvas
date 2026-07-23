@@ -94,6 +94,7 @@ export function createDocumentFileCommands(): DocumentFileCommands {
         content: response.document.content,
         revision: response.document.revision,
         assetPersistenceToken: response.document.assetSessionToken,
+        assetPersistenceToken: response.document.assetSessionToken,
       }
     },
 
