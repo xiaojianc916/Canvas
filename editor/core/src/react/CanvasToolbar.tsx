@@ -37,7 +37,13 @@ import {
   Undo,
   Union,
 } from '@mynaui/icons-react'
-import { type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react'
+import {
+  type ComponentType,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import {
   type TLUiActionsContextType,
   useActions,
@@ -45,7 +51,9 @@ import {
   useTools,
   useValue,
 } from 'tldraw'
+
 import type { CanvasToolId } from '../application/model/canvas-session-view-model'
+
 interface CanvasToolDefinition {
   readonly id: CanvasToolId
   readonly label: string
@@ -151,7 +159,8 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
   const hasSelection = selectionCount > 0
   const hasMultipleSelection = selectionCount > 1
   const containsGroup = selectedShapes.some((shape) => shape.type === 'group')
-  const allLocked = hasSelection && selectedShapes.every((shape) => shape.isLocked)
+  const allLocked =
+    hasSelection && selectedShapes.every((shape) => shape.isLocked)
 
   useEffect(() => {
     if (!isMoreOpen) {
@@ -161,7 +170,11 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target
 
-      if (target instanceof Node && menuRef.current && !menuRef.current.contains(target)) {
+      if (
+        target instanceof Node &&
+        menuRef.current &&
+        !menuRef.current.contains(target)
+      ) {
         setMoreOpen(false)
       }
     }
@@ -181,9 +194,7 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
     }
   }, [isMoreOpen])
 
-    const activateTool = (
-    toolId: CanvasToolId,
-  ) => {
+  const activateTool = (toolId: CanvasToolId) => {
     const tool = tools[toolId]
 
     if (!tool) {
@@ -194,15 +205,12 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
     setMoreOpen(false)
   }
 
-  const execute = (
-    actionId: string,
-  ) => {
+  const execute = (actionId: string) => {
     invokeAction(actions, actionId)
     setMoreOpen(false)
   }
 
-  const saveAction =
-    actions['hybrid-canvas.save']
+  const saveAction = actions['hybrid-canvas.save']
 
   const handleSave =
     onSave ??
@@ -232,7 +240,10 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
           return (
             <div className="contents" key={tool.id}>
               {tool.separatorBefore ? (
-                <Separator className="mx-1 h-5 shrink-0" orientation="vertical" />
+                <Separator
+                  className="mx-1 h-5 shrink-0"
+                  orientation="vertical"
+                />
               ) : null}
 
               <ToolbarButton
@@ -248,7 +259,12 @@ export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
 
         <Separator className="mx-1 h-5 shrink-0" orientation="vertical" />
 
-        <ToolbarButton icon={Undo} label="撤销" onClick={() => execute('undo')} shortcut="Ctrl+Z" />
+        <ToolbarButton
+          icon={Undo}
+          label="撤销"
+          onClick={() => execute('undo')}
+          shortcut="Ctrl+Z"
+        />
 
         <ToolbarButton
           icon={Redo}
@@ -431,7 +447,8 @@ function ToolbarButton({
           className={cn(
             'size-8 shrink-0 rounded-md text-muted-foreground',
             'hover:bg-accent hover:text-foreground',
-            active && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
+            active &&
+              'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
           )}
           disabled={disabled}
           onClick={onClick}
@@ -445,7 +462,9 @@ function ToolbarButton({
 
       <TooltipContent side="bottom">
         <span>{label}</span>
-        {shortcut ? <kbd className="ml-2 text-[10px] opacity-60">{shortcut}</kbd> : null}
+        {shortcut ? (
+          <kbd className="ml-2 text-[10px] opacity-60">{shortcut}</kbd>
+        ) : null}
       </TooltipContent>
     </Tooltip>
   )
@@ -475,7 +494,13 @@ interface MenuActionProps {
   readonly disabled?: boolean
 }
 
-function MenuAction({ icon: Icon, label, onClick, shortcut, disabled = false }: MenuActionProps) {
+function MenuAction({
+  icon: Icon,
+  label,
+  onClick,
+  shortcut,
+  disabled = false,
+}: MenuActionProps) {
   return (
     <button
       className={cn(
@@ -491,7 +516,9 @@ function MenuAction({ icon: Icon, label, onClick, shortcut, disabled = false }: 
       <Icon className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {shortcut ? (
-        <kbd className="shrink-0 text-[9px] text-muted-foreground">{shortcut}</kbd>
+        <kbd className="shrink-0 text-[9px] text-muted-foreground">
+          {shortcut}
+        </kbd>
       ) : null}
     </button>
   )
