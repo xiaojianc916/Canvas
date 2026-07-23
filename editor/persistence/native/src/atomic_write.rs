@@ -14,8 +14,7 @@
 //! temporary file during drop.
 
 use crate::{Error, Result};
-#[cfg(unix)]
-#[cfg(unix)]\nuse std::io::Write;
+use std::io::Write;
 use std::path::Path;
 
 const TEMPORARY_FILE_PREFIX: &str = ".hybrid-canvas-";
