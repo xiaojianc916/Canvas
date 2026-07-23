@@ -8,21 +8,12 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import {
-  relative,
-  resolve,
-} from 'node:path'
+import { relative, resolve } from 'node:path'
 
-const cli = parseCliArguments(process.argv.slice(2))
-const requestedRoot = resolve(cli.root)
-const root = findRepositoryRoot(requestedRoot)
+const root = findRepositoryRoot(
+  resolve(parseRootArgument(process.argv.slice(2))),
+)
 
-/**
- * 保存脚本修改前的文件内容。
- *
- * 如果格式化、类型检查、测试或构建失败，会恢复这些文件，
- * 避免留下只完成了一半的迁移。
- */
 const changedFiles = new Map()
 
 main().catch((error) => {
@@ -35,16 +26,14 @@ main().catch((error) => {
   }
 
   if (changedFiles.size > 0) {
-    console.error('\n验证失败，正在恢复本次脚本修改……')
+    console.error('\n验证失败，正在恢复本次修改……')
 
     try {
       rollback()
       console.error('已恢复全部脚本修改。')
     } catch (rollbackError) {
       console.error('自动恢复失败：', rollbackError)
-      console.error(
-        '请执行 git status 和 git diff，人工恢复脚本修改。',
-      )
+      console.error('请执行 git diff 并人工恢复。')
     }
   }
 
@@ -54,20 +43,20 @@ main().catch((error) => {
 async function main() {
   assertRepository()
   assertCleanWorktree()
+  assertPreviousMigrationCompleted()
 
   console.log(`仓库：${root}`)
-  console.log('模式：应用 P1 tldraw-first 修复')
+  console.log('迁移：tldraw Action / Tool / Shortcut 统一管线')
   console.log('')
 
-  replaceFlowNodeImplementation()
-  quarantinePrototypeScientificPlot()
-  removePrototypeChartToolbarEntry()
+  replaceEditorCanvas()
+  migrateToolbarToTldrawActions()
 
   formatChangedFiles()
-  verifyChangedSource()
+  verifySourceInvariants()
   verifyProject()
 
-  console.log('\nP1 tldraw-first 修复完成。')
+  console.log('\nAction 管线迁移完成。')
   console.log('\n修改文件：')
 
   for (const path of changedFiles.keys()) {
@@ -75,40 +64,21 @@ async function main() {
   }
 
   console.log(`
-已完成：
+结果：
 
-1. FlowNode 使用统一几何来源：
-   - React 画布渲染
-   - tldraw hit testing
-   - selection outline
-   - arrow binding
-   - indicator
-   - SVG/PNG 导出
-
-2. nodeType 使用 T.literalEnum 运行时校验。
-
-3. FlowNode 尺寸和颜色增加持久化边界校验。
-
-4. SVG 导出不再使用 foreignObject。
-
-5. 未接入 Dataset、Worker、revision 和 LOD 的科学图表，
-   已从 production composition root 和正式工具栏退出。
-
-6. 没有增加 fallback、兼容 wrapper 或第二套 Shape 实现。
-
-科学图表重新进入 production 前必须满足：
-
-- Shape 只保存 datasetId、datasetRevision 和轻量 ChartSpec；
-- 大型 Dataset 位于 TLStore 外部；
-- 数据计算和降采样进入 Worker；
-- Worker 输出带输入 revision，过期结果不可提交；
-- 支持取消、超时和资源预算；
-- 屏幕渲染和导出使用同一个 ChartSpec；
-- 具有大数据集性能基准和 round-trip 测试。
+- 保留现有 Hybrid Canvas 工具栏视觉；
+- 工具选择统一通过 tldraw useTools；
+- 编辑操作统一通过 tldraw useActions；
+- 保存成为正式 tldraw UI Action；
+- Ctrl/Cmd+S 由 tldraw 快捷键系统注册；
+- 删除 EditorCanvas 的 document keydown；
+- 工具栏进入 InFrontOfTheCanvas；
+- 不再在 tldraw Provider 外复制 Action 语义；
+- 不增加 fallback 或新旧双轨。
 `)
 }
 
-function parseCliArguments(arguments_) {
+function parseRootArgument(arguments_) {
   let rootArgument = null
 
   for (const argument of arguments_) {
@@ -120,7 +90,13 @@ function parseCliArguments(arguments_) {
       argument === '--help' ||
       argument === '-h'
     ) {
-      printHelp()
+      console.log(`
+用法：
+
+  node refactor-actions.mjs
+  node refactor-actions.mjs --apply
+  node refactor-actions.mjs "D:\\xiaojianc\\hybrid-canvas"
+`)
       process.exit(0)
     }
 
@@ -129,43 +105,13 @@ function parseCliArguments(arguments_) {
     }
 
     if (rootArgument !== null) {
-      fail(
-        [
-          '只能指定一个项目目录。',
-          `第一个目录：${rootArgument}`,
-          `第二个目录：${argument}`,
-        ].join('\n'),
-      )
+      fail('只能指定一个项目目录。')
     }
 
     rootArgument = argument
   }
 
-  return Object.freeze({
-    root: rootArgument ?? '.',
-  })
-}
-
-function printHelp() {
-  console.log(`
-用法：
-
-  node refactor.mjs
-  node refactor.mjs --apply
-  node refactor.mjs "D:\\\\xiaojianc\\\\hybrid-canvas"
-  node refactor.mjs --apply "D:\\\\xiaojianc\\\\hybrid-canvas"
-
-说明：
-
-  --apply 是可选参数。脚本默认就是应用修改。
-
-执行条件：
-
-  - 必须位于 Git 工作区中；
-  - 工作区必须干净；
-  - 目标源码必须与迁移脚本的前置条件匹配；
-  - 验证失败时自动恢复修改。
-`)
+  return rootArgument ?? '.'
 }
 
 function findRepositoryRoot(startDirectory) {
@@ -187,56 +133,36 @@ function findRepositoryRoot(startDirectory) {
       ).trim(),
     )
   } catch {
-    fail(
-      [
-        `无法从目标目录找到 Git 仓库：${startDirectory}`,
-        '',
-        '请确认：',
-        '1. 当前项目通过 git clone 获取，而不是解压 ZIP；',
-        '2. Git 已安装并可以在 PowerShell 中运行；',
-        '3. 传入的路径位于 hybrid-canvas 仓库中。',
-      ].join('\n'),
-    )
+    fail(`无法从该目录找到 Git 仓库：${startDirectory}`)
   }
 }
 
 function assertRepository() {
-  const packagePath = resolve(root, 'package.json')
-
-  if (!existsSync(packagePath)) {
-    fail(`缺少必要项目文件：package.json`)
-  }
-
-  let packageJson
-
-  try {
-    packageJson = JSON.parse(
-      readFileSync(packagePath, 'utf8'),
-    )
-  } catch {
-    fail('package.json 不是有效 JSON。')
-  }
-
-  if (packageJson.name !== 'hybrid-canvas') {
-    fail(
-      [
-        '目标仓库不是预期的 hybrid-canvas 项目。',
-        `实际 package name：${String(packageJson.name)}`,
-      ].join('\n'),
-    )
-  }
-
   const required = [
-    'apps/desktop/src/bootstrap/application.ts',
+    'package.json',
+    'editor/core/src/react/EditorCanvas.tsx',
     'editor/core/src/react/CanvasToolbar.tsx',
     'features/flowchart/src/shapes/FlowNodeShapeUtil.tsx',
-    'features/scientific-plot/src/shapes/ScientificChartShapeUtil.tsx',
+    'apps/desktop/src/bootstrap/application.ts',
   ]
 
   for (const item of required) {
     if (!existsSync(resolve(root, item))) {
-      fail(`缺少必要项目文件：${item}`)
+      fail(`缺少必要文件：${item}`)
     }
+  }
+
+  const packageJson = JSON.parse(
+    readFileSync(
+      resolve(root, 'package.json'),
+      'utf8',
+    ),
+  )
+
+  if (packageJson.name !== 'hybrid-canvas') {
+    fail(
+      `目标项目不是 hybrid-canvas：${String(packageJson.name)}`,
+    )
   }
 }
 
@@ -250,9 +176,8 @@ function assertCleanWorktree() {
   if (status.trim()) {
     fail(
       [
-        'Git 工作区不干净，拒绝执行自动迁移。',
-        '',
-        '请先提交、暂存或移走现有修改。',
+        'Git 工作区不干净。',
+        '请先提交上一个迁移，再执行本脚本。',
         '',
         status,
       ].join('\n'),
@@ -260,569 +185,7 @@ function assertCleanWorktree() {
   }
 }
 
-/**
- * 彻底替换 FlowNode Shape。
- *
- * 不保留旧的 CSS clip-path 视觉实现，因为它与 tldraw 的
- * Rectangle2d 命中几何不一致。
- */
-function replaceFlowNodeImplementation() {
-  const path = resolve(
-    root,
-    'features/flowchart/src/shapes/FlowNodeShapeUtil.tsx',
-  )
-
-  const current = read(path)
-
-  const requiredMarkers = [
-    "nodeType: T.string as T.Validator<FlowNodeType>",
-    'return new Rectangle2d({',
-    "clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)'",
-    '<foreignObject',
-  ]
-
-  for (const marker of requiredMarkers) {
-    if (!current.includes(marker)) {
-      fail(
-        [
-          'FlowNodeShapeUtil 与脚本预期不一致，拒绝整文件覆盖。',
-          `缺少源码标记：${marker}`,
-          `文件：${relative(root, path)}`,
-        ].join('\n'),
-      )
-    }
-  }
-
-  const next = `import { T } from '@tldraw/validate'
-import type { ReactElement } from 'react'
-import {
-  HTMLContainer,
-  Polygon2d,
-  ShapeUtil,
-  type TLBaseShape,
-  type TLIndicatorPath,
-  Vec,
-} from 'tldraw'
-
-declare module '@tldraw/tlschema' {
-  interface TLGlobalShapePropsMap {
-    'flow-node': FlowNodeShapeProps
-  }
-}
-
-export const FLOW_NODE_TYPES = [
-  'process',
-  'decision',
-  'start-end',
-  'input-output',
-] as const
-
-export type FlowNodeType =
-  (typeof FLOW_NODE_TYPES)[number]
-
-export interface FlowNodeShapeProps {
-  readonly label: string
-  readonly nodeType: FlowNodeType
-  readonly w: number
-  readonly h: number
-  readonly color: string
-}
-
-export type FlowNodeShape = TLBaseShape<
-  'flow-node',
-  FlowNodeShapeProps
->
-
-interface Point {
-  readonly x: number
-  readonly y: number
-}
-
-const MIN_FLOW_NODE_WIDTH = 32
-const MIN_FLOW_NODE_HEIGHT = 24
-const CAPSULE_SEGMENTS_PER_HALF = 12
-
-export class FlowNodeShapeUtil extends ShapeUtil<FlowNodeShape> {
-  static override type = 'flow-node' as const
-
-  static override props = {
-    label: T.string,
-
-    /*
-     * Runtime validation must agree with the TypeScript union.
-     * A type assertion around T.string would only hide malformed persisted
-     * values from TypeScript; it would not reject them at the Store boundary.
-     */
-    nodeType: T.literalEnum(...FLOW_NODE_TYPES),
-
-    w: T.number.refine(
-      (value) =>
-        Number.isFinite(value) &&
-        value >= MIN_FLOW_NODE_WIDTH,
-    ),
-
-    h: T.number.refine(
-      (value) =>
-        Number.isFinite(value) &&
-        value >= MIN_FLOW_NODE_HEIGHT,
-    ),
-
-    /*
-     * Persisted colors are intentionally self-contained.
-     * Reject url(), var(), gradients and other context-dependent CSS values.
-     */
-    color: T.string.refine(isSafeCssColor),
-  }
-
-  getDefaultProps(): FlowNodeShape['props'] {
-    return {
-      label: '节点',
-      nodeType: 'process',
-      w: 160,
-      h: 60,
-      color: '#3b82f6',
-    }
-  }
-
-  getGeometry(shape: FlowNodeShape): Polygon2d {
-    const points = getFlowNodePoints(
-      shape.props.nodeType,
-      shape.props.w,
-      shape.props.h,
-    )
-
-    return new Polygon2d({
-      points: points.map(
-        ({ x, y }) => new Vec(x, y),
-      ),
-      isFilled: true,
-    })
-  }
-
-  override component(
-    shape: FlowNodeShape,
-  ): ReactElement {
-    const {
-      label,
-      nodeType,
-      w,
-      h,
-      color,
-    } = shape.props
-
-    const pathData = getClosedSvgPath(
-      getFlowNodePoints(nodeType, w, h),
-    )
-
-    return (
-      <HTMLContainer
-        style={{
-          width: w,
-          height: h,
-          pointerEvents: 'none',
-        }}
-      >
-        <svg
-          aria-label={label}
-          height={h}
-          role="img"
-          style={{
-            display: 'block',
-            overflow: 'visible',
-          }}
-          viewBox={\`0 0 \${w} \${h}\`}
-          width={w}
-        >
-          <path
-            d={pathData}
-            fill={color}
-            stroke="rgba(0, 0, 0, 0.18)"
-            strokeLinejoin="round"
-            strokeWidth={1}
-          />
-
-          <text
-            dominantBaseline="middle"
-            fill="#ffffff"
-            fontFamily="system-ui, sans-serif"
-            fontSize={13}
-            fontWeight={500}
-            textAnchor="middle"
-            x={w / 2}
-            y={h / 2}
-          >
-            {label}
-          </text>
-        </svg>
-      </HTMLContainer>
-    )
-  }
-
-  override getIndicatorPath(
-    shape: FlowNodeShape,
-  ): TLIndicatorPath {
-    const points = getFlowNodePoints(
-      shape.props.nodeType,
-      shape.props.w,
-      shape.props.h,
-    )
-
-    const firstPoint = points[0]
-
-    if (!firstPoint) {
-      throw new Error('FLOW_NODE_GEOMETRY_EMPTY')
-    }
-
-    const path = new Path2D()
-
-    path.moveTo(firstPoint.x, firstPoint.y)
-
-    for (
-      let index = 1;
-      index < points.length;
-      index += 1
-    ) {
-      const point = points[index]
-
-      if (!point) {
-        throw new Error(
-          'FLOW_NODE_GEOMETRY_INVALID_POINT',
-        )
-      }
-
-      path.lineTo(point.x, point.y)
-    }
-
-    path.closePath()
-
-    return path
-  }
-
-  override toSvg(
-    shape: FlowNodeShape,
-  ): ReactElement {
-    const {
-      label,
-      nodeType,
-      w,
-      h,
-      color,
-    } = shape.props
-
-    const pathData = getClosedSvgPath(
-      getFlowNodePoints(nodeType, w, h),
-    )
-
-    /*
-     * Export native SVG elements instead of foreignObject.
-     * This keeps SVG/PNG export independent from HTML/CSS rendering support.
-     */
-    return (
-      <g>
-        <path
-          d={pathData}
-          fill={color}
-          stroke="rgba(0, 0, 0, 0.18)"
-          strokeLinejoin="round"
-          strokeWidth={1}
-        />
-
-        <text
-          dominantBaseline="middle"
-          fill="#ffffff"
-          fontFamily="system-ui, sans-serif"
-          fontSize={13}
-          fontWeight={500}
-          textAnchor="middle"
-          x={w / 2}
-          y={h / 2}
-        >
-          {label}
-        </text>
-      </g>
-    )
-  }
-}
-
-/**
- * This function is the sole source of FlowNode outline geometry.
- *
- * Rendering, hit testing, binding, selection indicators and SVG export must
- * consume these same points.
- */
-function getFlowNodePoints(
-  type: FlowNodeType,
-  width: number,
-  height: number,
-): readonly Point[] {
-  switch (type) {
-    case 'process':
-      return [
-        { x: 0, y: 0 },
-        { x: width, y: 0 },
-        { x: width, y: height },
-        { x: 0, y: height },
-      ]
-
-    case 'decision':
-      return [
-        { x: width / 2, y: 0 },
-        { x: width, y: height / 2 },
-        { x: width / 2, y: height },
-        { x: 0, y: height / 2 },
-      ]
-
-    case 'input-output': {
-      const inset = Math.min(
-        width * 0.12,
-        height * 0.45,
-      )
-
-      return [
-        { x: inset, y: 0 },
-        { x: width - inset, y: 0 },
-        { x: width, y: height / 2 },
-        { x: width - inset, y: height },
-        { x: inset, y: height },
-        { x: 0, y: height / 2 },
-      ]
-    }
-
-    case 'start-end':
-      return getCapsulePoints(width, height)
-  }
-}
-
-function getCapsulePoints(
-  width: number,
-  height: number,
-): readonly Point[] {
-  const radius = Math.min(
-    height / 2,
-    width / 2,
-  )
-
-  const leftCenterX = radius
-  const rightCenterX = width - radius
-  const centerY = height / 2
-
-  if (leftCenterX >= rightCenterX) {
-    return getEllipsePoints(
-      width / 2,
-      centerY,
-      width / 2,
-      height / 2,
-      CAPSULE_SEGMENTS_PER_HALF * 2,
-    )
-  }
-
-  const points: Point[] = []
-
-  for (
-    let index = 0;
-    index <= CAPSULE_SEGMENTS_PER_HALF;
-    index += 1
-  ) {
-    const angle =
-      -Math.PI / 2 +
-      (Math.PI * index) /
-        CAPSULE_SEGMENTS_PER_HALF
-
-    points.push({
-      x:
-        rightCenterX +
-        Math.cos(angle) * radius,
-      y:
-        centerY +
-        Math.sin(angle) * radius,
-    })
-  }
-
-  for (
-    let index = 0;
-    index <= CAPSULE_SEGMENTS_PER_HALF;
-    index += 1
-  ) {
-    const angle =
-      Math.PI / 2 +
-      (Math.PI * index) /
-        CAPSULE_SEGMENTS_PER_HALF
-
-    points.push({
-      x:
-        leftCenterX +
-        Math.cos(angle) * radius,
-      y:
-        centerY +
-        Math.sin(angle) * radius,
-    })
-  }
-
-  return points
-}
-
-function getEllipsePoints(
-  centerX: number,
-  centerY: number,
-  radiusX: number,
-  radiusY: number,
-  segments: number,
-): readonly Point[] {
-  return Array.from(
-    { length: segments },
-    (_, index) => {
-      const angle =
-        (Math.PI * 2 * index) /
-        segments
-
-      return {
-        x:
-          centerX +
-          Math.cos(angle) * radiusX,
-        y:
-          centerY +
-          Math.sin(angle) * radiusY,
-      }
-    },
-  )
-}
-
-function getClosedSvgPath(
-  points: readonly Point[],
-): string {
-  if (points.length < 3) {
-    throw new Error(
-      'FLOW_NODE_GEOMETRY_REQUIRES_THREE_POINTS',
-    )
-  }
-
-  const firstPoint = points[0]
-
-  if (!firstPoint) {
-    throw new Error('FLOW_NODE_GEOMETRY_EMPTY')
-  }
-
-  return [
-    \`M \${formatNumber(firstPoint.x)} \${formatNumber(firstPoint.y)}\`,
-    ...points
-      .slice(1)
-      .map(
-        ({ x, y }) =>
-          \`L \${formatNumber(x)} \${formatNumber(y)}\`,
-      ),
-    'Z',
-  ].join(' ')
-}
-
-function formatNumber(value: number): string {
-  return Number(value.toFixed(3)).toString()
-}
-
-function isSafeCssColor(
-  value: string,
-): boolean {
-  return (
-    /^#[0-9a-f]{6}$/iu.test(value) ||
-    /^#[0-9a-f]{8}$/iu.test(value)
-  )
-}
-`
-
-  update(path, next)
-}
-
-/**
- * 当前 ScientificChartShapeUtil 使用固定 values 数组。
- *
- * 这不是完整 scientific plot 能力，因此在 Dataset repository、Worker、
- * revision 和 LOD 管线完成前，不应继续出现在正式 composition root 中。
- *
- * 保留 feature 包源码，不创建 legacy fallback，也不注册第二种图表实现。
- */
-function quarantinePrototypeScientificPlot() {
-  const path = resolve(
-    root,
-    'apps/desktop/src/bootstrap/application.ts',
-  )
-
-  let source = read(path)
-
-  source = replaceExactlyOnce(
-    source,
-    `import { scientificPlotExtension } from '@hybrid-canvas/scientific-plot'\n`,
-    '',
-    'scientific plot production import',
-  )
-
-  source = replaceExactlyOnce(
-    source,
-    `      flowchartExtension,
-      freehandExtension,
-      scientificPlotExtension,
-`,
-    `      flowchartExtension,
-      freehandExtension,
-`,
-    'scientific plot production registration',
-  )
-
-  update(path, source)
-}
-
-function removePrototypeChartToolbarEntry() {
-  const path = resolve(
-    root,
-    'editor/core/src/react/CanvasToolbar.tsx',
-  )
-
-  let source = read(path)
-
-  source = replaceExactlyOnce(
-    source,
-    `  ChartLine,
-`,
-    '',
-    'scientific chart toolbar icon',
-  )
-
-  source = replaceExactlyOnce(
-    source,
-    `  {
-    id: 'scientific-chart',
-    label: '图表',
-    shortcut: 'C',
-    icon: ChartLine,
-  },
-`,
-    '',
-    'scientific chart toolbar entry',
-  )
-
-  update(path, source)
-}
-
-function formatChangedFiles() {
-  const paths = [...changedFiles.keys()].map(
-    (path) => relative(root, path),
-  )
-
-  if (paths.length === 0) {
-    fail('脚本没有产生任何修改。')
-  }
-
-  run('pnpm', [
-    'exec',
-    'biome',
-    'format',
-    '--write',
-    ...paths,
-  ])
-}
-
-/**
- * 格式化之后再次检查关键不变量。
- */
-function verifyChangedSource() {
+function assertPreviousMigrationCompleted() {
   const flowNode = read(
     resolve(
       root,
@@ -837,6 +200,598 @@ function verifyChangedSource() {
     ),
   )
 
+  if (
+    !flowNode.includes(
+      'T.literalEnum(...FLOW_NODE_TYPES)',
+    )
+  ) {
+    fail(
+      [
+        '上一个 P1 迁移尚未应用。',
+        'FlowNode 仍未使用 T.literalEnum。',
+        '请先执行前一个 refactor.mjs。',
+      ].join('\n'),
+    )
+  }
+
+  if (
+    application.includes(
+      'scientificPlotExtension',
+    )
+  ) {
+    fail(
+      [
+        '上一个 P1 迁移尚未完成。',
+        '科学图表原型仍注册在 production composition root。',
+      ].join('\n'),
+    )
+  }
+}
+
+function replaceEditorCanvas() {
+  const path = resolve(
+    root,
+    'editor/core/src/react/EditorCanvas.tsx',
+  )
+
+  const current = read(path)
+
+  const expectedMarkers = [
+    'document.addEventListener(\'keydown\', onKeyDown)',
+    '<CanvasToolbar onSave={handleSave} />',
+    'hideUi: true',
+    'useBindEditorSession',
+  ]
+
+  for (const marker of expectedMarkers) {
+    if (!current.includes(marker)) {
+      fail(
+        [
+          'EditorCanvas 与迁移前置条件不一致。',
+          `缺少标记：${marker}`,
+        ].join('\n'),
+      )
+    }
+  }
+
+  const next = `import { Minus, Plus } from '@mynaui/icons-react'
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
+import {
+  type Editor,
+  type TLComponents,
+  type TLUiActionsContextType,
+  type TLUiOverrides,
+  Tldraw,
+  type TldrawProps,
+  useActions,
+  useEditor as useTldrawEditor,
+  useValue,
+} from 'tldraw'
+
+import type { EditorSession } from '../runtime/editor-session'
+import { CanvasToolbar } from './CanvasToolbar'
+import {
+  useBindEditorSession,
+  useTldrawLicenseKey,
+} from './editor-context'
+
+export const HYBRID_CANVAS_SAVE_ACTION_ID =
+  'hybrid-canvas.save'
+
+const CANVAS_COMPONENTS: TLComponents = {
+  InFrontOfTheCanvas: CanvasUiOverlay,
+}
+
+export interface EditorCanvasProps {
+  readonly session: EditorSession
+  readonly isActive?: boolean
+  readonly onSave?: () => void
+}
+
+export function EditorCanvas({
+  session,
+  isActive = true,
+  onSave,
+}: EditorCanvasProps) {
+  const licenseKey = useTldrawLicenseKey()
+  const [editor, setEditor] =
+    useState<Editor | null>(null)
+
+  const { registration, store } = session
+
+  useBindEditorSession(
+    isActive ? editor : null,
+    isActive ? registration : null,
+  )
+
+  const hasTools =
+    registration.tools.length > 0
+
+  /*
+   * Product actions enter through tldraw's official Action provider.
+   * This makes toolbar invocation and keyboard invocation share one command.
+   */
+  const overrides = useMemo<TLUiOverrides>(
+    () => createCanvasUiOverrides(onSave),
+    [onSave],
+  )
+
+  const tldrawProps =
+    useMemo((): TldrawProps => {
+      const base: TldrawProps = {
+        hideUi: true,
+        licenseKey,
+        store,
+        onMount: setEditor,
+        overrides,
+        components: CANVAS_COMPONENTS,
+        options: {
+          maxPages: 100,
+        },
+        shapeUtils:
+          registration.shapeUtils,
+        bindingUtils:
+          registration.bindingUtils,
+      }
+
+      if (hasTools) {
+        base.tools = registration.tools
+      }
+
+      return base
+    }, [
+      store,
+      registration,
+      hasTools,
+      licenseKey,
+      overrides,
+    ])
+
+  useEffect(() => {
+    if (!editor) {
+      return
+    }
+
+    if (isActive) {
+      editor.setCameraOptions({
+        ...editor.getCameraOptions(),
+        wheelBehavior: 'zoom',
+        zoomSpeed: 1,
+      })
+
+      editor.updateInstanceState({
+        isGridMode: false,
+        isToolLocked: true,
+      })
+
+      session.attachEditor(editor)
+
+      return () =>
+        session.detachEditor(editor)
+    }
+
+    session.detachEditor(editor)
+
+    return undefined
+  }, [editor, isActive, session])
+
+  return (
+    <div
+      className="relative size-full overflow-hidden bg-canvas"
+      data-document-id={session.documentId}
+      data-session-id={session.sessionId}
+    >
+      <Tldraw {...tldrawProps} />
+    </div>
+  )
+}
+
+function createCanvasUiOverrides(
+  onSave: (() => void) | undefined,
+): TLUiOverrides {
+  return {
+    actions(
+      _editor,
+      actions,
+    ): TLUiActionsContextType {
+      if (!onSave) {
+        return actions
+      }
+
+      return {
+        ...actions,
+
+        [HYBRID_CANVAS_SAVE_ACTION_ID]: {
+          id: HYBRID_CANVAS_SAVE_ACTION_ID,
+          label: '保存',
+          kbd: 'cmd+s,ctrl+s',
+
+          onSelect() {
+            onSave()
+          },
+        },
+      }
+    },
+  }
+}
+
+/*
+ * This component is mounted by tldraw inside TldrawUiContextProvider.
+ *
+ * Even with hideUi enabled, tldraw keeps its Action, Tool, keyboard shortcut
+ * and clipboard providers mounted while suppressing only the default visuals.
+ */
+function CanvasUiOverlay() {
+  return (
+    <>
+      <CanvasToolbar />
+      <CanvasZoomControl />
+    </>
+  )
+}
+
+function CanvasZoomControl() {
+  const editor = useTldrawEditor()
+  const actions = useActions()
+
+  const zoomPercentage = useValue(
+    'canvas zoom',
+    () =>
+      Math.round(
+        editor.getZoomLevel() * 100,
+      ),
+    [editor],
+  )
+
+  return (
+    <div className="absolute bottom-3 right-3 z-20 flex h-8 items-center rounded-lg border bg-background/95 shadow-sm backdrop-blur-xl">
+      <button
+        aria-label="缩小"
+        className="grid size-8 place-items-center rounded-l-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+        onClick={() =>
+          invokeAction(
+            actions,
+            'zoom-out',
+          )
+        }
+        type="button"
+      >
+        <Minus className="size-3.5" />
+      </button>
+
+      <button
+        aria-label="重置缩放"
+        className="h-8 min-w-12 border-x px-2 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+        onClick={() =>
+          invokeAction(
+            actions,
+            'zoom-to-100',
+          )
+        }
+        type="button"
+      >
+        {zoomPercentage}%
+      </button>
+
+      <button
+        aria-label="放大"
+        className="grid size-8 place-items-center rounded-r-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+        onClick={() =>
+          invokeAction(
+            actions,
+            'zoom-in',
+          )
+        }
+        type="button"
+      >
+        <Plus className="size-3.5" />
+      </button>
+    </div>
+  )
+}
+
+function invokeAction(
+  actions: TLUiActionsContextType,
+  actionId: string,
+): void {
+  const action = actions[actionId]
+
+  if (!action) {
+    throw new Error(
+      \`TLDRAW_ACTION_NOT_REGISTERED:\${actionId}\`,
+    )
+  }
+
+  void action.onSelect('toolbar')
+}
+
+// Keep the application-level active-editor API available to external packages.
+export { useEditor } from './editor-context'
+`
+
+  update(path, next)
+}
+
+function migrateToolbarToTldrawActions() {
+  const path = resolve(
+    root,
+    'editor/core/src/react/CanvasToolbar.tsx',
+  )
+
+  let source = read(path)
+
+  assertContains(
+    source,
+    'editor?.setCurrentTool(toolId)',
+    '工具栏已经发生变化，找不到直接工具切换代码。',
+  )
+
+  assertContains(
+    source,
+    'editor?.undo()',
+    '找不到旧 Undo 直接调用。',
+  )
+
+  assertContains(
+    source,
+    'document.addEventListener',
+    '找不到工具栏菜单的 DOM listener。',
+  )
+
+  source = replaceExactlyOnce(
+    source,
+    `import { useValue } from 'tldraw'\n`,
+    `import {
+  type TLUiActionsContextType,
+  useActions,
+  useEditor,
+  useTools,
+  useValue,
+} from 'tldraw'\n`,
+    'tldraw UI hooks import',
+  )
+
+  source = replaceExactlyOnce(
+    source,
+    `import { useEditor } from './editor-context'\n`,
+    '',
+    'legacy external editor context import',
+  )
+
+  source = replaceExactlyOnce(
+    source,
+    `export interface CanvasToolbarProps {
+  readonly onSave?: () => void
+}
+
+export function CanvasToolbar({ onSave }: CanvasToolbarProps) {
+  const editor = useEditor()
+`,
+    `export function CanvasToolbar() {
+  const editor = useEditor()
+  const actions = useActions()
+  const tools = useTools()
+`,
+    'CanvasToolbar provider inputs',
+  )
+
+  source = replaceExactlyOnce(
+    source,
+    `  const selectedIds = selectedShapes.map((shape) => shape.id)
+
+  const activateTool = (toolId: CanvasToolId) => {
+    editor?.setCurrentTool(toolId)
+    setMoreOpen(false)
+  }
+
+  const toggleLock = () => {
+    if (!editor || !hasSelection) {
+      return
+    }
+
+    const shouldLock = !selectedShapes.every((shape) => shape.isLocked)
+
+    editor.updateShapes(
+      selectedShapes.map((shape) => ({
+        id: shape.id,
+        type: shape.type,
+        isLocked: shouldLock,
+      })) as never,
+    )
+
+    setMoreOpen(false)
+  }
+
+  const execute = (action: () => void) => {
+    action()
+    setMoreOpen(false)
+  }
+`,
+    `  const activateTool = (
+    toolId: CanvasToolId,
+  ) => {
+    const tool = tools[toolId]
+
+    if (!tool) {
+      throw new Error(
+        \`TLDRAW_TOOL_NOT_REGISTERED:\${toolId}\`,
+      )
+    }
+
+    void tool.onSelect('toolbar')
+    setMoreOpen(false)
+  }
+
+  const execute = (
+    actionId: string,
+  ) => {
+    invokeAction(actions, actionId)
+    setMoreOpen(false)
+  }
+
+  const saveAction =
+    actions['hybrid-canvas.save']
+`,
+    'official tool and action invocation',
+  )
+
+  const replacements = [
+    [
+      `onClick={() => editor?.undo()}`,
+      `onClick={() => execute('undo')}`,
+      'undo action',
+    ],
+    [
+      `onClick={() => editor?.redo()}`,
+      `onClick={() => execute('redo')}`,
+      'redo action',
+    ],
+    [
+      `onClick={() => execute(() => editor?.selectAll())}`,
+      `onClick={() => execute('select-all')}`,
+      'select-all action',
+    ],
+    [
+      `onClick={() => execute(() => editor?.groupShapes(selectedIds))}`,
+      `onClick={() => execute('group')}`,
+      'group action',
+    ],
+    [
+      `onClick={() => execute(() => editor?.ungroupShapes(selectedIds))}`,
+      `onClick={() => execute('ungroup')}`,
+      'ungroup action',
+    ],
+    [
+      `onClick={toggleLock}`,
+      `onClick={() => execute('toggle-lock')}`,
+      'toggle-lock action',
+    ],
+    [
+      `onClick={() => execute(() => editor?.bringToFront(selectedIds))}`,
+      `onClick={() => execute('bring-to-front')}`,
+      'bring-to-front action',
+    ],
+    [
+      `onClick={() => execute(() => editor?.bringForward(selectedIds))}`,
+      `onClick={() => execute('bring-forward')}`,
+      'bring-forward action',
+    ],
+    [
+      `onClick={() => execute(() => editor?.sendBackward(selectedIds))}`,
+      `onClick={() => execute('send-backward')}`,
+      'send-backward action',
+    ],
+    [
+      `onClick={() => execute(() => editor?.sendToBack(selectedIds))}`,
+      `onClick={() => execute('send-to-back')}`,
+      'send-to-back action',
+    ],
+    [
+      `onClick={() => execute(() => editor?.flipShapes(selectedIds, 'horizontal'))}`,
+      `onClick={() => execute('flip-horizontal')}`,
+      'flip-horizontal action',
+    ],
+    [
+      `onClick={() => execute(() => editor?.flipShapes(selectedIds, 'vertical'))}`,
+      `onClick={() => execute('flip-vertical')}`,
+      'flip-vertical action',
+    ],
+    [
+      `onClick={() => execute(() => editor?.zoomToSelection())}`,
+      `onClick={() => execute('zoom-to-selection')}`,
+      'zoom-to-selection action',
+    ],
+    [
+      `onClick={() => execute(() => editor?.zoomToFit())}`,
+      `onClick={() => execute('zoom-to-fit')}`,
+      'zoom-to-fit action',
+    ],
+    [
+      `onClick={() => execute(() => editor?.resetZoom())}`,
+      `onClick={() => execute('zoom-to-100')}`,
+      'zoom-to-100 action',
+    ],
+  ]
+
+  for (const [
+    oldText,
+    newText,
+    label,
+  ] of replacements) {
+    source = replaceExactlyOnce(
+      source,
+      oldText,
+      newText,
+      label,
+    )
+  }
+
+  source = replaceExactlyOnce(
+    source,
+    `      {onSave ? (
+        <>
+          <Separator className="mx-1 h-5 shrink-0" orientation="vertical" />
+
+          <ToolbarButton icon={Save} label="保存" onClick={onSave} shortcut="Ctrl+S" />
+        </>
+      ) : null}
+`,
+    `      {saveAction ? (
+        <>
+          <Separator
+            className="mx-1 h-5 shrink-0"
+            orientation="vertical"
+          />
+
+          <ToolbarButton
+            icon={Save}
+            label="保存"
+            onClick={() =>
+              void saveAction.onSelect(
+                'toolbar',
+              )
+            }
+            shortcut="Ctrl+S"
+          />
+        </>
+      ) : null}
+`,
+    'save UI action',
+  )
+
+  source += `
+
+function invokeAction(
+  actions: TLUiActionsContextType,
+  actionId: string,
+): void {
+  const action = actions[actionId]
+
+  if (!action) {
+    throw new Error(
+      \`TLDRAW_ACTION_NOT_REGISTERED:\${actionId}\`,
+    )
+  }
+
+  void action.onSelect('toolbar')
+}
+`
+
+  update(path, source)
+}
+
+function verifySourceInvariants() {
+  const editorCanvas = read(
+    resolve(
+      root,
+      'editor/core/src/react/EditorCanvas.tsx',
+    ),
+  )
+
   const toolbar = read(
     resolve(
       root,
@@ -844,53 +799,87 @@ function verifyChangedSource() {
     ),
   )
 
-  assertAbsent(
-    flowNode,
-    'T.string as T.Validator<FlowNodeType>',
-    '伪造的 FlowNode 枚举 validator 仍然存在',
+  const forbiddenEditorCanvas = [
+    'document.addEventListener(\'keydown\'',
+    '<CanvasToolbar onSave=',
+    'editor.zoomOut()',
+    'editor.zoomIn()',
+    'editor.resetZoom()',
+  ]
+
+  for (const marker of forbiddenEditorCanvas) {
+    if (editorCanvas.includes(marker)) {
+      fail(
+        `EditorCanvas 仍存在旧管线：${marker}`,
+      )
+    }
+  }
+
+  const requiredEditorCanvas = [
+    'InFrontOfTheCanvas: CanvasUiOverlay',
+    'createCanvasUiOverrides(onSave)',
+    "kbd: 'cmd+s,ctrl+s'",
+    "invokeAction(actions, 'zoom-out')",
+    "invokeAction(actions, 'zoom-to-100')",
+  ]
+
+  for (const marker of requiredEditorCanvas) {
+    if (!editorCanvas.includes(marker)) {
+      fail(
+        `EditorCanvas 缺少新管线：${marker}`,
+      )
+    }
+  }
+
+  const forbiddenToolbar = [
+    'editor?.setCurrentTool(',
+    'editor?.undo()',
+    'editor?.redo()',
+    'editor?.groupShapes(',
+    'editor?.ungroupShapes(',
+    'editor?.flipShapes(',
+    'editor?.bringToFront(',
+    'editor?.sendToBack(',
+  ]
+
+  for (const marker of forbiddenToolbar) {
+    if (toolbar.includes(marker)) {
+      fail(
+        `CanvasToolbar 仍绕过官方 Action/Tool：${marker}`,
+      )
+    }
+  }
+
+  const requiredToolbar = [
+    'useActions()',
+    'useTools()',
+    "execute('undo')",
+    "execute('group')",
+    "execute('toggle-lock')",
+    "actions['hybrid-canvas.save']",
+  ]
+
+  for (const marker of requiredToolbar) {
+    if (!toolbar.includes(marker)) {
+      fail(
+        `CanvasToolbar 缺少统一管线：${marker}`,
+      )
+    }
+  }
+}
+
+function formatChangedFiles() {
+  const paths = [...changedFiles.keys()].map(
+    (path) => relative(root, path),
   )
 
-  assertAbsent(
-    flowNode,
-    '<foreignObject',
-    'FlowNode SVG 导出仍使用 foreignObject',
-  )
-
-  assertAbsent(
-    flowNode,
-    'clipPath:',
-    'FlowNode 仍存在独立 CSS clip-path 几何',
-  )
-
-  assertPresent(
-    flowNode,
-    'T.literalEnum(...FLOW_NODE_TYPES)',
-    'FlowNode 没有使用运行时枚举校验',
-  )
-
-  assertPresent(
-    flowNode,
-    'new Polygon2d({',
-    'FlowNode 没有使用真实多边形几何',
-  )
-
-  assertPresent(
-    flowNode,
-    'getFlowNodePoints(',
-    'FlowNode 没有统一几何来源',
-  )
-
-  assertAbsent(
-    application,
-    'scientificPlotExtension',
-    '科学图表原型仍注册在 production composition root',
-  )
-
-  assertAbsent(
-    toolbar,
-    "id: 'scientific-chart'",
-    '科学图表原型仍暴露在正式工具栏',
-  )
+  run('pnpm', [
+    'exec',
+    'biome',
+    'format',
+    '--write',
+    ...paths,
+  ])
 }
 
 function verifyProject() {
@@ -901,36 +890,16 @@ function verifyProject() {
   run('pnpm', ['build:desktop'])
 }
 
-function assertPresent(
-  source,
-  expected,
-  message,
-) {
-  if (!source.includes(expected)) {
-    fail(message)
-  }
-}
-
-function assertAbsent(
-  source,
-  forbidden,
-  message,
-) {
-  if (source.includes(forbidden)) {
-    fail(message)
-  }
-}
-
 function read(path) {
   return readFileSync(path, 'utf8')
 }
 
-function update(path, nextContent) {
+function update(path, content) {
   if (!changedFiles.has(path)) {
     changedFiles.set(path, read(path))
   }
 
-  writeFileSync(path, nextContent, 'utf8')
+  writeFileSync(path, content, 'utf8')
 
   console.log(
     `修改：${relative(root, path)}`,
@@ -943,60 +912,55 @@ function replaceExactlyOnce(
   newText,
   label,
 ) {
-  const firstIndex = source.indexOf(oldText)
+  const first = source.indexOf(oldText)
 
-  if (firstIndex < 0) {
-    fail(
-      [
-        `没有找到预期源码：${label}`,
-        '',
-        '目标文件可能已经修改。',
-        '脚本拒绝猜测或模糊替换。',
-      ].join('\n'),
-    )
+  if (first < 0) {
+    fail(`找不到预期源码：${label}`)
   }
 
-  const secondIndex = source.indexOf(
+  const second = source.indexOf(
     oldText,
-    firstIndex + oldText.length,
+    first + oldText.length,
   )
 
-  if (secondIndex >= 0) {
-    fail(
-      `预期源码出现多次，拒绝修改：${label}`,
-    )
+  if (second >= 0) {
+    fail(`预期源码不唯一：${label}`)
   }
 
   return (
-    source.slice(0, firstIndex) +
+    source.slice(0, first) +
     newText +
-    source.slice(
-      firstIndex + oldText.length,
-    )
+    source.slice(first + oldText.length)
   )
 }
 
+function assertContains(
+  source,
+  marker,
+  message,
+) {
+  if (!source.includes(marker)) {
+    fail(message)
+  }
+}
+
 function rollback() {
-  const failures = []
+  const errors = []
 
   for (const [path, original] of changedFiles) {
     try {
       writeFileSync(path, original, 'utf8')
-
       console.error(
         `已恢复：${relative(root, path)}`,
       )
     } catch (error) {
-      failures.push({
-        path,
-        error,
-      })
+      errors.push(error)
     }
   }
 
-  if (failures.length > 0) {
+  if (errors.length > 0) {
     throw new AggregateError(
-      failures.map(({ error }) => error),
+      errors,
       '部分文件恢复失败',
     )
   }
