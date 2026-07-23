@@ -1,4 +1,7 @@
-import type { EditorSession, EditorSessionRegistry } from '@hybrid-canvas/canvas/application'
+import type {
+  EditorSession,
+  EditorSessionRegistry,
+} from '@hybrid-canvas/canvas/application'
 import type { HybridCanvasExtension } from '@hybrid-canvas/canvas/extensions'
 import { parseDrawDocument, serializeDrawDocument } from '@hybrid-canvas/file'
 import type { TLEditorSnapshot } from 'tldraw'
@@ -9,13 +12,13 @@ import {
   type DocumentSaveTicket,
   type DocumentSession,
 } from '../domain/document-session'
-import type { EditorDocumentEvent, EditorDocumentPort } from '../ports/editor-document-port'
-
-// Tests: tests/cross-domain-contract/document-lifecycle/canvas-document-service.test.ts
+import type {
+  EditorDocumentEvent,
+  EditorDocumentPort,
+} from '../ports/editor-document-port'
 
 export type CanvasId = string
 export type CanvasSessionId = string
-
 export type CanvasPersistenceState = DocumentPersistenceState
 
 export interface OpenedCanvasSession {
@@ -30,9 +33,7 @@ export interface CanvasSessionSnapshot {
 }
 
 export type CanvasCloseDecision =
-  | {
-      readonly kind: 'close-now'
-    }
+  | { readonly kind: 'close-now' }
   | {
       readonly kind: 'confirm-discard'
       readonly persistence: 'dirty' | 'failed'
@@ -41,14 +42,10 @@ export type CanvasCloseDecision =
       readonly kind: 'wait-for-save'
       readonly operation: Promise<void>
     }
-  | {
-      readonly kind: 'not-found'
-    }
+  | { readonly kind: 'not-found' }
 
 export type ApplicationClosePlan =
-  | {
-      readonly kind: 'close-now'
-    }
+  | { readonly kind: 'close-now' }
   | {
       readonly kind: 'confirm-discard'
       readonly sessionIds: readonly CanvasSessionId[]
@@ -60,55 +57,53 @@ export type ApplicationClosePlan =
 
 export interface CanvasDocumentService {
   readonly create: (title: string) => OpenedCanvasSession
-
   readonly open: () => Promise<OpenedCanvasSession | null>
-
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
-
   readonly requestClose: (sessionId: CanvasSessionId) => CanvasCloseDecision
-
   readonly discardAndClose: (sessionId: CanvasSessionId) => void
-
   readonly planApplicationClose: () => ApplicationClosePlan
-
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
-
-  readonly getSessionSnapshot: (sessionId: CanvasSessionId) => CanvasSessionSnapshot | null
-
+  readonly getSessionSnapshot: (
+    sessionId: CanvasSessionId,
+  ) => CanvasSessionSnapshot | null
   readonly getVersion: () => number
-
   readonly subscribe: (listener: () => void) => () => void
-
   readonly dispose: () => void
 }
 
 export interface CanvasEditorSessionRegistryPort {
   readonly create: EditorSessionRegistry['create']
-
   readonly close: EditorSessionRegistry['close']
-
   readonly dispose: EditorSessionRegistry['dispose']
 }
 
-export interface DrawPersistencePort {
-  readonly read: (path: string) => Promise<string>
-
-  readonly write: (path: string, content: string) => Promise<void>
+export interface OpenedNativeDocument {
+  readonly id: string
+  readonly displayName: string
+  readonly content: string
 }
 
-export interface CanvasFileSelectionPort {
-  readonly selectOpenPath: () => Promise<string | null>
+export interface SavedNativeDocument {
+  readonly id: string
+  readonly displayName: string
+}
 
-  readonly selectSavePath: (suggestedName: string) => Promise<string | null>
+export interface DocumentPersistencePort {
+  readonly open: () => Promise<OpenedNativeDocument | null>
+  readonly save: (documentId: string, content: string) => Promise<void>
+  readonly saveAs: (
+    content: string,
+    options: {
+      readonly documentId?: string
+      readonly suggestedName?: string
+    },
+  ) => Promise<SavedNativeDocument | null>
+  readonly close: (documentId: string) => Promise<void>
 }
 
 export interface CreateCanvasDocumentServiceDependencies {
   readonly editorSessions: CanvasEditorSessionRegistryPort
-
-  readonly persistence: DrawPersistencePort
-
-  readonly fileSelection: CanvasFileSelectionPort
-
+  readonly persistence: DocumentPersistencePort
   readonly extensions: readonly HybridCanvasExtension[]
 }
 
@@ -116,7 +111,6 @@ interface OwnedCanvasSession {
   readonly editor: EditorSession
   readonly editorDocument: EditorDocumentPort
   readonly document: DocumentSession
-
   stopObservingDocument: () => void
   saveOperation: Promise<void> | null
 }
@@ -124,16 +118,13 @@ interface OwnedCanvasSession {
 export function createCanvasDocumentService({
   editorSessions,
   persistence,
-  fileSelection,
   extensions,
 }: CreateCanvasDocumentServiceDependencies): CanvasDocumentService {
   const sessions = new Map<CanvasSessionId, OwnedCanvasSession>()
-
   const listeners = new Set<() => void>()
-
   let version = 0
 
-  function emit(): void {
+  function emit() {
     version += 1
 
     for (const listener of listeners) {
@@ -151,30 +142,21 @@ export function createCanvasDocumentService({
       extensions,
     })
 
-    const owned = createOwnedSession(editor, null)
+    sessions.set(sessionId, createOwnedSession(editor, null))
 
-    sessions.set(sessionId, owned)
-
-    return {
-      canvasId,
-      sessionId,
-      title,
-    }
+    return { canvasId, sessionId, title }
   }
 
   async function open(): Promise<OpenedCanvasSession | null> {
-    const filePath = await fileSelection.selectOpenPath()
+    const opened = await persistence.open()
 
-    if (!filePath) {
+    if (!opened) {
       return null
     }
 
-    const content = await persistence.read(filePath)
-
-    const initialSnapshot = parseEditorSnapshot(content)
-
     const canvasId = crypto.randomUUID()
     const sessionId = crypto.randomUUID()
+    const initialSnapshot = parseEditorSnapshot(opened.content)
 
     const editor = editorSessions.create({
       documentId: canvasId,
@@ -183,25 +165,21 @@ export function createCanvasDocumentService({
       extensions,
     })
 
-    const owned = createOwnedSession(editor, filePath)
-
-    sessions.set(sessionId, owned)
+    sessions.set(sessionId, createOwnedSession(editor, opened.id))
 
     return {
       canvasId,
       sessionId,
-      title: getFileTitle(filePath),
+      title: opened.displayName,
     }
   }
 
-  function createOwnedSession(editor: EditorSession, filePath: string | null): OwnedCanvasSession {
-    /*
-     * EditorSession structurally implements EditorDocumentPort without
-     * editor/core depending on editor/document.
-     */
+  function createOwnedSession(
+    editor: EditorSession,
+    documentId: string | null,
+  ): OwnedCanvasSession {
     const editorDocument: EditorDocumentPort = editor
-
-    const document = createDocumentSession(filePath)
+    const document = createDocumentSession(documentId)
 
     const owned: OwnedCanvasSession = {
       editor,
@@ -211,36 +189,27 @@ export function createCanvasDocumentService({
       saveOperation: null,
     }
 
-    owned.stopObservingDocument = editorDocument.subscribeDocumentEvents((event) => {
-      handleEditorDocumentEvent(owned, event)
-    })
+    owned.stopObservingDocument = editorDocument.subscribeDocumentEvents(
+      (event) => {
+        if (event.kind === 'ready') {
+          if (!document.isInitialized()) {
+            document.initialize(editorDocument.captureDocument())
+            emit()
+          }
+
+          return
+        }
+
+        if (!document.isInitialized()) {
+          throw new Error('DOCUMENT_CHANGE_BEFORE_EDITOR_READY')
+        }
+
+        document.recordDocumentChange(editorDocument.captureDocument())
+        emit()
+      },
+    )
 
     return owned
-  }
-
-  function handleEditorDocumentEvent(owned: OwnedCanvasSession, event: EditorDocumentEvent): void {
-    if (event.kind === 'ready') {
-      /*
-       * React StrictMode or tab remounting may attach the same session more
-       * than once. Only the first explicit ready event establishes the saved
-       * baseline.
-       */
-      if (!owned.document.isInitialized()) {
-        owned.document.initialize(owned.editorDocument.captureDocument())
-
-        emit()
-      }
-
-      return
-    }
-
-    if (!owned.document.isInitialized()) {
-      throw new Error('DOCUMENT_CHANGE_BEFORE_EDITOR_READY')
-    }
-
-    owned.document.recordDocumentChange(owned.editorDocument.captureDocument())
-
-    emit()
   }
 
   function save(sessionId: CanvasSessionId): Promise<void> {
@@ -250,13 +219,11 @@ export function createCanvasDocumentService({
       return owned.saveOperation
     }
 
-    const operation = performSave(owned).finally(() => {
+    owned.saveOperation = performSave(owned).finally(() => {
       owned.saveOperation = null
     })
 
-    owned.saveOperation = operation
-
-    return operation
+    return owned.saveOperation
   }
 
   async function performSave(owned: OwnedCanvasSession): Promise<void> {
@@ -264,42 +231,45 @@ export function createCanvasDocumentService({
       throw new Error('DOCUMENT_SESSION_NOT_READY')
     }
 
-    const existingPath = owned.document.getFilePath()
-
-    const filePath = existingPath ?? (await fileSelection.selectSavePath('未命名画布.draw'))
-
-    if (!filePath) {
-      return
-    }
-
-    /*
-     * Snapshot and save checkpoint are created from the same synchronous
-     * capture. Concurrent edits after this point update currentCheckpoint but
-     * cannot incorrectly become part of the completed savepoint.
-     */
     const snapshot = owned.editorDocument.captureDocument()
+    const ticket = owned.document.beginSave(snapshot)
 
-    let ticket: DocumentSaveTicket | null = null
+    emit()
 
     try {
-      ticket = owned.document.beginSave(snapshot)
-
-      emit()
-
       const content = serializeDrawDocument(snapshot)
+      const currentDocumentId = owned.document.getDocumentId()
 
-      await persistence.write(filePath, content)
+      const saved = currentDocumentId
+        ? await saveExistingDocument(currentDocumentId, content)
+        : await persistence.saveAs(content, {
+            suggestedName: '未命名画布.draw',
+          })
 
-      owned.document.completeSave(ticket, filePath)
-
-      emit()
-    } catch (error) {
-      if (ticket) {
+      if (!saved) {
         owned.document.failSave(ticket)
         emit()
+        return
       }
 
+      owned.document.completeSave(ticket, saved.id)
+      emit()
+    } catch (error) {
+      owned.document.failSave(ticket)
+      emit()
       throw error
+    }
+  }
+
+  async function saveExistingDocument(
+    documentId: string,
+    content: string,
+  ): Promise<SavedNativeDocument> {
+    await persistence.save(documentId, content)
+
+    return {
+      id: documentId,
+      displayName: '',
     }
   }
 
@@ -307,9 +277,7 @@ export function createCanvasDocumentService({
     const owned = sessions.get(sessionId)
 
     if (!owned) {
-      return {
-        kind: 'not-found',
-      }
+      return { kind: 'not-found' }
     }
 
     if (owned.saveOperation) {
@@ -319,23 +287,21 @@ export function createCanvasDocumentService({
       }
     }
 
-    const persistenceState = owned.document.getSnapshot().persistence
+    const state = owned.document.getSnapshot().persistence
 
-    if (persistenceState === 'dirty' || persistenceState === 'failed') {
+    if (state === 'dirty' || state === 'failed') {
       return {
         kind: 'confirm-discard',
-        persistence: persistenceState,
+        persistence: state,
       }
     }
 
     closeNow(sessionId, owned)
 
-    return {
-      kind: 'close-now',
-    }
+    return { kind: 'close-now' }
   }
 
-  function discardAndClose(sessionId: CanvasSessionId): void {
+  function discardAndClose(sessionId: CanvasSessionId) {
     const owned = requireSession(sessionId)
 
     if (owned.saveOperation) {
@@ -345,18 +311,20 @@ export function createCanvasDocumentService({
     closeNow(sessionId, owned)
   }
 
-  function closeNow(sessionId: CanvasSessionId, owned: OwnedCanvasSession): void {
+  function closeNow(sessionId: CanvasSessionId, owned: OwnedCanvasSession) {
     owned.document.beginClosing()
     owned.document.completeClosing()
 
-    release(sessionId, owned)
-    emit()
-  }
+    const documentId = owned.document.getDocumentId()
 
-  function release(sessionId: CanvasSessionId, owned: OwnedCanvasSession): void {
+    if (documentId) {
+      void persistence.close(documentId)
+    }
+
     owned.stopObservingDocument()
     sessions.delete(sessionId)
     editorSessions.close(sessionId)
+    emit()
   }
 
   function planApplicationClose(): ApplicationClosePlan {
@@ -366,37 +334,28 @@ export function createCanvasDocumentService({
     for (const [sessionId, owned] of sessions) {
       if (owned.saveOperation) {
         operations.push(owned.saveOperation)
-
         continue
       }
 
-      const persistenceState = owned.document.getSnapshot().persistence
+      const state = owned.document.getSnapshot().persistence
 
-      if (persistenceState === 'dirty' || persistenceState === 'failed') {
+      if (state === 'dirty' || state === 'failed') {
         dirtySessionIds.push(sessionId)
       }
     }
 
     if (operations.length > 0) {
-      return {
-        kind: 'wait-for-saves',
-        operations,
-      }
+      return { kind: 'wait-for-saves', operations }
     }
 
     if (dirtySessionIds.length > 0) {
-      return {
-        kind: 'confirm-discard',
-        sessionIds: dirtySessionIds,
-      }
+      return { kind: 'confirm-discard', sessionIds: dirtySessionIds }
     }
 
-    return {
-      kind: 'close-now',
-    }
+    return { kind: 'close-now' }
   }
 
-  function requireSession(sessionId: CanvasSessionId): OwnedCanvasSession {
+  function requireSession(sessionId: CanvasSessionId) {
     const owned = sessions.get(sessionId)
 
     if (!owned) {
@@ -421,14 +380,12 @@ export function createCanvasDocumentService({
     getSessionSnapshot(sessionId) {
       const owned = sessions.get(sessionId)
 
-      if (!owned) {
-        return null
-      }
-
-      return {
-        sessionId,
-        persistence: owned.document.getSnapshot().persistence,
-      }
+      return owned
+        ? {
+            sessionId,
+            persistence: owned.document.getSnapshot().persistence,
+          }
+        : null
     },
 
     getVersion() {
@@ -438,13 +395,17 @@ export function createCanvasDocumentService({
     subscribe(listener) {
       listeners.add(listener)
 
-      return () => {
-        listeners.delete(listener)
-      }
+      return () => listeners.delete(listener)
     },
 
     dispose() {
       for (const [sessionId, owned] of sessions) {
+        const documentId = owned.document.getDocumentId()
+
+        if (documentId) {
+          void persistence.close(documentId)
+        }
+
         owned.stopObservingDocument()
         editorSessions.close(sessionId)
       }
@@ -463,25 +424,18 @@ function parseEditorSnapshot(json: string): TLEditorSnapshot {
     try {
       const parsed: unknown = JSON.parse(json)
 
-      if (isEditorSnapshot(parsed)) {
-        return parsed
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        'document' in parsed &&
+        'session' in parsed
+      ) {
+        return parsed as TLEditorSnapshot
       }
     } catch {
-      // Preserve the validated container error as the public failure.
+      // Preserve the validated container error.
     }
 
     throw containerError
   }
-}
-
-function isEditorSnapshot(value: unknown): value is TLEditorSnapshot {
-  return typeof value === 'object' && value !== null && 'document' in value && 'session' in value
-}
-
-function getFileTitle(filePath: string): string {
-  const normalized = filePath.replaceAll('\\', '/')
-
-  const fileName = normalized.slice(normalized.lastIndexOf('/') + 1)
-
-  return fileName.toLowerCase().endsWith('.draw') ? fileName.slice(0, -5) : fileName
 }

@@ -4,8 +4,7 @@ import { flowchartExtension } from '@hybrid-canvas/flowchart'
 import { freehandExtension } from '@hybrid-canvas/freehand'
 import {
   createDesktopSettingsStore,
-  createDrawFileCommands,
-  createFileDialog,
+  createDocumentFileCommands,
   createMainWindowController,
   type MainWindowController,
   type SettingsStore,
@@ -17,7 +16,10 @@ import {
   createWorkbenchSessionController,
 } from '@hybrid-canvas/workspace/application'
 import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
-import { type CanvasWorkflow, createCanvasWorkflow } from '../application/canvas/canvas-workflow'
+import {
+  type CanvasWorkflow,
+  createCanvasWorkflow,
+} from '../application/canvas/canvas-workflow'
 import {
   type ApplicationTerminationCoordinator,
   createApplicationTerminationCoordinator,
@@ -43,44 +45,14 @@ export function createApplicationRuntime({
 }: CreateApplicationRuntimeOptions): ApplicationRuntime {
   const workspace = createWorkbenchSessionController()
   const commands = createCommandRegistry()
-  const drawFiles = createDrawFileCommands()
-  const dialog = createFileDialog()
+  const documentsGateway = createDocumentFileCommands()
   const mainWindow = createMainWindowController()
   const settings = createDesktopSettingsStore()
   const editorSessions = createEditorSessionRegistry()
 
   const documents = createCanvasDocumentService({
     editorSessions,
-    persistence: {
-      read: drawFiles.readDraw,
-      write: drawFiles.saveDraw,
-    },
-    fileSelection: {
-      async selectOpenPath() {
-        const [path] = await dialog.open({
-          filters: [
-            {
-              name: 'Hybrid Canvas 画布',
-              extensions: ['draw'],
-            },
-          ],
-        })
-
-        return path ?? null
-      },
-
-      selectSavePath(suggestedName) {
-        return dialog.save({
-          filters: [
-            {
-              name: 'Hybrid Canvas 画布',
-              extensions: ['draw'],
-            },
-          ],
-          defaultPath: suggestedName,
-        })
-      },
-    },
+    persistence: documentsGateway,
     extensions: [
       flowchartExtension,
       freehandExtension,

@@ -6,8 +6,6 @@ import {
   type DocumentCheckpoint,
 } from './document-checkpoint'
 
-// Tests: tests/cross-domain-contract/document-lifecycle/document-session.test.ts
-
 export type DocumentSessionPhase =
   | 'initializing'
   | 'ready'
@@ -26,76 +24,66 @@ export interface DocumentSaveTicket {
 export interface DocumentSessionSnapshot {
   readonly phase: DocumentSessionPhase
   readonly persistence: DocumentPersistenceState
-  readonly filePath: string | null
+  readonly documentId: string | null
 }
 
 export interface DocumentSession {
   readonly initialize: (snapshot: TLEditorSnapshot) => void
-
   readonly recordDocumentChange: (snapshot: TLEditorSnapshot) => void
-
   readonly beginSave: (snapshot: TLEditorSnapshot) => DocumentSaveTicket
-
-  readonly completeSave: (ticket: DocumentSaveTicket, filePath: string) => void
-
+  readonly completeSave: (
+    ticket: DocumentSaveTicket,
+    documentId: string,
+  ) => void
   readonly failSave: (ticket: DocumentSaveTicket) => void
-
   readonly beginClosing: () => void
   readonly completeClosing: () => void
-
   readonly isInitialized: () => boolean
   readonly isDirty: () => boolean
   readonly getPhase: () => DocumentSessionPhase
-  readonly getFilePath: () => string | null
+  readonly getDocumentId: () => string | null
   readonly getSnapshot: () => DocumentSessionSnapshot
 }
 
-export function createDocumentSession(filePath: string | null): DocumentSession {
+export function createDocumentSession(
+  initialDocumentId: string | null,
+): DocumentSession {
   let phase: DocumentSessionPhase = 'initializing'
-
   let currentCheckpoint: DocumentCheckpoint | null = null
-
   let savedCheckpoint: DocumentCheckpoint | null = null
-
-  let currentFilePath = filePath
+  let documentId = initialDocumentId
   let activeSave: DocumentSaveTicket | null = null
   let nextSaveId = 1
 
-  function assertNotClosed(): void {
+  function assertNotClosed() {
     if (phase === 'closing' || phase === 'closed') {
       throw new Error('DOCUMENT_SESSION_NOT_ACTIVE')
     }
   }
 
-  function requireInitialized(): void {
-    if (currentCheckpoint === null || savedCheckpoint === null) {
+  function requireInitialized() {
+    if (!currentCheckpoint || !savedCheckpoint) {
       throw new Error('DOCUMENT_SESSION_NOT_INITIALIZED')
     }
   }
 
-  function requireActiveTicket(ticket: DocumentSaveTicket): void {
-    if (activeSave === null || activeSave.id !== ticket.id) {
+  function requireActiveTicket(ticket: DocumentSaveTicket) {
+    if (!activeSave || activeSave.id !== ticket.id) {
       throw new Error('DOCUMENT_SESSION_STALE_SAVE_TICKET')
     }
   }
 
-  function isDirty(): boolean {
-    if (currentCheckpoint === null || savedCheckpoint === null) {
-      return false
-    }
-
-    return !checkpointsEqual(currentCheckpoint, savedCheckpoint)
+  function isDirty() {
+    return (
+      currentCheckpoint !== null &&
+      savedCheckpoint !== null &&
+      !checkpointsEqual(currentCheckpoint, savedCheckpoint)
+    )
   }
 
-  function getPersistenceState(): DocumentPersistenceState {
-    if (phase === 'saving') {
-      return 'saving'
-    }
-
-    if (phase === 'save-failed') {
-      return 'failed'
-    }
-
+  function persistence(): DocumentPersistenceState {
+    if (phase === 'saving') return 'saving'
+    if (phase === 'save-failed') return 'failed'
     return isDirty() ? 'dirty' : 'clean'
   }
 
@@ -108,7 +96,6 @@ export function createDocumentSession(filePath: string | null): DocumentSession 
       }
 
       const checkpoint = createDocumentCheckpoint(snapshot)
-
       currentCheckpoint = checkpoint
       savedCheckpoint = checkpoint
       phase = 'ready'
@@ -147,12 +134,12 @@ export function createDocumentSession(filePath: string | null): DocumentSession 
       return ticket
     },
 
-    completeSave(ticket, nextFilePath) {
+    completeSave(ticket, nextDocumentId) {
       assertNotClosed()
       requireActiveTicket(ticket)
 
       savedCheckpoint = ticket.checkpoint
-      currentFilePath = nextFilePath
+      documentId = nextDocumentId
       activeSave = null
       phase = 'ready'
     },
@@ -193,15 +180,15 @@ export function createDocumentSession(filePath: string | null): DocumentSession 
       return phase
     },
 
-    getFilePath() {
-      return currentFilePath
+    getDocumentId() {
+      return documentId
     },
 
     getSnapshot() {
       return {
         phase,
-        persistence: getPersistenceState(),
-        filePath: currentFilePath,
+        persistence: persistence(),
+        documentId,
       }
     },
   }

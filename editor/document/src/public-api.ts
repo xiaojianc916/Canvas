@@ -3,15 +3,16 @@ export {
   type CanvasCloseDecision,
   type CanvasDocumentService,
   type CanvasEditorSessionRegistryPort,
-  type CanvasFileSelectionPort,
   type CanvasId,
   type CanvasPersistenceState,
   type CanvasSessionId,
   type CanvasSessionSnapshot,
   type CreateCanvasDocumentServiceDependencies,
   createCanvasDocumentService,
-  type DrawPersistencePort,
+  type DocumentPersistencePort,
   type OpenedCanvasSession,
+  type OpenedNativeDocument,
+  type SavedNativeDocument,
 } from './application/canvas-document-service'
 
 export {
