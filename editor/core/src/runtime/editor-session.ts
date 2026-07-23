@@ -93,7 +93,9 @@ export function createEditorSession(options: CreateEditorSessionOptions): Editor
       ...registration.shapeUtils,
     ] as unknown as readonly TLAnyShapeUtilConstructor[],
     bindingUtils: [...defaultBindingUtils, ...registration.bindingUtils],
-    snapshot: options.initialSnapshot,
+    ...(options.initialSnapshot
+      ? { snapshot: options.initialSnapshot }
+      : {}),
   })
 
   let attachedEditor: Editor | null = null
