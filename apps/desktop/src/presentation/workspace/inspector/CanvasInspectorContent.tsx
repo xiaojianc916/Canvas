@@ -2,13 +2,16 @@ import { useEditor } from '@hybrid-canvas/canvas/react'
 import { useValue } from 'tldraw'
 import { SelectionInspectorRouter } from './selections/SelectionInspectorRouter'
 import { ToolInspectorRouter } from './tools/ToolInspectorRouter'
+import type { ToolInspectorRegistry } from './tools/ToolInspectorRegistry'
 
 export interface CanvasInspectorContentProps {
   readonly hasActiveCanvas: boolean
+  readonly toolInspectorRegistry: ToolInspectorRegistry
 }
 
 export function CanvasInspectorContent({
   hasActiveCanvas,
+  toolInspectorRegistry,
 }: CanvasInspectorContentProps) {
   const editor = useEditor()
 
@@ -40,6 +43,7 @@ export function CanvasInspectorContent({
     return (
       <ToolInspectorRouter
         editor={editor}
+        registry={toolInspectorRegistry}
         toolId={activeToolId}
       />
     )

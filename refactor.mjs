@@ -14,403 +14,112 @@ import { fileURLToPath } from 'node:url'
 const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url))
 const DRY_RUN = process.argv.includes('--dry-run')
 
-const TOOLS_DIRECTORY = path.join(
-  ROOT_DIR,
-  'apps/desktop/src/presentation/workspace/inspector/tools',
-)
-
 const PATHS = {
   packageJson: path.join(ROOT_DIR, 'package.json'),
 
-  router: path.join(
-    TOOLS_DIRECTORY,
-    'ToolInspectorRouter.tsx',
+  extensionContract: path.join(
+    ROOT_DIR,
+    'editor/core/src/contracts/extension-contract.ts',
   ),
 
-  registry: path.join(
-    TOOLS_DIRECTORY,
-    'ToolInspectorRegistry.tsx',
+  contractsPublicApi: path.join(
+    ROOT_DIR,
+    'editor/core/src/contracts/public-api.ts',
   ),
 
-  index: path.join(
-    TOOLS_DIRECTORY,
-    'index.ts',
+  extensionsPublicApi: path.join(
+    ROOT_DIR,
+    'editor/core/src/extensions-public-api.ts',
   ),
-}
 
-const REGISTRY_SOURCE = `import type { ComponentType } from 'react'
-import { ArrowToolInspector } from './ArrowToolInspector'
-import { DrawToolInspector } from './DrawToolInspector'
-import { EraserToolInspector } from './EraserToolInspector'
-import { FrameToolInspector } from './FrameToolInspector'
-import { HandToolInspector } from './HandToolInspector'
-import { LineToolInspector } from './LineToolInspector'
-import { NoteToolInspector } from './NoteToolInspector'
-import { ScientificChartToolInspector } from './ScientificChartToolInspector'
-import { SelectToolInspector } from './SelectToolInspector'
-import { ShapeToolInspector } from './ShapeToolInspector'
-import { TextToolInspector } from './TextToolInspector'
-import type { ToolInspectorProps } from './types'
+  toolRegistry: path.join(
+    ROOT_DIR,
+    'apps/desktop/src/presentation/workspace/inspector/tools/ToolInspectorRegistry.tsx',
+  ),
 
-export interface ToolInspectorContribution {
-  /**
-   * The exact tldraw StateNode tool id.
-   */
-  readonly toolId: string
+  canvasInspector: path.join(
+    ROOT_DIR,
+    'apps/desktop/src/presentation/workspace/inspector/CanvasInspectorContent.tsx',
+  ),
 
-  /**
-   * Higher-priority contributions override lower-priority contributions
-   * for the same tool id.
-   *
-   * Core inspectors use priority 0. Feature-owned inspectors should
-   * normally use priority 100.
-   */
-  readonly priority?: number
-
-  /**
-   * Stable owner identifier used for diagnostics.
-   *
-   * Examples:
-   * - core
-   * - freehand
-   * - flowchart
-   * - scientific-plot
-   */
-  readonly owner: string
-
-  readonly component: ComponentType<ToolInspectorProps>
-}
-
-export interface ToolInspectorResolution {
-  readonly toolId: string
-  readonly owner: string
-  readonly priority: number
-  readonly component: ComponentType<ToolInspectorProps>
-}
-
-function DrawInspector(
-  props: ToolInspectorProps,
-) {
-  return (
-    <DrawToolInspector
-      {...props}
-      variant="draw"
-    />
-  )
-}
-
-function HighlightInspector(
-  props: ToolInspectorProps,
-) {
-  return (
-    <DrawToolInspector
-      {...props}
-      variant="highlight"
-    />
-  )
-}
-
-/**
- * Temporary core contribution list.
- *
- * Domain-specific entries will move to their owning Feature packages:
- *
- * - draw/highlight -> @hybrid-canvas/freehand
- * - arrow -> @hybrid-canvas/flowchart
- * - scientific-chart -> @hybrid-canvas/scientific-plot
- */
-export const CORE_TOOL_INSPECTOR_CONTRIBUTIONS:
-  readonly ToolInspectorContribution[] = [
-    {
-      toolId: 'select',
-      owner: 'core',
-      component: SelectToolInspector,
-    },
-    {
-      toolId: 'hand',
-      owner: 'core',
-      component: HandToolInspector,
-    },
-    {
-      toolId: 'geo',
-      owner: 'core',
-      component: ShapeToolInspector,
-    },
-    {
-      toolId: 'line',
-      owner: 'core',
-      component: LineToolInspector,
-    },
-    {
-      toolId: 'arrow',
-      owner: 'core',
-      component: ArrowToolInspector,
-    },
-    {
-      toolId: 'draw',
-      owner: 'core',
-      component: DrawInspector,
-    },
-    {
-      toolId: 'highlight',
-      owner: 'core',
-      component: HighlightInspector,
-    },
-    {
-      toolId: 'eraser',
-      owner: 'core',
-      component: EraserToolInspector,
-    },
-    {
-      toolId: 'text',
-      owner: 'core',
-      component: TextToolInspector,
-    },
-    {
-      toolId: 'note',
-      owner: 'core',
-      component: NoteToolInspector,
-    },
-    {
-      toolId: 'frame',
-      owner: 'core',
-      component: FrameToolInspector,
-    },
-    {
-      toolId: 'scientific-chart',
-      owner: 'core',
-      component: ScientificChartToolInspector,
-    },
-  ]
-
-export class ToolInspectorRegistry {
-  readonly #resolutions: ReadonlyMap<
-    string,
-    ToolInspectorResolution
-  >
-
-  constructor(
-    contributions:
-      readonly ToolInspectorContribution[],
-  ) {
-    this.#resolutions =
-      buildResolutionMap(contributions)
-  }
-
-  resolve(
-    toolId: string,
-  ): ToolInspectorResolution | null {
-    return this.#resolutions.get(toolId) ?? null
-  }
-
-  has(toolId: string): boolean {
-    return this.#resolutions.has(toolId)
-  }
-
-  list(): readonly ToolInspectorResolution[] {
-    return Array.from(
-      this.#resolutions.values(),
-    ).sort((left, right) =>
-      left.toolId.localeCompare(right.toolId),
-    )
-  }
-}
-
-export function createToolInspectorRegistry(
-  contributions:
-    readonly ToolInspectorContribution[] = [],
-): ToolInspectorRegistry {
-  return new ToolInspectorRegistry([
-    ...CORE_TOOL_INSPECTOR_CONTRIBUTIONS,
-    ...contributions,
-  ])
-}
-
-export const defaultToolInspectorRegistry =
-  createToolInspectorRegistry()
-
-function buildResolutionMap(
-  contributions:
-    readonly ToolInspectorContribution[],
-): ReadonlyMap<
-  string,
-  ToolInspectorResolution
-> {
-  const resolutions = new Map<
-    string,
-    ToolInspectorResolution
-  >()
-
-  for (const contribution of contributions) {
-    validateContribution(contribution)
-
-    const priority =
-      contribution.priority ?? 0
-
-    const existing = resolutions.get(
-      contribution.toolId,
-    )
-
-    if (
-      existing &&
-      existing.priority === priority
-    ) {
-      throw new Error(
-        'Conflicting tool inspector contributions for "' +
-          contribution.toolId +
-          '" at priority ' +
-          String(priority) +
-          ': "' +
-          existing.owner +
-          '" and "' +
-          contribution.owner +
-          '".',
-      )
-    }
-
-    if (
-      !existing ||
-      priority > existing.priority
-    ) {
-      resolutions.set(
-        contribution.toolId,
-        {
-          toolId: contribution.toolId,
-          owner: contribution.owner,
-          priority,
-          component: contribution.component,
-        },
-      )
-    }
-  }
-
-  return resolutions
-}
-
-function validateContribution(
-  contribution:
-    ToolInspectorContribution,
-): void {
-  if (!contribution.toolId.trim()) {
-    throw new Error(
-      'Tool inspector contribution requires a toolId.',
-    )
-  }
-
-  if (!contribution.owner.trim()) {
-    throw new Error(
-      'Tool inspector contribution "' +
-        contribution.toolId +
-        '" requires an owner.',
-    )
-  }
-
-  if (
-    typeof contribution.component !==
-    'function'
-  ) {
-    throw new Error(
-      'Tool inspector contribution "' +
-        contribution.toolId +
-        '" requires a React component.',
-    )
-  }
-
-  if (
-    contribution.priority !== undefined &&
-    !Number.isFinite(
-      contribution.priority,
-    )
-  ) {
-    throw new Error(
-      'Tool inspector contribution "' +
-        contribution.toolId +
-        '" has an invalid priority.',
-    )
-  }
-}
-`
-
-const ROUTER_SOURCE = `import {
-  defaultToolInspectorRegistry,
-  type ToolInspectorRegistry,
-} from './ToolInspectorRegistry'
-import type { ToolInspectorRouterProps } from './types'
-import { UnknownToolInspector } from './UnknownToolInspector'
-
-export interface RegisteredToolInspectorRouterProps
-  extends ToolInspectorRouterProps {
-  readonly registry?: ToolInspectorRegistry
-}
-
-export function ToolInspectorRouter({
-  editor,
-  toolId,
-  registry = defaultToolInspectorRegistry,
-}: RegisteredToolInspectorRouterProps) {
-  const resolution = registry.resolve(toolId)
-
-  if (!resolution) {
-    return (
-      <UnknownToolInspector
-        editor={editor}
-        toolId={toolId}
-      />
-    )
-  }
-
-  const Inspector = resolution.component
-
-  return <Inspector editor={editor} />
-}
-`
-
-function transformIndex(source) {
-  if (
-    source.includes(
-      "from './ToolInspectorRegistry'",
-    )
-  ) {
-    return source
-  }
-
-  return (
-    source.trimEnd() +
-    `
-
-export {
-  CORE_TOOL_INSPECTOR_CONTRIBUTIONS,
-  ToolInspectorRegistry,
-  createToolInspectorRegistry,
-  defaultToolInspectorRegistry,
-  type ToolInspectorContribution,
-  type ToolInspectorResolution,
-} from './ToolInspectorRegistry'
-`
-  )
+  workspaceContainer: path.join(
+    ROOT_DIR,
+    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+  ),
 }
 
 async function main() {
   console.log('')
-  console.log('Hybrid Canvas — Tool Inspector Registry Refactor')
+  console.log(
+    'Hybrid Canvas — Extension Tool Inspector Contract',
+  )
   console.log(`Repository: ${ROOT_DIR}`)
   console.log(`Mode: ${DRY_RUN ? 'dry-run' : 'write'}`)
   console.log('')
 
   await validateRepository()
 
-  const indexSource = await readUtf8(
-    PATHS.index,
-  )
+  const originals = {
+    extensionContract: await readUtf8(
+      PATHS.extensionContract,
+    ),
 
-  const transformedIndex =
-    transformIndex(indexSource)
+    contractsPublicApi: await readUtf8(
+      PATHS.contractsPublicApi,
+    ),
+
+    extensionsPublicApi: await readUtf8(
+      PATHS.extensionsPublicApi,
+    ),
+
+    toolRegistry: await readUtf8(
+      PATHS.toolRegistry,
+    ),
+
+    canvasInspector: await readUtf8(
+      PATHS.canvasInspector,
+    ),
+
+    workspaceContainer: await readUtf8(
+      PATHS.workspaceContainer,
+    ),
+  }
+
+  const transformed = {
+    extensionContract: transformExtensionContract(
+      originals.extensionContract,
+    ),
+
+    contractsPublicApi: transformContractsPublicApi(
+      originals.contractsPublicApi,
+    ),
+
+    extensionsPublicApi:
+      transformExtensionsPublicApi(
+        originals.extensionsPublicApi,
+      ),
+
+    toolRegistry: transformToolRegistry(
+      originals.toolRegistry,
+    ),
+
+    canvasInspector: transformCanvasInspector(
+      originals.canvasInspector,
+    ),
+
+    workspaceContainer:
+      transformWorkspaceContainer(
+        originals.workspaceContainer,
+      ),
+  }
 
   if (DRY_RUN) {
-    console.log('✓ Current switch router detected')
-    console.log('✓ All current tool inspectors detected')
-    console.log('✓ Registry can be generated')
-    console.log('✓ Router can be replaced safely')
+    console.log('✓ Extension contract detected')
+    console.log('✓ Extension registration builder detected')
+    console.log('✓ Tool inspector registry detected')
+    console.log('✓ Canvas inspector detected')
+    console.log('✓ Workspace session registration detected')
+    console.log('✓ All changes can be applied safely')
     console.log('✓ No files were changed')
     console.log('')
     return
@@ -419,147 +128,473 @@ async function main() {
   const backupDirectory =
     await createBackupDirectory()
 
-  await backupFile(
-    PATHS.router,
-    path.join(
-      backupDirectory,
-      'ToolInspectorRouter.tsx',
-    ),
-  )
+  for (const filePath of Object.values(PATHS)) {
+    if (filePath === PATHS.packageJson) {
+      continue
+    }
 
-  await backupFile(
-    PATHS.index,
-    path.join(
-      backupDirectory,
-      'index.ts',
-    ),
+    await backupFile(
+      filePath,
+      path.join(
+        backupDirectory,
+        path.relative(ROOT_DIR, filePath),
+      ),
+    )
+  }
+
+  await writeUtf8(
+    PATHS.extensionContract,
+    transformed.extensionContract,
   )
 
   await writeUtf8(
-    PATHS.registry,
-    REGISTRY_SOURCE,
+    PATHS.contractsPublicApi,
+    transformed.contractsPublicApi,
   )
 
   await writeUtf8(
-    PATHS.router,
-    ROUTER_SOURCE,
+    PATHS.extensionsPublicApi,
+    transformed.extensionsPublicApi,
   )
 
   await writeUtf8(
-    PATHS.index,
-    transformedIndex,
+    PATHS.toolRegistry,
+    transformed.toolRegistry,
+  )
+
+  await writeUtf8(
+    PATHS.canvasInspector,
+    transformed.canvasInspector,
+  )
+
+  await writeUtf8(
+    PATHS.workspaceContainer,
+    transformed.workspaceContainer,
   )
 
   console.log('')
   console.log(`Backup: ${relative(backupDirectory)}`)
   console.log('')
-  console.log('Registry refactor complete:')
-  console.log('  ✓ ToolInspectorRegistry created')
-  console.log('  ✓ ToolInspectorRouter switch removed')
-  console.log('  ✓ Unknown tool fallback preserved')
-  console.log('  ✓ Contribution priority supported')
-  console.log('  ✓ Duplicate priority conflicts detected')
-  console.log('  ✓ Feature override path prepared')
+  console.log('Extension inspector contract complete:')
+  console.log('  ✓ Extension tool inspector contract added')
+  console.log('  ✓ Registration collection added')
+  console.log('  ✓ Public API exports added')
+  console.log('  ✓ App registry uses extension contract')
+  console.log('  ✓ Active session contributions connected')
+  console.log('  ✓ Core inspectors remain fallback entries')
   console.log('')
   console.log('Run validation:')
   console.log(
-    '  pnpm exec biome check --write apps/desktop/src/presentation/workspace/inspector/tools',
+    '  pnpm exec biome check --write editor/core/src apps/desktop/src/presentation/workspace',
   )
   console.log('  pnpm typecheck')
   console.log('  pnpm test')
   console.log('')
 }
 
-async function validateRepository() {
-  const requiredFiles = [
-    PATHS.packageJson,
-    PATHS.router,
-    PATHS.index,
-    path.join(
-      TOOLS_DIRECTORY,
-      'SelectToolInspector.tsx',
-    ),
-    path.join(
-      TOOLS_DIRECTORY,
-      'HandToolInspector.tsx',
-    ),
-    path.join(
-      TOOLS_DIRECTORY,
-      'ShapeToolInspector.tsx',
-    ),
-    path.join(
-      TOOLS_DIRECTORY,
-      'LineToolInspector.tsx',
-    ),
-    path.join(
-      TOOLS_DIRECTORY,
-      'ArrowToolInspector.tsx',
-    ),
-    path.join(
-      TOOLS_DIRECTORY,
-      'DrawToolInspector.tsx',
-    ),
-    path.join(
-      TOOLS_DIRECTORY,
-      'EraserToolInspector.tsx',
-    ),
-    path.join(
-      TOOLS_DIRECTORY,
-      'TextToolInspector.tsx',
-    ),
-    path.join(
-      TOOLS_DIRECTORY,
-      'NoteToolInspector.tsx',
-    ),
-    path.join(
-      TOOLS_DIRECTORY,
-      'FrameToolInspector.tsx',
-    ),
-    path.join(
-      TOOLS_DIRECTORY,
-      'ScientificChartToolInspector.tsx',
-    ),
-    path.join(
-      TOOLS_DIRECTORY,
-      'UnknownToolInspector.tsx',
-    ),
-  ]
+function transformExtensionContract(source) {
+  let next = source
 
-  for (const filePath of requiredFiles) {
-    await assertFile(filePath)
+  next = replaceRequired(
+    next,
+    `import type {
+  TLAnyBindingUtilConstructor,
+  TLAnyShapeUtilConstructor,
+  TLStateNodeConstructor,
+} from 'tldraw'`,
+    `import type { ComponentType } from 'react'
+import type {
+  Editor,
+  TLAnyBindingUtilConstructor,
+  TLAnyShapeUtilConstructor,
+  TLStateNodeConstructor,
+} from 'tldraw'`,
+    'extension contract imports',
+  )
+
+  next = replaceRequired(
+    next,
+    `export interface HybridCanvasExtension {`,
+    `export interface HybridCanvasToolInspectorProps {
+  readonly editor: Editor
+}
+
+export interface HybridCanvasToolInspectorContribution {
+  /**
+   * Exact tldraw StateNode tool id.
+   */
+  readonly toolId: string
+
+  /**
+   * Stable Feature owner id used for diagnostics.
+   */
+  readonly owner: string
+
+  /**
+   * Higher priorities override lower priorities.
+   *
+   * Core fallback inspectors use 0. Feature-owned inspectors
+   * should normally use 100.
+   */
+  readonly priority?: number
+
+  readonly component: ComponentType<HybridCanvasToolInspectorProps>
+}
+
+export interface HybridCanvasExtension {`,
+    'tool inspector contract interfaces',
+  )
+
+  next = replaceRequired(
+    next,
+    `  readonly tools?: readonly TLStateNodeConstructor[]
+  readonly shapeLabels?: Readonly<Record<string, string>>
+}`,
+    `  readonly tools?: readonly TLStateNodeConstructor[]
+  readonly shapeLabels?: Readonly<Record<string, string>>
+  readonly toolInspectors?: readonly HybridCanvasToolInspectorContribution[]
+}`,
+    'HybridCanvasExtension toolInspectors',
+  )
+
+  next = replaceRequired(
+    next,
+    `  readonly tools: readonly TLStateNodeConstructor[]
+  readonly shapeLabels: Readonly<Record<string, string>>
+}`,
+    `  readonly tools: readonly TLStateNodeConstructor[]
+  readonly shapeLabels: Readonly<Record<string, string>>
+  readonly toolInspectors: readonly HybridCanvasToolInspectorContribution[]
+}`,
+    'ExtensionRegistration toolInspectors',
+  )
+
+  next = replaceRequired(
+    next,
+    `  const tools: TLStateNodeConstructor[] = []
+  const shapeLabels: Record<string, string> = {}`,
+    `  const tools: TLStateNodeConstructor[] = []
+  const shapeLabels: Record<string, string> = {}
+  const toolInspectors: HybridCanvasToolInspectorContribution[] = []`,
+    'registration tool inspector collection',
+  )
+
+  next = replaceRequired(
+    next,
+    `    tools.push(...(extension.tools ?? []))
+    Object.assign(shapeLabels, extension.shapeLabels)`,
+    `    tools.push(...(extension.tools ?? []))
+    Object.assign(shapeLabels, extension.shapeLabels)
+
+    for (const contribution of extension.toolInspectors ?? []) {
+      validateToolInspectorContribution(
+        extension.id,
+        contribution,
+      )
+
+      toolInspectors.push(contribution)
+    }`,
+    'extension contribution collection',
+  )
+
+  next = replaceRequired(
+    next,
+    `    tools: Object.freeze(tools),
+    shapeLabels: Object.freeze(shapeLabels),
+  })
+}`,
+    `    tools: Object.freeze(tools),
+    shapeLabels: Object.freeze(shapeLabels),
+    toolInspectors: Object.freeze(toolInspectors),
+  })
+}
+
+function validateToolInspectorContribution(
+  extensionId: string,
+  contribution: HybridCanvasToolInspectorContribution,
+): void {
+  if (!contribution.toolId.trim()) {
+    throw new Error(
+      'EXTENSION_TOOL_INSPECTOR_TOOL_ID_REQUIRED:' +
+        extensionId,
+    )
   }
 
-  const routerSource = await readUtf8(
-    PATHS.router,
+  if (!contribution.owner.trim()) {
+    throw new Error(
+      'EXTENSION_TOOL_INSPECTOR_OWNER_REQUIRED:' +
+        extensionId,
+    )
+  }
+
+  if (
+    typeof contribution.component !== 'function'
+  ) {
+    throw new Error(
+      'EXTENSION_TOOL_INSPECTOR_COMPONENT_REQUIRED:' +
+        extensionId,
+    )
+  }
+
+  if (
+    contribution.priority !== undefined &&
+    !Number.isFinite(contribution.priority)
+  ) {
+    throw new Error(
+      'EXTENSION_TOOL_INSPECTOR_PRIORITY_INVALID:' +
+        extensionId,
+    )
+  }
+}`,
+    'registration return and validation',
+  )
+
+  return next
+}
+
+function transformContractsPublicApi(source) {
+  return replaceRequired(
+    source,
+    `  type HybridCanvasExtension,
+} from './extension-contract'`,
+    `  type HybridCanvasExtension,
+  type HybridCanvasToolInspectorContribution,
+  type HybridCanvasToolInspectorProps,
+} from './extension-contract'`,
+    'contracts public API exports',
+  )
+}
+
+function transformExtensionsPublicApi(source) {
+  return replaceRequired(
+    source,
+    `  type HybridCanvasExtension,
+} from './contracts/public-api'`,
+    `  type HybridCanvasExtension,
+  type HybridCanvasToolInspectorContribution,
+  type HybridCanvasToolInspectorProps,
+} from './contracts/public-api'`,
+    'extensions public API exports',
+  )
+}
+
+function transformToolRegistry(source) {
+  let next = source
+
+  next = replaceRequired(
+    next,
+    `import type { ComponentType } from 'react'`,
+    `import type {
+  HybridCanvasToolInspectorContribution,
+  HybridCanvasToolInspectorProps,
+} from '@hybrid-canvas/canvas/extensions'
+import type { ComponentType } from 'react'`,
+    'registry contract import',
+  )
+
+  const interfaceStart = next.indexOf(
+    'export interface ToolInspectorContribution {',
+  )
+
+  const interfaceEnd = next.indexOf(
+    'export interface ToolInspectorResolution {',
+    interfaceStart,
   )
 
   if (
-    !routerSource.includes(
-      'switch (toolId)',
+    interfaceStart === -1 ||
+    interfaceEnd === -1
+  ) {
+    throw new Error(
+      'Could not locate ToolInspectorContribution interface.',
+    )
+  }
+
+  next =
+    next.slice(0, interfaceStart) +
+    `export type ToolInspectorContribution =
+  HybridCanvasToolInspectorContribution
+
+` +
+    next.slice(interfaceEnd)
+
+  next = next.replaceAll(
+    `ComponentType<ToolInspectorProps>`,
+    `ComponentType<HybridCanvasToolInspectorProps>`,
+  )
+
+  return next
+}
+
+function transformCanvasInspector(source) {
+  let next = source
+
+  if (
+    !next.includes(
+      `import type { ToolInspectorRegistry }`,
     )
   ) {
-    if (
-      routerSource.includes(
-        'defaultToolInspectorRegistry',
-      )
-    ) {
-      throw new Error(
-        'Tool inspector registry refactor appears to be already applied.',
-      )
-    }
+    next = replaceRequired(
+      next,
+      `import { ToolInspectorRouter } from './tools/ToolInspectorRouter'`,
+      `import { ToolInspectorRouter } from './tools/ToolInspectorRouter'
+import type { ToolInspectorRegistry } from './tools/ToolInspectorRegistry'`,
+      'CanvasInspector registry import',
+    )
+  }
 
+  next = replaceRequired(
+    next,
+    `export interface CanvasInspectorContentProps {
+  readonly hasActiveCanvas: boolean
+}`,
+    `export interface CanvasInspectorContentProps {
+  readonly hasActiveCanvas: boolean
+  readonly toolInspectorRegistry: ToolInspectorRegistry
+}`,
+    'CanvasInspector props',
+  )
+
+  next = replaceRequired(
+    next,
+    `export function CanvasInspectorContent({
+  hasActiveCanvas,
+}: CanvasInspectorContentProps) {`,
+    `export function CanvasInspectorContent({
+  hasActiveCanvas,
+  toolInspectorRegistry,
+}: CanvasInspectorContentProps) {`,
+    'CanvasInspector destructuring',
+  )
+
+  next = replaceRequired(
+    next,
+    `      <ToolInspectorRouter
+        editor={editor}
+        toolId={activeToolId}
+      />`,
+    `      <ToolInspectorRouter
+        editor={editor}
+        registry={toolInspectorRegistry}
+        toolId={activeToolId}
+      />`,
+    'ToolInspectorRouter registry prop',
+  )
+
+  return next
+}
+
+function transformWorkspaceContainer(source) {
+  let next = source
+
+  next = replaceRequired(
+    next,
+    `import { CanvasInspectorContent } from './inspector/CanvasInspectorContent'`,
+    `import { CanvasInspectorContent } from './inspector/CanvasInspectorContent'
+import { createToolInspectorRegistry } from './inspector/tools/ToolInspectorRegistry'`,
+    'Workspace registry import',
+  )
+
+  const registryAnchor = `  const activeEditorSession = activeSessionId
+    ? port.canvases.getEditorSession(activeSessionId)
+    : null
+`
+
+  const registryReplacement = `  const activeEditorSession = activeSessionId
+    ? port.canvases.getEditorSession(activeSessionId)
+    : null
+
+  const toolInspectorRegistry = useMemo(
+    () =>
+      createToolInspectorRegistry(
+        activeEditorSession?.registration.toolInspectors ?? [],
+      ),
+    [activeEditorSession],
+  )
+`
+
+  next = replaceRequired(
+    next,
+    registryAnchor,
+    registryReplacement,
+    'active session inspector registry',
+  )
+
+  next = replaceRequired(
+    next,
+    `      inspector={<CanvasInspectorContent hasActiveCanvas={workbench.activeCanvas !== null} />}`,
+    `      inspector={
+        <CanvasInspectorContent
+          hasActiveCanvas={workbench.activeCanvas !== null}
+          toolInspectorRegistry={toolInspectorRegistry}
+        />
+      }`,
+    'Workspace CanvasInspectorContent props',
+  )
+
+  return next
+}
+
+function replaceRequired(
+  source,
+  oldValue,
+  newValue,
+  label,
+) {
+  if (!source.includes(oldValue)) {
     throw new Error(
-      'Expected ToolInspectorRouter switch was not found.',
+      `Could not update ${label}.\n` +
+        'The source differs from the expected remote version. ' +
+        'Refusing an unsafe partial edit.',
+    )
+  }
+
+  return source.replace(oldValue, newValue)
+}
+
+async function validateRepository() {
+  for (const filePath of Object.values(PATHS)) {
+    await assertFile(filePath)
+  }
+
+  const contractSource = await readUtf8(
+    PATHS.extensionContract,
+  )
+
+  if (
+    !contractSource.includes(
+      'export interface HybridCanvasExtension',
+    ) ||
+    !contractSource.includes(
+      'buildExtensionRegistration',
+    )
+  ) {
+    throw new Error(
+      'Expected HybridCanvasExtension contract was not found.',
     )
   }
 
   if (
-    routerSource.includes(
-      "from './BasicToolInspectors'",
+    contractSource.includes(
+      'toolInspectors?:',
     )
   ) {
     throw new Error(
-      'BasicToolInspectors is still in use. Run the per-tool split refactor first.',
+      'Extension tool inspector contract appears to be already installed.',
+    )
+  }
+
+  const registrySource = await readUtf8(
+    PATHS.toolRegistry,
+  )
+
+  if (
+    !registrySource.includes(
+      'export interface ToolInspectorContribution',
+    )
+  ) {
+    throw new Error(
+      'Expected app-level ToolInspectorContribution was not found.',
     )
   }
 }
@@ -583,7 +618,7 @@ async function createBackupDirectory() {
   const backupDirectory = path.join(
     ROOT_DIR,
     '.refactor-backup',
-    `tool-inspector-registry-${timestamp}`,
+    `extension-inspector-contract-${timestamp}`,
   )
 
   await mkdir(backupDirectory, {
@@ -646,7 +681,7 @@ function relative(filePath) {
 main().catch((error) => {
   console.error('')
   console.error(
-    'Tool inspector registry refactor failed.',
+    'Extension inspector contract refactor failed.',
   )
   console.error(
     error instanceof Error

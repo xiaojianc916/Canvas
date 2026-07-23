@@ -1,3 +1,7 @@
+import type {
+  HybridCanvasToolInspectorContribution,
+  HybridCanvasToolInspectorProps,
+} from '@hybrid-canvas/canvas/extensions'
 import type { ComponentType } from 'react'
 import { ArrowToolInspector } from './ArrowToolInspector'
 import { DrawToolInspector } from './DrawToolInspector'
@@ -12,40 +16,14 @@ import { ShapeToolInspector } from './ShapeToolInspector'
 import { TextToolInspector } from './TextToolInspector'
 import type { ToolInspectorProps } from './types'
 
-export interface ToolInspectorContribution {
-  /**
-   * The exact tldraw StateNode tool id.
-   */
-  readonly toolId: string
-
-  /**
-   * Higher-priority contributions override lower-priority contributions
-   * for the same tool id.
-   *
-   * Core inspectors use priority 0. Feature-owned inspectors should
-   * normally use priority 100.
-   */
-  readonly priority?: number
-
-  /**
-   * Stable owner identifier used for diagnostics.
-   *
-   * Examples:
-   * - core
-   * - freehand
-   * - flowchart
-   * - scientific-plot
-   */
-  readonly owner: string
-
-  readonly component: ComponentType<ToolInspectorProps>
-}
+export type ToolInspectorContribution =
+  HybridCanvasToolInspectorContribution
 
 export interface ToolInspectorResolution {
   readonly toolId: string
   readonly owner: string
   readonly priority: number
-  readonly component: ComponentType<ToolInspectorProps>
+  readonly component: ComponentType<HybridCanvasToolInspectorProps>
 }
 
 function DrawInspector(

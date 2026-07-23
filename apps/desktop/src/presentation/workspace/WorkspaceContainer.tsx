@@ -20,6 +20,7 @@ import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
 import { DesktopTitleBar } from '../chrome/DesktopTitleBar'
 import { reportUiError as reportError } from '../ui/ui-feedback'
 import { CanvasInspectorContent } from './inspector/CanvasInspectorContent'
+import { createToolInspectorRegistry } from './inspector/tools/ToolInspectorRegistry'
 import { SelectionTransformStatus } from './status/SelectionTransformStatus'
 
 const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({
@@ -117,6 +118,14 @@ export function WorkspaceContainer({
   const activeEditorSession = activeSessionId
     ? port.canvases.getEditorSession(activeSessionId)
     : null
+
+  const toolInspectorRegistry = useMemo(
+    () =>
+      createToolInspectorRegistry(
+        activeEditorSession?.registration.toolInspectors ?? [],
+      ),
+    [activeEditorSession],
+  )
 
   const pages = useSyncExternalStore(
     activeEditorSession?.subscribe ?? EMPTY_SUBSCRIBE,
@@ -289,7 +298,12 @@ export function WorkspaceContainer({
   return (
     <WorkspaceShell
       actions={actions}
-      inspector={<CanvasInspectorContent hasActiveCanvas={workbench.activeCanvas !== null} />}
+      inspector={
+        <CanvasInspectorContent
+          hasActiveCanvas={workbench.activeCanvas !== null}
+          toolInspectorRegistry={toolInspectorRegistry}
+        />
+      }
       inspectorSelectionKey={inspectorSelectionKey}
       mainContent={mainContent}
       model={model}
