@@ -30,6 +30,7 @@ uuid.workspace = true
 hybrid-canvas-file-native = { path = "../../../editor/persistence/native" }
 
 tauri.workspace = true
+tauri-plugin-clipboard-manager.workspace = true
 tauri-plugin-dialog.workspace = true
 tauri-plugin-fs.workspace = true
 tauri-plugin-log.workspace = true

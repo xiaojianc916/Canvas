@@ -1727,7 +1727,11 @@ dependencies = [
 name = "hybrid-canvas-file-native"
 version = "0.1.0"
 dependencies = [
+ "hex",
+ "serde_json",
+ "sha2",
  "tempfile",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

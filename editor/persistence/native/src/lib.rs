@@ -19,7 +19,9 @@ mod atomic_write;
 
 mod document_codec;
 mod error;
+mod revision;
 
 pub use atomic_write::atomic_write;
 pub use document_codec::canonicalize_draw_document;
 pub use error::{Error, Result};
+pub use revision::document_revision;

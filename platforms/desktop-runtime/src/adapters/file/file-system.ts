@@ -11,6 +11,7 @@ import {
   type DocumentSaveAsRequest,
   type DocumentSaveAsResult,
   type DocumentSaveRequest,
+  type DocumentSaveResult,
 } from '@hybrid-canvas/desktop-ipc/generated/ipc-bindings'
 
 export type DocumentId = NativeDocumentId
@@ -19,6 +20,7 @@ export interface OpenedDocument {
   readonly id: DocumentId
   readonly displayName: string
   readonly content: string
+  readonly revision: string
 }
 
 export interface DocumentFileCommands {
@@ -30,9 +32,17 @@ export interface DocumentFileCommands {
       readonly documentId?: DocumentId
       readonly suggestedName?: string
     },
-  ) => Promise<{ readonly id: DocumentId; readonly displayName: string } | null>
+  ) => Promise<{
+    readonly id: DocumentId
+    readonly displayName: string
+    readonly revision: string
+  } | null>
 
-  readonly save: (documentId: DocumentId, content: string) => Promise<void>
+  readonly save: (
+    documentId: DocumentId,
+    expectedRevision: string,
+    content: string,
+  ) => Promise<{ readonly revision: string }>
 
   readonly close: (documentId: DocumentId) => Promise<void>
 }
@@ -53,10 +63,15 @@ async function invokeDocumentCommand<T>(
 
 function toDocumentDescriptor(
   descriptor: DocumentDescriptor,
-): { readonly id: DocumentId; readonly displayName: string } {
+): {
+  readonly id: DocumentId
+  readonly displayName: string
+  readonly revision: string
+} {
   return {
     id: descriptor.documentId,
     displayName: descriptor.displayName,
+    revision: descriptor.revision,
   }
 }
 
@@ -74,6 +89,7 @@ export function createDocumentFileCommands(): DocumentFileCommands {
         id: response.document.documentId,
         displayName: response.document.displayName,
         content: response.document.content,
+        revision: response.document.revision,
       }
     },
 
@@ -92,13 +108,21 @@ export function createDocumentFileCommands(): DocumentFileCommands {
         : null
     },
 
-    async save(documentId, content) {
+    async save(documentId, expectedRevision, content) {
       const request: DocumentSaveRequest = {
         documentId,
+        expectedRevision,
         content,
       }
 
-      await invokeDocumentCommand(() => commands.documentSave(request))
+      const response: DocumentSaveResult =
+        await invokeDocumentCommand(() =>
+          commands.documentSave(request),
+        )
+
+      return {
+        revision: response.revision,
+      }
     },
 
     async close(documentId) {

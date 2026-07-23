@@ -38,7 +38,9 @@ function createHarness() {
 
   const persistence = {
     open: vi.fn(),
-    save: vi.fn(),
+    save: vi.fn().mockResolvedValue({
+      revision: 'revision-next',
+    }),
     saveAs: vi.fn(),
     close: vi.fn(),
   }
@@ -143,6 +145,7 @@ describe('Canvas document native-release contract', () => {
     harness.persistence.open.mockResolvedValue({
       id: 'native-document-unwrapped-snapshot',
       displayName: 'legacy.draw',
+      revision: 'revision-current',
       content: JSON.stringify({
         document: {
           shapes: [],
@@ -160,6 +163,7 @@ describe('Canvas document native-release contract', () => {
     harness.persistence.open.mockResolvedValue({
       id: 'native-document-opened',
       displayName: 'architecture.draw',
+      revision: 'revision-current',
       content: serializeDrawDocument(snapshot({ shapes: [] })),
     })
 
@@ -180,6 +184,7 @@ describe('Canvas document native-release contract', () => {
     harness.persistence.saveAs.mockResolvedValue({
       id: 'native-document-created',
       displayName: 'untitled.draw',
+      revision: 'revision-current',
     })
 
     await harness.service.save(opened.sessionId)
@@ -203,6 +208,7 @@ describe('Canvas document native-release contract', () => {
     harness.persistence.open.mockResolvedValue({
       id: 'native-document-existing',
       displayName: 'existing.draw',
+      revision: 'revision-current',
       content: serializeDrawDocument(snapshot({ shapes: [] })),
     })
 
@@ -219,6 +225,7 @@ describe('Canvas document native-release contract', () => {
 
     expect(harness.persistence.save).toHaveBeenCalledWith(
       'native-document-existing',
+      'revision-current',
       expect.any(String),
     )
   })
@@ -229,6 +236,7 @@ describe('Canvas document native-release contract', () => {
     harness.persistence.open.mockResolvedValue({
       id: 'native-document-saving',
       displayName: 'saving.draw',
+      revision: 'revision-current',
       content: serializeDrawDocument(snapshot({ shapes: [] })),
     })
 
@@ -243,8 +251,11 @@ describe('Canvas document native-release contract', () => {
 
     let resolveSave!: () => void
 
-    const pendingSave = new Promise<void>((resolve) => {
-      resolveSave = resolve
+    const pendingSave = new Promise<{
+      readonly revision: string
+    }>((resolve) => {
+      resolveSave = () =>
+        resolve({ revision: 'revision-next' })
     })
 
     harness.persistence.save.mockImplementation(() => pendingSave)
@@ -276,6 +287,7 @@ describe('Canvas document native-release contract', () => {
     harness.persistence.open.mockResolvedValue({
       id: 'native-document-save-failure',
       displayName: 'save-failure.draw',
+      revision: 'revision-current',
       content: serializeDrawDocument(snapshot({ shapes: [] })),
     })
 
@@ -312,6 +324,7 @@ describe('Canvas document native-release contract', () => {
     harness.persistence.open.mockResolvedValue({
       id: 'native-document-release-failure',
       displayName: 'failure.draw',
+      revision: 'revision-current',
       content: serializeDrawDocument(snapshot({ shapes: [] })),
     })
 

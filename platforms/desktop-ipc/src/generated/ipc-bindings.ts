@@ -25,7 +25,7 @@ async documentSaveAs(request: DocumentSaveAsRequest) : Promise<DocumentSaveAsRes
  * 
  * The renderer supplies an opaque document ID, never a local path.
  */
-async documentSave(request: DocumentSaveRequest) : Promise<null> {
+async documentSave(request: DocumentSaveRequest) : Promise<DocumentSaveResult> {
     return await TAURI_INVOKE("document_save", { request });
 },
 /**
@@ -63,7 +63,7 @@ export type AppSettings = { theme: string; language: string; auto_save: boolean;
 auto_save_interval: number; shortcuts: Partial<{ [key in string]: string }>; canvas: CanvasSettings; editor: EditorSettings; export: ExportSettings; privacy: PrivacySettings }
 export type CanvasSettings = { default_zoom: number; show_grid: boolean; snap_to_grid: boolean; grid_size: number; show_rulers: boolean; infinite_canvas: boolean }
 export type DocumentCloseRequest = { documentId: DocumentId }
-export type DocumentDescriptor = { documentId: DocumentId; displayName: string }
+export type DocumentDescriptor = { documentId: DocumentId; displayName: string; revision: string }
 /**
  * Opaque document identity exposed to the renderer.
  * 
@@ -72,7 +72,7 @@ export type DocumentDescriptor = { documentId: DocumentId; displayName: string }
  */
 export type DocumentId = string
 export type DocumentOpenResponse = { document: DocumentOpenResult | null }
-export type DocumentOpenResult = { documentId: DocumentId; displayName: string; content: string }
+export type DocumentOpenResult = { documentId: DocumentId; displayName: string; content: string; revision: string }
 export type DocumentSaveAsRequest = { 
 /**
  * None creates a new native document session.
@@ -81,11 +81,12 @@ export type DocumentSaveAsRequest = {
  */
 documentId: DocumentId | null; content: string; suggestedName: string | null }
 export type DocumentSaveAsResult = { document: DocumentDescriptor | null }
-export type DocumentSaveRequest = { documentId: DocumentId; content: string }
+export type DocumentSaveRequest = { documentId: DocumentId; expectedRevision: string; content: string }
+export type DocumentSaveResult = { revision: string }
 export type EditorSettings = { font_family: string; font_size: number; line_height: number; tab_size: number; insert_spaces: boolean; word_wrap: boolean; minimap: boolean }
 export type ExportSettings = { default_format: string; png_dpi: number; pdf_quality: number; include_metadata: boolean }
 export type IpcError = { code: IpcErrorCode; message: string; operation: IpcOperation; recoverable: boolean }
-export type IpcErrorCode = "validation" | "not-found" | "permission-denied" | "persistence" | "plugin" | "asset" | "import-export" | "platform"
+export type IpcErrorCode = "validation" | "not-found" | "file-conflict" | "permission-denied" | "persistence" | "plugin" | "asset" | "import-export" | "platform"
 export type IpcOperation = "file" | "plugin" | "asset" | "import-export" | "platform"
 export type PrivacySettings = { telemetry: boolean; crash_reporting: boolean; update_check: boolean }
 

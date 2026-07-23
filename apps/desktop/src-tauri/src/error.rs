@@ -55,6 +55,9 @@ pub enum Error {
     #[error("Not found: {0}")]
     NotFound(String),
 
+    #[error("File conflict: {0}")]
+    FileConflict(String),
+
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
 
@@ -85,6 +88,7 @@ pub enum Error {
 pub enum IpcErrorCode {
     Validation,
     NotFound,
+    FileConflict,
     PermissionDenied,
     Persistence,
     Plugin,
@@ -126,6 +130,7 @@ impl Error {
         match self {
             Self::Validation(_) => IpcErrorCode::Validation,
             Self::NotFound(_) => IpcErrorCode::NotFound,
+            Self::FileConflict(_) => IpcErrorCode::FileConflict,
             Self::PermissionDenied(_) => IpcErrorCode::PermissionDenied,
             Self::Persistence(_) | Self::File(_) | Self::Io(_) => IpcErrorCode::Persistence,
             Self::Plugin(_) => IpcErrorCode::Plugin,
@@ -137,7 +142,10 @@ impl Error {
 
     fn operation(&self) -> IpcOperation {
         match self {
-            Self::Persistence(_) | Self::File(_) | Self::Io(_) => IpcOperation::File,
+            Self::Persistence(_)
+            | Self::File(_)
+            | Self::FileConflict(_)
+            | Self::Io(_) => IpcOperation::File,
             Self::Plugin(_) => IpcOperation::Plugin,
             Self::Asset(_) => IpcOperation::Asset,
             Self::Import(_) | Self::Export(_) => IpcOperation::ImportExport,
@@ -152,6 +160,7 @@ impl Error {
                 | Self::Persistence(_)
                 | Self::PermissionDenied(_)
                 | Self::File(_)
+                | Self::FileConflict(_)
                 | Self::NotFound(_)
         )
     }
@@ -166,6 +175,7 @@ impl Error {
         match self {
             Self::Validation(_) => "请求参数无效",
             Self::NotFound(_) => "请求的资源不存在",
+            Self::FileConflict(_) => "文件已在其他位置被修改",
             Self::PermissionDenied(_) => "该操作未获授权",
 
             Self::Io(_)
@@ -277,6 +287,19 @@ mod tests {
         assert_eq!(value["operation"], "platform");
         assert_eq!(value["message"], "请求参数无效");
         assert_eq!(value["recoverable"], false);
+    }
+
+    #[test]
+    fn serialized_file_conflict_has_stable_contract() {
+        let value = serde_json::to_value(Error::FileConflict(
+            "private conflict diagnostics".to_owned(),
+        ))
+        .expect("error should serialize");
+
+        assert_eq!(value["code"], "file-conflict");
+        assert_eq!(value["operation"], "file");
+        assert_eq!(value["recoverable"], true);
+        assert_eq!(value["message"], "文件已在其他位置被修改");
     }
 
     #[test]

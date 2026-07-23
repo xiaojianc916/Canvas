@@ -105,16 +105,22 @@ export interface OpenedNativeDocument {
   readonly id: string
   readonly displayName: string
   readonly content: string
+  readonly revision: string
 }
 
 export interface SavedNativeDocument {
   readonly id: string
   readonly displayName: string
+  readonly revision: string
 }
 
 export interface DocumentPersistencePort {
   readonly open: () => Promise<OpenedNativeDocument | null>
-  readonly save: (documentId: string, content: string) => Promise<void>
+  readonly save: (
+    documentId: string,
+    expectedRevision: string,
+    content: string,
+  ) => Promise<{ readonly revision: string }>
   readonly saveAs: (
     content: string,
     options: {
@@ -137,6 +143,7 @@ interface OwnedCanvasSession {
   readonly document: DocumentSession
   stopObservingDocument: () => void
   saveOperation: Promise<void> | null
+  revision: string | null
 }
 
 export function createCanvasDocumentService({
@@ -166,7 +173,10 @@ export function createCanvasDocumentService({
       extensions,
     })
 
-    sessions.set(sessionId, createOwnedSession(editor, null))
+    sessions.set(
+      sessionId,
+      createOwnedSession(editor, null, null),
+    )
 
     return { canvasId, sessionId, title }
   }
@@ -199,7 +209,14 @@ export function createCanvasDocumentService({
         extensions,
       })
 
-      sessions.set(sessionId, createOwnedSession(editor, opened.id))
+      sessions.set(
+        sessionId,
+        createOwnedSession(
+          editor,
+          opened.id,
+          opened.revision,
+        ),
+      )
 
       return {
         canvasId,
@@ -235,6 +252,7 @@ export function createCanvasDocumentService({
   function createOwnedSession(
     editor: EditorSession,
     documentId: string | null,
+    revision: string | null,
   ): OwnedCanvasSession {
     const editorDocument: EditorDocumentPort = editor
     const document = createDocumentSession(documentId)
@@ -245,6 +263,7 @@ export function createCanvasDocumentService({
       document,
       stopObservingDocument: () => {},
       saveOperation: null,
+      revision,
     }
 
     owned.stopObservingDocument = editorDocument.subscribeDocumentEvents(
@@ -309,7 +328,11 @@ export function createCanvasDocumentService({
       const currentDocumentId = owned.document.getDocumentId()
 
       const saved = currentDocumentId
-        ? await saveExistingDocument(currentDocumentId, content)
+        ? await saveExistingDocument(
+            currentDocumentId,
+            requireRevision(owned),
+            content,
+          )
         : await persistence.saveAs(content, {
             suggestedName: '未命名画布.draw',
           })
@@ -320,6 +343,7 @@ export function createCanvasDocumentService({
         return
       }
 
+      owned.revision = saved.revision
       owned.document.completeSave(ticket, saved.id)
       emit()
     } catch (error) {
@@ -329,15 +353,31 @@ export function createCanvasDocumentService({
     }
   }
 
+  function requireRevision(
+    owned: OwnedCanvasSession,
+  ): string {
+    if (!owned.revision) {
+      throw new Error('DOCUMENT_REVISION_MISSING')
+    }
+
+    return owned.revision
+  }
+
   async function saveExistingDocument(
     documentId: string,
+    expectedRevision: string,
     content: string,
   ): Promise<SavedNativeDocument> {
-    await persistence.save(documentId, content)
+    const saved = await persistence.save(
+      documentId,
+      expectedRevision,
+      content,
+    )
 
     return {
       id: documentId,
       displayName: '',
+      revision: saved.revision,
     }
   }
 
