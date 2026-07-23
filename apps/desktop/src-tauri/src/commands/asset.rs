@@ -9,9 +9,7 @@ use specta::Type;
 use tauri::State;
 use uuid::Uuid;
 
-use crate::asset_protocol::{
-    asset_protocol_url, AssetProtocolError, AssetProtocolRegistry,
-};
+use crate::asset_protocol::{AssetProtocolError, AssetProtocolRegistry, asset_protocol_url};
 use crate::error::{Error, IpcError};
 
 type CommandResult<T> = Result<T, IpcError>;
@@ -76,8 +74,7 @@ pub async fn asset_upload(
     let byte_length = u32::try_from(request.bytes.len())
         .map_err(|_| Error::Asset("asset length overflow".into()))?;
 
-    let content_hash =
-        hex::encode(Sha256::digest(&request.bytes));
+    let content_hash = hex::encode(Sha256::digest(&request.bytes));
     let asset_token = content_hash.clone();
 
     assets
@@ -90,16 +87,10 @@ pub async fn asset_upload(
         )
         .map_err(map_asset_error)?;
 
-    let source = match asset_protocol_url(
-        &request.session_token,
-        &asset_token,
-    ) {
+    let source = match asset_protocol_url(&request.session_token, &asset_token) {
         Ok(source) => source,
         Err(error) => {
-            let _ = assets.remove(
-                &request.session_token,
-                &asset_token,
-            );
+            let _ = assets.remove(&request.session_token, &asset_token);
 
             return Err(map_asset_error(error));
         }
@@ -121,17 +112,11 @@ pub async fn asset_remove(
     assets: State<'_, AssetProtocolRegistry>,
 ) -> CommandResult<()> {
     let removed = assets
-        .remove(
-            &request.session_token,
-            &request.asset_token,
-        )
+        .remove(&request.session_token, &request.asset_token)
         .map_err(map_asset_error)?;
 
     if !removed {
-        return Err(Error::NotFound(
-            "asset does not exist in session".into(),
-        )
-        .into());
+        return Err(Error::NotFound("asset does not exist in session".into()).into());
     }
 
     Ok(())
@@ -147,13 +132,9 @@ pub async fn asset_session_close(
         .remove_session(&request.session_token)
         .map_err(map_asset_error)?;
 
-    if !removed {
-        return Err(Error::NotFound(
-            "asset session does not exist".into(),
-        )
-        .into());
-    }
-
+    // Document close may already have released a restored asset session.
+    // Keep explicit renderer disposal idempotent.
+    let _ = removed;
     Ok(())
 }
 
@@ -162,13 +143,9 @@ fn map_asset_error(error: AssetProtocolError) -> IpcError {
         AssetProtocolError::InvalidToken
         | AssetProtocolError::InvalidContentHash
         | AssetProtocolError::UnsupportedContentType
-        | AssetProtocolError::AssetTooLarge => {
-            Error::Validation("invalid asset request".into())
-        }
+        | AssetProtocolError::AssetTooLarge => Error::Validation("invalid asset request".into()),
 
-        AssetProtocolError::NotFound => {
-            Error::NotFound("asset session or asset not found".into())
-        }
+        AssetProtocolError::NotFound => Error::NotFound("asset session or asset not found".into()),
 
         AssetProtocolError::RegistryBudgetExceeded
         | AssetProtocolError::DuplicateAsset
@@ -176,9 +153,7 @@ fn map_asset_error(error: AssetProtocolError) -> IpcError {
             Error::Asset("asset registry rejected resource".into())
         }
 
-        AssetProtocolError::Internal => {
-            Error::Internal("asset registry unavailable".into())
-        }
+        AssetProtocolError::Internal => Error::Internal("asset registry unavailable".into()),
     };
 
     error.into()
@@ -193,17 +168,15 @@ mod tests {
         let hash = hex::encode(Sha256::digest(b"canvas"));
 
         assert_eq!(hash.len(), 64);
-        assert!(hash.bytes().all(|byte| {
-            byte.is_ascii_digit()
-                || matches!(byte, b'a'..=b'f')
-        }));
+        assert!(
+            hash.bytes()
+                .all(|byte| { byte.is_ascii_digit() || matches!(byte, b'a'..=b'f') })
+        );
     }
 
     #[test]
     fn asset_errors_do_not_expose_internal_details() {
-        let ipc = map_asset_error(
-            AssetProtocolError::RegistryBudgetExceeded,
-        );
+        let ipc = map_asset_error(AssetProtocolError::RegistryBudgetExceeded);
 
         assert_eq!(ipc.message, "资源处理失败");
     }

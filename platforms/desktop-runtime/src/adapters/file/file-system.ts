@@ -21,6 +21,7 @@ export interface OpenedDocument {
   readonly displayName: string
   readonly content: string
   readonly revision: string
+  readonly assetPersistenceToken: string | null
 }
 
 export interface DocumentFileCommands {
@@ -28,6 +29,7 @@ export interface DocumentFileCommands {
 
   readonly saveAs: (
     content: string,
+    assetPersistenceToken: string | null,
     options?: {
       readonly documentId?: DocumentId
       readonly suggestedName?: string
@@ -42,6 +44,7 @@ export interface DocumentFileCommands {
     documentId: DocumentId,
     expectedRevision: string,
     content: string,
+    assetPersistenceToken: string | null,
   ) => Promise<{ readonly revision: string }>
 
   readonly close: (documentId: DocumentId) => Promise<void>
@@ -90,13 +93,15 @@ export function createDocumentFileCommands(): DocumentFileCommands {
         displayName: response.document.displayName,
         content: response.document.content,
         revision: response.document.revision,
+        assetPersistenceToken: response.document.assetSessionToken,
       }
     },
 
-    async saveAs(content, options) {
+    async saveAs(content, assetPersistenceToken, options) {
       const request: DocumentSaveAsRequest = {
         documentId: options?.documentId ?? null,
         content,
+        assetSessionToken: assetPersistenceToken,
         suggestedName: options?.suggestedName ?? null,
       }
 
@@ -108,11 +113,12 @@ export function createDocumentFileCommands(): DocumentFileCommands {
         : null
     },
 
-    async save(documentId, expectedRevision, content) {
+    async save(documentId, expectedRevision, content, assetPersistenceToken) {
       const request: DocumentSaveRequest = {
         documentId,
         expectedRevision,
         content,
+        assetSessionToken: assetPersistenceToken,
       }
 
       const response: DocumentSaveResult =

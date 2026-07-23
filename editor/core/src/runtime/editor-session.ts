@@ -5,7 +5,6 @@ import {
   type Editor,
   type TLAnyShapeUtilConstructor,
   type TLAssetStore,
-  type TLEditorSnapshot,
   type TLStore,
   type TLStoreSnapshot,
 } from 'tldraw'
@@ -47,7 +46,7 @@ export type EditorAssetStoreSessionFactory = (
 export interface CreateEditorSessionOptions {
   readonly sessionId: string
   readonly documentId: string
-  readonly initialSnapshot?: TLEditorSnapshot
+  readonly initialSnapshot?: TLStoreSnapshot
 
   /**
    * Present only when Native has transactionally restored resources while
@@ -106,8 +105,6 @@ export interface EditorSession {
   readonly attachEditor: (editor: Editor) => void
 
   readonly detachEditor: (editor: Editor) => void
-
-  readonly getSnapshot: () => TLEditorSnapshot
 
   /**
    * Explicit document persistence adapter consumed structurally by
@@ -191,15 +188,6 @@ export function createEditorSession(
      * excluded from this boundary.
      */
     return store.getStoreSnapshot()
-  }
-
-  function captureLegacyEditorSnapshot(): TLEditorSnapshot {
-    /*
-     * Temporary v1 compatibility boundary. A complete TLEditorSnapshot needs
-     * initialized tldraw session state and therefore requires an attached
-     * Editor. The v2 writer must not use this method.
-     */
-    return requireAttachedEditor().getSnapshot()
   }
 
   function createSessionSnapshot(): EditorSessionSnapshot {
@@ -307,7 +295,6 @@ export function createEditorSession(
       publishSessionSnapshot()
     },
 
-    getSnapshot: captureLegacyEditorSnapshot,
     captureDocument,
 
     captureAssetPersistenceToken() {
@@ -382,7 +369,7 @@ export function createEditorSession(
 
 function createValidatedEditorStore(
   registration: ExtensionRegistration,
-  initialSnapshot: TLEditorSnapshot | undefined,
+  initialSnapshot: TLStoreSnapshot | undefined,
   assets: TLAssetStore,
 ): TLStore {
   try {

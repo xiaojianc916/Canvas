@@ -5,24 +5,15 @@ import {
 } from '@hybrid-canvas/canvas/application'
 import type {
   TLAssetStore,
-  TLEditorSnapshot,
+  TLStoreSnapshot,
 } from 'tldraw'
 import { describe, expect, it, vi } from 'vitest'
 
-function invalidPersistedSnapshot(): TLEditorSnapshot {
-  /*
-   * This crosses the real createTLStore({ snapshot }) path. It is deliberately
-   * malformed so tldraw migration/schema validation must reject it.
-   */
+function invalidPersistedSnapshot(): TLStoreSnapshot {
   return {
-    document: {
-      schema: {},
-      store: {},
-    },
-    session: {
-      version: 0,
-    },
-  } as unknown as TLEditorSnapshot
+    schema: null,
+    store: null,
+  } as unknown as TLStoreSnapshot
 }
 
 function createAssetStoreHarness() {
@@ -147,7 +138,7 @@ describe('EditorSessionRegistry persisted snapshot boundary', () => {
 
     const dispose = vi.fn(
       () =>
-        new Promise<void>((resolve) => {
+        new Promise((resolve) => {
           releaseAssetStore = resolve
         }),
     )

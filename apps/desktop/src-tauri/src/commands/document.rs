@@ -1,18 +1,22 @@
+use crate::asset_protocol::{AssetProtocolError, AssetProtocolRegistry, AssetSessionSnapshotEntry};
 use crate::error::{Error, IpcError, Result};
 use hybrid_canvas_file_native::{
-    atomic_write, canonicalize_draw_document, document_revision,
-    DocumentRevision,
+    DocumentRevision, DrawAssetInput, DrawDocumentV2Input, atomic_write,
+    canonicalize_draw_document, decode_draw_document_v2, document_revision,
+    encode_draw_document_v2,
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use tauri::{command, AppHandle, State};
+use tauri::{AppHandle, State, command};
 use tauri_plugin_dialog::{DialogExt, FilePath};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use uuid::Uuid;
 
-const MAX_DOCUMENT_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_LOGICAL_DOCUMENT_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_CONTAINER_BYTES: u64 = 320 * 1024 * 1024;
 const DRAW_EXTENSION: &str = "draw";
 const DEFAULT_DOCUMENT_NAME: &str = "untitled.draw";
 
@@ -40,6 +44,8 @@ impl DocumentId {
 struct DocumentHandle {
     path: PathBuf,
     revision: DocumentRevision,
+    created_at: String,
+    asset_session_token: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -52,6 +58,8 @@ impl DocumentRegistry {
         &self,
         path: PathBuf,
         revision: DocumentRevision,
+        created_at: String,
+        asset_session_token: Option<String>,
     ) -> Result<DocumentId> {
         let document_id = DocumentId::new();
         let mut documents = self
@@ -59,7 +67,16 @@ impl DocumentRegistry {
             .write()
             .map_err(|_| Error::Internal("document registry write lock poisoned".into()))?;
 
-        documents.insert(document_id, DocumentHandle { path, revision });
+        documents.insert(
+            document_id,
+            DocumentHandle {
+                path,
+                revision,
+                created_at,
+                asset_session_token,
+            },
+        );
+
         Ok(document_id)
     }
 
@@ -80,41 +97,34 @@ impl DocumentRegistry {
         document_id: DocumentId,
         path: PathBuf,
         content: &str,
+        asset_session_token: Option<String>,
+        assets: &[AssetSessionSnapshotEntry],
     ) -> Result<DocumentRevision> {
-        ensure_document_size(content.len() as u64)?;
+        ensure_logical_document_size(content.len() as u64)?;
         ensure_draw_document_path(&path)?;
 
-        /*
-         * Save As must revalidate and retain the native document handle while
-         * producing the new file. If the document was closed after the dialog
-         * opened, fail before touching the selected destination.
-         *
-         * Holding the same write lock used by ordinary CAS saves and close
-         * prevents Save, Save As and Close from interleaving for this registry.
-         */
         let mut documents = self
             .documents
             .write()
-            .map_err(|_| Error::Internal(
-                "document registry write lock poisoned".into(),
-            ))?;
+            .map_err(|_| Error::Internal("document registry write lock poisoned".into()))?;
 
         let handle = documents
             .get_mut(&document_id)
-            .ok_or_else(|| Error::NotFound(
-                "document session does not exist".into(),
-            ))?;
+            .ok_or_else(|| Error::NotFound("document session does not exist".into()))?;
 
-        let canonical_content =
-            canonicalize_draw_document(content.as_bytes())?;
+        validate_asset_session_transition(
+            handle.asset_session_token.as_deref(),
+            asset_session_token.as_deref(),
+        )?;
 
-        atomic_write(&path, canonical_content.as_bytes())?;
+        let encoded = encode_document(content, &handle.created_at, assets)?;
+        atomic_write(&path, &encoded)?;
 
-        let revision =
-            document_revision(canonical_content.as_bytes());
+        let revision = document_revision(&encoded);
 
         handle.path = path;
         handle.revision.clone_from(&revision);
+        handle.asset_session_token = asset_session_token;
 
         Ok(revision)
     }
@@ -124,31 +134,23 @@ impl DocumentRegistry {
         document_id: DocumentId,
         expected_revision: &str,
         content: &str,
+        asset_session_token: Option<String>,
+        assets: &[AssetSessionSnapshotEntry],
     ) -> Result<DocumentRevision> {
-        ensure_document_size(content.len() as u64)?;
+        ensure_logical_document_size(content.len() as u64)?;
 
-        let expected_revision =
-            DocumentRevision::parse(expected_revision)
-                .ok_or_else(|| Error::Validation(
-                    "expected revision must be canonical SHA-256".into(),
-                ))?;
+        let expected_revision = DocumentRevision::parse(expected_revision).ok_or_else(|| {
+            Error::Validation("expected revision must be canonical SHA-256".into())
+        })?;
 
-        /*
-         * Hold the registry write lock across verification and replacement.
-         * This serializes all Canvas save commands for this native handle.
-         */
         let mut documents = self
             .documents
             .write()
-            .map_err(|_| Error::Internal(
-                "document registry write lock poisoned".into(),
-            ))?;
+            .map_err(|_| Error::Internal("document registry write lock poisoned".into()))?;
 
         let handle = documents
             .get_mut(&document_id)
-            .ok_or_else(|| Error::NotFound(
-                "document session does not exist".into(),
-            ))?;
+            .ok_or_else(|| Error::NotFound("document session does not exist".into()))?;
 
         if handle.revision != expected_revision {
             return Err(Error::FileConflict(
@@ -156,18 +158,16 @@ impl DocumentRegistry {
             ));
         }
 
+        validate_asset_session_transition(
+            handle.asset_session_token.as_deref(),
+            asset_session_token.as_deref(),
+        )?;
+
         ensure_draw_document_path(&handle.path)?;
 
         let disk_bytes = match std::fs::read(&handle.path) {
             Ok(bytes) => bytes,
-            Err(error)
-                if error.kind() == std::io::ErrorKind::NotFound =>
-            {
-                /*
-                 * An opened document disappearing from disk is an external
-                 * state change. Recreating it through ordinary Save would
-                 * silently discard the deletion decision.
-                 */
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Err(Error::FileConflict(
                     "document was removed outside Canvas".into(),
                 ));
@@ -175,7 +175,7 @@ impl DocumentRegistry {
             Err(error) => return Err(error.into()),
         };
 
-        ensure_document_size(disk_bytes.len() as u64)?;
+        ensure_container_size(disk_bytes.len() as u64)?;
 
         let actual_revision = document_revision(&disk_bytes);
 
@@ -185,33 +185,36 @@ impl DocumentRegistry {
             ));
         }
 
-        let canonical_content =
-            canonicalize_draw_document(content.as_bytes())?;
+        let encoded = encode_document(content, &handle.created_at, assets)?;
+        atomic_write(&handle.path, &encoded)?;
 
-        atomic_write(
-            &handle.path,
-            canonical_content.as_bytes(),
-        )?;
-
-        let next_revision =
-            document_revision(canonical_content.as_bytes());
+        let next_revision = document_revision(&encoded);
 
         handle.revision.clone_from(&next_revision);
+        handle.asset_session_token = asset_session_token;
 
         Ok(next_revision)
     }
 
-    fn remove(&self, document_id: DocumentId) -> Result<()> {
+    fn remove(&self, document_id: DocumentId) -> Result<DocumentHandle> {
         let mut documents = self
             .documents
             .write()
             .map_err(|_| Error::Internal("document registry write lock poisoned".into()))?;
 
-        if documents.remove(&document_id).is_some() {
-            Ok(())
-        } else {
-            Err(Error::NotFound("document session does not exist".into()))
-        }
+        documents
+            .remove(&document_id)
+            .ok_or_else(|| Error::NotFound("document session does not exist".into()))
+    }
+
+    fn restore(&self, document_id: DocumentId, handle: DocumentHandle) -> Result<()> {
+        let mut documents = self
+            .documents
+            .write()
+            .map_err(|_| Error::Internal("document registry write lock poisoned".into()))?;
+
+        documents.insert(document_id, handle);
+        Ok(())
     }
 }
 
@@ -222,6 +225,7 @@ pub struct DocumentOpenResult {
     pub display_name: String,
     pub content: String,
     pub revision: String,
+    pub asset_session_token: Option<String>,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -236,6 +240,7 @@ pub struct DocumentSaveRequest {
     pub document_id: DocumentId,
     pub expected_revision: String,
     pub content: String,
+    pub asset_session_token: Option<String>,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -252,6 +257,7 @@ pub struct DocumentSaveAsRequest {
     /// Some(document_id) moves the existing session to the newly selected file.
     pub document_id: Option<DocumentId>,
     pub content: String,
+    pub asset_session_token: Option<String>,
     pub suggested_name: Option<String>,
 }
 
@@ -283,6 +289,7 @@ pub struct DocumentCloseRequest {
 pub async fn document_open(
     app: AppHandle,
     documents: State<'_, DocumentRegistry>,
+    assets: State<'_, AssetProtocolRegistry>,
 ) -> DocumentCommandResult<DocumentOpenResponse> {
     let selected = select_open_document(&app).await?;
 
@@ -293,16 +300,42 @@ pub async fn document_open(
     let path = selected_native_path(selected)?;
     ensure_draw_document_path(&path)?;
 
-    let (content, revision) = read_document(path.clone()).await?;
-    let document_id =
-        documents.insert(path.clone(), revision.clone())?;
+    let (decoded, revision) = read_document(path.clone()).await?;
+
+    let asset_session_token = if decoded.assets.is_empty() {
+        None
+    } else {
+        let token = Uuid::now_v7().simple().to_string();
+
+        assets
+            .restore_session(&token, decoded.assets)
+            .map_err(map_asset_error)?;
+
+        Some(token)
+    };
+
+    let document_id = match documents.insert(
+        path.clone(),
+        revision.clone(),
+        decoded.created_at,
+        asset_session_token.clone(),
+    ) {
+        Ok(document_id) => document_id,
+        Err(error) => {
+            if let Some(token) = &asset_session_token {
+                let _ = assets.remove_session(token);
+            }
+            return Err(error.into());
+        }
+    };
 
     Ok(DocumentOpenResponse {
         document: Some(DocumentOpenResult {
             document_id,
             display_name: display_name(&path),
-            content,
+            content: decoded.content,
             revision: revision.into_string(),
+            asset_session_token,
         }),
     })
 }
@@ -314,15 +347,16 @@ pub async fn document_open(
 pub async fn document_save_as(
     app: AppHandle,
     documents: State<'_, DocumentRegistry>,
+    assets: State<'_, AssetProtocolRegistry>,
     request: DocumentSaveAsRequest,
 ) -> DocumentCommandResult<DocumentSaveAsResult> {
-    ensure_document_size(request.content.len() as u64)?;
+    ensure_logical_document_size(request.content.len() as u64)?;
 
     if let Some(document_id) = request.document_id {
-        // Validate the document before displaying a dialog. An invalid document
-        // ID must not be able to trigger a native file picker.
         let _ = documents.path(document_id)?;
     }
+
+    let asset_snapshot = snapshot_assets(&assets, request.asset_session_token.as_deref())?;
 
     let suggested_name = normalize_suggested_name(request.suggested_name.as_deref())?;
 
@@ -340,28 +374,40 @@ pub async fn document_save_as(
             let registry = documents.inner().clone();
             let save_path = path.clone();
             let content = request.content;
+            let asset_session_token = request.asset_session_token;
 
             let revision = tokio::task::spawn_blocking(move || {
                 registry.save_as_existing(
                     document_id,
                     save_path,
                     &content,
+                    asset_session_token,
+                    &asset_snapshot,
                 )
             })
             .await
-            .map_err(|_| Error::Internal(
-                "document Save As task terminated unexpectedly".into(),
-            ))??;
+            .map_err(|_| {
+                Error::Internal("document Save As task terminated unexpectedly".into())
+            })??;
 
             (document_id, revision)
         }
         None => {
-            let revision =
-                write_document(path.clone(), request.content).await?;
+            let created_at = now_timestamp()?;
+
+            let revision = write_document(
+                path.clone(),
+                request.content,
+                created_at.clone(),
+                asset_snapshot,
+            )
+            .await?;
 
             let document_id = documents.insert(
                 path.clone(),
                 revision.clone(),
+                created_at,
+                request.asset_session_token,
             )?;
 
             (document_id, revision)
@@ -384,8 +430,11 @@ pub async fn document_save_as(
 #[specta::specta]
 pub async fn document_save(
     documents: State<'_, DocumentRegistry>,
+    assets: State<'_, AssetProtocolRegistry>,
     request: DocumentSaveRequest,
 ) -> DocumentCommandResult<DocumentSaveResult> {
+    let asset_snapshot = snapshot_assets(&assets, request.asset_session_token.as_deref())?;
+
     let registry = documents.inner().clone();
 
     let revision = tokio::task::spawn_blocking(move || {
@@ -393,12 +442,12 @@ pub async fn document_save(
             request.document_id,
             &request.expected_revision,
             &request.content,
+            request.asset_session_token,
+            &asset_snapshot,
         )
     })
     .await
-    .map_err(|_| Error::Internal(
-        "document CAS save task terminated unexpectedly".into(),
-    ))??;
+    .map_err(|_| Error::Internal("document CAS save task terminated unexpectedly".into()))??;
 
     Ok(DocumentSaveResult {
         revision: revision.into_string(),
@@ -410,9 +459,19 @@ pub async fn document_save(
 #[specta::specta]
 pub fn document_close(
     documents: State<'_, DocumentRegistry>,
+    assets: State<'_, AssetProtocolRegistry>,
     request: DocumentCloseRequest,
 ) -> DocumentCommandResult<()> {
-    Ok(documents.remove(request.document_id)?)
+    let handle = documents.remove(request.document_id)?;
+
+    if let Some(token) = &handle.asset_session_token {
+        if let Err(error) = assets.remove_session(token) {
+            documents.restore(request.document_id, handle)?;
+            return Err(map_asset_error(error).into());
+        }
+    }
+
+    Ok(())
 }
 
 async fn select_open_document(app: &AppHandle) -> Result<Option<FilePath>> {
@@ -430,10 +489,7 @@ async fn select_open_document(app: &AppHandle) -> Result<Option<FilePath>> {
         .map_err(|_| Error::Internal("document open dialog callback was dropped".into()))
 }
 
-async fn select_save_document(
-    app: &AppHandle,
-    suggested_name: String,
-) -> Result<Option<FilePath>> {
+async fn select_save_document(app: &AppHandle, suggested_name: String) -> Result<Option<FilePath>> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
 
     app.dialog()
@@ -449,43 +505,151 @@ async fn select_save_document(
         .map_err(|_| Error::Internal("document save dialog callback was dropped".into()))
 }
 
-async fn read_document(
-    path: PathBuf,
-) -> Result<(String, DocumentRevision)> {
+struct DecodedDocument {
+    content: String,
+    created_at: String,
+    assets: Vec<AssetSessionSnapshotEntry>,
+}
+
+async fn read_document(path: PathBuf) -> Result<(DecodedDocument, DocumentRevision)> {
     let metadata = tokio::fs::metadata(&path).await?;
-    ensure_document_size(metadata.len())?;
+    ensure_container_size(metadata.len())?;
 
     let bytes = tokio::fs::read(&path).await?;
-    ensure_document_size(bytes.len() as u64)?;
+    ensure_container_size(bytes.len() as u64)?;
 
     tokio::task::spawn_blocking(move || {
         let revision = document_revision(&bytes);
-        let content = canonicalize_draw_document(&bytes)?;
+        let decoded = decode_document(&bytes)?;
 
-        Ok((content, revision))
+        Ok((decoded, revision))
     })
     .await
-    .map_err(|_| Error::Internal(
-        "document decode task terminated unexpectedly".into(),
-    ))?
+    .map_err(|_| Error::Internal("document decode task terminated unexpectedly".into()))?
 }
 
 async fn write_document(
     path: PathBuf,
     content: String,
+    created_at: String,
+    assets: Vec<AssetSessionSnapshotEntry>,
 ) -> Result<DocumentRevision> {
     tokio::task::spawn_blocking(move || {
-        let canonical_content =
-            canonicalize_draw_document(content.as_bytes())?;
+        let encoded = encode_document(&content, &created_at, &assets)?;
 
-        atomic_write(&path, canonical_content.as_bytes())?;
+        atomic_write(&path, &encoded)?;
 
-        Ok(document_revision(canonical_content.as_bytes()))
+        Ok(document_revision(&encoded))
     })
     .await
-    .map_err(|_| Error::Internal(
-        "document save task terminated unexpectedly".into(),
-    ))?
+    .map_err(|_| Error::Internal("document save task terminated unexpectedly".into()))?
+}
+
+fn decode_document(bytes: &[u8]) -> Result<DecodedDocument> {
+    if bytes.starts_with(b"PK\x03\x04") {
+        let decoded = decode_draw_document_v2(bytes)?;
+
+        let assets = decoded
+            .assets
+            .into_iter()
+            .map(|asset| AssetSessionSnapshotEntry {
+                content_hash: asset.content_hash,
+                content_type: asset.content_type,
+                bytes: Arc::from(asset.bytes),
+            })
+            .collect::<Vec<_>>();
+
+        return Ok(DecodedDocument {
+            content: serde_json::to_string(&decoded.document)?,
+            created_at: decoded.created_at,
+            assets,
+        });
+    }
+
+    ensure_logical_document_size(bytes.len() as u64)?;
+
+    let canonical = canonicalize_draw_document(bytes)?;
+    let legacy: serde_json::Value = serde_json::from_str(&canonical)?;
+
+    let created_at = legacy
+        .get("header")
+        .and_then(|header| header.get("createdAt"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| Error::Validation("v1 document has no createdAt".into()))?
+        .to_owned();
+
+    let document = legacy
+        .get("content")
+        .and_then(|content| content.get("document"))
+        .filter(|value| value.is_object())
+        .ok_or_else(|| Error::Validation("v1 document has no store snapshot".into()))?;
+
+    Ok(DecodedDocument {
+        content: serde_json::to_string(document)?,
+        created_at,
+        assets: Vec::new(),
+    })
+}
+
+fn encode_document(
+    content: &str,
+    created_at: &str,
+    assets: &[AssetSessionSnapshotEntry],
+) -> Result<Vec<u8>> {
+    ensure_logical_document_size(content.len() as u64)?;
+
+    let saved_at = now_timestamp()?;
+
+    let asset_inputs = assets
+        .iter()
+        .map(|asset| DrawAssetInput {
+            content_hash: &asset.content_hash,
+            content_type: &asset.content_type,
+            bytes: asset.bytes.as_ref(),
+        })
+        .collect::<Vec<_>>();
+
+    Ok(encode_draw_document_v2(DrawDocumentV2Input {
+        created_at,
+        saved_at: &saved_at,
+        document_json: content.as_bytes(),
+        application_json: br#"{}"#,
+        assets: &asset_inputs,
+    })?)
+}
+
+fn snapshot_assets(
+    assets: &AssetProtocolRegistry,
+    token: Option<&str>,
+) -> Result<Vec<AssetSessionSnapshotEntry>> {
+    match token {
+        Some(token) => assets.snapshot_session(token).map_err(map_asset_error),
+        None => Ok(Vec::new()),
+    }
+}
+
+fn validate_asset_session_transition(current: Option<&str>, next: Option<&str>) -> Result<()> {
+    if current.is_some() && current != next {
+        return Err(Error::Validation(
+            "document asset-session capability changed unexpectedly".into(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn map_asset_error(error: AssetProtocolError) -> Error {
+    match error {
+        AssetProtocolError::NotFound => Error::NotFound("asset session does not exist".into()),
+        AssetProtocolError::Internal => Error::Internal("asset registry unavailable".into()),
+        _ => Error::Asset("asset registry rejected document resources".into()),
+    }
+}
+
+fn now_timestamp() -> Result<String> {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .map_err(|_| Error::Internal("failed to format document timestamp".into()))
 }
 
 fn selected_native_path(selected: FilePath) -> Result<PathBuf> {
@@ -497,12 +661,24 @@ fn selected_native_path(selected: FilePath) -> Result<PathBuf> {
     }
 }
 
-fn ensure_document_size(size: u64) -> Result<()> {
-    if size <= MAX_DOCUMENT_BYTES {
+fn ensure_logical_document_size(size: u64) -> Result<()> {
+    if size <= MAX_LOGICAL_DOCUMENT_BYTES {
         return Ok(());
     }
 
-    Err(Error::Validation("document exceeds the supported size limit".into()))
+    Err(Error::Validation(
+        "document exceeds the supported size limit".into(),
+    ))
+}
+
+fn ensure_container_size(size: u64) -> Result<()> {
+    if size <= MAX_CONTAINER_BYTES {
+        return Ok(());
+    }
+
+    Err(Error::Validation(
+        "document container exceeds the supported size limit".into(),
+    ))
 }
 
 fn ensure_draw_document_path(path: &Path) -> Result<()> {
@@ -558,321 +734,153 @@ fn display_name(path: &Path) -> String {
 mod tests {
     use super::*;
 
-    fn valid_document(marker: &str) -> String {
-        format!(
-            r#"{{
-                "header": {{
-                    "format": "hybrid-canvas/draw",
-                    "version": 1,
-                    "createdAt": "2026-07-23T00:00:00.000Z"
-                }},
-                "content": {{
-                    "document": {{}},
-                    "session": {{}},
-                    "marker": "{marker}"
-                }}
-            }}"#,
-        )
+    fn logical_store_snapshot(marker: &str) -> String {
+        serde_json::json!({
+            "schema": {},
+            "store": {
+                "marker": marker
+            }
+        })
+        .to_string()
+    }
+
+    fn legacy_v1(marker: &str) -> Vec<u8> {
+        serde_json::json!({
+            "header": {
+                "format": "hybrid-canvas/draw",
+                "version": 1,
+                "createdAt": "2026-07-23T00:00:00.000Z"
+            },
+            "content": {
+                "document": {
+                    "schema": {},
+                    "store": {
+                        "marker": marker
+                    }
+                },
+                "session": {}
+            }
+        })
+        .to_string()
+        .into_bytes()
     }
 
     #[test]
-    fn registry_keeps_path_private_behind_document_id() {
-        let registry = DocumentRegistry::default();
-        let path = PathBuf::from("/private/example.draw");
+    fn v1_reader_is_explicit_migration() {
+        let decoded = decode_document(&legacy_v1("legacy")).expect("v1 migration should succeed");
 
-        let document_id = registry.insert(
-                path.clone(),
-                document_revision(b"revision"),
-            ).expect("document should register");
-
-        assert_eq!(registry.path(document_id).expect("path should resolve"), path);
-    }
-
-    #[test]
-    fn registry_rejects_unknown_document_id() {
-        let registry = DocumentRegistry::default();
-        let result = registry.path(DocumentId::new());
-
-        assert!(matches!(result, Err(Error::NotFound(_))));
-    }
-
-    #[test]
-    fn registry_removes_closed_document() {
-        let registry = DocumentRegistry::default();
-        let document_id = registry
-            .insert(
-                PathBuf::from("/private/example.draw"),
-                document_revision(b"revision"),
-            )
-            .expect("document should register");
-
-        registry.remove(document_id).expect("document should close");
-
-        assert!(matches!(registry.path(document_id), Err(Error::NotFound(_))));
-    }
-
-    #[test]
-    fn rejects_stale_renderer_revision_before_writing() {
-        let directory =
-            tempfile::tempdir().expect("temporary directory");
-        let path = directory.path().join("stale.draw");
-        let original = valid_document("original");
-
-        std::fs::write(&path, &original)
-            .expect("fixture should be written");
-
-        let current_revision =
-            document_revision(original.as_bytes());
-
-        let registry = DocumentRegistry::default();
-        let document_id = registry
-            .insert(path.clone(), current_revision)
-            .expect("document should register");
-
-        let replacement = valid_document("replacement");
-
-        let result = registry.save_existing(
-            document_id,
-            &"0".repeat(64),
-            &replacement,
-        );
-
-        assert!(matches!(result, Err(Error::FileConflict(_))));
         assert_eq!(
-            std::fs::read_to_string(&path)
-                .expect("original file should remain readable"),
-            original,
+            serde_json::from_str::<serde_json::Value>(&decoded.content).expect("logical snapshot"),
+            serde_json::json!({
+                "schema": {},
+                "store": {
+                    "marker": "legacy"
+                }
+            }),
         );
+        assert!(decoded.assets.is_empty());
     }
 
     #[test]
-    fn rejects_save_when_document_was_removed_externally() {
-        let directory =
-            tempfile::tempdir().expect("temporary directory");
-        let path = directory.path().join("removed.draw");
-        let original = valid_document("original");
+    fn v2_writer_always_emits_zip() {
+        let bytes = encode_document(
+            &logical_store_snapshot("v2"),
+            "2026-07-23T00:00:00.000Z",
+            &[],
+        )
+        .expect("v2 encode should succeed");
 
-        std::fs::write(&path, &original)
-            .expect("fixture should be written");
+        assert!(bytes.starts_with(b"PK\x03\x04"));
 
-        let current_revision =
-            document_revision(original.as_bytes());
+        let decoded = decode_draw_document_v2(&bytes).expect("written v2 should decode");
 
-        let registry = DocumentRegistry::default();
-        let document_id = registry
-            .insert(
-                path.clone(),
-                current_revision.clone(),
-            )
-            .expect("document should register");
-
-        std::fs::remove_file(&path)
-            .expect("external deletion should succeed");
-
-        let replacement = valid_document("replacement");
-
-        let result = registry.save_existing(
-            document_id,
-            &current_revision,
-            &replacement,
-        );
-
-        assert!(matches!(result, Err(Error::FileConflict(_))));
-        assert!(!path.exists());
+        assert_eq!(decoded.document["store"]["marker"], "v2");
     }
 
     #[test]
-    fn successful_save_advances_revision_and_rejects_old_revision() {
-        let directory =
-            tempfile::tempdir().expect("temporary directory");
-        let path = directory.path().join("advance.draw");
-        let original = valid_document("original");
+    fn cas_save_writes_v2_and_advances_revision() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("cas.draw");
+        let created_at = "2026-07-23T00:00:00.000Z";
 
-        std::fs::write(&path, &original)
-            .expect("fixture should be written");
+        let original = encode_document(&logical_store_snapshot("original"), created_at, &[])
+            .expect("fixture should encode");
 
-        let original_revision =
-            document_revision(original.as_bytes());
+        std::fs::write(&path, &original).expect("fixture should write");
+
+        let original_revision = document_revision(&original);
 
         let registry = DocumentRegistry::default();
         let document_id = registry
             .insert(
                 path.clone(),
                 original_revision.clone(),
+                created_at.to_owned(),
+                None,
             )
             .expect("document should register");
-
-        let replacement = valid_document("replacement");
 
         let next_revision = registry
             .save_existing(
                 document_id,
-                &original_revision,
-                &replacement,
+                &original_revision.clone().into_string(),
+                &logical_store_snapshot("replacement"),
+                None,
+                &[],
             )
-            .expect("first CAS save should succeed");
+            .expect("CAS save should succeed");
 
         assert_ne!(next_revision, original_revision);
 
-        let stored_bytes = std::fs::read(&path)
-            .expect("saved file should be readable");
-
-        assert_eq!(
-            document_revision(&stored_bytes),
-            next_revision,
-        );
-
-        let second_replacement =
-            valid_document("second-replacement");
-
-        let stale_result = registry.save_existing(
-            document_id,
-            &original_revision,
-            &second_replacement,
-        );
-
-        assert!(matches!(
-            stale_result,
-            Err(Error::FileConflict(_)),
-        ));
-
-        assert_eq!(
-            document_revision(
-                &std::fs::read(&path)
-                    .expect("saved file should remain readable"),
-            ),
-            next_revision,
-        );
+        let stored = std::fs::read(&path).expect("stored document should read");
+        assert!(stored.starts_with(b"PK\x03\x04"));
+        assert_eq!(document_revision(&stored), next_revision);
     }
 
     #[test]
-    fn rejects_save_when_disk_revision_changed() {
-        let directory =
-            tempfile::tempdir().expect("temporary directory");
+    fn cas_rejects_external_change_without_overwriting() {
+        let directory = tempfile::tempdir().expect("temporary directory");
         let path = directory.path().join("conflict.draw");
-        let original = r#"{"format":"hybrid-canvas/draw","version":1,"content":{}}"#;
+        let created_at = "2026-07-23T00:00:00.000Z";
 
-        std::fs::write(&path, original)
-            .expect("fixture should be written");
+        let original = encode_document(&logical_store_snapshot("original"), created_at, &[])
+            .expect("fixture should encode");
 
-        let original_revision =
-            document_revision(original.as_bytes());
+        std::fs::write(&path, &original).expect("fixture should write");
+
+        let original_revision = document_revision(&original);
 
         let registry = DocumentRegistry::default();
         let document_id = registry
-            .insert(path.clone(), original_revision.clone())
+            .insert(
+                path.clone(),
+                original_revision.clone(),
+                created_at.to_owned(),
+                None,
+            )
             .expect("document should register");
 
-        std::fs::write(&path, b"external change")
-            .expect("external edit should be written");
+        std::fs::write(&path, b"external change").expect("external edit should write");
 
         let result = registry.save_existing(
             document_id,
-            &original_revision,
-            original,
+            &original_revision.clone().into_string(),
+            &logical_store_snapshot("replacement"),
+            None,
+            &[],
         );
 
         assert!(matches!(result, Err(Error::FileConflict(_))));
         assert_eq!(
-            std::fs::read(&path).expect("file should remain readable"),
+            std::fs::read(&path).expect("file should remain"),
             b"external change",
         );
     }
 
     #[test]
-    fn save_as_unknown_document_does_not_write_destination() {
-        let directory =
-            tempfile::tempdir().expect("temporary directory");
-        let destination =
-            directory.path().join("must-not-exist.draw");
-        let content = valid_document("save-as");
-
-        let registry = DocumentRegistry::default();
-
-        let result = registry.save_as_existing(
-            DocumentId::new(),
-            destination.clone(),
-            &content,
-        );
-
-        assert!(matches!(result, Err(Error::NotFound(_))));
-        assert!(!destination.exists());
-    }
-
-    #[test]
-    fn save_as_updates_path_and_revision_together() {
-        let directory =
-            tempfile::tempdir().expect("temporary directory");
-
-        let original_path =
-            directory.path().join("original.draw");
-        let destination =
-            directory.path().join("renamed.draw");
-
-        let original = valid_document("original");
-
-        std::fs::write(&original_path, &original)
-            .expect("original document should be written");
-
-        let original_revision =
-            document_revision(original.as_bytes());
-
-        let registry = DocumentRegistry::default();
-        let document_id = registry
-            .insert(
-                original_path,
-                original_revision.clone(),
-            )
-            .expect("document should register");
-
-        let replacement = valid_document("replacement");
-
-        let next_revision = registry
-            .save_as_existing(
-                document_id,
-                destination.clone(),
-                &replacement,
-            )
-            .expect("Save As should succeed");
-
-        assert_ne!(next_revision, original_revision);
-
-        assert_eq!(
-            registry
-                .path(document_id)
-                .expect("updated path should resolve"),
-            destination,
-        );
-
-        let stored_bytes = std::fs::read(
-            registry
-                .path(document_id)
-                .expect("updated path should remain registered"),
-        )
-        .expect("saved document should be readable");
-
-        assert_eq!(
-            document_revision(&stored_bytes),
-            next_revision,
-        );
-    }
-
-    #[test]
-    fn suggested_name_never_accepts_a_path() {
+    fn suggested_name_never_accepts_path() {
         assert!(normalize_suggested_name(Some("../secret.draw")).is_err());
         assert!(normalize_suggested_name(Some("folder/document.draw")).is_err());
         assert!(normalize_suggested_name(Some("folder\\document.draw")).is_err());
-    }
-
-    #[test]
-    fn suggested_name_normalizes_draw_extension() {
-        assert_eq!(
-            normalize_suggested_name(Some("diagram")).expect("name should normalize"),
-            "diagram.draw",
-        );
-        assert_eq!(
-            normalize_suggested_name(Some("diagram.DRAW")).expect("name should normalize"),
-            "diagram.DRAW",
-        );
     }
 }

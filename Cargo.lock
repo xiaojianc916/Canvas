@@ -1715,6 +1715,7 @@ dependencies = [
  "tauri-specta",
  "tempfile",
  "thiserror 2.0.19",
+ "time",
  "tokio",
  "uuid",
  "windows-sys 0.61.2",

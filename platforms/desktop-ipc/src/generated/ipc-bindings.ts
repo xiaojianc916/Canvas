@@ -89,16 +89,16 @@ export type DocumentDescriptor = { documentId: DocumentId; displayName: string; 
  */
 export type DocumentId = string
 export type DocumentOpenResponse = { document: DocumentOpenResult | null }
-export type DocumentOpenResult = { documentId: DocumentId; displayName: string; content: string; revision: string }
+export type DocumentOpenResult = { documentId: DocumentId; displayName: string; content: string; revision: string; assetSessionToken: string | null }
 export type DocumentSaveAsRequest = { 
 /**
  * None creates a new native document session.
  * 
  * Some(document_id) moves the existing session to the newly selected file.
  */
-documentId: DocumentId | null; content: string; suggestedName: string | null }
+documentId: DocumentId | null; content: string; assetSessionToken: string | null; suggestedName: string | null }
 export type DocumentSaveAsResult = { document: DocumentDescriptor | null }
-export type DocumentSaveRequest = { documentId: DocumentId; expectedRevision: string; content: string }
+export type DocumentSaveRequest = { documentId: DocumentId; expectedRevision: string; content: string; assetSessionToken: string | null }
 export type DocumentSaveResult = { revision: string }
 export type EditorSettings = { font_family: string; font_size: number; line_height: number; tab_size: number; insert_spaces: boolean; word_wrap: boolean; minimap: boolean }
 export type ExportSettings = { default_format: string; png_dpi: number; pdf_quality: number; include_metadata: boolean }

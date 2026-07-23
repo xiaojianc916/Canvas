@@ -3,8 +3,7 @@ import type {
   EditorSessionRegistry,
 } from '@hybrid-canvas/canvas/application'
 import type { HybridCanvasExtension } from '@hybrid-canvas/canvas/extensions'
-import { parseDrawDocument, serializeDrawDocument } from '@hybrid-canvas/file'
-import type { TLEditorSnapshot } from 'tldraw'
+import type { TLStoreSnapshot } from 'tldraw'
 
 import {
   createDocumentSession,
@@ -108,6 +107,7 @@ export interface OpenedNativeDocument {
   readonly displayName: string
   readonly content: string
   readonly revision: string
+  readonly assetPersistenceToken: string | null
 }
 
 export interface SavedNativeDocument {
@@ -122,9 +122,11 @@ export interface DocumentPersistencePort {
     documentId: string,
     expectedRevision: string,
     content: string,
+    assetPersistenceToken: string | null,
   ) => Promise<{ readonly revision: string }>
   readonly saveAs: (
     content: string,
+    assetPersistenceToken: string | null,
     options: {
       readonly documentId?: string
       readonly suggestedName?: string
@@ -192,143 +194,9 @@ export function createCanvasDocumentService({
       return null
     }
 
-    /*
-     * Native document_open registers an opaque document handle before the
-     * renderer can validate the logical .draw payload with the complete tldraw
-     * extension schema.
-     *
-     * Treat parsing, configured store creation and session registration as one
-     * transaction. Until sessions.set() succeeds, any failure must release the
-     * native document handle.
-     */
-    try {
-      const canvasId = crypto.randomUUID()
-      const sessionId = crypto.randomUUID()
-      const initialSnapshot = parseEditorSnapshot(opened.content)
-
-      const editor = await editorSessions.create({
-        documentId: canvasId,
-        sessionId,
-        initialSnapshot,
-        extensions,
-      })
-
-      sessions.set(
-        sessionId,
-        createOwnedSession(
-          editor,
-          opened.id,
-          opened.revision,
-        ),
-      )
-
-      return {
-        canvasId,
-        sessionId,
-        title: opened.displayName,
-      }
-    } catch (openError) {
-      return rollbackOpenedNativeDocument(opened.id, openError)
-    }
-  }
-
-  async function rollbackOpenedNativeDocument(
-    documentId: string,
-    openError: unknown,
-  ): Promise<never> {
-    try {
-      await persistence.close(documentId)
-    } catch (rollbackError) {
-      /*
-       * Never hide a leaked native handle behind the original parsing or
-       * tldraw validation error. Preserve both failures for diagnostics while
-       * exposing a stable application-level failure message.
-       */
-      throw new AggregateError(
-        [openError, rollbackError],
-        'DOCUMENT_OPEN_ROLLBACK_FAILED',
-      )
-    }
-
-    throw openError
-  }
-
-  function createOwnedSession(
-    editor: EditorSession,
-    documentId: string | null,
-    revision: string | null,
-  ): OwnedCanvasSession {
-    const editorDocument: EditorDocumentPort = editor
-    const document = createDocumentSession(documentId)
-
-    const owned: OwnedCanvasSession = {
-      editor,
-      editorDocument,
-      document,
-      stopObservingDocument: () => {},
-      saveOperation: null,
-      revision,
-    }
-
-    owned.stopObservingDocument = editorDocument.subscribeDocumentEvents(
-      (event) => {
-        if (event.kind === 'ready') {
-          if (!document.isInitialized()) {
-            document.initialize(editorDocument.captureDocument())
-            emit()
-          }
-
-          return
-        }
-
-        if (!document.isInitialized()) {
-          throw new Error('DOCUMENT_CHANGE_BEFORE_EDITOR_READY')
-        }
-
-        document.recordDocumentChange(editorDocument.captureDocument())
-        emit()
-      },
-    )
-
-    return owned
-  }
-
-  function save(sessionId: CanvasSessionId): Promise<void> {
-    const owned = requireSession(sessionId)
-
-    if (owned.saveOperation) {
-      return owned.saveOperation
-    }
-
-    owned.saveOperation = performSave(owned).finally(() => {
-      owned.saveOperation = null
-    })
-
-    return owned.saveOperation
-  }
-
-  async function performSave(owned: OwnedCanvasSession): Promise<void> {
-    if (!owned.document.isInitialized()) {
-      throw new Error('DOCUMENT_SESSION_NOT_READY')
-    }
-
-    const documentSnapshot = owned.editorDocument.captureDocument()
-    const ticket = owned.document.beginSave(documentSnapshot)
-
-    emit()
-
-    try {
-      /*
-       * Temporary v1 compatibility bridge.
-       *
-       * Dirty tracking and DocumentSession accept only TLStoreSnapshot. The
-       * legacy v1 JSON writer still requires a complete TLEditorSnapshot, so
-       * capture it only at this serialization boundary.
-       *
-       * Delete this call when the v2 document-only writer becomes canonical.
-       */
-      const legacyEditorSnapshot = owned.editor.getSnapshot()
-      const content = serializeDrawDocument(legacyEditorSnapshot)
+      const content = JSON.stringify(documentSnapshot)
+      const assetPersistenceToken =
+        await owned.editor.captureAssetPersistenceToken()
       const currentDocumentId = owned.document.getDocumentId()
 
       const saved = currentDocumentId
@@ -336,10 +204,15 @@ export function createCanvasDocumentService({
             currentDocumentId,
             requireRevision(owned),
             content,
+            assetPersistenceToken,
           )
-        : await persistence.saveAs(content, {
-            suggestedName: '未命名画布.draw',
-          })
+        : await persistence.saveAs(
+            content,
+            assetPersistenceToken,
+            {
+              suggestedName: '未命名画布.draw',
+            },
+          )
 
       if (!saved) {
         owned.document.failSave(ticket)
@@ -371,11 +244,13 @@ export function createCanvasDocumentService({
     documentId: string,
     expectedRevision: string,
     content: string,
+    assetPersistenceToken: string | null,
   ): Promise<SavedNativeDocument> {
     const saved = await persistence.save(
       documentId,
       expectedRevision,
       content,
+      assetPersistenceToken,
     )
 
     return {
@@ -550,15 +425,18 @@ export function createCanvasDocumentService({
   }
 }
 
-function parseEditorSnapshot(json: string): TLEditorSnapshot {
-  /*
-   * The application has exactly one supported persisted-document wire format:
-   * the versioned Hybrid Canvas .draw container.
-   *
-   * Do not add a fallback that guesses whether arbitrary JSON is a tldraw
-   * snapshot. Legacy formats must be recognized by an explicit importer or
-   * migration pipeline with a bounded compatibility policy; they must never
-   * bypass the canonical file-format validation path.
-   */
-  return parseDrawDocument(json).content
+function parseEditorSnapshot(json: string): TLStoreSnapshot {
+  const parsed: unknown = JSON.parse(json)
+
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    !('schema' in parsed) ||
+    !('store' in parsed)
+  ) {
+    throw new Error('DRAW_INVALID_STORE_SNAPSHOT')
+  }
+
+  return parsed as TLStoreSnapshot
 }

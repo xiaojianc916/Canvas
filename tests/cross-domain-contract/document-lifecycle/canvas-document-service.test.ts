@@ -3,30 +3,18 @@ import type {
   EditorSession,
 } from '@hybrid-canvas/canvas/application'
 import { createCanvasDocumentService } from '@hybrid-canvas/document'
-import { serializeDrawDocument } from '@hybrid-canvas/file'
 import {
   createTLStore,
-  getSnapshot,
-  type TLEditorSnapshot,
+  type TLStoreSnapshot,
 } from 'tldraw'
 import { describe, expect, it, vi } from 'vitest'
 
-function validSnapshot(): TLEditorSnapshot {
-  /*
-   * Never handwrite a partial TLEditorSnapshot fixture. A snapshot includes
-   * serialized store schema and session state that are owned by tldraw.
-   */
-  return getSnapshot(createTLStore({}))
+function validSnapshot(): TLStoreSnapshot {
+  return createTLStore({}).getStoreSnapshot()
 }
 
-function snapshot(documentValue: unknown): TLEditorSnapshot {
-  /*
-   * Lifecycle tests trigger their mocked editor change notification explicitly.
-   * Keep their persisted value a real, tldraw-generated snapshot rather than
-   * manufacturing invalid pseudo-records.
-   */
+function snapshot(documentValue: unknown): TLStoreSnapshot {
   void documentValue
-
   return validSnapshot()
 }
 
@@ -52,11 +40,11 @@ function createHarness() {
     documentId: 'editor-document',
 
     captureDocument() {
-      return currentSnapshot.document
+      return currentSnapshot
     },
 
-    getSnapshot() {
-      return currentSnapshot
+    captureAssetPersistenceToken() {
+      return Promise.resolve(null)
     },
 
     subscribeDocumentEvents(listener: (event: EditorDocumentEvent) => void) {
@@ -89,7 +77,7 @@ function createHarness() {
       }
     },
 
-    change(nextSnapshot: TLEditorSnapshot) {
+    change(nextSnapshot: TLStoreSnapshot) {
       currentSnapshot = nextSnapshot
 
       for (const listener of documentListeners) {
@@ -145,7 +133,7 @@ describe('Canvas document native-release contract', () => {
     expect(harness.closeEditorSession).toHaveBeenCalledWith(opened.sessionId)
   })
 
-  it('rejects an unwrapped tldraw snapshot instead of guessing a legacy format', async () => {
+  it('rejects an unwrapped store snapshot instead of guessing a legacy format', async () => {
     const harness = createHarness()
 
     harness.persistence.open.mockResolvedValue({
@@ -158,9 +146,10 @@ describe('Canvas document native-release contract', () => {
         },
         session: {},
       }),
+      assetPersistenceToken: null,
     })
 
-    await expect(harness.service.open()).rejects.toThrow('DRAW_INVALID_HEADER')
+    await expect(harness.service.open()).rejects.toThrow('DRAW_INVALID_STORE_SNAPSHOT')
   })
 
   it('opens through the native gateway without exposing a filesystem path', async () => {
@@ -170,7 +159,8 @@ describe('Canvas document native-release contract', () => {
       id: 'native-document-opened',
       displayName: 'architecture.draw',
       revision: 'revision-current',
-      content: serializeDrawDocument(snapshot({ shapes: [] })),
+      content: JSON.stringify(snapshot({ shapes: [] })),
+      assetPersistenceToken: null,
     })
 
     await expect(harness.service.open()).resolves.toEqual({
@@ -187,7 +177,7 @@ describe('Canvas document native-release contract', () => {
     )
 
     harness.ready()
-    harness.change(snapshot({ shapes: [{ id: 'shape:1' }]}))
+    harness.change(snapshot({ shapes: [{ id: 'shape:1' }] }))
 
     harness.persistence.saveAs.mockResolvedValue({
       id: 'native-document-created',
@@ -199,6 +189,7 @@ describe('Canvas document native-release contract', () => {
 
     expect(harness.persistence.saveAs).toHaveBeenCalledWith(
       expect.any(String),
+      null,
       {
         suggestedName: '未命名画布.draw',
       },
@@ -217,7 +208,8 @@ describe('Canvas document native-release contract', () => {
       id: 'native-document-existing',
       displayName: 'existing.draw',
       revision: 'revision-current',
-      content: serializeDrawDocument(snapshot({ shapes: [] })),
+      content: JSON.stringify(snapshot({ shapes: [] })),
+      assetPersistenceToken: null,
     })
 
     const opened = await harness.service.open()
@@ -227,7 +219,7 @@ describe('Canvas document native-release contract', () => {
     }
 
     harness.ready()
-    harness.change(snapshot({ shapes: [{ id: 'shape:1' }]}))
+    harness.change(snapshot({ shapes: [{ id: 'shape:1' }] }))
 
     await harness.service.save(opened.sessionId)
 
@@ -235,6 +227,7 @@ describe('Canvas document native-release contract', () => {
       'native-document-existing',
       'revision-current',
       expect.any(String),
+      null,
     )
   })
 
@@ -245,7 +238,8 @@ describe('Canvas document native-release contract', () => {
       id: 'native-document-revision-advance',
       displayName: 'revision-advance.draw',
       revision: 'revision-current',
-      content: serializeDrawDocument(snapshot({ shapes: [] })),
+      content: JSON.stringify(snapshot({ shapes: [] })),
+      assetPersistenceToken: null,
     })
 
     const opened = await harness.service.open()
@@ -272,6 +266,7 @@ describe('Canvas document native-release contract', () => {
       'native-document-revision-advance',
       'revision-current',
       expect.any(String),
+      null,
     )
 
     expect(harness.persistence.save).toHaveBeenNthCalledWith(
@@ -279,6 +274,7 @@ describe('Canvas document native-release contract', () => {
       'native-document-revision-advance',
       'revision-second',
       expect.any(String),
+      null,
     )
 
     expect(
@@ -296,7 +292,8 @@ describe('Canvas document native-release contract', () => {
       id: 'native-document-conflict',
       displayName: 'conflict.draw',
       revision: 'revision-current',
-      content: serializeDrawDocument(snapshot({ shapes: [] })),
+      content: JSON.stringify(snapshot({ shapes: [] })),
+      assetPersistenceToken: null,
     })
 
     const opened = await harness.service.open()
@@ -352,7 +349,8 @@ describe('Canvas document native-release contract', () => {
       id: 'native-document-saving',
       displayName: 'saving.draw',
       revision: 'revision-current',
-      content: serializeDrawDocument(snapshot({ shapes: [] })),
+      content: JSON.stringify(snapshot({ shapes: [] })),
+      assetPersistenceToken: null,
     })
 
     const opened = await harness.service.open()
@@ -362,13 +360,11 @@ describe('Canvas document native-release contract', () => {
     }
 
     harness.ready()
-    harness.change(snapshot({ shapes: [{ id: 'shape:1' }]}))
+    harness.change(snapshot({ shapes: [{ id: 'shape:1' }] }))
 
-    let resolveSave!: () => void
+    let resolveSave
 
-    const pendingSave = new Promise<{
-      readonly revision: string
-    }>((resolve) => {
+    const pendingSave = new Promise((resolve) => {
       resolveSave = () =>
         resolve({ revision: 'revision-next' })
     })
@@ -403,7 +399,8 @@ describe('Canvas document native-release contract', () => {
       id: 'native-document-save-failure',
       displayName: 'save-failure.draw',
       revision: 'revision-current',
-      content: serializeDrawDocument(snapshot({ shapes: [] })),
+      content: JSON.stringify(snapshot({ shapes: [] })),
+      assetPersistenceToken: null,
     })
 
     const opened = await harness.service.open()
@@ -413,7 +410,7 @@ describe('Canvas document native-release contract', () => {
     }
 
     harness.ready()
-    harness.change(snapshot({ shapes: [{ id: 'shape:1' }]}))
+    harness.change(snapshot({ shapes: [{ id: 'shape:1' }] }))
 
     harness.persistence.save.mockRejectedValue(
       new Error('native document_save rejected'),
@@ -440,7 +437,8 @@ describe('Canvas document native-release contract', () => {
       id: 'native-document-release-failure',
       displayName: 'failure.draw',
       revision: 'revision-current',
-      content: serializeDrawDocument(snapshot({ shapes: [] })),
+      content: JSON.stringify(snapshot({ shapes: [] })),
+      assetPersistenceToken: null,
     })
 
     const opened = await harness.service.open()
