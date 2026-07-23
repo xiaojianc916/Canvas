@@ -64,6 +64,12 @@ if (!workflow.includes('closeCanvas')) {
   violations.push('workflow: closeCanvas is required')
 }
 
+if (!workflow.includes("readonly intent: CanvasCloseIntent")) {
+  violations.push(
+    'workflow: release state must retain the original CanvasCloseIntent',
+  )
+}
+
 if (!workflow.includes('workspace.closeCanvas(sessionId)')) {
   violations.push(
     'workflow: workspace tab removal must be owned by the close transaction',

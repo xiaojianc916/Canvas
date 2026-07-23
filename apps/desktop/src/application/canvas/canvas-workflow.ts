@@ -18,10 +18,12 @@ export type CanvasCloseSnapshot =
   | {
       readonly state: 'releasing'
       readonly sessionId: CanvasSessionId
+      readonly intent: CanvasCloseIntent
     }
   | {
       readonly state: 'release-failed'
       readonly sessionId: CanvasSessionId
+      readonly intent: CanvasCloseIntent
     }
 
 export interface CanvasWorkflow {
@@ -126,6 +128,7 @@ export function createCanvasWorkflow(
     setCloseSnapshot({
       state: 'releasing',
       sessionId,
+      intent,
     })
 
     let result = await documents.releaseCanvas(sessionId, intent)
@@ -135,11 +138,12 @@ export function createCanvasWorkflow(
       result = await documents.releaseCanvas(sessionId, intent)
     }
 
-    applyReleaseResult(sessionId, result)
+    applyReleaseResult(sessionId, intent, result)
   }
 
   function applyReleaseResult(
     sessionId: CanvasSessionId,
+    intent: CanvasCloseIntent,
     result: CanvasReleaseResult,
   ): void {
     switch (result.kind) {
@@ -159,6 +163,7 @@ export function createCanvasWorkflow(
         setCloseSnapshot({
           state: 'release-failed',
           sessionId,
+          intent,
         })
         return
 

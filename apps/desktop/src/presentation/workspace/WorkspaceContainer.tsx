@@ -323,7 +323,10 @@ export function WorkspaceContainer({
             onCancel={port.canvases.cancelCanvasClose}
             onConfirm={() => {
               if (closeSnapshot.state === 'release-failed') {
-                handleCloseCanvas(closeSnapshot.sessionId, 'normal')
+                handleCloseCanvas(
+                  closeSnapshot.sessionId,
+                  closeSnapshot.intent,
+                )
               }
             }}
             open={closeSnapshot.state === 'release-failed'}

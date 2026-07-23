@@ -98,12 +98,54 @@ describe('CanvasWorkflow close transaction', () => {
     expect(workflow.getCloseSnapshot()).toEqual({
       state: 'release-failed',
       sessionId: 'session-1',
+      intent: 'normal',
     })
 
     await workflow.closeCanvas('session-1', 'normal')
 
     expect(workspace.closeCanvas).toHaveBeenCalledWith('session-1')
     expect(workflow.getCloseSnapshot()).toEqual({ state: 'idle' })
+  })
+
+  it('preserves discard intent when native release fails and retries', async () => {
+    const documents = createDocumentPort([
+      { kind: 'release-failed' },
+      { kind: 'released' },
+    ])
+
+    const workspace = {
+      createCanvas: vi.fn(),
+      closeCanvas: vi.fn(),
+    }
+
+    const workflow = createCanvasWorkflow(
+      documents,
+      workspace as never,
+    )
+
+    await workflow.closeCanvas('session-1', 'discard')
+
+    expect(workflow.getCloseSnapshot()).toEqual({
+      state: 'release-failed',
+      sessionId: 'session-1',
+      intent: 'discard',
+    })
+
+    await workflow.closeCanvas('session-1', 'discard')
+
+    expect(documents.releaseCanvas).toHaveBeenNthCalledWith(
+      1,
+      'session-1',
+      'discard',
+    )
+
+    expect(documents.releaseCanvas).toHaveBeenNthCalledWith(
+      2,
+      'session-1',
+      'discard',
+    )
+
+    expect(workspace.closeCanvas).toHaveBeenCalledWith('session-1')
   })
 
   it('waits for an active save and reevaluates the same close intent', async () => {
