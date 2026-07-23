@@ -20,6 +20,7 @@ import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
 import { DesktopTitleBar } from '../chrome/DesktopTitleBar'
 import { reportUiError as reportError } from '../ui/ui-feedback'
 import { CanvasInspectorContent } from './inspector/CanvasInspectorContent'
+import { SelectionTransformStatus } from './status/SelectionTransformStatus'
 
 const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({
   pages: Object.freeze([]),
@@ -253,6 +254,15 @@ export function WorkspaceContainer({
     tabs,
   }
 
+  const activeCanvasTitle =
+    activeSessionId === null
+      ? null
+      : (tabs.find(
+          (tab) =>
+            tab.kind === 'canvas' &&
+            tab.sessionId === activeSessionId,
+        )?.title ?? null)
+
   const hostedSessions = useMemo(
     () =>
       workbench.tabs.flatMap((tab) => {
@@ -344,10 +354,9 @@ export function WorkspaceContainer({
         </DesktopTitleBar>
       )}
       statusLeft={
-        <>
-          <CanvasStatusLeftContent hasActiveCanvas={workbench.activeCanvas !== null} />
-          <CanvasSelectionGeometryStatus />
-        </>
+        <SelectionTransformStatus
+          canvasTitle={activeCanvasTitle}
+        />
       }
       statusRight={<CanvasStatusRightContent pageCount={pages.length} />}
     />
@@ -392,112 +401,6 @@ function renderActiveSurface({
         </UiErrorBoundary>
       )
   }
-}
-
-function CanvasSelectionGeometryStatus() {
-  const editor = useEditor()
-
-  const geometry = useValue('canvas status selection geometry', () => {
-    if (!editor) {
-      return null
-    }
-
-    const selectedShapes = editor.getSelectedShapes()
-
-    if (selectedShapes.length === 0) {
-      return null
-    }
-
-    const bounds = editor.getSelectionPageBounds()
-
-    if (!bounds) {
-      return null
-    }
-
-    const firstShape = selectedShapes[0]
-
-    const sharedRotation =
-      firstShape &&
-      selectedShapes.every((shape) => Math.abs(shape.rotation - firstShape.rotation) < 0.0001)
-        ? radiansToStatusDegrees(firstShape.rotation)
-        : null
-
-    return {
-      count: selectedShapes.length,
-      x: bounds.x,
-      y: bounds.y,
-      width: bounds.width,
-      height: bounds.height,
-      rotation: sharedRotation,
-    }
-  }, [editor])
-
-  if (!geometry) {
-    return null
-  }
-
-  return (
-    <>
-      <StatusDivider />
-
-      <span className="shrink-0 font-medium text-foreground/80">
-        {geometry.count === 1 ? '已选择 1 个对象' : '已选择 ' + String(geometry.count) + ' 个对象'}
-      </span>
-
-      <StatusGeometryValue label="X" value={formatStatusNumber(geometry.x)} />
-
-      <StatusGeometryValue label="Y" value={formatStatusNumber(geometry.y)} />
-
-      <StatusGeometryValue label="W" value={formatStatusNumber(geometry.width)} />
-
-      <StatusGeometryValue label="H" value={formatStatusNumber(geometry.height)} />
-
-      {geometry.rotation !== null ? (
-        <StatusGeometryValue label="R" suffix="°" value={formatStatusNumber(geometry.rotation)} />
-      ) : null}
-    </>
-  )
-}
-
-interface StatusGeometryValueProps {
-  readonly label: string
-  readonly value: string
-  readonly suffix?: string
-}
-
-function StatusGeometryValue({ label, value, suffix }: StatusGeometryValueProps) {
-  return (
-    <span
-      className="inline-flex shrink-0 items-center gap-1"
-      title={label + ': ' + value + (suffix ?? '')}
-    >
-      <span className="text-muted-foreground/70">{label}</span>
-      <span className="min-w-8 rounded bg-background/70 px-1.5 py-0.5 text-right font-mono tabular-nums text-foreground/80">
-        {value}
-        {suffix}
-      </span>
-    </span>
-  )
-}
-
-function StatusDivider() {
-  return <span aria-hidden="true" className="h-3 w-px shrink-0 bg-divider" />
-}
-
-function radiansToStatusDegrees(value: number): number {
-  return (value * 180) / Math.PI
-}
-
-function formatStatusNumber(value: number): string {
-  if (!Number.isFinite(value)) {
-    return '0'
-  }
-
-  return String(Math.round(value * 10) / 10)
-}
-
-function CanvasStatusLeftContent({ hasActiveCanvas }: { readonly hasActiveCanvas: boolean }) {
-  return <span>{hasActiveCanvas ? '本地画布' : null}</span>
 }
 
 function CanvasStatusRightContent({ pageCount }: { readonly pageCount: number }) {
