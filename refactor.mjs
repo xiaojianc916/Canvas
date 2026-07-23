@@ -1,200 +1,102 @@
 #!/usr/bin/env node
 /**
- * scripts/harden-tauri-release.mjs
+ * refactor.mjs — 续跑已推送版本的安全加固
  *
  * 用法：
- *   node scripts/harden-tauri-release.mjs
+ *   node refactor.mjs          # 仅预览，不写入
+ *   node refactor.mjs --write  # 执行修改
  *
- * 作用：
- * - 禁用发布版本的 Tauri DevTools feature
- * - 从 IPC 注册表移除通用窗口创建/销毁/DevTools/系统 opener 命令
- * - 让原 opener command 即使被意外重新注册，也默认拒绝执行
- * - 将 pnpm audit 与 cargo deny 纳入 release script 与 GitHub Actions
- * - 为 Windows 原子覆盖写入插入“禁止不安全覆盖”的保护门
+ * 当前脚本只处理上次失败后尚未完成的两项：
+ * 1. Windows 原子覆盖写入：先改为 fail-closed，禁止旧的“原文件 -> 固定 backup
+ *    -> 新文件”两阶段覆盖流程造成数据丢失。
+ * 2. GitHub Actions：加入 JavaScript dependency audit。
  *
- * 注意：
- * Windows 安全覆盖写入需要后续用 ReplaceFileW / 平台专用实现完成。
- * 本脚本的策略是宁可让覆盖保存失败，也不允许旧文件先被移走导致丢失。
+ * 设计原则：
+ * - 先读取并生成全部变更；任一步不满足预期则不写任何文件。
+ * - 写入失败时自动回滚本次已写文件。
+ * - 保留 CRLF / LF。
+ * - 不修改已经推送成功的 package.json、Cargo.toml、app.rs、opener.rs。
+ *
+ * 说明：
+ * 这个版本不会假装实现 Windows 的原子覆盖替换。
+ * 在引入 ReplaceFileW / MoveFileExW 的经过测试的平台后端前，
+ * 已存在目标文件的 Windows 保存会明确失败，而不是冒险损坏用户文件。
  */
 
-import { readFile, writeFile, mkdir, rename, copyFile, stat } from 'node:fs/promises'
+import {
+  copyFile,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 
 const root = resolve(process.cwd())
+const writeMode = process.argv.includes('--write')
 const timestamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')
-const backupRoot = join(root, '.hardening-backup', timestamp)
+const backupRoot = join(root, '.hardening-backup', `resume-${timestamp}`)
 
-const files = {
-  rootPackage: 'package.json',
-  workflow: '.github/workflows/quality.yml',
-  workspaceCargo: 'Cargo.toml',
-  tauriApp: 'apps/desktop/src-tauri/src/bootstrap/app.rs',
-  opener: 'apps/desktop/src-tauri/src/commands/opener.rs',
+const TARGETS = {
   atomicWrite: 'editor/persistence/native/src/atomic_write.rs',
+  qualityWorkflow: '.github/workflows/quality.yml',
 }
 
-async function assertFile(relativePath) {
-  const absolutePath = join(root, relativePath)
+function fail(message) {
+  throw new Error(message)
+}
 
-  try {
-    await stat(absolutePath)
-  } catch {
-    throw new Error(`找不到预期文件：${relativePath}`)
+function normalizeNewlines(content) {
+  return content.replaceAll('\r\n', '\n')
+}
+
+function detectEol(content) {
+  return content.includes('\r\n') ? '\r\n' : '\n'
+}
+
+function withOriginalEol(content, eol) {
+  return content.replaceAll('\n', eol)
+}
+
+function countOccurrences(content, value) {
+  return content.split(value).length - 1
+}
+
+function assertOnce(content, value, description) {
+  const count = countOccurrences(content, value)
+
+  if (count !== 1) {
+    fail(`${description}：预期匹配 1 次，实际匹配 ${count} 次。未写入任何文件。`)
   }
+}
 
-  return absolutePath
+async function fileExists(relativePath) {
+  try {
+    await stat(join(root, relativePath))
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function load(relativePath) {
-  return readFile(await assertFile(relativePath), 'utf8')
-}
+  const absolutePath = join(root, relativePath)
 
-async function save(relativePath, content) {
-  const sourcePath = await assertFile(relativePath)
-  const backupPath = join(backupRoot, relativePath)
-
-  await mkdir(dirname(backupPath), { recursive: true })
-  await copyFile(sourcePath, backupPath)
-
-  const temporaryPath = `${sourcePath}.hardening-${process.pid}.tmp`
-  await writeFile(temporaryPath, content, 'utf8')
-  await rename(temporaryPath, sourcePath)
-
-  console.log(`已修改：${relative(root, sourcePath)}`)
-}
-
-function replaceExactly(content, oldText, newText, description) {
-  const count = content.split(oldText).length - 1
-
-  if (count !== 1) {
-    throw new Error(
-      `${description}：预期匹配 1 次，实际匹配 ${count} 次。仓库版本可能已变化，请人工合并。`,
-    )
+  if (!(await fileExists(relativePath))) {
+    fail(`找不到文件：${relativePath}`)
   }
 
-  return content.replace(oldText, newText)
+  return readFile(absolutePath, 'utf8')
 }
 
-function appendUnique(content, marker, text, description) {
-  if (content.includes(marker)) {
-    console.log(`跳过：${description} 已存在`)
-    return content
-  }
+function patchAtomicWrite(original) {
+  const eol = detectEol(original)
+  let content = normalizeNewlines(original)
 
-  return `${content.trimEnd()}\n${text}\n`
-}
-
-async function hardenRootPackage() {
-  const path = files.rootPackage
-  const packageJson = JSON.parse(await load(path))
-
-  const releaseCommand = packageJson.scripts?.['verify:release']
-  if (!releaseCommand) {
-    throw new Error('package.json 缺少 scripts.verify:release')
-  }
-
-  const requiredChecks = ['pnpm audit --audit-level high', 'pnpm audit:rust']
-  const missingChecks = requiredChecks.filter((check) => !releaseCommand.includes(check))
-
-  if (missingChecks.length > 0) {
-    packageJson.scripts['verify:release'] = `${releaseCommand} && ${missingChecks.join(' && ')}`
-  }
-
-  await save(path, `${JSON.stringify(packageJson, null, 2)}\n`)
-}
-
-async function hardenCargoWorkspace() {
-  const path = files.workspaceCargo
-  let content = await load(path)
-
-  content = replaceExactly(
-    content,
-    'tauri = { version = "2.5.1", features = ["devtools"] }',
-    'tauri = { version = "2.5.1", features = [] }',
-    '移除 Tauri devtools feature',
-  )
-
-  await save(path, content)
-}
-
-async function hardenCommandRegistration() {
-  const path = files.tauriApp
-  let content = await load(path)
-
-  const commandsToRemove = [
-    '            commands::window::window_create,\n',
-    '            commands::window::window_destroy,\n',
-    '            commands::window::window_open_devtools,\n',
-    '            commands::opener::opener_show_in_folder,\n',
-    '            commands::opener::opener_open_external,\n',
-  ]
-
-  for (const command of commandsToRemove) {
-    if (content.includes(command)) {
-      content = content.replace(command, '')
-    }
-  }
-
-  const marker = '.invoke_handler(tauri::generate_handler!['
-  if (!content.includes(marker)) {
-    throw new Error('未找到 Tauri invoke_handler 注册表')
-  }
-
-  await save(path, content)
-}
-
-async function disableUnsafeOpenerCommands() {
-  const path = files.opener
-
-  const replacement = `use crate::error::Result;
-use serde::Deserialize;
-use specta::Type;
-use tauri::command;
-
-#[derive(Debug, Deserialize, Type)]
-pub struct ShowInFolderOptions {
-    pub path: String,
-}
-
-#[derive(Debug, Deserialize, Type)]
-pub struct OpenExternalOptions {
-    pub url: String,
-}
-
-/// 此 command 不应在生产版本注册。
-///
-/// 原实现把 renderer 可控字符串传入 \`cmd /C start\`、\`open\` 或
-/// \`xdg-open\`，其中 Windows 的 cmd.exe 会重新解释元字符，形成命令注入面。
-///
-/// 若未来需要恢复此能力：
-/// 1. 不得通过 shell / command interpreter 启动；
-/// 2. 使用官方 tauri-plugin-opener 的受限 API；
-/// 3. 用结构化 URL parser 做精确 scheme allowlist；
-/// 4. 将 command 限制到特定 capability/window。
-#[command]
-pub async fn opener_show_in_folder(_options: ShowInFolderOptions) -> Result<()> {
-    Err(crate::Error::PermissionDenied(
-        "opening arbitrary filesystem paths is disabled in this build".into(),
-    ))
-}
-
-#[command]
-pub async fn opener_open_external(_options: OpenExternalOptions) -> Result<()> {
-    Err(crate::Error::PermissionDenied(
-        "opening external URLs is disabled in this build".into(),
-    ))
-}
-`
-
-  await save(path, replacement)
-}
-
-async function hardenWindowsAtomicWrite() {
-  const path = files.atomicWrite
-  let content = await load(path)
-
-  const oldImplementation = `#[cfg(windows)]
+  const unsafeWindowsImplementation = `#[cfg(windows)]
 fn replace_file(source: &Path, destination: &Path) -> Result<()> {
     let backup = backup_path(destination);
     if destination.exists() {
@@ -222,19 +124,20 @@ fn backup_path(destination: &Path) -> PathBuf {
 }
 `
 
-  const safeTemporaryImplementation = `#[cfg(windows)]
+  const safeWindowsImplementation = `#[cfg(windows)]
 fn replace_file(source: &Path, destination: &Path) -> Result<()> {
-    // 禁止旧实现：
+    // 禁止旧流程：
     //   destination -> 固定 backup -> source -> destination
     //
-    // 该流程在两次 rename 之间可能让正式文件消失；固定 backup 名还会造成
-    // 多窗口/多进程冲突。std::fs 当前没有提供 Windows 的安全覆盖替换 API。
+    // 旧流程不是原子替换：进程崩溃、目标文件锁定、磁盘错误或并发保存时，
+    // destination 可能已经消失，而固定 backup 文件名还会发生冲突。
     //
-    // 在接入 ReplaceFileW / MoveFileExW（带 WRITE_THROUGH）或经过验证的跨平台
-    // 原子写库之前，宁可拒绝覆盖已有文件，也不能以数据损坏为代价“看似保存成功”。
+    // std::fs 没有提供 Windows 的安全“覆盖替换”API。接入并测试
+    // ReplaceFileW / MoveFileExW 平台后端前，宁可拒绝覆盖已有文件，
+    // 也不允许保存操作破坏用户的旧文档。
     if destination.exists() {
         return Err(Error::Persistence(
-            "refusing unsafe Windows overwrite: atomic replacement backend is not configured"
+            "Windows overwrite is disabled until an atomic replacement backend is configured"
                 .into(),
         ));
     }
@@ -244,72 +147,161 @@ fn replace_file(source: &Path, destination: &Path) -> Result<()> {
 }
 `
 
-  if (!content.includes(oldImplementation)) {
-    throw new Error(
-      '未找到预期的 Windows replace_file 实现；请不要自动改写 atomic_write.rs。',
-    )
+  if (content.includes(safeWindowsImplementation.trimEnd())) {
+    console.log('跳过：Windows fail-closed 保存保护已存在')
+    return original
   }
 
-  content = content.replace(oldImplementation, safeTemporaryImplementation)
-  content = content.replace('use std::path::{Path, PathBuf};', 'use std::path::Path;')
+  assertOnce(content, unsafeWindowsImplementation, 'Windows replace_file 旧实现')
 
-  await save(path, content)
+  content = content.replace(unsafeWindowsImplementation, safeWindowsImplementation)
+
+  const pathImport = 'use std::path::{Path, PathBuf};'
+  if (content.includes(pathImport)) {
+    assertOnce(content, pathImport, 'Path / PathBuf import')
+    content = content.replace(pathImport, 'use std::path::Path;')
+  }
+
+  return withOriginalEol(content, eol)
 }
 
-async function hardenWorkflow() {
-  const path = files.workflow
-  let content = await load(path)
+function patchQualityWorkflow(original) {
+  const eol = detectEol(original)
+  let content = normalizeNewlines(original)
 
-  const jsAuditStep = `
-      - name: JavaScript dependency audit
+  const auditStep = `      - name: JavaScript dependency audit
         run: pnpm audit --audit-level high
 `
 
-  const releaseSecurityNote = `
-# Security policy:
-# - JavaScript audit runs in CI and release verification.
-# - Rust advisories, licenses, bans and sources run via cargo-deny.
-# - Pin third-party GitHub Actions to immutable commit SHAs before protected-branch release.
+  if (content.includes('- name: JavaScript dependency audit')) {
+    console.log('跳过：JavaScript dependency audit 已存在')
+    return original
+  }
+
+  const installStep = `      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 `
 
-  content = appendUnique(
-    content,
-    '- name: JavaScript dependency audit',
-    jsAuditStep,
-    'JavaScript dependency audit',
-  )
+  assertOnce(content, installStep, 'CI dependency installation step')
 
-  content = appendUnique(
-    content,
-    '# Security policy:',
-    releaseSecurityNote,
-    '安全策略说明',
-  )
+  content = content.replace(installStep, `${installStep}\n${auditStep}`)
 
-  await save(path, content)
+  return withOriginalEol(content, eol)
+}
+
+async function buildPlan() {
+  const atomicOriginal = await load(TARGETS.atomicWrite)
+  const workflowOriginal = await load(TARGETS.qualityWorkflow)
+
+  const plan = [
+    {
+      path: TARGETS.atomicWrite,
+      before: atomicOriginal,
+      after: patchAtomicWrite(atomicOriginal),
+    },
+    {
+      path: TARGETS.qualityWorkflow,
+      before: workflowOriginal,
+      after: patchQualityWorkflow(workflowOriginal),
+    },
+  ].filter((entry) => entry.before !== entry.after)
+
+  if (plan.length === 0) {
+    console.log('\n没有需要修改的文件。')
+  }
+
+  return plan
+}
+
+async function backupAll(plan) {
+  for (const entry of plan) {
+    const sourcePath = join(root, entry.path)
+    const backupPath = join(backupRoot, entry.path)
+
+    await mkdir(dirname(backupPath), { recursive: true })
+    await copyFile(sourcePath, backupPath)
+  }
+}
+
+async function writeOne(entry) {
+  const targetPath = join(root, entry.path)
+  const temporaryPath = `${targetPath}.refactor-${process.pid}.tmp`
+
+  await writeFile(temporaryPath, entry.after, 'utf8')
+  await rename(temporaryPath, targetPath)
+}
+
+async function restoreAll(plan) {
+  for (const entry of plan) {
+    const backupPath = join(backupRoot, entry.path)
+    const targetPath = join(root, entry.path)
+
+    if (await fileExists(relative(backupRoot, backupPath))) {
+      await copyFile(backupPath, targetPath)
+    }
+  }
+}
+
+async function applyPlan(plan) {
+  await backupAll(plan)
+
+  const written = []
+
+  try {
+    for (const entry of plan) {
+      await writeOne(entry)
+      written.push(entry)
+
+      console.log(`已修改：${entry.path}`)
+    }
+  } catch (error) {
+    console.error('\n写入失败，正在回滚本次变更……')
+
+    for (const entry of written.reverse()) {
+      const backupPath = join(backupRoot, entry.path)
+      const targetPath = join(root, entry.path)
+      await copyFile(backupPath, targetPath)
+    }
+
+    throw error
+  }
 }
 
 async function main() {
   console.log(`仓库根目录：${root}`)
-  console.log(`原始文件备份目录：${backupRoot}`)
+  console.log(`模式：${writeMode ? '写入' : '预览（不会修改文件）'}`)
 
-  await hardenRootPackage()
-  await hardenCargoWorkspace()
-  await hardenCommandRegistration()
-  await disableUnsafeOpenerCommands()
-  await hardenWindowsAtomicWrite()
-  await hardenWorkflow()
+  const plan = await buildPlan()
 
-  console.log('\n已完成机械化安全加固。接下来必须运行：')
-  console.log('  pnpm install --frozen-lockfile')
+  if (plan.length === 0) {
+    return
+  }
+
+  console.log('\n计划修改：')
+  for (const entry of plan) {
+    console.log(`  - ${entry.path}`)
+  }
+
+  if (!writeMode) {
+    console.log('\n预览结束。确认后执行：node refactor.mjs --write')
+    return
+  }
+
+  console.log(`\n备份目录：${backupRoot}`)
+  await applyPlan(plan)
+
+  console.log('\n完成。必须继续执行：')
+  console.log('  pnpm format:check')
+  console.log('  pnpm lint')
+  console.log('  pnpm test:architecture')
   console.log('  pnpm verify:release')
   console.log('  cargo test --workspace --all-features')
   console.log('  cargo clippy --workspace --all-targets --all-features -- -D warnings')
-  console.log('\nWindows 原子覆盖保存目前会安全拒绝已有文件覆盖。')
-  console.log('在实现 ReplaceFileW / MoveFileExW 的平台后端并补足崩溃测试前，不应发布 Windows 覆盖保存功能。')
+  console.log('\n注意：Windows 已存在文件的覆盖保存现在会安全失败。')
+  console.log('在实现并测试 ReplaceFileW / MoveFileExW 后端前，不应恢复 Windows 覆盖保存。')
 }
 
 main().catch((error) => {
-  console.error(`\n加固脚本失败：${error instanceof Error ? error.message : String(error)}`)
+  console.error(`\n脚本失败：${error instanceof Error ? error.message : String(error)}`)
   process.exitCode = 1
 })

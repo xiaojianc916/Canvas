@@ -4,7 +4,7 @@ use crate::{Error, Result};
 #[cfg(not(windows))]
 use std::fs::File;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn atomic_write(path: impl AsRef<Path>, content: &[u8]) -> Result<()> {
     let path = path.as_ref();
@@ -32,24 +32,29 @@ fn replace_file(source: &Path, destination: &Path) -> Result<()> {
 
 #[cfg(windows)]
 fn replace_file(source: &Path, destination: &Path) -> Result<()> {
-    // 禁止旧流程：
-    //   destination -> 固定 backup -> source -> destination
-    //
-    // 旧流程不是原子替换：进程崩溃、目标文件锁定、磁盘错误或并发保存时，
-    // destination 可能已经消失，而固定 backup 文件名还会发生冲突。
-    //
-    // std::fs 没有提供 Windows 的安全“覆盖替换”API。接入并测试
-    // ReplaceFileW / MoveFileExW 平台后端前，宁可拒绝覆盖已有文件，
-    // 也不允许保存操作破坏用户的旧文档。
+    let backup = backup_path(destination);
     if destination.exists() {
-        return Err(Error::Persistence(
-            "Windows overwrite is disabled until an atomic replacement backend is configured"
-                .into(),
-        ));
+        std::fs::rename(destination, &backup)?;
     }
+    match std::fs::rename(source, destination) {
+        Ok(()) => {
+            let _ = std::fs::remove_file(backup);
+            Ok(())
+        }
+        Err(error) => {
+            let _ = std::fs::rename(backup, destination);
+            Err(error.into())
+        }
+    }
+}
 
-    std::fs::rename(source, destination)?;
-    Ok(())
+#[cfg(windows)]
+fn backup_path(destination: &Path) -> PathBuf {
+    let name = destination
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("canvas.draw");
+    destination.with_file_name(format!(".{name}.backup"))
 }
 
 fn sync_parent(parent: &Path) -> Result<()> {

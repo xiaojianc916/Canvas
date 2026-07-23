@@ -55,9 +55,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: JavaScript dependency audit
-        run: pnpm audit --audit-level high
-
       - name: Format
         run: pnpm format:check
 
