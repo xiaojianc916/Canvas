@@ -1687,10 +1687,12 @@ version = "0.1.0"
 name = "hybrid-canvas-desktop"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "hybrid-canvas-file-native",
  "log",
  "serde",
  "serde_json",
+ "sha2",
  "specta",
  "specta-typescript",
  "tauri",
