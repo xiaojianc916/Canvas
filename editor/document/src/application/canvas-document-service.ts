@@ -461,24 +461,14 @@ export function createCanvasDocumentService({
 }
 
 function parseEditorSnapshot(json: string): TLEditorSnapshot {
-  try {
-    return parseDrawDocument(json).content
-  } catch (containerError) {
-    try {
-      const parsed: unknown = JSON.parse(json)
-
-      if (
-        typeof parsed === 'object' &&
-        parsed !== null &&
-        'document' in parsed &&
-        'session' in parsed
-      ) {
-        return parsed as TLEditorSnapshot
-      }
-    } catch {
-      // Preserve the validated container error.
-    }
-
-    throw containerError
-  }
+  /*
+   * The application has exactly one supported persisted-document wire format:
+   * the versioned Hybrid Canvas .draw container.
+   *
+   * Do not add a fallback that guesses whether arbitrary JSON is a tldraw
+   * snapshot. Legacy formats must be recognized by an explicit importer or
+   * migration pipeline with a bounded compatibility policy; they must never
+   * bypass the canonical file-format validation path.
+   */
+  return parseDrawDocument(json).content
 }

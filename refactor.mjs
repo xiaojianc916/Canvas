@@ -1,144 +1,159 @@
 #!/usr/bin/env node
 /**
- * Hybrid Canvas — 审查 Phase 0 自动修复
+ * P0 — 删除未经版本化和 schema 验证的裸 tldraw snapshot fallback
  *
- * 只修复两项已经由源码确认、且可以无行为歧义自动修复的问题：
- * 1. DOMMatrix 变换向量时错误带入平移。
- * 2. CancellationTokenSource 的“检查后订阅”取消竞态。
+ * 问题：
+ * canvas-document-service.ts 当前在 parseDrawDocument() 失败后，
+ * 会接受任意带 { document, session } 顶层字段的 JSON，并强制断言为
+ * TLEditorSnapshot。这绕过了：
  *
- * 该脚本故意 fail-closed：
- * - 仅匹配已审查版本的精确源码片段；
- * - 源码已变化且不符合预期时立即报错，不进行猜测性替换；
- * - 可重复执行；已修复时只输出提示。
+ * - .draw 容器 header 校验
+ * - 文件版本策略
+ * - 文件大小、对象数量和嵌套预算
+ * - future-version 只读策略
+ * - 真实 snapshot schema 验证边界
  *
- * 使用：
- *   node audit-phase0.mjs /path/to/Canvas
+ * 修复：
+ * - 删除“猜测旧格式”的 fallback；
+ * - .draw 文件只能经 parseDrawDocument() 读取；
+ * - 旧裸 JSON 必须由后续显式 migration/import 流程处理，
+ *   而不能作为无期限运行时兼容层保留在主打开路径中。
  *
- * 然后必须验证：
- *   pnpm format:check
- *   pnpm lint
- *   pnpm typecheck
- *   pnpm test
- *   cargo fmt --check
- *   cargo clippy --workspace --all-targets --all-features
- *   cargo test --workspace
+ * 特性：
+ * - fail-closed：目标源码不完全匹配时拒绝修改；
+ * - 幂等：已修复时不会重复写入；
+ * - 不使用模糊正则替换；
+ * - 不生成 backup / 不保留旧逻辑副本；
+ * - 修改后输出必须执行的验证命令。
+ *
+ * 用法：
+ *   node fix-p0-remove-raw-snapshot-fallback.mjs .
+ *   node fix-p0-remove-raw-snapshot-fallback.mjs /absolute/path/to/Canvas
  */
 
-import { readFile, writeFile } from 'node:fs/promises'
+import { access, readFile, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { join, resolve } from 'node:path'
+import process from 'node:process'
 
 const repositoryRoot = resolve(process.argv[2] ?? process.cwd())
 
-const edits = [
-  {
-    file: 'foundations/geometry/src/transform.ts',
+const targetRelativePath =
+  'editor/document/src/application/canvas-document-service.ts'
 
-    before: `export function transformVector(t: Transform2D, v: Vector2D): Vector2D {
-  const pt = t.transformPoint(new DOMPoint(v[0], v[1]))
-  return [pt.x, pt.y]
-}`,
+const targetPath = join(repositoryRoot, targetRelativePath)
 
-    after: `export function transformVector(t: Transform2D, v: Vector2D): Vector2D {
-  // A vector has homogeneous w = 0: matrix translation must not affect it.
-  const pt = t.transformPoint(new DOMPoint(v[0], v[1], 0, 0))
-  return [pt.x, pt.y]
-}`,
-  },
+const oldImplementation = `function parseEditorSnapshot(json: string): TLEditorSnapshot {
+  try {
+    return parseDrawDocument(json).content
+  } catch (containerError) {
+    try {
+      const parsed: unknown = JSON.parse(json)
 
-  {
-    file: 'foundations/kernel/src/cancellation.ts',
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        'document' in parsed &&
+        'session' in parsed
+      ) {
+        return parsed as TLEditorSnapshot
+      }
+    } catch {
+      // Preserve the validated container error.
+    }
 
-    before: `      onCancelled(listener: () => void): () => void {
-        source.#listeners.push(listener)
-        return () => {
-          const idx = source.#listeners.indexOf(listener)
-          if (idx >= 0) source.#listeners.splice(idx, 1)
-        }
-      },`,
+    throw containerError
+  }
+}`
 
-    after: `      onCancelled(listener: () => void): () => void {
-        // Cancellation is level-triggered. A listener registered after
-        // cancellation must observe the already-cancelled state immediately;
-        // otherwise withCancellation has a check-then-subscribe race.
-        if (source.#cancelled) {
-          listener()
-          return () => {}
-        }
+const newImplementation = `function parseEditorSnapshot(json: string): TLEditorSnapshot {
+  /*
+   * The application has exactly one supported persisted-document wire format:
+   * the versioned Hybrid Canvas .draw container.
+   *
+   * Do not add a fallback that guesses whether arbitrary JSON is a tldraw
+   * snapshot. Legacy formats must be recognized by an explicit importer or
+   * migration pipeline with a bounded compatibility policy; they must never
+   * bypass the canonical file-format validation path.
+   */
+  return parseDrawDocument(json).content
+}`
 
-        source.#listeners.push(listener)
-
-        return () => {
-          const idx = source.#listeners.indexOf(listener)
-
-          if (idx >= 0) {
-            source.#listeners.splice(idx, 1)
-          }
-        }
-      },`,
-  },
-]
-
-async function patchFile({ file, before, after }) {
-  const path = join(repositoryRoot, file)
-  const source = await readFile(path, 'utf8')
-
-  if (source.includes(after)) {
-    console.log(`已修复，跳过：${file}`)
+async function fileExists(path) {
+  try {
+    await access(path, constants.F_OK)
+    return true
+  } catch {
     return false
   }
+}
 
-  if (!source.includes(before)) {
-    throw new Error(
-      [
-        `拒绝修改：${file}`,
-        '原因：源码片段与已审查版本不一致。',
-        '脚本不会对未知版本进行模糊替换；请先人工重新审查差异。',
-      ].join('\n'),
-    )
-  }
-
-  const next = source.replace(before, after)
-
-  if (next === source) {
-    throw new Error(`拒绝修改：${file} 未产生预期变更。`)
-  }
-
-  await writeFile(path, next, 'utf8')
-  console.log(`已修复：${file}`)
-
-  return true
+function fail(message) {
+  console.error(`\nP0 修复失败：${message}\n`)
+  process.exitCode = 1
 }
 
 async function main() {
   const packageJsonPath = join(repositoryRoot, 'package.json')
 
-  try {
-    await readFile(packageJsonPath, 'utf8')
-  } catch {
-    throw new Error(
-      `未找到 ${packageJsonPath}。请传入 Hybrid Canvas 仓库根目录，或在仓库根目录执行脚本。`,
+  if (!(await fileExists(packageJsonPath))) {
+    fail(
+      [
+        `未找到仓库根 package.json：${packageJsonPath}`,
+        '请在 Hybrid Canvas 仓库根目录运行，或把仓库根目录作为第一个参数传入。',
+      ].join('\n'),
     )
+    return
   }
 
-  let changedCount = 0
-
-  for (const edit of edits) {
-    if (await patchFile(edit)) {
-      changedCount += 1
-    }
+  if (!(await fileExists(targetPath))) {
+    fail(`未找到目标文件：${targetRelativePath}`)
+    return
   }
 
+  const source = await readFile(targetPath, 'utf8')
+
+  if (source.includes(newImplementation)) {
+    console.log(`已是单一容器读取路径，跳过：${targetRelativePath}`)
+    return
+  }
+
+  if (!source.includes(oldImplementation)) {
+    fail(
+      [
+        `目标文件与已审查版本不匹配：${targetRelativePath}`,
+        '拒绝进行模糊替换。',
+        '请人工检查当前 parseEditorSnapshot()，重新确认兼容策略后再修改。',
+      ].join('\n'),
+    )
+    return
+  }
+
+  const nextSource = source.replace(oldImplementation, newImplementation)
+
+  if (nextSource === source) {
+    fail('替换未产生变化。')
+    return
+  }
+
+  await writeFile(targetPath, nextSource, 'utf8')
+
+  console.log(`已修复：${targetRelativePath}`)
   console.log('')
-  console.log(`完成：应用了 ${changedCount} 项确定性修复。`)
+  console.log('结果：')
+  console.log('- .draw 打开路径不再猜测或强制断言裸 JSON snapshot。')
+  console.log('- 所有持久化输入必须经过 versioned DrawFileContainer 校验。')
+  console.log('- 历史裸 JSON 文件需要后续显式迁移工具处理。')
   console.log('')
-  console.log('必须执行以下验证：')
+  console.log('必须验证：')
   console.log('  pnpm format:check')
   console.log('  pnpm lint')
   console.log('  pnpm typecheck')
   console.log('  pnpm test')
+  console.log('  pnpm test:architecture')
   console.log('  cargo fmt --check')
-  console.log('  cargo clippy --workspace --all-targets --all-features')
-  console.log('  cargo test --workspace')
+  console.log('  cargo clippy --workspace --all-targets --all-features -- -D warnings')
+  console.log('  cargo test --workspace --all-features')
 }
 
 await main()
