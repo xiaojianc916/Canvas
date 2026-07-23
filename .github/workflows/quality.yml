@@ -112,6 +112,13 @@ jobs:
       - name: Check
         run: cargo check --workspace --all-targets --all-features
 
+      - name: Verify generated IPC bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run -p hybrid-canvas-desktop --bin export-ipc-bindings
+          git diff --exit-code -- platforms/desktop-ipc/src/generated/ipc-bindings.ts
+
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
