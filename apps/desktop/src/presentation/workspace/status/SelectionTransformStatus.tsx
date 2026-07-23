@@ -190,9 +190,6 @@ export function SelectionTransformStatus({
 
         break
       }
-
-      case 'rotation':
-        return
     }
 
     if (
