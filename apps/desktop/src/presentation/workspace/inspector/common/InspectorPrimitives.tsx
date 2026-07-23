@@ -67,11 +67,7 @@ export interface InspectorSectionProps {
   readonly children: import('react').ReactNode
 }
 
-export function ShapeInspectorSection({
-  title,
-  description,
-  children,
-}: InspectorSectionProps) {
+export function ShapeInspectorSection({ title, description, children }: InspectorSectionProps) {
   return (
     <section className="space-y-2.5 border-b border-divider pb-4 last:border-b-0">
       <header className="space-y-0.5">
@@ -80,9 +76,7 @@ export function ShapeInspectorSection({
         </h3>
 
         {description ? (
-          <p className="text-[10px] leading-4 text-muted-foreground/80">
-            {description}
-          </p>
+          <p className="text-[10px] leading-4 text-muted-foreground/80">{description}</p>
         ) : null}
       </header>
 
@@ -104,9 +98,7 @@ export function ToolPanelHeader({
     <div className="space-y-4">
       <header className="border-b border-divider pb-3">
         <h2 className="text-sm font-semibold">{title}</h2>
-        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-          {description}
-        </p>
+        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{description}</p>
       </header>
 
       {children}
@@ -162,8 +154,7 @@ export function ShapeInspectorSegmentedControl({
       className="grid gap-1.5"
       role="group"
       style={{
-        gridTemplateColumns:
-          'repeat(' + String(options.length) + ', minmax(0, 1fr))',
+        gridTemplateColumns: 'repeat(' + String(options.length) + ', minmax(0, 1fr))',
       }}
     >
       {options.map((option) => (
@@ -247,11 +238,7 @@ export function ShapeInspectorArrowheadSelect({
   )
 }
 
-export function ToolColorSection({
-  editor,
-}: {
-  readonly editor: Editor
-}) {
+export function ToolColorSection({ editor }: { readonly editor: Editor }) {
   const currentColor = useValue(
     'inspector next shape color',
     () => editor.getStyleForNextShape(DefaultColorStyle),
@@ -269,17 +256,10 @@ export function ToolColorSection({
               'size-7 rounded-md border border-divider transition-transform ' +
               'hover:scale-105 focus-visible:outline-none ' +
               'focus-visible:ring-2 focus-visible:ring-primary ' +
-              (currentColor === color.value
-                ? 'ring-2 ring-primary ring-offset-1'
-                : '')
+              (currentColor === color.value ? 'ring-2 ring-primary ring-offset-1' : '')
             }
             key={color.value}
-            onClick={() =>
-              editor.setStyleForNextShapes(
-                DefaultColorStyle,
-                color.value,
-              )
-            }
+            onClick={() => editor.setStyleForNextShapes(DefaultColorStyle, color.value)}
             style={{ backgroundColor: color.css }}
             title={color.label}
             type="button"
@@ -290,11 +270,7 @@ export function ToolColorSection({
   )
 }
 
-export function ToolStrokeSizeSection({
-  editor,
-}: {
-  readonly editor: Editor
-}) {
+export function ToolStrokeSizeSection({ editor }: { readonly editor: Editor }) {
   const currentSize = useValue(
     'inspector next shape size',
     () => editor.getStyleForNextShape(DefaultSizeStyle),
@@ -302,15 +278,10 @@ export function ToolStrokeSizeSection({
   )
 
   return (
-    <ShapeInspectorSection
-      description="快捷档位；后续阶段增加精确数值与滑杆。"
-      title="粗细"
-    >
+    <ShapeInspectorSection description="快捷档位；后续阶段增加精确数值与滑杆。" title="粗细">
       <ShapeInspectorSegmentedControl
         ariaLabel="默认线条粗细"
-        onChange={(value) =>
-          editor.setStyleForNextShapes(DefaultSizeStyle, value as never)
-        }
+        onChange={(value) => editor.setStyleForNextShapes(DefaultSizeStyle, value as never)}
         options={[
           { value: 's', label: '细' },
           { value: 'm', label: '中' },
@@ -323,11 +294,7 @@ export function ToolStrokeSizeSection({
   )
 }
 
-export function ToolDashSection({
-  editor,
-}: {
-  readonly editor: Editor
-}) {
+export function ToolDashSection({ editor }: { readonly editor: Editor }) {
   const currentDash = useValue(
     'inspector next shape dash',
     () => editor.getStyleForNextShape(DefaultDashStyle),
@@ -338,9 +305,7 @@ export function ToolDashSection({
     <ShapeInspectorSection title="线型">
       <ShapeInspectorSegmentedControl
         ariaLabel="默认线型"
-        onChange={(value) =>
-          editor.setStyleForNextShapes(DefaultDashStyle, value as never)
-        }
+        onChange={(value) => editor.setStyleForNextShapes(DefaultDashStyle, value as never)}
         options={[
           { value: 'draw', label: '手绘' },
           { value: 'solid', label: '实线' },
@@ -383,9 +348,7 @@ export function ToolFillSection({
     <ShapeInspectorSection title="填充">
       <ShapeInspectorSegmentedControl
         ariaLabel="默认填充"
-        onChange={(value) =>
-          editor.setStyleForNextShapes(DefaultFillStyle, value as never)
-        }
+        onChange={(value) => editor.setStyleForNextShapes(DefaultFillStyle, value as never)}
         options={options}
         value={currentFill}
       />
@@ -393,11 +356,7 @@ export function ToolFillSection({
   )
 }
 
-export function InspectorHint({
-  children,
-}: {
-  readonly children: import('react').ReactNode
-}) {
+export function InspectorHint({ children }: { readonly children: import('react').ReactNode }) {
   return (
     <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
       {children}

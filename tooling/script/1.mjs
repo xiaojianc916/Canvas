@@ -14,12 +14,9 @@ const PATHS = Object.freeze({
   designTokens: 'foundations/design-system/src/styles/index.css',
   separator: 'foundations/design-system/src/components/ui/separator.tsx',
   applicationStyles: 'apps/desktop/src/app.css',
-  desktopTitleBar:
-    'apps/desktop/src/presentation/chrome/DesktopTitleBar.tsx',
-  workspaceShell:
-    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
-  workbenchTabs:
-    'features/workspace/src/presentation/shell/chrome-workbench-tabs.css',
+  desktopTitleBar: 'apps/desktop/src/presentation/chrome/DesktopTitleBar.tsx',
+  workspaceShell: 'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
+  workbenchTabs: 'features/workspace/src/presentation/shell/chrome-workbench-tabs.css',
 })
 
 main()
@@ -29,41 +26,17 @@ function main() {
 
   const changes = []
 
-  updateFile(
-    PATHS.designTokens,
-    migrateDesignTokens,
-    changes,
-  )
+  updateFile(PATHS.designTokens, migrateDesignTokens, changes)
 
-  updateFile(
-    PATHS.separator,
-    migrateSeparator,
-    changes,
-  )
+  updateFile(PATHS.separator, migrateSeparator, changes)
 
-  updateFile(
-    PATHS.applicationStyles,
-    migrateApplicationStyles,
-    changes,
-  )
+  updateFile(PATHS.applicationStyles, migrateApplicationStyles, changes)
 
-  updateFile(
-    PATHS.desktopTitleBar,
-    migrateDesktopTitleBar,
-    changes,
-  )
+  updateFile(PATHS.desktopTitleBar, migrateDesktopTitleBar, changes)
 
-  updateFile(
-    PATHS.workspaceShell,
-    migrateWorkspaceShell,
-    changes,
-  )
+  updateFile(PATHS.workspaceShell, migrateWorkspaceShell, changes)
 
-  updateFile(
-    PATHS.workbenchTabs,
-    migrateWorkbenchTabs,
-    changes,
-  )
+  updateFile(PATHS.workbenchTabs, migrateWorkbenchTabs, changes)
 
   console.log('')
 
@@ -109,19 +82,13 @@ function assertRepositoryRoot() {
   let packageJson
 
   try {
-    packageJson = JSON.parse(
-      fs.readFileSync(packagePath, 'utf8'),
-    )
+    packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
   } catch (cause) {
     fail(`无法读取 package.json：${formatCause(cause)}`)
   }
 
   if (packageJson.name !== 'hybrid-canvas') {
-    fail(
-      `仓库不匹配：期望 package.json.name 为 hybrid-canvas，实际为 ${String(
-        packageJson.name,
-      )}`,
-    )
+    fail(`仓库不匹配：期望 package.json.name 为 hybrid-canvas，实际为 ${String(packageJson.name)}`)
   }
 }
 
@@ -156,10 +123,7 @@ function migrateDesignTokens(source) {
 
   content = replaceIdempotent(
     content,
-    [
-      '  --ui-divider: oklch(0.885 0.004 90);',
-      '  --ui-border: var(--ui-divider);',
-    ].join('\n'),
+    ['  --ui-divider: oklch(0.885 0.004 90);', '  --ui-border: var(--ui-divider);'].join('\n'),
     [
       '  /* Canonical 1px workspace-region divider. */',
       `  --ui-region-divider-color: ${DIVIDER_COLOR};`,
@@ -172,10 +136,7 @@ function migrateDesignTokens(source) {
 
   content = replaceIdempotent(
     content,
-    [
-      '  --ui-divider: rgb(255 255 255 / 16%);',
-      '  --ui-border: var(--ui-divider);',
-    ].join('\n'),
+    ['  --ui-divider: rgb(255 255 255 / 16%);', '  --ui-border: var(--ui-divider);'].join('\n'),
     [
       '  /* Region divider remains theme-invariant. */',
       '  --ui-border: rgb(255 255 255 / 16%);',
@@ -198,15 +159,9 @@ function migrateSeparator(source) {
 function migrateApplicationStyles(source) {
   let content = source
 
-  content = removeIfPresent(
-    content,
-    '  --color-divider: #e0e0e0;\n',
-  )
+  content = removeIfPresent(content, '  --color-divider: #e0e0e0;\n')
 
-  content = removeIfPresent(
-    content,
-    '  --color-divider: var(--color-divider);\n',
-  )
+  content = removeIfPresent(content, '  --color-divider: var(--color-divider);\n')
 
   return content
 }
@@ -402,12 +357,7 @@ function migrateWorkbenchTabs(source) {
   return content
 }
 
-function replaceIdempotent(
-  source,
-  oldText,
-  newText,
-  description,
-) {
+function replaceIdempotent(source, oldText, newText, description) {
   if (source.includes(newText)) {
     return source
   }
@@ -426,10 +376,7 @@ function replaceIdempotent(
 
   if (count > 1) {
     fail(
-      [
-        `无法执行：${description}`,
-        `预期旧代码出现一次，实际出现 ${String(count)} 次。`,
-      ].join('\n'),
+      [`无法执行：${description}`, `预期旧代码出现一次，实际出现 ${String(count)} 次。`].join('\n'),
     )
   }
 
@@ -444,9 +391,7 @@ function removeIfPresent(source, text) {
   }
 
   if (count > 1) {
-    fail(
-      `待删除内容出现了 ${String(count)} 次，无法确定唯一修改位置。`,
-    )
+    fail(`待删除内容出现了 ${String(count)} 次，无法确定唯一修改位置。`)
   }
 
   return source.replace(text, '')

@@ -7,14 +7,9 @@ import {
   SelectionStrokeSections,
 } from './SelectionInspectorShared'
 
-export function MultiSelectionInspector({
-  editor,
-  shapes,
-}: SelectionInspectorProps) {
+export function MultiSelectionInspector({ editor, shapes }: SelectionInspectorProps) {
   const firstType = shapes[0]?.type
-  const sameType = shapes.every(
-    (shape) => shape.type === firstType,
-  )
+  const sameType = shapes.every((shape) => shape.type === firstType)
 
   const sharedProps = { editor, shapes }
 

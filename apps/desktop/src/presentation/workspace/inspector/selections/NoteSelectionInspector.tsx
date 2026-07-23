@@ -1,7 +1,4 @@
-import {
-  DefaultFontStyle,
-  DefaultTextAlignStyle,
-} from 'tldraw'
+import { DefaultFontStyle, DefaultTextAlignStyle } from 'tldraw'
 import {
   ShapeInspectorSection,
   ShapeInspectorSegmentedControl,
@@ -16,39 +13,22 @@ import {
   SelectionObjectActionsSection,
 } from './SelectionInspectorShared'
 
-export function NoteSelectionInspector({
-  editor,
-  shapes,
-}: SelectionInspectorProps) {
-  const commonFont = getCommonStringProp(
-    shapes,
-    'font',
-  )
+export function NoteSelectionInspector({ editor, shapes }: SelectionInspectorProps) {
+  const commonFont = getCommonStringProp(shapes, 'font')
 
-  const commonAlign = getCommonStringProp(
-    shapes,
-    'textAlign',
-  )
+  const commonAlign = getCommonStringProp(shapes, 'textAlign')
 
   const sharedProps = { editor, shapes }
 
   return (
-    <SelectionInspectorLayout
-      description="编辑便签背景和文字样式。"
-      title="便签"
-    >
+    <SelectionInspectorLayout description="编辑便签背景和文字样式。" title="便签">
       <SelectionColorSection {...sharedProps} />
       <SelectionFillSection {...sharedProps} />
 
       <ShapeInspectorSection title="字体">
         <ShapeInspectorSegmentedControl
           ariaLabel="便签字体"
-          onChange={(value) =>
-            editor.setStyleForSelectedShapes(
-              DefaultFontStyle,
-              value as never,
-            )
-          }
+          onChange={(value) => editor.setStyleForSelectedShapes(DefaultFontStyle, value as never)}
           options={[
             { value: 'draw', label: '手写' },
             { value: 'sans', label: '无衬线' },
@@ -63,10 +43,7 @@ export function NoteSelectionInspector({
         <ShapeInspectorSegmentedControl
           ariaLabel="便签文字对齐"
           onChange={(value) =>
-            editor.setStyleForSelectedShapes(
-              DefaultTextAlignStyle,
-              value as never,
-            )
+            editor.setStyleForSelectedShapes(DefaultTextAlignStyle, value as never)
           }
           options={[
             { value: 'start', label: '左' },

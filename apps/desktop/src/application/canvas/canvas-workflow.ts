@@ -33,17 +33,12 @@ export interface CanvasWorkflow {
   readonly create: (title: string) => Promise<void>
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
-  readonly closeCanvas: (
-    sessionId: CanvasSessionId,
-    intent: CanvasCloseIntent,
-  ) => Promise<void>
+  readonly closeCanvas: (sessionId: CanvasSessionId, intent: CanvasCloseIntent) => Promise<void>
   readonly cancelCanvasClose: (sessionId: CanvasSessionId) => void
   readonly getCloseSnapshot: () => CanvasCloseSnapshot
   readonly planApplicationClose: () => ApplicationClosePlan
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
-  readonly getSessionSnapshot: (
-    sessionId: CanvasSessionId,
-  ) => CanvasSessionSnapshot | null
+  readonly getSessionSnapshot: (sessionId: CanvasSessionId) => CanvasSessionSnapshot | null
   readonly getVersion: () => number
   readonly subscribe: (listener: () => void) => () => void
   readonly dispose: () => Promise<void>
@@ -76,20 +71,14 @@ export function createCanvasWorkflow(
         ? EMPTY_CLOSE_SNAPSHOT
         : {
             states: Object.freeze(
-              Object.fromEntries(closeStates) as Record<
-                CanvasSessionId,
-                CanvasCloseState
-              >,
+              Object.fromEntries(closeStates) as Record<CanvasSessionId, CanvasCloseState>,
             ),
           }
 
     emit()
   }
 
-  function setCloseState(
-    sessionId: CanvasSessionId,
-    state: CanvasCloseState,
-  ): void {
+  function setCloseState(sessionId: CanvasSessionId, state: CanvasCloseState): void {
     closeStates.set(sessionId, state)
     publishCloseStates()
   }
@@ -130,20 +119,14 @@ export function createCanvasWorkflow(
     sessionId: CanvasSessionId,
     errorCode: string,
   ): Promise<void> {
-    const result = await documents.releaseCanvas(
-      sessionId,
-      'discard',
-    )
+    const result = await documents.releaseCanvas(sessionId, 'discard')
 
     if (result.kind !== 'released' && result.kind !== 'not-found') {
       throw new Error(errorCode)
     }
   }
 
-  function closeCanvas(
-    sessionId: CanvasSessionId,
-    intent: CanvasCloseIntent,
-  ): Promise<void> {
+  function closeCanvas(sessionId: CanvasSessionId, intent: CanvasCloseIntent): Promise<void> {
     const existingOperation = closeOperations.get(sessionId)
 
     if (existingOperation) {
@@ -169,10 +152,7 @@ export function createCanvasWorkflow(
       intent,
     })
 
-    const result = await documents.releaseCanvas(
-      sessionId,
-      intent,
-    )
+    const result = await documents.releaseCanvas(sessionId, intent)
 
     applyReleaseResult(sessionId, intent, result)
   }
@@ -211,10 +191,7 @@ export function createCanvasWorkflow(
   function planApplicationClose(): ApplicationClosePlan {
     const documentLifecycle = documents.getLifecycleSnapshot()
 
-    const operations = [
-      ...documentLifecycle.savingOperations,
-      ...closeOperations.values(),
-    ]
+    const operations = [...documentLifecycle.savingOperations, ...closeOperations.values()]
 
     if (operations.length > 0) {
       return {

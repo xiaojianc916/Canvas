@@ -1,6 +1,4 @@
-import type {
-  HybridCanvasToolInspectorProps,
-} from '@hybrid-canvas/canvas/extensions'
+import type { HybridCanvasToolInspectorProps } from '@hybrid-canvas/canvas/extensions'
 import {
   ArrowShapeArrowheadEndStyle,
   ArrowShapeArrowheadStartStyle,
@@ -201,164 +199,103 @@ const ARROWHEAD_OPTIONS = [
   },
 ] as const
 
-export function ConnectorToolInspector({
-  editor,
-}: HybridCanvasToolInspectorProps) {
+export function ConnectorToolInspector({ editor }: HybridCanvasToolInspectorProps) {
   const currentColor = useValue(
     'flowchart connector next color',
-    () =>
-      editor.getStyleForNextShape(
-        DefaultColorStyle,
-      ),
+    () => editor.getStyleForNextShape(DefaultColorStyle),
     [editor],
   )
 
   const currentSize = useValue(
     'flowchart connector next size',
-    () =>
-      editor.getStyleForNextShape(
-        DefaultSizeStyle,
-      ),
+    () => editor.getStyleForNextShape(DefaultSizeStyle),
     [editor],
   )
 
   const currentDash = useValue(
     'flowchart connector next dash',
-    () =>
-      editor.getStyleForNextShape(
-        DefaultDashStyle,
-      ),
+    () => editor.getStyleForNextShape(DefaultDashStyle),
     [editor],
   )
 
   const currentStart = useValue(
     'flowchart connector next start',
-    () =>
-      editor.getStyleForNextShape(
-        ArrowShapeArrowheadStartStyle,
-      ),
+    () => editor.getStyleForNextShape(ArrowShapeArrowheadStartStyle),
     [editor],
   )
 
   const currentEnd = useValue(
     'flowchart connector next end',
-    () =>
-      editor.getStyleForNextShape(
-        ArrowShapeArrowheadEndStyle,
-      ),
+    () => editor.getStyleForNextShape(ArrowShapeArrowheadEndStyle),
     [editor],
   )
 
-  const currentColorCss =
-    COLORS.find(
-      (color) =>
-        color.value === currentColor,
-    )?.css ?? '#2563eb'
+  const currentColorCss = COLORS.find((color) => color.value === currentColor)?.css ?? '#2563eb'
 
-  const applyPreset = (
-    preset:
-      (typeof CONNECTOR_PRESETS)[number],
-  ) => {
-    editor.setStyleForNextShapes(
-      DefaultColorStyle,
-      preset.color,
-    )
+  const applyPreset = (preset: (typeof CONNECTOR_PRESETS)[number]) => {
+    editor.setStyleForNextShapes(DefaultColorStyle, preset.color)
 
-    editor.setStyleForNextShapes(
-      DefaultSizeStyle,
-      preset.size,
-    )
+    editor.setStyleForNextShapes(DefaultSizeStyle, preset.size)
 
-    editor.setStyleForNextShapes(
-      DefaultDashStyle,
-      preset.dash,
-    )
+    editor.setStyleForNextShapes(DefaultDashStyle, preset.dash)
 
-    editor.setStyleForNextShapes(
-      ArrowShapeArrowheadStartStyle,
-      preset.start,
-    )
+    editor.setStyleForNextShapes(ArrowShapeArrowheadStartStyle, preset.start)
 
-    editor.setStyleForNextShapes(
-      ArrowShapeArrowheadEndStyle,
-      preset.end,
-    )
+    editor.setStyleForNextShapes(ArrowShapeArrowheadEndStyle, preset.end)
   }
 
   return (
     <div className="space-y-4">
       <header className="border-b border-divider pb-3">
-        <h2 className="text-sm font-semibold">
-          连接线
-        </h2>
+        <h2 className="text-sm font-semibold">连接线</h2>
 
         <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
           在对象之间创建可绑定的连接线。
         </p>
       </header>
 
-      <InspectorSection
-        description="预设会同时应用颜色、粗细、线型和端点。"
-        title="连接预设"
-      >
+      <InspectorSection description="预设会同时应用颜色、粗细、线型和端点。" title="连接预设">
         <div className="grid grid-cols-2 gap-2">
-          {CONNECTOR_PRESETS.map(
-            (preset) => {
-              const selected =
-                currentColor ===
-                  preset.color &&
-                currentSize ===
-                  preset.size &&
-                currentDash ===
-                  preset.dash &&
-                currentStart ===
-                  preset.start &&
-                currentEnd ===
-                  preset.end
+          {CONNECTOR_PRESETS.map((preset) => {
+            const selected =
+              currentColor === preset.color &&
+              currentSize === preset.size &&
+              currentDash === preset.dash &&
+              currentStart === preset.start &&
+              currentEnd === preset.end
 
-              return (
-                <button
-                  aria-pressed={selected}
-                  className={
-                    'min-h-14 rounded-md border p-2 text-left ' +
-                    'transition-colors focus-visible:outline-none ' +
-                    'focus-visible:ring-2 focus-visible:ring-primary ' +
-                    (
-                      selected
-                        ? 'border-primary bg-primary/10'
-                        : 'border-divider bg-background hover:bg-accent'
-                    )
-                  }
-                  key={preset.id}
-                  onClick={() => {
-                    applyPreset(preset)
-                  }}
-                  type="button"
-                >
-                  <ConnectorPreview
-                    color={
-                      COLORS.find(
-                        (color) =>
-                          color.value ===
-                          preset.color,
-                      )?.css ?? '#2563eb'
-                    }
-                    dash={preset.dash}
-                    end={preset.end}
-                    start={preset.start}
-                  />
+            return (
+              <button
+                aria-pressed={selected}
+                className={
+                  'min-h-14 rounded-md border p-2 text-left ' +
+                  'transition-colors focus-visible:outline-none ' +
+                  'focus-visible:ring-2 focus-visible:ring-primary ' +
+                  (selected
+                    ? 'border-primary bg-primary/10'
+                    : 'border-divider bg-background hover:bg-accent')
+                }
+                key={preset.id}
+                onClick={() => {
+                  applyPreset(preset)
+                }}
+                type="button"
+              >
+                <ConnectorPreview
+                  color={COLORS.find((color) => color.value === preset.color)?.css ?? '#2563eb'}
+                  dash={preset.dash}
+                  end={preset.end}
+                  start={preset.start}
+                />
 
-                  <span className="mt-1.5 block text-[11px] font-medium">
-                    {preset.label}
-                  </span>
+                <span className="mt-1.5 block text-[11px] font-medium">{preset.label}</span>
 
-                  <span className="mt-0.5 block text-[10px] text-muted-foreground">
-                    {preset.description}
-                  </span>
-                </button>
-              )
-            },
-          )}
+                <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                  {preset.description}
+                </span>
+              </button>
+            )
+          })}
         </div>
       </InspectorSection>
 
@@ -366,29 +303,17 @@ export function ConnectorToolInspector({
         <div className="grid grid-cols-6 gap-1.5">
           {COLORS.map((color) => (
             <button
-              aria-label={
-                '设置连接线颜色为' +
-                color.label
-              }
-              aria-pressed={
-                currentColor === color.value
-              }
+              aria-label={'设置连接线颜色为' + color.label}
+              aria-pressed={currentColor === color.value}
               className={
                 'size-7 rounded-md border border-divider transition-transform ' +
                 'hover:scale-105 focus-visible:outline-none ' +
                 'focus-visible:ring-2 focus-visible:ring-primary ' +
-                (
-                  currentColor === color.value
-                    ? 'ring-2 ring-primary ring-offset-1'
-                    : ''
-                )
+                (currentColor === color.value ? 'ring-2 ring-primary ring-offset-1' : '')
               }
               key={color.value}
               onClick={() => {
-                editor.setStyleForNextShapes(
-                  DefaultColorStyle,
-                  color.value,
-                )
+                editor.setStyleForNextShapes(DefaultColorStyle, color.value)
               }}
               style={{
                 backgroundColor: color.css,
@@ -401,31 +326,20 @@ export function ConnectorToolInspector({
       </InspectorSection>
 
       <InspectorSection title="粗细">
-        <div
-          aria-label="连接线粗细"
-          className="grid grid-cols-4 gap-1.5"
-          role="group"
-        >
+        <div aria-label="连接线粗细" className="grid grid-cols-4 gap-1.5" role="group">
           {SIZE_OPTIONS.map((option) => (
             <button
-              aria-pressed={
-                currentSize === option.value
-              }
+              aria-pressed={currentSize === option.value}
               className={
                 'flex min-h-10 flex-col items-center justify-center gap-1 ' +
                 'rounded-md border px-1 text-[10px] transition-colors ' +
-                (
-                  currentSize === option.value
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-divider bg-background hover:bg-accent'
-                )
+                (currentSize === option.value
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-divider bg-background hover:bg-accent')
               }
               key={option.value}
               onClick={() => {
-                editor.setStyleForNextShapes(
-                  DefaultSizeStyle,
-                  option.value,
-                )
+                editor.setStyleForNextShapes(DefaultSizeStyle, option.value)
               }}
               type="button"
             >
@@ -433,8 +347,7 @@ export function ConnectorToolInspector({
                 aria-hidden="true"
                 className="block w-7 rounded-full"
                 style={{
-                  backgroundColor:
-                    currentColorCss,
+                  backgroundColor: currentColorCss,
                   height: option.pixels,
                 }}
               />
@@ -449,10 +362,7 @@ export function ConnectorToolInspector({
         <SegmentedControl
           ariaLabel="连接线线型"
           onChange={(value) => {
-            editor.setStyleForNextShapes(
-              DefaultDashStyle,
-              value as never,
-            )
+            editor.setStyleForNextShapes(DefaultDashStyle, value as never)
           }}
           options={DASH_OPTIONS}
           value={currentDash}
@@ -462,10 +372,7 @@ export function ConnectorToolInspector({
       <ArrowheadSection
         label="起点"
         onChange={(value) => {
-          editor.setStyleForNextShapes(
-            ArrowShapeArrowheadStartStyle,
-            value as never,
-          )
+          editor.setStyleForNextShapes(ArrowShapeArrowheadStartStyle, value as never)
         }}
         value={currentStart}
       />
@@ -473,37 +380,27 @@ export function ConnectorToolInspector({
       <ArrowheadSection
         label="终点"
         onChange={(value) => {
-          editor.setStyleForNextShapes(
-            ArrowShapeArrowheadEndStyle,
-            value as never,
-          )
+          editor.setStyleForNextShapes(ArrowShapeArrowheadEndStyle, value as never)
         }}
         value={currentEnd}
       />
 
       <InspectorSection title="连接行为">
         <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 rounded-md border border-divider bg-background p-3 text-[10px]">
-          <dt className="text-muted-foreground">
-            对象吸附
-          </dt>
+          <dt className="text-muted-foreground">对象吸附</dt>
           <dd>启用</dd>
 
-          <dt className="text-muted-foreground">
-            移动时跟随
-          </dt>
+          <dt className="text-muted-foreground">移动时跟随</dt>
           <dd>启用</dd>
 
-          <dt className="text-muted-foreground">
-            当前路由
-          </dt>
+          <dt className="text-muted-foreground">当前路由</dt>
           <dd>tldraw 原生</dd>
         </dl>
       </InspectorSection>
 
       <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
-        当前只显示已经真实生效的连接参数。
-        正交路由、避障、标签和自动重路由将在 Flowchart
-        Connector 实现后开放。
+        当前只显示已经真实生效的连接参数。 正交路由、避障、标签和自动重路由将在 Flowchart Connector
+        实现后开放。
       </div>
     </div>
   )
@@ -516,54 +413,35 @@ function ArrowheadSection({
 }: {
   readonly label: string
   readonly value: string
-  readonly onChange: (
-    value: string,
-  ) => void
+  readonly onChange: (value: string) => void
 }) {
   return (
     <InspectorSection title={label}>
-      <div
-        aria-label={
-          label + '端点样式'
-        }
-        className="grid grid-cols-4 gap-1.5"
-        role="group"
-      >
-        {ARROWHEAD_OPTIONS.map(
-          (option) => (
-            <button
-              aria-pressed={
-                value === option.value
-              }
-              className={
-                'flex min-h-12 flex-col items-center justify-center gap-1 ' +
-                'rounded-md border px-1 transition-colors ' +
-                (
-                  value === option.value
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-divider bg-background hover:bg-accent'
-                )
-              }
-              key={option.value}
-              onClick={() => {
-                onChange(option.value)
-              }}
-              title={option.label}
-              type="button"
-            >
-              <span
-                aria-hidden="true"
-                className="font-mono text-base leading-none"
-              >
-                {option.symbol}
-              </span>
+      <div aria-label={label + '端点样式'} className="grid grid-cols-4 gap-1.5" role="group">
+        {ARROWHEAD_OPTIONS.map((option) => (
+          <button
+            aria-pressed={value === option.value}
+            className={
+              'flex min-h-12 flex-col items-center justify-center gap-1 ' +
+              'rounded-md border px-1 transition-colors ' +
+              (value === option.value
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-divider bg-background hover:bg-accent')
+            }
+            key={option.value}
+            onClick={() => {
+              onChange(option.value)
+            }}
+            title={option.label}
+            type="button"
+          >
+            <span aria-hidden="true" className="font-mono text-base leading-none">
+              {option.symbol}
+            </span>
 
-              <span className="text-[9px]">
-                {option.label}
-              </span>
-            </button>
-          ),
-        )}
+            <span className="text-[9px]">{option.label}</span>
+          </button>
+        ))}
       </div>
     </InspectorSection>
   )
@@ -572,15 +450,10 @@ function ArrowheadSection({
 interface InspectorSectionProps {
   readonly title: string
   readonly description?: string
-  readonly children:
-    import('react').ReactNode
+  readonly children: import('react').ReactNode
 }
 
-function InspectorSection({
-  title,
-  description,
-  children,
-}: InspectorSectionProps) {
+function InspectorSection({ title, description, children }: InspectorSectionProps) {
   return (
     <section className="space-y-2.5 border-b border-divider pb-4 last:border-b-0">
       <header className="space-y-0.5">
@@ -589,9 +462,7 @@ function InspectorSection({
         </h3>
 
         {description ? (
-          <p className="text-[10px] leading-4 text-muted-foreground/80">
-            {description}
-          </p>
+          <p className="text-[10px] leading-4 text-muted-foreground/80">{description}</p>
         ) : null}
       </header>
 
@@ -612,9 +483,7 @@ function SegmentedControl({
     readonly value: string
     readonly label: string
   }[]
-  readonly onChange: (
-    value: string,
-  ) => void
+  readonly onChange: (value: string) => void
 }) {
   return (
     <div
@@ -622,24 +491,17 @@ function SegmentedControl({
       className="grid gap-1.5"
       role="group"
       style={{
-        gridTemplateColumns:
-          'repeat(' +
-          String(options.length) +
-          ', minmax(0, 1fr))',
+        gridTemplateColumns: 'repeat(' + String(options.length) + ', minmax(0, 1fr))',
       }}
     >
       {options.map((option) => (
         <button
-          aria-pressed={
-            value === option.value
-          }
+          aria-pressed={value === option.value}
           className={
             'min-h-8 rounded-md border px-1 text-[10px] transition-colors ' +
-            (
-              value === option.value
-                ? 'border-primary bg-primary/10 text-primary'
-                : 'border-divider bg-background hover:bg-accent'
-            )
+            (value === option.value
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-divider bg-background hover:bg-accent')
           }
           key={option.value}
           onClick={() => {
@@ -665,20 +527,10 @@ function ConnectorPreview({
   readonly start: string
   readonly end: string
 }) {
-  const dashArray =
-    dash === 'dashed'
-      ? '5 4'
-      : dash === 'dotted'
-        ? '2 3'
-        : undefined
+  const dashArray = dash === 'dashed' ? '5 4' : dash === 'dotted' ? '2 3' : undefined
 
   return (
-    <svg
-      aria-hidden="true"
-      className="h-5 w-full"
-      preserveAspectRatio="none"
-      viewBox="0 0 88 20"
-    >
+    <svg aria-hidden="true" className="h-5 w-full" preserveAspectRatio="none" viewBox="0 0 88 20">
       <defs>
         <marker
           id={'preview-start-' + start}
@@ -688,12 +540,7 @@ function ConnectorPreview({
           refX="5"
           refY="3"
         >
-          <path
-            d={
-              getMarkerPath(start)
-            }
-            fill={color}
-          />
+          <path d={getMarkerPath(start)} fill={color} />
         </marker>
 
         <marker
@@ -704,30 +551,13 @@ function ConnectorPreview({
           refX="5"
           refY="3"
         >
-          <path
-            d={
-              getMarkerPath(end)
-            }
-            fill={color}
-          />
+          <path d={getMarkerPath(end)} fill={color} />
         </marker>
       </defs>
 
       <line
-        markerEnd={
-          end === 'none'
-            ? undefined
-            : 'url(#preview-end-' +
-              end +
-              ')'
-        }
-        markerStart={
-          start === 'none'
-            ? undefined
-            : 'url(#preview-start-' +
-              start +
-              ')'
-        }
+        markerEnd={end === 'none' ? undefined : 'url(#preview-end-' + end + ')'}
+        markerStart={start === 'none' ? undefined : 'url(#preview-start-' + start + ')'}
         stroke={color}
         strokeDasharray={dashArray}
         strokeLinecap="round"
@@ -741,9 +571,7 @@ function ConnectorPreview({
   )
 }
 
-function getMarkerPath(
-  type: string,
-): string {
+function getMarkerPath(type: string): string {
   switch (type) {
     case 'diamond':
       return 'M 0 3 L 3 0 L 6 3 L 3 6 Z'

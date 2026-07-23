@@ -2,10 +2,7 @@ import type { CanvasSessionId } from '@hybrid-canvas/document'
 
 import type { ApplicationClosePlan } from '../canvas/canvas-workflow'
 
-export type ApplicationTerminationIntent =
-  | 'window-close'
-  | 'update-restart'
-  | 'application-exit'
+export type ApplicationTerminationIntent = 'window-close' | 'update-restart' | 'application-exit'
 
 export type ApplicationTerminationSnapshot =
   | {
@@ -79,10 +76,7 @@ export function createApplicationTerminationCoordinator(
     terminator.terminate(intent)
   }
 
-  function evaluate(
-    intent: ApplicationTerminationIntent,
-    plan: ApplicationClosePlan,
-  ): void {
+  function evaluate(intent: ApplicationTerminationIntent, plan: ApplicationClosePlan): void {
     if (plan.kind === 'close-now') {
       beginTermination(intent)
       return

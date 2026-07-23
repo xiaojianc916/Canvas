@@ -1,9 +1,5 @@
 import { Minus, Plus } from '@mynaui/icons-react'
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   type Editor,
   type TLComponents,
@@ -18,13 +14,9 @@ import {
 
 import type { EditorSession } from '../runtime/editor-session'
 import { CanvasToolbar } from './CanvasToolbar'
-import {
-  useBindEditorSession,
-  useTldrawLicenseKey,
-} from './editor-context'
+import { useBindEditorSession, useTldrawLicenseKey } from './editor-context'
 
-export const HYBRID_CANVAS_SAVE_ACTION_ID =
-  'hybrid-canvas.save'
+export const HYBRID_CANVAS_SAVE_ACTION_ID = 'hybrid-canvas.save'
 
 const CANVAS_COMPONENTS: TLComponents = {
   InFrontOfTheCanvas: CanvasUiOverlay,
@@ -36,60 +28,39 @@ export interface EditorCanvasProps {
   readonly onSave?: () => void
 }
 
-export function EditorCanvas({
-  session,
-  isActive = true,
-  onSave,
-}: EditorCanvasProps) {
+export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasProps) {
   const licenseKey = useTldrawLicenseKey()
-  const [editor, setEditor] =
-    useState<Editor | null>(null)
+  const [editor, setEditor] = useState<Editor | null>(null)
 
   const { registration, store } = session
 
-  useBindEditorSession(
-    isActive ? editor : null,
-    isActive ? registration : null,
-  )
+  useBindEditorSession(isActive ? editor : null, isActive ? registration : null)
 
-  const hasTools =
-    registration.tools.length > 0
+  const hasTools = registration.tools.length > 0
 
-  const overrides = useMemo<TLUiOverrides>(
-    () => createCanvasUiOverrides(onSave),
-    [onSave],
-  )
+  const overrides = useMemo<TLUiOverrides>(() => createCanvasUiOverrides(onSave), [onSave])
 
-  const tldrawProps =
-    useMemo((): TldrawProps => {
-      const base: TldrawProps = {
-        hideUi: true,
-        licenseKey,
-        store,
-        onMount: setEditor,
-        overrides,
-        components: CANVAS_COMPONENTS,
-        options: {
-          maxPages: 100,
-        },
-        shapeUtils:
-          registration.shapeUtils,
-        bindingUtils:
-          registration.bindingUtils,
-      }
-
-      if (hasTools) {
-        base.tools = registration.tools
-      }
-
-      return base
-    }, [
-      store,
-      registration,
-      hasTools,
+  const tldrawProps = useMemo((): TldrawProps => {
+    const base: TldrawProps = {
+      hideUi: true,
       licenseKey,
+      store,
+      onMount: setEditor,
       overrides,
-    ])
+      components: CANVAS_COMPONENTS,
+      options: {
+        maxPages: 100,
+      },
+      shapeUtils: registration.shapeUtils,
+      bindingUtils: registration.bindingUtils,
+    }
+
+    if (hasTools) {
+      base.tools = registration.tools
+    }
+
+    return base
+  }, [store, registration, hasTools, licenseKey, overrides])
 
   useEffect(() => {
     if (!editor) {
@@ -110,8 +81,7 @@ export function EditorCanvas({
 
       session.attachEditor(editor)
 
-      return () =>
-        session.detachEditor(editor)
+      return () => session.detachEditor(editor)
     }
 
     session.detachEditor(editor)
@@ -130,14 +100,9 @@ export function EditorCanvas({
   )
 }
 
-function createCanvasUiOverrides(
-  onSave: (() => void) | undefined,
-): TLUiOverrides {
+function createCanvasUiOverrides(onSave: (() => void) | undefined): TLUiOverrides {
   return {
-    actions(
-      _editor,
-      actions,
-    ): TLUiActionsContextType {
+    actions(_editor, actions): TLUiActionsContextType {
       if (!onSave) {
         return actions
       }
@@ -172,23 +137,16 @@ function CanvasZoomControl() {
   const editor = useTldrawEditor()
   const actions = useActions()
 
-  const zoomPercentage = useValue(
-    'canvas zoom',
-    () =>
-      Math.round(
-        editor.getZoomLevel() * 100,
-      ),
-    [editor],
-  )
+  const zoomPercentage = useValue('canvas zoom', () => Math.round(editor.getZoomLevel() * 100), [
+    editor,
+  ])
 
   return (
     <div className="pointer-events-auto absolute bottom-3 right-3 flex h-8 items-center rounded-lg border bg-background/95 shadow-sm backdrop-blur-xl">
       <button
         aria-label="缩小"
         className="grid size-8 place-items-center rounded-l-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-        onClick={() =>
-          invokeAction(actions, 'zoom-out')
-        }
+        onClick={() => invokeAction(actions, 'zoom-out')}
         type="button"
       >
         <Minus className="size-3.5" />
@@ -197,9 +155,7 @@ function CanvasZoomControl() {
       <button
         aria-label="重置缩放"
         className="h-8 min-w-12 border-x px-2 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-        onClick={() =>
-          invokeAction(actions, 'zoom-to-100')
-        }
+        onClick={() => invokeAction(actions, 'zoom-to-100')}
         type="button"
       >
         {zoomPercentage}%
@@ -208,9 +164,7 @@ function CanvasZoomControl() {
       <button
         aria-label="放大"
         className="grid size-8 place-items-center rounded-r-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-        onClick={() =>
-          invokeAction(actions, 'zoom-in')
-        }
+        onClick={() => invokeAction(actions, 'zoom-in')}
         type="button"
       >
         <Plus className="size-3.5" />
@@ -219,10 +173,7 @@ function CanvasZoomControl() {
   )
 }
 
-function invokeAction(
-  actions: TLUiActionsContextType,
-  actionId: string,
-): void {
+function invokeAction(actions: TLUiActionsContextType, actionId: string): void {
   const action = actions[actionId]
 
   if (!action) {

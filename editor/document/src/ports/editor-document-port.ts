@@ -26,7 +26,5 @@ export interface EditorDocumentPort {
    * Changed events are emitted only after ready and only for user-originated
    * TLStore document transactions.
    */
-  readonly subscribeDocumentEvents: (
-    listener: (event: EditorDocumentEvent) => void,
-  ) => () => void
+  readonly subscribeDocumentEvents: (listener: (event: EditorDocumentEvent) => void) => () => void
 }

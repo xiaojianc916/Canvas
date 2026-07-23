@@ -1,8 +1,4 @@
-import {
-  DefaultFontStyle,
-  DefaultTextAlignStyle,
-  useValue,
-} from 'tldraw'
+import { DefaultFontStyle, DefaultTextAlignStyle, useValue } from 'tldraw'
 import {
   InspectorHint,
   ShapeInspectorSection,
@@ -13,9 +9,7 @@ import {
 } from '../common/InspectorPrimitives'
 import type { ToolInspectorProps } from './types'
 
-export function TextToolInspector({
-  editor,
-}: ToolInspectorProps) {
+export function TextToolInspector({ editor }: ToolInspectorProps) {
   const currentFont = useValue(
     'inspector next text font',
     () => editor.getStyleForNextShape(DefaultFontStyle),
@@ -29,21 +23,13 @@ export function TextToolInspector({
   )
 
   return (
-    <ToolPanelHeader
-      description="单击创建自动宽度文本，拖动创建固定宽度文本框。"
-      title="文本"
-    >
+    <ToolPanelHeader description="单击创建自动宽度文本，拖动创建固定宽度文本框。" title="文本">
       <ToolColorSection editor={editor} />
 
       <ShapeInspectorSection title="字体分类">
         <ShapeInspectorSegmentedControl
           ariaLabel="默认字体分类"
-          onChange={(value) =>
-            editor.setStyleForNextShapes(
-              DefaultFontStyle,
-              value as never,
-            )
-          }
+          onChange={(value) => editor.setStyleForNextShapes(DefaultFontStyle, value as never)}
           options={[
             { value: 'draw', label: '手写' },
             { value: 'sans', label: '无衬线' },
@@ -59,12 +45,7 @@ export function TextToolInspector({
       <ShapeInspectorSection title="水平对齐">
         <ShapeInspectorSegmentedControl
           ariaLabel="默认文本对齐"
-          onChange={(value) =>
-            editor.setStyleForNextShapes(
-              DefaultTextAlignStyle,
-              value as never,
-            )
-          }
+          onChange={(value) => editor.setStyleForNextShapes(DefaultTextAlignStyle, value as never)}
           options={[
             { value: 'start', label: '左' },
             { value: 'middle', label: '中' },

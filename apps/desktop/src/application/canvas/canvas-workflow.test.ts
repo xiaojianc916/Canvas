@@ -131,10 +131,7 @@ describe('CanvasWorkflow lifecycle coordinator', () => {
 
     expect(duplicate).toBe(first)
     expect(documents.releaseCanvas).toHaveBeenCalledTimes(1)
-    expect(documents.releaseCanvas).toHaveBeenCalledWith(
-      'session-a',
-      'normal',
-    )
+    expect(documents.releaseCanvas).toHaveBeenCalledWith('session-a', 'normal')
 
     resolveRelease()
     await first
@@ -203,17 +200,9 @@ describe('CanvasWorkflow lifecycle coordinator', () => {
 
     await workflow.closeCanvas('session-a', 'discard')
 
-    expect(documents.releaseCanvas).toHaveBeenNthCalledWith(
-      1,
-      'session-a',
-      'discard',
-    )
+    expect(documents.releaseCanvas).toHaveBeenNthCalledWith(1, 'session-a', 'discard')
 
-    expect(documents.releaseCanvas).toHaveBeenNthCalledWith(
-      2,
-      'session-a',
-      'discard',
-    )
+    expect(documents.releaseCanvas).toHaveBeenNthCalledWith(2, 'session-a', 'discard')
 
     expect(workspace.closeCanvas).toHaveBeenCalledWith('session-a')
   })

@@ -15,27 +15,17 @@ import {
   SelectionStrokeSections,
 } from './SelectionInspectorShared'
 
-export function GeoSelectionInspector({
-  editor,
-  shapes,
-}: SelectionInspectorProps) {
-  const commonGeo =
-    getCommonStringProp(shapes, 'geo') ?? 'rectangle'
+export function GeoSelectionInspector({ editor, shapes }: SelectionInspectorProps) {
+  const commonGeo = getCommonStringProp(shapes, 'geo') ?? 'rectangle'
 
   const updateGeo = (geo: string) => {
-    editor.setStyleForSelectedShapes(
-      GeoShapeGeoStyle,
-      geo as never,
-    )
+    editor.setStyleForSelectedShapes(GeoShapeGeoStyle, geo as never)
   }
 
   const sharedProps = { editor, shapes }
 
   return (
-    <SelectionInspectorLayout
-      description="编辑形状几何、填充和描边。"
-      title="形状"
-    >
+    <SelectionInspectorLayout description="编辑形状几何、填充和描边。" title="形状">
       <ShapeInspectorSection title="形状类型">
         <ShapeInspectorSelect
           onChange={updateGeo}

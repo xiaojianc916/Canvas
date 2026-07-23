@@ -36,9 +36,7 @@ export function SelectionInspectorLayout({
     <div className="space-y-4">
       <header className="border-b border-divider pb-3">
         <div className="flex min-w-0 items-center justify-between gap-2">
-          <h2 className="truncate text-sm font-semibold">
-            {title}
-          </h2>
+          <h2 className="truncate text-sm font-semibold">{title}</h2>
 
           {count && count > 1 ? (
             <span className="shrink-0 rounded bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -47,9 +45,7 @@ export function SelectionInspectorLayout({
           ) : null}
         </div>
 
-        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-          {description}
-        </p>
+        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{description}</p>
       </header>
 
       {children}
@@ -57,18 +53,14 @@ export function SelectionInspectorLayout({
   )
 }
 
-export function getCommonStringProp(
-  shapes: readonly TLShape[],
-  key: string,
-): string | null {
+export function getCommonStringProp(shapes: readonly TLShape[], key: string): string | null {
   const firstShape = shapes[0]
 
   if (!firstShape) {
     return null
   }
 
-  const firstProps =
-    firstShape.props as unknown as Record<string, unknown>
+  const firstProps = firstShape.props as unknown as Record<string, unknown>
 
   const firstValue = firstProps[key]
 
@@ -77,8 +69,7 @@ export function getCommonStringProp(
   }
 
   const isShared = shapes.every((shape) => {
-    const props =
-      shape.props as unknown as Record<string, unknown>
+    const props = shape.props as unknown as Record<string, unknown>
 
     return props[key] === firstValue
   })
@@ -86,21 +77,14 @@ export function getCommonStringProp(
   return isShared ? firstValue : null
 }
 
-export function SelectionColorSection({
-  editor,
-  shapes,
-}: SelectionInspectorProps) {
-  const commonColor = getCommonStringProp(
-    shapes,
-    'color',
-  )
+export function SelectionColorSection({ editor, shapes }: SelectionInspectorProps) {
+  const commonColor = getCommonStringProp(shapes, 'color')
 
   return (
     <ShapeInspectorSection
       {...(commonColor === null && shapes.length > 1
         ? {
-            description:
-              '当前选择包含多个颜色；选择颜色后将统一覆盖。',
+            description: '当前选择包含多个颜色；选择颜色后将统一覆盖。',
           }
         : {})}
       title="颜色"
@@ -114,17 +98,10 @@ export function SelectionColorSection({
               'size-7 rounded-md border border-divider transition-transform ' +
               'hover:scale-105 focus-visible:outline-none ' +
               'focus-visible:ring-2 focus-visible:ring-primary ' +
-              (commonColor === color.value
-                ? 'ring-2 ring-primary ring-offset-1'
-                : '')
+              (commonColor === color.value ? 'ring-2 ring-primary ring-offset-1' : '')
             }
             key={color.value}
-            onClick={() =>
-              editor.setStyleForSelectedShapes(
-                DefaultColorStyle,
-                color.value,
-              )
-            }
+            onClick={() => editor.setStyleForSelectedShapes(DefaultColorStyle, color.value)}
             style={{ backgroundColor: color.css }}
             title={color.label}
             type="button"
@@ -135,30 +112,17 @@ export function SelectionColorSection({
   )
 }
 
-export function SelectionFillSection({
-  editor,
-  shapes,
-}: SelectionInspectorProps) {
-  const commonFill = getCommonStringProp(
-    shapes,
-    'fill',
-  )
+export function SelectionFillSection({ editor, shapes }: SelectionInspectorProps) {
+  const commonFill = getCommonStringProp(shapes, 'fill')
 
   return (
     <ShapeInspectorSection
-      {...(commonFill === null && shapes.length > 1
-        ? { description: '混合填充' }
-        : {})}
+      {...(commonFill === null && shapes.length > 1 ? { description: '混合填充' } : {})}
       title="填充"
     >
       <ShapeInspectorSegmentedControl
         ariaLabel="对象填充"
-        onChange={(value) =>
-          editor.setStyleForSelectedShapes(
-            DefaultFillStyle,
-            value as never,
-          )
-        }
+        onChange={(value) => editor.setStyleForSelectedShapes(DefaultFillStyle, value as never)}
         options={[
           { value: 'none', label: '无' },
           { value: 'semi', label: '半透明' },
@@ -171,36 +135,20 @@ export function SelectionFillSection({
   )
 }
 
-export function SelectionStrokeSections({
-  editor,
-  shapes,
-}: SelectionInspectorProps) {
-  const commonDash = getCommonStringProp(
-    shapes,
-    'dash',
-  )
+export function SelectionStrokeSections({ editor, shapes }: SelectionInspectorProps) {
+  const commonDash = getCommonStringProp(shapes, 'dash')
 
-  const commonSize = getCommonStringProp(
-    shapes,
-    'size',
-  )
+  const commonSize = getCommonStringProp(shapes, 'size')
 
   return (
     <>
       <ShapeInspectorSection
-        {...(commonDash === null && shapes.length > 1
-          ? { description: '混合线型' }
-          : {})}
+        {...(commonDash === null && shapes.length > 1 ? { description: '混合线型' } : {})}
         title="线型"
       >
         <ShapeInspectorSegmentedControl
           ariaLabel="对象线型"
-          onChange={(value) =>
-            editor.setStyleForSelectedShapes(
-              DefaultDashStyle,
-              value as never,
-            )
-          }
+          onChange={(value) => editor.setStyleForSelectedShapes(DefaultDashStyle, value as never)}
           options={[
             { value: 'draw', label: '手绘' },
             { value: 'solid', label: '实线' },
@@ -212,21 +160,12 @@ export function SelectionStrokeSections({
       </ShapeInspectorSection>
 
       <ShapeInspectorSection
-        description={
-          commonSize === null && shapes.length > 1
-            ? '混合粗细'
-            : '使用 tldraw 样式档位'
-        }
+        description={commonSize === null && shapes.length > 1 ? '混合粗细' : '使用 tldraw 样式档位'}
         title="粗细"
       >
         <ShapeInspectorSegmentedControl
           ariaLabel="对象粗细"
-          onChange={(value) =>
-            editor.setStyleForSelectedShapes(
-              DefaultSizeStyle,
-              value as never,
-            )
-          }
+          onChange={(value) => editor.setStyleForSelectedShapes(DefaultSizeStyle, value as never)}
           options={[
             { value: 's', label: '细' },
             { value: 'm', label: '中' },
@@ -240,36 +179,25 @@ export function SelectionStrokeSections({
   )
 }
 
-export function SelectionArrangementSection({
-  editor,
-  shapes,
-}: SelectionInspectorProps) {
+export function SelectionArrangementSection({ editor, shapes }: SelectionInspectorProps) {
   const shapeIds = shapes.map((shape) => shape.id)
 
   return (
     <ShapeInspectorSection title="排列">
       <div className="grid grid-cols-2 gap-2">
-        <ShapeInspectorButton
-          onClick={() => editor.bringToFront(shapeIds)}
-        >
+        <ShapeInspectorButton onClick={() => editor.bringToFront(shapeIds)}>
           置于顶层
         </ShapeInspectorButton>
 
-        <ShapeInspectorButton
-          onClick={() => editor.sendToBack(shapeIds)}
-        >
+        <ShapeInspectorButton onClick={() => editor.sendToBack(shapeIds)}>
           置于底层
         </ShapeInspectorButton>
 
-        <ShapeInspectorButton
-          onClick={() => editor.bringForward(shapeIds)}
-        >
+        <ShapeInspectorButton onClick={() => editor.bringForward(shapeIds)}>
           上移一层
         </ShapeInspectorButton>
 
-        <ShapeInspectorButton
-          onClick={() => editor.sendBackward(shapeIds)}
-        >
+        <ShapeInspectorButton onClick={() => editor.sendBackward(shapeIds)}>
           下移一层
         </ShapeInspectorButton>
       </div>
@@ -277,10 +205,7 @@ export function SelectionArrangementSection({
   )
 }
 
-export function SelectionObjectActionsSection({
-  editor,
-  shapes,
-}: SelectionInspectorProps) {
+export function SelectionObjectActionsSection({ editor, shapes }: SelectionInspectorProps) {
   const shapeIds = shapes.map((shape) => shape.id)
   const allLocked = shapes.every((shape) => shape.isLocked)
 
@@ -297,9 +222,7 @@ export function SelectionObjectActionsSection({
   return (
     <ShapeInspectorSection title="对象操作">
       <div className="grid grid-cols-2 gap-2">
-        <ShapeInspectorButton
-          onClick={() => editor.duplicateShapes(shapeIds)}
-        >
+        <ShapeInspectorButton onClick={() => editor.duplicateShapes(shapeIds)}>
           复制
         </ShapeInspectorButton>
 

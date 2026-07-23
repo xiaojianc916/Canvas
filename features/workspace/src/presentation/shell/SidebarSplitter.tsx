@@ -1,9 +1,4 @@
-import {
-  type KeyboardEvent,
-  type PointerEvent,
-  useEffect,
-  useRef,
-} from 'react'
+import { type KeyboardEvent, type PointerEvent, useEffect, useRef } from 'react'
 
 export interface SidebarSplitterProps {
   readonly width: number
@@ -33,28 +28,20 @@ export function SidebarSplitter({
   onResizeEnd,
   onCollapse,
 }: SidebarSplitterProps) {
-  const dragSessionRef =
-    useRef<SidebarDragSession | null>(null)
+  const dragSessionRef = useRef<SidebarDragSession | null>(null)
 
   const resizeEndRef = useRef(onResizeEnd)
 
   resizeEndRef.current = onResizeEnd
 
   const clamp = (nextWidth: number) => {
-    return Math.max(
-      min,
-      Math.min(max, nextWidth),
-    )
+    return Math.max(min, Math.min(max, nextWidth))
   }
 
-  const restoreBodyInteraction = (
-    session: SidebarDragSession,
-  ) => {
-    document.body.style.cursor =
-      session.previousBodyCursor
+  const restoreBodyInteraction = (session: SidebarDragSession) => {
+    document.body.style.cursor = session.previousBodyCursor
 
-    document.body.style.userSelect =
-      session.previousBodyUserSelect
+    document.body.style.userSelect = session.previousBodyUserSelect
   }
 
   const finishResize = () => {
@@ -71,14 +58,8 @@ export function SidebarSplitter({
      */
     dragSessionRef.current = null
 
-    if (
-      session.element.hasPointerCapture(
-        session.pointerId,
-      )
-    ) {
-      session.element.releasePointerCapture(
-        session.pointerId,
-      )
+    if (session.element.hasPointerCapture(session.pointerId)) {
+      session.element.releasePointerCapture(session.pointerId)
     }
 
     restoreBodyInteraction(session)
@@ -98,9 +79,7 @@ export function SidebarSplitter({
     }
   }, [])
 
-  const handlePointerDown = (
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) {
       return
     }
@@ -122,10 +101,8 @@ export function SidebarSplitter({
       element,
       startX: event.clientX,
       startWidth: width,
-      previousBodyCursor:
-        document.body.style.cursor,
-      previousBodyUserSelect:
-        document.body.style.userSelect,
+      previousBodyCursor: document.body.style.cursor,
+      previousBodyUserSelect: document.body.style.userSelect,
     }
 
     dragSessionRef.current = session
@@ -143,39 +120,26 @@ export function SidebarSplitter({
     onResizeStart?.()
   }
 
-  const handlePointerMove = (
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const session = dragSessionRef.current
 
-    if (
-      !session ||
-      session.pointerId !== event.pointerId
-    ) {
+    if (!session || session.pointerId !== event.pointerId) {
       return
     }
 
     event.preventDefault()
 
-    const deltaX =
-      event.clientX - session.startX
+    const deltaX = event.clientX - session.startX
 
-    const nextWidth = clamp(
-      session.startWidth + deltaX,
-    )
+    const nextWidth = clamp(session.startWidth + deltaX)
 
     onResize(nextWidth)
   }
 
-  const handlePointerUp = (
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
+  const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
     const session = dragSessionRef.current
 
-    if (
-      !session ||
-      session.pointerId !== event.pointerId
-    ) {
+    if (!session || session.pointerId !== event.pointerId) {
       return
     }
 
@@ -183,39 +147,27 @@ export function SidebarSplitter({
     finishResize()
   }
 
-  const handlePointerCancel = (
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
+  const handlePointerCancel = (event: PointerEvent<HTMLDivElement>) => {
     const session = dragSessionRef.current
 
-    if (
-      !session ||
-      session.pointerId !== event.pointerId
-    ) {
+    if (!session || session.pointerId !== event.pointerId) {
       return
     }
 
     finishResize()
   }
 
-  const handleLostPointerCapture = (
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
+  const handleLostPointerCapture = (event: PointerEvent<HTMLDivElement>) => {
     const session = dragSessionRef.current
 
-    if (
-      !session ||
-      session.pointerId !== event.pointerId
-    ) {
+    if (!session || session.pointerId !== event.pointerId) {
       return
     }
 
     finishResize()
   }
 
-  const handleKeyDown = (
-    event: KeyboardEvent<HTMLDivElement>,
-  ) => {
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     switch (event.key) {
       case 'ArrowLeft':
         event.preventDefault()
@@ -258,9 +210,7 @@ export function SidebarSplitter({
         'focus-visible:bg-primary/25',
         'data-[resizing=true]:bg-primary/25',
       ].join(' ')}
-      data-resizing={
-        dragSessionRef.current !== null
-      }
+      data-resizing={dragSessionRef.current !== null}
       data-window-drag-exclude
       onDoubleClick={(event) => {
         event.preventDefault()
@@ -268,9 +218,7 @@ export function SidebarSplitter({
         onCollapse()
       }}
       onKeyDown={handleKeyDown}
-      onLostPointerCapture={
-        handleLostPointerCapture
-      }
+      onLostPointerCapture={handleLostPointerCapture}
       onPointerCancel={handlePointerCancel}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

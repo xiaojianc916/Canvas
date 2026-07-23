@@ -112,15 +112,13 @@ export function AppShell({ runtime }: AppShellProps) {
   }, [runtime.mainWindow])
 
   const openDeveloperTools = useCallback(() => {
-    void runtime.mainWindow
-      .openDeveloperTools()
-      .catch((cause: unknown) => {
-        reportError('open developer tools failed', {
-          scope: 'app-shell',
-          operation: 'open-developer-tools',
-          cause,
-        })
+    void runtime.mainWindow.openDeveloperTools().catch((cause: unknown) => {
+      reportError('open developer tools failed', {
+        scope: 'app-shell',
+        operation: 'open-developer-tools',
+        cause,
       })
+    })
   }, [runtime.mainWindow])
 
   const startWindowDragging = useCallback(() => {

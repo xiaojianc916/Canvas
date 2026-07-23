@@ -18,28 +18,19 @@ export function installApplicationLifecycle(
     }
 
     disposed = true
-    window.removeEventListener(
-      'pagehide',
-      handlePageHide,
-    )
-    window.removeEventListener(
-      'beforeunload',
-      handleBeforeUnload,
-    )
+    window.removeEventListener('pagehide', handlePageHide)
+    window.removeEventListener('beforeunload', handleBeforeUnload)
 
     await mounted.unmount()
   }
 
   const handlePageHide = () => {
     void dispose().catch((cause: unknown) => {
-      reportError(
-        'application disposal failed during pagehide',
-        {
-          scope: 'application-lifecycle',
-          operation: 'dispose',
-          cause,
-        },
-      )
+      reportError('application disposal failed during pagehide', {
+        scope: 'application-lifecycle',
+        operation: 'dispose',
+        cause,
+      })
     })
   }
 

@@ -1,7 +1,4 @@
-import {
-  DefaultFontStyle,
-  DefaultTextAlignStyle,
-} from 'tldraw'
+import { DefaultFontStyle, DefaultTextAlignStyle } from 'tldraw'
 import {
   ShapeInspectorSection,
   ShapeInspectorSegmentedControl,
@@ -15,38 +12,21 @@ import {
   SelectionObjectActionsSection,
 } from './SelectionInspectorShared'
 
-export function TextSelectionInspector({
-  editor,
-  shapes,
-}: SelectionInspectorProps) {
-  const commonFont = getCommonStringProp(
-    shapes,
-    'font',
-  )
+export function TextSelectionInspector({ editor, shapes }: SelectionInspectorProps) {
+  const commonFont = getCommonStringProp(shapes, 'font')
 
-  const commonAlign = getCommonStringProp(
-    shapes,
-    'textAlign',
-  )
+  const commonAlign = getCommonStringProp(shapes, 'textAlign')
 
   const sharedProps = { editor, shapes }
 
   return (
-    <SelectionInspectorLayout
-      description="编辑文本颜色、字体和对齐。"
-      title="文本"
-    >
+    <SelectionInspectorLayout description="编辑文本颜色、字体和对齐。" title="文本">
       <SelectionColorSection {...sharedProps} />
 
       <ShapeInspectorSection title="字体">
         <ShapeInspectorSegmentedControl
           ariaLabel="文本字体"
-          onChange={(value) =>
-            editor.setStyleForSelectedShapes(
-              DefaultFontStyle,
-              value as never,
-            )
-          }
+          onChange={(value) => editor.setStyleForSelectedShapes(DefaultFontStyle, value as never)}
           options={[
             { value: 'draw', label: '手写' },
             { value: 'sans', label: '无衬线' },
@@ -61,10 +41,7 @@ export function TextSelectionInspector({
         <ShapeInspectorSegmentedControl
           ariaLabel="文本对齐"
           onChange={(value) =>
-            editor.setStyleForSelectedShapes(
-              DefaultTextAlignStyle,
-              value as never,
-            )
+            editor.setStyleForSelectedShapes(DefaultTextAlignStyle, value as never)
           }
           options={[
             { value: 'start', label: '左' },

@@ -11,9 +11,7 @@ import {
 } from '../common/InspectorPrimitives'
 import type { ToolInspectorProps } from './types'
 
-export function ShapeToolInspector({
-  editor,
-}: ToolInspectorProps) {
+export function ShapeToolInspector({ editor }: ToolInspectorProps) {
   const currentGeo = useValue(
     'inspector next geo shape',
     () => editor.getStyleForNextShape(GeoShapeGeoStyle),
@@ -21,18 +19,10 @@ export function ShapeToolInspector({
   )
 
   return (
-    <ToolPanelHeader
-      description="在画布中拖动创建形状；以下参数用于下一个新形状。"
-      title="形状"
-    >
+    <ToolPanelHeader description="在画布中拖动创建形状；以下参数用于下一个新形状。" title="形状">
       <ShapeInspectorSection title="形状类型">
         <ShapeInspectorSelect
-          onChange={(value) =>
-            editor.setStyleForNextShapes(
-              GeoShapeGeoStyle,
-              value as never,
-            )
-          }
+          onChange={(value) => editor.setStyleForNextShapes(GeoShapeGeoStyle, value as never)}
           options={GEO_SHAPE_OPTIONS}
           type="形状"
           value={currentGeo}

@@ -1,9 +1,7 @@
 import type { SelectionInspectorProps } from './SelectionInspectorShared'
 import { StandardSelectionInspector } from './StandardSelectionInspector'
 
-export function FrameSelectionInspector(
-  props: SelectionInspectorProps,
-) {
+export function FrameSelectionInspector(props: SelectionInspectorProps) {
   return (
     <StandardSelectionInspector
       {...props}

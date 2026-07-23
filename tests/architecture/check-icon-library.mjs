@@ -1,30 +1,15 @@
 #!/usr/bin/env node
 
-import {
-  readFileSync,
-  readdirSync,
-  statSync,
-} from 'node:fs'
-import {
-  extname,
-  join,
-  relative,
-  resolve,
-} from 'node:path'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { extname, join, relative, resolve } from 'node:path'
 
 const root = resolve(process.cwd())
 
 const allowedIconPackage = '@mynaui/icons-react'
 
-const forbiddenExactPackages = new Set([
-  'lucide-react',
-  'react-icons',
-  '@tabler/icons-react',
-])
+const forbiddenExactPackages = new Set(['lucide-react', 'react-icons', '@tabler/icons-react'])
 
-const forbiddenPackagePrefixes = [
-  '@heroicons/',
-]
+const forbiddenPackagePrefixes = ['@heroicons/']
 
 const ignoredDirectories = new Set([
   '.git',
@@ -36,14 +21,7 @@ const ignoredDirectories = new Set([
   'target',
 ])
 
-const sourceExtensions = new Set([
-  '.cjs',
-  '.js',
-  '.jsx',
-  '.mjs',
-  '.ts',
-  '.tsx',
-])
+const sourceExtensions = new Set(['.cjs', '.js', '.jsx', '.mjs', '.ts', '.tsx'])
 
 const violations = []
 
@@ -55,21 +33,12 @@ if (violations.length > 0) {
 
   for (const violation of violations) {
     console.error(
-      '- ' +
-        violation.file +
-        ':' +
-        String(violation.line) +
-        ' -> ' +
-        violation.packageName,
+      '- ' + violation.file + ':' + String(violation.line) + ' -> ' + violation.packageName,
     )
   }
 
   console.error('')
-  console.error(
-    '产品 UI 只能直接使用 ' +
-      allowedIconPackage +
-      '。',
-  )
+  console.error('产品 UI 只能直接使用 ' + allowedIconPackage + '。')
 
   process.exit(1)
 }
@@ -112,11 +81,7 @@ function inspectPackageJson(file) {
   ]) {
     const section = json[sectionName]
 
-    if (
-      !section ||
-      typeof section !== 'object' ||
-      Array.isArray(section)
-    ) {
+    if (!section || typeof section !== 'object' || Array.isArray(section)) {
       continue
     }
 
@@ -147,11 +112,7 @@ function inspectSourceFile(file) {
     for (const pattern of importPatterns) {
       pattern.lastIndex = 0
 
-      for (
-        let match = pattern.exec(line);
-        match;
-        match = pattern.exec(line)
-      ) {
+      for (let match = pattern.exec(line); match; match = pattern.exec(line)) {
         const packageName = match[1]
 
         if (isForbiddenPackage(packageName)) {
@@ -172,28 +133,18 @@ function isForbiddenPackage(packageName) {
   }
 
   return forbiddenPackagePrefixes.some(
-    (prefix) =>
-      packageName === prefix.slice(0, -1) ||
-      packageName.startsWith(prefix),
+    (prefix) => packageName === prefix.slice(0, -1) || packageName.startsWith(prefix),
   )
 }
 
 function parseJson(file) {
   const content = readFileSync(file, 'utf8')
 
-  const normalized =
-    content.charCodeAt(0) === 0xfeff
-      ? content.slice(1)
-      : content
+  const normalized = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content
 
   try {
     return JSON.parse(normalized)
   } catch (error) {
-    throw new Error(
-      '无法解析 JSON：' +
-        relative(root, file) +
-        '\n' +
-        String(error),
-    )
+    throw new Error('无法解析 JSON：' + relative(root, file) + '\n' + String(error))
   }
 }

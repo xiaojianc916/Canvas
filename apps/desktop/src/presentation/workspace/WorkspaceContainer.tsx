@@ -39,16 +39,11 @@ export interface WorkspaceCanvasUIPort {
   readonly create: (title: string) => Promise<void>
   readonly open: () => Promise<void>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
-  readonly closeCanvas: (
-    sessionId: CanvasSessionId,
-    intent: CanvasCloseIntent,
-  ) => Promise<void>
+  readonly closeCanvas: (sessionId: CanvasSessionId, intent: CanvasCloseIntent) => Promise<void>
   readonly cancelCanvasClose: (sessionId: CanvasSessionId) => void
   readonly getCloseSnapshot: () => CanvasCloseSnapshot
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
-  readonly getSessionSnapshot: (
-    sessionId: CanvasSessionId,
-  ) => CanvasSessionSnapshot | null
+  readonly getSessionSnapshot: (sessionId: CanvasSessionId) => CanvasSessionSnapshot | null
   readonly getVersion: () => number
   readonly subscribe: (listener: () => void) => () => void
 }
@@ -133,10 +128,7 @@ export function WorkspaceContainer({
     : null
 
   const toolInspectorRegistry = useMemo(
-    () =>
-      createToolInspectorRegistry(
-        activeEditorSession?.registration.toolInspectors ?? [],
-      ),
+    () => createToolInspectorRegistry(activeEditorSession?.registration.toolInspectors ?? []),
     [activeEditorSession],
   )
 
@@ -280,11 +272,8 @@ export function WorkspaceContainer({
   const activeCanvasTitle =
     activeSessionId === null
       ? null
-      : (tabs.find(
-          (tab) =>
-            tab.kind === 'canvas' &&
-            tab.sessionId === activeSessionId,
-        )?.title ?? null)
+      : (tabs.find((tab) => tab.kind === 'canvas' && tab.sessionId === activeSessionId)?.title ??
+        null)
 
   const hostedSessions = useMemo(
     () =>
@@ -352,10 +341,7 @@ export function WorkspaceContainer({
             }}
             onConfirm={() => {
               if (failedClose && failedClose[1].state === 'release-failed') {
-                handleCloseCanvas(
-                  failedClose[0],
-                  failedClose[1].intent,
-                )
+                handleCloseCanvas(failedClose[0], failedClose[1].intent)
               }
             }}
             open={failedClose !== undefined}
@@ -393,11 +379,7 @@ export function WorkspaceContainer({
           />
         </DesktopTitleBar>
       )}
-      statusLeft={
-        <SelectionTransformStatus
-          canvasTitle={activeCanvasTitle}
-        />
-      }
+      statusLeft={<SelectionTransformStatus canvasTitle={activeCanvasTitle} />}
       statusRight={<CanvasStatusRightContent pageCount={pages.length} />}
     />
   )

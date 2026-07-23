@@ -6,18 +6,10 @@ import {
 } from '../common/InspectorPrimitives'
 import type { ToolInspectorProps } from './types'
 
-export function SelectToolInspector({
-  editor: _editor,
-}: ToolInspectorProps) {
+export function SelectToolInspector({ editor: _editor }: ToolInspectorProps) {
   return (
-    <ToolPanelHeader
-      description="选择画布中的对象以编辑属性。"
-      title="选择"
-    >
-      <ShapeInspectorSection
-        description="控制拖动选择框与对象相交时的选择方式。"
-        title="框选"
-      >
+    <ToolPanelHeader description="选择画布中的对象以编辑属性。" title="选择">
+      <ShapeInspectorSection description="控制拖动选择框与对象相交时的选择方式。" title="框选">
         <ShapeInspectorSegmentedControl
           ariaLabel="框选方式"
           onChange={() => {
@@ -39,9 +31,7 @@ export function SelectToolInspector({
         </div>
       </ShapeInspectorSection>
 
-      <InspectorHint>
-        选中一个或多个对象后，右侧栏将切换为对象属性检查器。
-      </InspectorHint>
+      <InspectorHint>选中一个或多个对象后，右侧栏将切换为对象属性检查器。</InspectorHint>
     </ToolPanelHeader>
   )
 }

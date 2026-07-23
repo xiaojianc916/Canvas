@@ -10,9 +10,7 @@ import {
 } from '../common/InspectorPrimitives'
 import type { ToolInspectorProps } from './types'
 
-export function NoteToolInspector({
-  editor,
-}: ToolInspectorProps) {
+export function NoteToolInspector({ editor }: ToolInspectorProps) {
   const currentFont = useValue(
     'inspector next note font',
     () => editor.getStyleForNextShape(DefaultFontStyle),
@@ -20,22 +18,14 @@ export function NoteToolInspector({
   )
 
   return (
-    <ToolPanelHeader
-      description="在画布中创建便签并立即输入内容。"
-      title="便签"
-    >
+    <ToolPanelHeader description="在画布中创建便签并立即输入内容。" title="便签">
       <ToolColorSection editor={editor} />
       <ToolFillSection editor={editor} includeNone={false} />
 
       <ShapeInspectorSection title="字体">
         <ShapeInspectorSegmentedControl
           ariaLabel="便签字体"
-          onChange={(value) =>
-            editor.setStyleForNextShapes(
-              DefaultFontStyle,
-              value as never,
-            )
-          }
+          onChange={(value) => editor.setStyleForNextShapes(DefaultFontStyle, value as never)}
           options={[
             { value: 'draw', label: '手写' },
             { value: 'sans', label: '无衬线' },
@@ -64,9 +54,7 @@ export function NoteToolInspector({
         />
       </ShapeInspectorSection>
 
-      <InspectorHint>
-        便签创建后应立即进入文本编辑，并支持连接线绑定。
-      </InspectorHint>
+      <InspectorHint>便签创建后应立即进入文本编辑，并支持连接线绑定。</InspectorHint>
     </ToolPanelHeader>
   )
 }

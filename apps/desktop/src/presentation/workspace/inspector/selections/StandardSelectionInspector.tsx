@@ -8,8 +8,7 @@ import {
   SelectionStrokeSections,
 } from './SelectionInspectorShared'
 
-export interface StandardSelectionInspectorProps
-  extends SelectionInspectorProps {
+export interface StandardSelectionInspectorProps extends SelectionInspectorProps {
   readonly title: string
   readonly description: string
   readonly showColor?: boolean
@@ -29,22 +28,12 @@ export function StandardSelectionInspector({
   const sharedProps = { editor, shapes }
 
   return (
-    <SelectionInspectorLayout
-      count={shapes.length}
-      description={description}
-      title={title}
-    >
-      {showColor ? (
-        <SelectionColorSection {...sharedProps} />
-      ) : null}
+    <SelectionInspectorLayout count={shapes.length} description={description} title={title}>
+      {showColor ? <SelectionColorSection {...sharedProps} /> : null}
 
-      {showFill ? (
-        <SelectionFillSection {...sharedProps} />
-      ) : null}
+      {showFill ? <SelectionFillSection {...sharedProps} /> : null}
 
-      {showStroke ? (
-        <SelectionStrokeSections {...sharedProps} />
-      ) : null}
+      {showStroke ? <SelectionStrokeSections {...sharedProps} /> : null}
 
       <SelectionArrangementSection {...sharedProps} />
       <SelectionObjectActionsSection {...sharedProps} />

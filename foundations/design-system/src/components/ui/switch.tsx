@@ -1,13 +1,9 @@
 import { Switch as BaseSwitch } from '@base-ui/react/switch'
-import {
-  type ComponentPropsWithoutRef,
-  forwardRef,
-} from 'react'
+import { type ComponentPropsWithoutRef, forwardRef } from 'react'
 
 import { cn } from '../../lib/utils'
 
-export type SwitchProps =
-  ComponentPropsWithoutRef<typeof BaseSwitch.Root>
+export type SwitchProps = ComponentPropsWithoutRef<typeof BaseSwitch.Root>
 
 /**
  * 通用开关组件。
@@ -15,15 +11,8 @@ export type SwitchProps =
  * 保留 Base UI 默认的 span 结构，
  * 方便通过外层 Label 进行隐式关联。
  */
-export const Switch = forwardRef<
-  HTMLSpanElement,
-  SwitchProps
->(function Switch(
-  {
-    className,
-    children,
-    ...props
-  },
+export const Switch = forwardRef<HTMLSpanElement, SwitchProps>(function Switch(
+  { className, children, ...props },
   forwardedRef,
 ) {
   return (

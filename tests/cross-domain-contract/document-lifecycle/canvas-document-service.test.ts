@@ -1,12 +1,6 @@
-import type {
-  EditorDocumentEvent,
-  EditorSession,
-} from '@hybrid-canvas/canvas/application'
+import type { EditorDocumentEvent, EditorSession } from '@hybrid-canvas/canvas/application'
 import { createCanvasDocumentService } from '@hybrid-canvas/document'
-import {
-  createTLStore,
-  type TLStoreSnapshot,
-} from 'tldraw'
+import { createTLStore, type TLStoreSnapshot } from 'tldraw'
 import { describe, expect, it, vi } from 'vitest'
 
 function validSnapshot(): TLStoreSnapshot {
@@ -92,9 +86,7 @@ describe('Canvas document native-release contract', () => {
 
     harness.ready()
 
-    await expect(
-      harness.service.releaseCanvas(opened.sessionId, 'normal'),
-    ).resolves.toEqual({
+    await expect(harness.service.releaseCanvas(opened.sessionId, 'normal')).resolves.toEqual({
       kind: 'released',
     })
 
@@ -110,17 +102,13 @@ describe('Canvas document native-release contract', () => {
     harness.ready()
     harness.change(snapshot({ shapes: [{ id: 'shape:1' }] }))
 
-    await expect(
-      harness.service.releaseCanvas(opened.sessionId, 'normal'),
-    ).resolves.toEqual({
+    await expect(harness.service.releaseCanvas(opened.sessionId, 'normal')).resolves.toEqual({
       kind: 'confirmation-required',
     })
 
     expect(harness.service.getEditorSession(opened.sessionId)).not.toBeNull()
 
-    await expect(
-      harness.service.releaseCanvas(opened.sessionId, 'discard'),
-    ).resolves.toEqual({
+    await expect(harness.service.releaseCanvas(opened.sessionId, 'discard')).resolves.toEqual({
       kind: 'released',
     })
 
@@ -179,13 +167,9 @@ describe('Canvas document native-release contract', () => {
 
     await harness.service.save(opened.sessionId)
 
-    expect(harness.persistence.saveAs).toHaveBeenCalledWith(
-      expect.any(String),
-      null,
-      {
-        suggestedName: '未命名画布.draw',
-      },
-    )
+    expect(harness.persistence.saveAs).toHaveBeenCalledWith(expect.any(String), null, {
+      suggestedName: '未命名画布.draw',
+    })
 
     expect(harness.service.getSessionSnapshot(opened.sessionId)).toEqual({
       sessionId: opened.sessionId,
@@ -312,9 +296,7 @@ describe('Canvas document native-release contract', () => {
       persistence: 'failed',
     })
 
-    await expect(
-      harness.service.releaseCanvas(opened.sessionId, 'normal'),
-    ).resolves.toEqual({
+    await expect(harness.service.releaseCanvas(opened.sessionId, 'normal')).resolves.toEqual({
       kind: 'confirmation-required',
     })
 
@@ -364,9 +346,7 @@ describe('Canvas document native-release contract', () => {
       kind: 'released',
     })
 
-    expect(harness.persistence.close).toHaveBeenCalledWith(
-      'native-document-saving',
-    )
+    expect(harness.persistence.close).toHaveBeenCalledWith('native-document-saving')
   })
 
   it('requires confirmation after a save fails before normal close', async () => {
@@ -389,17 +369,13 @@ describe('Canvas document native-release contract', () => {
     harness.ready()
     harness.change(snapshot({ shapes: [{ id: 'shape:1' }] }))
 
-    harness.persistence.save.mockRejectedValue(
-      new Error('native document_save rejected'),
-    )
+    harness.persistence.save.mockRejectedValue(new Error('native document_save rejected'))
 
     await expect(harness.service.save(opened.sessionId)).rejects.toThrow(
       'native document_save rejected',
     )
 
-    await expect(
-      harness.service.releaseCanvas(opened.sessionId, 'normal'),
-    ).resolves.toEqual({
+    await expect(harness.service.releaseCanvas(opened.sessionId, 'normal')).resolves.toEqual({
       kind: 'confirmation-required',
     })
 
@@ -435,9 +411,7 @@ describe('Canvas document native-release contract', () => {
       }),
     )
 
-    await expect(
-      harness.service.releaseCanvas(opened.sessionId, 'normal'),
-    ).resolves.toEqual({
+    await expect(harness.service.releaseCanvas(opened.sessionId, 'normal')).resolves.toEqual({
       kind: 'release-failed',
       failure: {
         code: 'permission-denied',
@@ -454,9 +428,7 @@ describe('Canvas document native-release contract', () => {
 
     harness.persistence.close.mockResolvedValue(undefined)
 
-    await expect(
-      harness.service.releaseCanvas(opened.sessionId, 'normal'),
-    ).resolves.toEqual({
+    await expect(harness.service.releaseCanvas(opened.sessionId, 'normal')).resolves.toEqual({
       kind: 'released',
     })
 

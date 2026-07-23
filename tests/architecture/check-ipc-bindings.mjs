@@ -2,14 +2,11 @@
 import { readFile } from 'node:fs/promises'
 import process from 'node:process'
 
-const generatedBindingsPath =
-  'platforms/desktop-ipc/src/generated/ipc-bindings.ts'
+const generatedBindingsPath = 'platforms/desktop-ipc/src/generated/ipc-bindings.ts'
 
-const runtimeAdapterPath =
-  'platforms/desktop-runtime/src/adapters/file/file-system.ts'
+const runtimeAdapterPath = 'platforms/desktop-runtime/src/adapters/file/file-system.ts'
 
-const exporterPath =
-  'apps/desktop/src-tauri/src/ipc/export_bindings.rs'
+const exporterPath = 'apps/desktop/src-tauri/src/ipc/export_bindings.rs'
 
 const requiredGeneratedCommands = [
   'documentOpen',
@@ -41,58 +38,37 @@ if (/export const commands = \{\s*\}/.test(generatedBindings)) {
 
 for (const command of requiredGeneratedCommands) {
   if (!new RegExp('async\\s+' + command + '\\s*\\(').test(generatedBindings)) {
-    violations.push(
-      'Generated IPC bindings is missing commands.' + command,
-    )
+    violations.push('Generated IPC bindings is missing commands.' + command)
   }
 }
 
 for (const command of requiredRustCommands) {
-  if (
-    !new RegExp(
-      'collect_commands!\\[[\\s\\S]*' + command,
-    ).test(exporter)
-  ) {
-    violations.push(
-      'Rust IPC exporter is missing ' + command + ' in collect_commands!',
-    )
+  if (!new RegExp('collect_commands!\\[[\\s\\S]*' + command).test(exporter)) {
+    violations.push('Rust IPC exporter is missing ' + command + ' in collect_commands!')
   }
 }
 
 if (!/from '@hybrid-canvas\/desktop-ipc\/generated\/ipc-bindings'/.test(runtimeAdapter)) {
-  violations.push(
-    'Desktop document adapter must import generated IPC bindings',
-  )
+  violations.push('Desktop document adapter must import generated IPC bindings')
 }
 
 if (!/\bcommands\.documentOpen\(\)/.test(runtimeAdapter)) {
-  violations.push(
-    'Desktop document adapter must call generated commands.documentOpen',
-  )
+  violations.push('Desktop document adapter must call generated commands.documentOpen')
 }
 
 for (const command of requiredGeneratedCommands.slice(1)) {
-  if (
-    !new RegExp(
-      '\\bcommands\\.' + command + '\\(',
-    ).test(runtimeAdapter)
-  ) {
-    violations.push(
-      'Desktop document adapter must call generated commands.' + command,
-    )
+  if (!new RegExp('\\bcommands\\.' + command + '\\(').test(runtimeAdapter)) {
+    violations.push('Desktop document adapter must call generated commands.' + command)
   }
 }
 
 if (/\binvoke(?:<[^>]*>)?\s*\(\s*['"]document_/.test(runtimeAdapter)) {
-  violations.push(
-    'Desktop document adapter must not handwrite document_* invoke command strings',
-  )
+  violations.push('Desktop document adapter must not handwrite document_* invoke command strings')
 }
 
 if (violations.length > 0) {
   console.error(
-    'Document IPC architecture check failed:\n' +
-      violations.map((item) => '- ' + item).join('\n'),
+    'Document IPC architecture check failed:\n' + violations.map((item) => '- ' + item).join('\n'),
   )
 
   process.exitCode = 1

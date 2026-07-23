@@ -16,10 +16,7 @@ export type DocumentSessionPhase =
 
 export type DocumentPersistenceState = 'clean' | 'dirty' | 'saving' | 'failed'
 
-type ReopenableDocumentSessionPhase = Exclude<
-  DocumentSessionPhase,
-  'closing' | 'closed'
->
+type ReopenableDocumentSessionPhase = Exclude<DocumentSessionPhase, 'closing' | 'closed'>
 
 export interface DocumentSaveTicket {
   readonly id: number
@@ -36,10 +33,7 @@ export interface DocumentSession {
   readonly initialize: (snapshot: TLStoreSnapshot) => void
   readonly recordDocumentChange: (snapshot: TLStoreSnapshot) => void
   readonly beginSave: (snapshot: TLStoreSnapshot) => DocumentSaveTicket
-  readonly completeSave: (
-    ticket: DocumentSaveTicket,
-    documentId: string,
-  ) => void
+  readonly completeSave: (ticket: DocumentSaveTicket, documentId: string) => void
   readonly failSave: (ticket: DocumentSaveTicket) => void
   readonly beginClosing: () => void
   readonly cancelClosing: () => void
@@ -51,9 +45,7 @@ export interface DocumentSession {
   readonly getSnapshot: () => DocumentSessionSnapshot
 }
 
-export function createDocumentSession(
-  initialDocumentId: string | null,
-): DocumentSession {
+export function createDocumentSession(initialDocumentId: string | null): DocumentSession {
   let phase: DocumentSessionPhase = 'initializing'
   let currentCheckpoint: DocumentCheckpoint | null = null
   let savedCheckpoint: DocumentCheckpoint | null = null

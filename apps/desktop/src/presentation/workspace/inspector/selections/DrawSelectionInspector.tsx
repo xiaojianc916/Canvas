@@ -1,9 +1,7 @@
 import type { SelectionInspectorProps } from './SelectionInspectorShared'
 import { StandardSelectionInspector } from './StandardSelectionInspector'
 
-export function DrawSelectionInspector(
-  props: SelectionInspectorProps,
-) {
+export function DrawSelectionInspector(props: SelectionInspectorProps) {
   return (
     <StandardSelectionInspector
       {...props}

@@ -1,8 +1,4 @@
-import {
-  createShapeId,
-  DefaultColorStyle,
-  useValue,
-} from 'tldraw'
+import { createShapeId, DefaultColorStyle, useValue } from 'tldraw'
 import {
   InspectorHint,
   ShapeInspectorSection,
@@ -42,37 +38,22 @@ const FRAME_PRESETS = [
   },
 ] as const
 
-export function FrameToolInspector({
-  editor,
-}: ToolInspectorProps) {
+export function FrameToolInspector({ editor }: ToolInspectorProps) {
   const currentColor = useValue(
     'inspector next frame color',
-    () =>
-      editor.getStyleForNextShape(
-        DefaultColorStyle,
-      ),
+    () => editor.getStyleForNextShape(DefaultColorStyle),
     [editor],
   )
 
-  const createPresetFrame = (
-    preset:
-      (typeof FRAME_PRESETS)[number],
-  ) => {
+  const createPresetFrame = (preset: (typeof FRAME_PRESETS)[number]) => {
     const id = createShapeId()
-    const viewport =
-      editor.getViewportPageBounds()
+    const viewport = editor.getViewportPageBounds()
 
-    const x =
-      viewport.center.x -
-      preset.width / 2
+    const x = viewport.center.x - preset.width / 2
 
-    const y =
-      viewport.center.y -
-      preset.height / 2
+    const y = viewport.center.y - preset.height / 2
 
-    editor.markHistoryStoppingPoint(
-      'create frame from preset',
-    )
+    editor.markHistoryStoppingPoint('create frame from preset')
 
     editor.createShape({
       id,
@@ -92,10 +73,7 @@ export function FrameToolInspector({
   }
 
   return (
-    <ToolPanelHeader
-      description="拖动创建自定义画框，或使用预设快速创建标准尺寸。"
-      title="画框"
-    >
+    <ToolPanelHeader description="拖动创建自定义画框，或使用预设快速创建标准尺寸。" title="画框">
       <ShapeInspectorSection
         description="点击预设后，会在当前视口中心创建并选中画框。"
         title="快速创建"
@@ -110,14 +88,9 @@ export function FrameToolInspector({
               }}
               type="button"
             >
-              <FramePresetPreview
-                height={preset.height}
-                width={preset.width}
-              />
+              <FramePresetPreview height={preset.height} width={preset.width} />
 
-              <span className="mt-2 block text-[11px] font-medium">
-                {preset.label}
-              </span>
+              <span className="mt-2 block text-[11px] font-medium">{preset.label}</span>
 
               <span className="mt-0.5 block font-mono text-[9px] tabular-nums text-muted-foreground">
                 {preset.description}
@@ -131,8 +104,7 @@ export function FrameToolInspector({
 
       <ShapeInspectorSection title="自定义尺寸">
         <div className="rounded-md border border-divider bg-background p-3 text-[11px] leading-5 text-muted-foreground">
-          在画布中拖动以创建任意尺寸的画框。
-          创建后可在底部状态栏双击 W 或 H 输入精确尺寸。
+          在画布中拖动以创建任意尺寸的画框。 创建后可在底部状态栏双击 W 或 H 输入精确尺寸。
         </div>
       </ShapeInspectorSection>
 
@@ -156,13 +128,11 @@ function FramePresetPreview({
   const ratio = width / height
 
   let previewWidth = maximumWidth
-  let previewHeight =
-    previewWidth / ratio
+  let previewHeight = previewWidth / ratio
 
   if (previewHeight > maximumHeight) {
     previewHeight = maximumHeight
-    previewWidth =
-      previewHeight * ratio
+    previewWidth = previewHeight * ratio
   }
 
   return (

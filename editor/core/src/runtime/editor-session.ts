@@ -380,9 +380,7 @@ function createValidatedEditorStore(
         ...registration.shapeUtils,
       ] as unknown as readonly TLAnyShapeUtilConstructor[],
       bindingUtils: [...defaultBindingUtils, ...registration.bindingUtils],
-      ...(initialSnapshot
-        ? { snapshot: initialSnapshot }
-        : {}),
+      ...(initialSnapshot ? { snapshot: initialSnapshot } : {}),
     })
   } catch {
     /*
@@ -400,9 +398,7 @@ interface OwnedEditorSession {
 }
 
 export interface EditorSessionRegistry {
-  readonly create: (
-    options: CreateEditorSessionOptions,
-  ) => Promise<EditorSession>
+  readonly create: (options: CreateEditorSessionOptions) => Promise<EditorSession>
 
   readonly get: (sessionId: string) => EditorSession | null
 
@@ -424,17 +420,12 @@ export function createEditorSessionRegistry(
         throw new Error('EDITOR_SESSION_DUPLICATE_ID')
       }
 
-      const assetStoreSession = assetStoreFactory(
-        options.assetStoreRestore,
-      )
+      const assetStoreSession = assetStoreFactory(options.assetStoreRestore)
 
       let session: EditorSession
 
       try {
-        session = createEditorSession(
-          options,
-          assetStoreSession,
-        )
+        session = createEditorSession(options, assetStoreSession)
       } catch (creationError) {
         try {
           await assetStoreSession.dispose()
@@ -496,11 +487,7 @@ export function createEditorSessionRegistry(
         owned.session.dispose()
       }
 
-      await Promise.all(
-        ownedSessions.map((owned) =>
-          owned.assetStoreSession.dispose(),
-        ),
-      )
+      await Promise.all(ownedSessions.map((owned) => owned.assetStoreSession.dispose()))
     },
   }
 }

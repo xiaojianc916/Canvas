@@ -41,18 +41,9 @@ export function CanvasInspectorContent({
 
   if (selectedShapes.length === 0) {
     return (
-      <ToolInspectorRouter
-        editor={editor}
-        registry={toolInspectorRegistry}
-        toolId={activeToolId}
-      />
+      <ToolInspectorRouter editor={editor} registry={toolInspectorRegistry} toolId={activeToolId} />
     )
   }
 
-  return (
-    <SelectionInspectorRouter
-      editor={editor}
-      shapes={selectedShapes}
-    />
-  )
+  return <SelectionInspectorRouter editor={editor} shapes={selectedShapes} />
 }

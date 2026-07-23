@@ -1,12 +1,5 @@
-import type {
-  HybridCanvasToolInspectorProps,
-} from '@hybrid-canvas/canvas/extensions'
-import {
-  DefaultColorStyle,
-  DefaultDashStyle,
-  DefaultSizeStyle,
-  useValue,
-} from 'tldraw'
+import type { HybridCanvasToolInspectorProps } from '@hybrid-canvas/canvas/extensions'
+import { DefaultColorStyle, DefaultDashStyle, DefaultSizeStyle, useValue } from 'tldraw'
 
 const COLORS = [
   {
@@ -147,108 +140,57 @@ const HIGHLIGHT_PRESETS = [
   },
 ] as const
 
-export function FreehandToolInspector({
-  editor,
-}: HybridCanvasToolInspectorProps) {
-  return (
-    <FreehandInspector
-      editor={editor}
-      variant="draw"
-    />
-  )
+export function FreehandToolInspector({ editor }: HybridCanvasToolInspectorProps) {
+  return <FreehandInspector editor={editor} variant="draw" />
 }
 
-export function HighlightToolInspector({
-  editor,
-}: HybridCanvasToolInspectorProps) {
-  return (
-    <FreehandInspector
-      editor={editor}
-      variant="highlight"
-    />
-  )
+export function HighlightToolInspector({ editor }: HybridCanvasToolInspectorProps) {
+  return <FreehandInspector editor={editor} variant="highlight" />
 }
 
-interface FreehandInspectorProps
-  extends HybridCanvasToolInspectorProps {
+interface FreehandInspectorProps extends HybridCanvasToolInspectorProps {
   readonly variant: 'draw' | 'highlight'
 }
 
-function FreehandInspector({
-  editor,
-  variant,
-}: FreehandInspectorProps) {
+function FreehandInspector({ editor, variant }: FreehandInspectorProps) {
   const isHighlight = variant === 'highlight'
 
   const currentColor = useValue(
     'freehand inspector next color',
-    () =>
-      editor.getStyleForNextShape(
-        DefaultColorStyle,
-      ),
+    () => editor.getStyleForNextShape(DefaultColorStyle),
     [editor],
   )
 
   const currentSize = useValue(
     'freehand inspector next size',
-    () =>
-      editor.getStyleForNextShape(
-        DefaultSizeStyle,
-      ),
+    () => editor.getStyleForNextShape(DefaultSizeStyle),
     [editor],
   )
 
   const currentDash = useValue(
     'freehand inspector next dash',
-    () =>
-      editor.getStyleForNextShape(
-        DefaultDashStyle,
-      ),
+    () => editor.getStyleForNextShape(DefaultDashStyle),
     [editor],
   )
 
-  const applyDrawPreset = (
-    preset: (typeof DRAW_PRESETS)[number],
-  ) => {
-    editor.setStyleForNextShapes(
-      DefaultColorStyle,
-      preset.color,
-    )
+  const applyDrawPreset = (preset: (typeof DRAW_PRESETS)[number]) => {
+    editor.setStyleForNextShapes(DefaultColorStyle, preset.color)
 
-    editor.setStyleForNextShapes(
-      DefaultSizeStyle,
-      preset.size,
-    )
+    editor.setStyleForNextShapes(DefaultSizeStyle, preset.size)
 
-    editor.setStyleForNextShapes(
-      DefaultDashStyle,
-      preset.dash,
-    )
+    editor.setStyleForNextShapes(DefaultDashStyle, preset.dash)
   }
 
-  const applyHighlightPreset = (
-    preset:
-      (typeof HIGHLIGHT_PRESETS)[number],
-  ) => {
-    editor.setStyleForNextShapes(
-      DefaultColorStyle,
-      preset.color,
-    )
+  const applyHighlightPreset = (preset: (typeof HIGHLIGHT_PRESETS)[number]) => {
+    editor.setStyleForNextShapes(DefaultColorStyle, preset.color)
 
-    editor.setStyleForNextShapes(
-      DefaultSizeStyle,
-      preset.size,
-    )
+    editor.setStyleForNextShapes(DefaultSizeStyle, preset.size)
   }
 
   return (
     <div className="space-y-4">
       <header className="border-b border-divider pb-3">
-        <h2 className="text-sm font-semibold">
-          {isHighlight
-            ? '高亮'
-            : '自由绘制'}
-        </h2>
+        <h2 className="text-sm font-semibold">{isHighlight ? '高亮' : '自由绘制'}</h2>
 
         <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
           {isHighlight
@@ -257,57 +199,40 @@ function FreehandInspector({
         </p>
       </header>
 
-      <InspectorSection
-        description="预设会同时应用颜色、粗细和线型。"
-        title="预设"
-      >
+      <InspectorSection description="预设会同时应用颜色、粗细和线型。" title="预设">
         {isHighlight ? (
           <div className="grid grid-cols-2 gap-2">
-            {HIGHLIGHT_PRESETS.map(
-              (preset) => {
-                const selected =
-                  currentColor ===
-                    preset.color &&
-                  currentSize === preset.size
+            {HIGHLIGHT_PRESETS.map((preset) => {
+              const selected = currentColor === preset.color && currentSize === preset.size
 
-                return (
-                  <button
-                    aria-pressed={selected}
-                    className={
-                      'flex min-h-10 items-center gap-2 rounded-md border px-2 ' +
-                      'text-left text-[11px] transition-colors ' +
-                      (
-                        selected
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-divider bg-background hover:bg-accent'
-                      )
-                    }
-                    key={preset.id}
-                    onClick={() => {
-                      applyHighlightPreset(
-                        preset,
-                      )
+              return (
+                <button
+                  aria-pressed={selected}
+                  className={
+                    'flex min-h-10 items-center gap-2 rounded-md border px-2 ' +
+                    'text-left text-[11px] transition-colors ' +
+                    (selected
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-divider bg-background hover:bg-accent')
+                  }
+                  key={preset.id}
+                  onClick={() => {
+                    applyHighlightPreset(preset)
+                  }}
+                  type="button"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="h-2.5 w-8 rounded-sm"
+                    style={{
+                      backgroundColor: COLORS.find((color) => color.value === preset.color)?.css,
                     }}
-                    type="button"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="h-2.5 w-8 rounded-sm"
-                      style={{
-                        backgroundColor:
-                          COLORS.find(
-                            (color) =>
-                              color.value ===
-                              preset.color,
-                          )?.css,
-                      }}
-                    />
+                  />
 
-                    <span>{preset.label}</span>
-                  </button>
-                )
-              },
-            )}
+                  <span>{preset.label}</span>
+                </button>
+              )
+            })}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-2">
@@ -323,11 +248,9 @@ function FreehandInspector({
                   className={
                     'min-h-12 rounded-md border px-2 py-1.5 text-left ' +
                     'transition-colors ' +
-                    (
-                      selected
-                        ? 'border-primary bg-primary/10'
-                        : 'border-divider bg-background hover:bg-accent'
-                    )
+                    (selected
+                      ? 'border-primary bg-primary/10'
+                      : 'border-divider bg-background hover:bg-accent')
                   }
                   key={preset.id}
                   onClick={() => {
@@ -335,9 +258,7 @@ function FreehandInspector({
                   }}
                   type="button"
                 >
-                  <span className="block text-[11px] font-medium">
-                    {preset.label}
-                  </span>
+                  <span className="block text-[11px] font-medium">{preset.label}</span>
 
                   <span className="mt-0.5 block text-[10px] text-muted-foreground">
                     {preset.description}
@@ -353,28 +274,17 @@ function FreehandInspector({
         <div className="grid grid-cols-6 gap-1.5">
           {COLORS.map((color) => (
             <button
-              aria-label={
-                '设置颜色为' + color.label
-              }
-              aria-pressed={
-                currentColor === color.value
-              }
+              aria-label={'设置颜色为' + color.label}
+              aria-pressed={currentColor === color.value}
               className={
                 'size-7 rounded-md border border-divider transition-transform ' +
                 'hover:scale-105 focus-visible:outline-none ' +
                 'focus-visible:ring-2 focus-visible:ring-primary ' +
-                (
-                  currentColor === color.value
-                    ? 'ring-2 ring-primary ring-offset-1'
-                    : ''
-                )
+                (currentColor === color.value ? 'ring-2 ring-primary ring-offset-1' : '')
               }
               key={color.value}
               onClick={() => {
-                editor.setStyleForNextShapes(
-                  DefaultColorStyle,
-                  color.value,
-                )
+                editor.setStyleForNextShapes(DefaultColorStyle, color.value)
               }}
               style={{
                 backgroundColor: color.css,
@@ -390,10 +300,7 @@ function FreehandInspector({
         <SegmentedControl
           ariaLabel="笔触粗细"
           onChange={(value) => {
-            editor.setStyleForNextShapes(
-              DefaultSizeStyle,
-              value as never,
-            )
+            editor.setStyleForNextShapes(DefaultSizeStyle, value as never)
           }}
           options={SIZE_OPTIONS}
           value={currentSize}
@@ -405,10 +312,7 @@ function FreehandInspector({
           <SegmentedControl
             ariaLabel="笔触线型"
             onChange={(value) => {
-              editor.setStyleForNextShapes(
-                DefaultDashStyle,
-                value as never,
-              )
+              editor.setStyleForNextShapes(DefaultDashStyle, value as never)
             }}
             options={DASH_OPTIONS}
             value={currentDash}
@@ -427,15 +331,10 @@ function FreehandInspector({
 interface InspectorSectionProps {
   readonly title: string
   readonly description?: string
-  readonly children:
-    import('react').ReactNode
+  readonly children: import('react').ReactNode
 }
 
-function InspectorSection({
-  title,
-  description,
-  children,
-}: InspectorSectionProps) {
+function InspectorSection({ title, description, children }: InspectorSectionProps) {
   return (
     <section className="space-y-2.5 border-b border-divider pb-4 last:border-b-0">
       <header className="space-y-0.5">
@@ -444,9 +343,7 @@ function InspectorSection({
         </h3>
 
         {description ? (
-          <p className="text-[10px] leading-4 text-muted-foreground/80">
-            {description}
-          </p>
+          <p className="text-[10px] leading-4 text-muted-foreground/80">{description}</p>
         ) : null}
       </header>
 
@@ -462,41 +359,27 @@ interface SegmentedControlProps {
     readonly value: string
     readonly label: string
   }[]
-  readonly onChange: (
-    value: string,
-  ) => void
+  readonly onChange: (value: string) => void
 }
 
-function SegmentedControl({
-  ariaLabel,
-  value,
-  options,
-  onChange,
-}: SegmentedControlProps) {
+function SegmentedControl({ ariaLabel, value, options, onChange }: SegmentedControlProps) {
   return (
     <div
       aria-label={ariaLabel}
       className="grid gap-1.5"
       role="group"
       style={{
-        gridTemplateColumns:
-          'repeat(' +
-          String(options.length) +
-          ', minmax(0, 1fr))',
+        gridTemplateColumns: 'repeat(' + String(options.length) + ', minmax(0, 1fr))',
       }}
     >
       {options.map((option) => (
         <button
-          aria-pressed={
-            value === option.value
-          }
+          aria-pressed={value === option.value}
           className={
             'min-h-8 rounded-md border px-1 text-[10px] transition-colors ' +
-            (
-              value === option.value
-                ? 'border-primary bg-primary/10 text-primary'
-                : 'border-divider bg-background hover:bg-accent'
-            )
+            (value === option.value
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-divider bg-background hover:bg-accent')
           }
           key={option.value}
           onClick={() => {

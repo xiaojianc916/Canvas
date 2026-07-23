@@ -9,14 +9,9 @@ import {
 } from '../common/InspectorPrimitives'
 import type { ToolInspectorProps } from './types'
 
-export function LineToolInspector({
-  editor,
-}: ToolInspectorProps) {
+export function LineToolInspector({ editor }: ToolInspectorProps) {
   return (
-    <ToolPanelHeader
-      description="拖动创建直线或折线；以下参数用于下一条线。"
-      title="直线"
-    >
+    <ToolPanelHeader description="拖动创建直线或折线；以下参数用于下一条线。" title="直线">
       <ToolColorSection editor={editor} />
       <ToolDashSection editor={editor} />
       <ToolStrokeSizeSection editor={editor} />

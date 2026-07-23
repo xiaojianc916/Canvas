@@ -80,10 +80,7 @@ export function buildExtensionRegistration(
     Object.assign(shapeLabels, extension.shapeLabels)
 
     for (const contribution of extension.toolInspectors ?? []) {
-      validateToolInspectorContribution(
-        extension.id,
-        contribution,
-      )
+      validateToolInspectorContribution(extension.id, contribution)
 
       toolInspectors.push(contribution)
     }
@@ -104,35 +101,18 @@ function validateToolInspectorContribution(
   contribution: HybridCanvasToolInspectorContribution,
 ): void {
   if (!contribution.toolId.trim()) {
-    throw new Error(
-      'EXTENSION_TOOL_INSPECTOR_TOOL_ID_REQUIRED:' +
-        extensionId,
-    )
+    throw new Error('EXTENSION_TOOL_INSPECTOR_TOOL_ID_REQUIRED:' + extensionId)
   }
 
   if (!contribution.owner.trim()) {
-    throw new Error(
-      'EXTENSION_TOOL_INSPECTOR_OWNER_REQUIRED:' +
-        extensionId,
-    )
+    throw new Error('EXTENSION_TOOL_INSPECTOR_OWNER_REQUIRED:' + extensionId)
   }
 
-  if (
-    typeof contribution.component !== 'function'
-  ) {
-    throw new Error(
-      'EXTENSION_TOOL_INSPECTOR_COMPONENT_REQUIRED:' +
-        extensionId,
-    )
+  if (typeof contribution.component !== 'function') {
+    throw new Error('EXTENSION_TOOL_INSPECTOR_COMPONENT_REQUIRED:' + extensionId)
   }
 
-  if (
-    contribution.priority !== undefined &&
-    !Number.isFinite(contribution.priority)
-  ) {
-    throw new Error(
-      'EXTENSION_TOOL_INSPECTOR_PRIORITY_INVALID:' +
-        extensionId,
-    )
+  if (contribution.priority !== undefined && !Number.isFinite(contribution.priority)) {
+    throw new Error('EXTENSION_TOOL_INSPECTOR_PRIORITY_INVALID:' + extensionId)
   }
 }

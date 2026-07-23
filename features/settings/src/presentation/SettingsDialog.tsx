@@ -614,28 +614,15 @@ function SettingsToggle({ checked, label, description, onChange }: SettingsToggl
   const descriptionId = useId()
 
   return (
-    <div
-      className={[
-        'grid min-h-14 gap-2',
-        'border-b border-divider',
-        'py-3',
-      ].join(' ')}
-    >
+    <div className={['grid min-h-14 gap-2', 'border-b border-divider', 'py-3'].join(' ')}>
       <Label className="flex w-fit cursor-pointer items-center gap-2">
-        <Switch
-          aria-describedby={descriptionId}
-          checked={checked}
-          onCheckedChange={onChange}
-        />
+        <Switch aria-describedby={descriptionId} checked={checked} onCheckedChange={onChange} />
 
         <span>{label}</span>
       </Label>
 
       <p
-        className={[
-          'pl-11 text-xs leading-5',
-          'text-muted-foreground',
-        ].join(' ')}
+        className={['pl-11 text-xs leading-5', 'text-muted-foreground'].join(' ')}
         id={descriptionId}
       >
         {description}

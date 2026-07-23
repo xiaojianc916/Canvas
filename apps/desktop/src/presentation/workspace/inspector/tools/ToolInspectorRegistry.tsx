@@ -12,8 +12,7 @@ import { SelectToolInspector } from './SelectToolInspector'
 import { ShapeToolInspector } from './ShapeToolInspector'
 import { TextToolInspector } from './TextToolInspector'
 
-export type ToolInspectorContribution =
-  HybridCanvasToolInspectorContribution
+export type ToolInspectorContribution = HybridCanvasToolInspectorContribution
 
 export interface ToolInspectorResolution {
   readonly toolId: string
@@ -34,69 +33,58 @@ export interface ToolInspectorResolution {
  * Missing Feature contributions must resolve to UnknownToolInspector.
  * Do not add duplicate App fallbacks.
  */
-export const CORE_TOOL_INSPECTOR_CONTRIBUTIONS:
-  readonly ToolInspectorContribution[] = [
-    {
-      toolId: 'select',
-      owner: 'core',
-      component: SelectToolInspector,
-    },
-    {
-      toolId: 'hand',
-      owner: 'core',
-      component: HandToolInspector,
-    },
-    {
-      toolId: 'geo',
-      owner: 'core',
-      component: ShapeToolInspector,
-    },
-    {
-      toolId: 'line',
-      owner: 'core',
-      component: LineToolInspector,
-    },
+export const CORE_TOOL_INSPECTOR_CONTRIBUTIONS: readonly ToolInspectorContribution[] = [
+  {
+    toolId: 'select',
+    owner: 'core',
+    component: SelectToolInspector,
+  },
+  {
+    toolId: 'hand',
+    owner: 'core',
+    component: HandToolInspector,
+  },
+  {
+    toolId: 'geo',
+    owner: 'core',
+    component: ShapeToolInspector,
+  },
+  {
+    toolId: 'line',
+    owner: 'core',
+    component: LineToolInspector,
+  },
 
-    {
-      toolId: 'eraser',
-      owner: 'core',
-      component: EraserToolInspector,
-    },
-    {
-      toolId: 'text',
-      owner: 'core',
-      component: TextToolInspector,
-    },
-    {
-      toolId: 'note',
-      owner: 'core',
-      component: NoteToolInspector,
-    },
-    {
-      toolId: 'frame',
-      owner: 'core',
-      component: FrameToolInspector,
-    },
-
-  ]
+  {
+    toolId: 'eraser',
+    owner: 'core',
+    component: EraserToolInspector,
+  },
+  {
+    toolId: 'text',
+    owner: 'core',
+    component: TextToolInspector,
+  },
+  {
+    toolId: 'note',
+    owner: 'core',
+    component: NoteToolInspector,
+  },
+  {
+    toolId: 'frame',
+    owner: 'core',
+    component: FrameToolInspector,
+  },
+]
 
 export class ToolInspectorRegistry {
-  readonly #resolutions: ReadonlyMap<
-    string,
-    ToolInspectorResolution
-  >
+  readonly #resolutions: ReadonlyMap<string, ToolInspectorResolution>
 
-  constructor(
-    contributions:
-      readonly ToolInspectorContribution[],
-  ) {
-    this.#resolutions =
-      buildResolutionMap(contributions)
+  constructor(contributions: readonly ToolInspectorContribution[]) {
+    this.#resolutions = buildResolutionMap(contributions)
   }
 
-  resolve(
-    toolId: string,
-  ): ToolInspectorResolution | null {
+  resolve(toolId: string): ToolInspectorResolution | null {
     return this.#resolutions.get(toolId) ?? null
   }
 
@@ -105,53 +93,33 @@ export class ToolInspectorRegistry {
   }
 
   list(): readonly ToolInspectorResolution[] {
-    return Array.from(
-      this.#resolutions.values(),
-    ).sort((left, right) =>
+    return Array.from(this.#resolutions.values()).sort((left, right) =>
       left.toolId.localeCompare(right.toolId),
     )
   }
 }
 
 export function createToolInspectorRegistry(
-  contributions:
-    readonly ToolInspectorContribution[] = [],
+  contributions: readonly ToolInspectorContribution[] = [],
 ): ToolInspectorRegistry {
-  return new ToolInspectorRegistry([
-    ...CORE_TOOL_INSPECTOR_CONTRIBUTIONS,
-    ...contributions,
-  ])
+  return new ToolInspectorRegistry([...CORE_TOOL_INSPECTOR_CONTRIBUTIONS, ...contributions])
 }
 
-export const defaultToolInspectorRegistry =
-  createToolInspectorRegistry()
+export const defaultToolInspectorRegistry = createToolInspectorRegistry()
 
 function buildResolutionMap(
-  contributions:
-    readonly ToolInspectorContribution[],
-): ReadonlyMap<
-  string,
-  ToolInspectorResolution
-> {
-  const resolutions = new Map<
-    string,
-    ToolInspectorResolution
-  >()
+  contributions: readonly ToolInspectorContribution[],
+): ReadonlyMap<string, ToolInspectorResolution> {
+  const resolutions = new Map<string, ToolInspectorResolution>()
 
   for (const contribution of contributions) {
     validateContribution(contribution)
 
-    const priority =
-      contribution.priority ?? 0
+    const priority = contribution.priority ?? 0
 
-    const existing = resolutions.get(
-      contribution.toolId,
-    )
+    const existing = resolutions.get(contribution.toolId)
 
-    if (
-      existing &&
-      existing.priority === priority
-    ) {
+    if (existing && existing.priority === priority) {
       throw new Error(
         'Conflicting tool inspector contributions for "' +
           contribution.toolId +
@@ -165,64 +133,37 @@ function buildResolutionMap(
       )
     }
 
-    if (
-      !existing ||
-      priority > existing.priority
-    ) {
-      resolutions.set(
-        contribution.toolId,
-        {
-          toolId: contribution.toolId,
-          owner: contribution.owner,
-          priority,
-          component: contribution.component,
-        },
-      )
+    if (!existing || priority > existing.priority) {
+      resolutions.set(contribution.toolId, {
+        toolId: contribution.toolId,
+        owner: contribution.owner,
+        priority,
+        component: contribution.component,
+      })
     }
   }
 
   return resolutions
 }
 
-function validateContribution(
-  contribution:
-    ToolInspectorContribution,
-): void {
+function validateContribution(contribution: ToolInspectorContribution): void {
   if (!contribution.toolId.trim()) {
-    throw new Error(
-      'Tool inspector contribution requires a toolId.',
-    )
+    throw new Error('Tool inspector contribution requires a toolId.')
   }
 
   if (!contribution.owner.trim()) {
+    throw new Error('Tool inspector contribution "' + contribution.toolId + '" requires an owner.')
+  }
+
+  if (typeof contribution.component !== 'function') {
     throw new Error(
-      'Tool inspector contribution "' +
-        contribution.toolId +
-        '" requires an owner.',
+      'Tool inspector contribution "' + contribution.toolId + '" requires a React component.',
     )
   }
 
-  if (
-    typeof contribution.component !==
-    'function'
-  ) {
+  if (contribution.priority !== undefined && !Number.isFinite(contribution.priority)) {
     throw new Error(
-      'Tool inspector contribution "' +
-        contribution.toolId +
-        '" requires a React component.',
-    )
-  }
-
-  if (
-    contribution.priority !== undefined &&
-    !Number.isFinite(
-      contribution.priority,
-    )
-  ) {
-    throw new Error(
-      'Tool inspector contribution "' +
-        contribution.toolId +
-        '" has an invalid priority.',
+      'Tool inspector contribution "' + contribution.toolId + '" has an invalid priority.',
     )
   }
 }

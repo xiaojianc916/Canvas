@@ -1,15 +1,6 @@
-import type {
-  HybridCanvasToolInspectorProps,
-} from '@hybrid-canvas/canvas/extensions'
-import {
-  DefaultColorStyle,
-  DefaultSizeStyle,
-  useValue,
-} from 'tldraw'
-import {
-  type ScientificChartType,
-  ScientificChartTypeStyle,
-} from '../styles/chart-styles'
+import type { HybridCanvasToolInspectorProps } from '@hybrid-canvas/canvas/extensions'
+import { DefaultColorStyle, DefaultSizeStyle, useValue } from 'tldraw'
+import { type ScientificChartType, ScientificChartTypeStyle } from '../styles/chart-styles'
 
 const CHART_TYPES = [
   {
@@ -120,97 +111,64 @@ const SIZE_OPTIONS = [
   },
 ] as const
 
-export function ScientificChartToolInspector({
-  editor,
-}: HybridCanvasToolInspectorProps) {
+export function ScientificChartToolInspector({ editor }: HybridCanvasToolInspectorProps) {
   const currentChartType = useValue(
     'scientific chart next type',
-    () =>
-      editor.getStyleForNextShape(
-        ScientificChartTypeStyle,
-      ),
+    () => editor.getStyleForNextShape(ScientificChartTypeStyle),
     [editor],
   )
 
   const currentColor = useValue(
     'scientific chart next color',
-    () =>
-      editor.getStyleForNextShape(
-        DefaultColorStyle,
-      ),
+    () => editor.getStyleForNextShape(DefaultColorStyle),
     [editor],
   )
 
   const currentSize = useValue(
     'scientific chart next size',
-    () =>
-      editor.getStyleForNextShape(
-        DefaultSizeStyle,
-      ),
+    () => editor.getStyleForNextShape(DefaultSizeStyle),
     [editor],
   )
 
   const currentColorCss =
-    CHART_COLORS.find(
-      (color) =>
-        color.value === currentColor,
-    )?.css ?? '#2563eb'
+    CHART_COLORS.find((color) => color.value === currentColor)?.css ?? '#2563eb'
 
   return (
     <div className="space-y-4">
       <header className="border-b border-divider pb-3">
-        <h2 className="text-sm font-semibold">
-          科学图表
-        </h2>
+        <h2 className="text-sm font-semibold">科学图表</h2>
 
         <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
           选择类型和初始样式，然后在画布中拖动创建图表。
         </p>
       </header>
 
-      <InspectorSection
-        description="选择创建下一个图表时使用的图表类型。"
-        title="图表类型"
-      >
+      <InspectorSection description="选择创建下一个图表时使用的图表类型。" title="图表类型">
         <div className="grid grid-cols-2 gap-2">
           {CHART_TYPES.map((chartType) => {
-            const selected =
-              currentChartType ===
-              chartType.value
+            const selected = currentChartType === chartType.value
 
             return (
               <button
-                aria-label={
-                  '创建' + chartType.label
-                }
+                aria-label={'创建' + chartType.label}
                 aria-pressed={selected}
                 className={
                   'group min-h-24 rounded-md border p-2 text-left ' +
                   'transition-colors focus-visible:outline-none ' +
                   'focus-visible:ring-2 focus-visible:ring-primary ' +
-                  (
-                    selected
-                      ? 'border-primary bg-primary/10'
-                      : 'border-divider bg-background hover:bg-accent'
-                  )
+                  (selected
+                    ? 'border-primary bg-primary/10'
+                    : 'border-divider bg-background hover:bg-accent')
                 }
                 key={chartType.value}
                 onClick={() => {
-                  editor.setStyleForNextShapes(
-                    ScientificChartTypeStyle,
-                    chartType.value,
-                  )
+                  editor.setStyleForNextShapes(ScientificChartTypeStyle, chartType.value)
                 }}
                 type="button"
               >
-                <ChartTypePreview
-                  color={currentColorCss}
-                  type={chartType.value}
-                />
+                <ChartTypePreview color={currentColorCss} type={chartType.value} />
 
-                <span className="mt-2 block text-[11px] font-medium">
-                  {chartType.label}
-                </span>
+                <span className="mt-2 block text-[11px] font-medium">{chartType.label}</span>
 
                 <span className="mt-0.5 block text-[10px] text-muted-foreground">
                   {chartType.description}
@@ -221,20 +179,13 @@ export function ScientificChartToolInspector({
         </div>
       </InspectorSection>
 
-      <InspectorSection
-        description="当前 Shape 使用单系列示例数据。"
-        title="数据"
-      >
+      <InspectorSection description="当前 Shape 使用单系列示例数据。" title="数据">
         <div className="rounded-md border border-divider bg-background p-3">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate text-[11px] font-medium">
-                示例数据
-              </p>
+              <p className="truncate text-[11px] font-medium">示例数据</p>
 
-              <p className="mt-0.5 text-[10px] text-muted-foreground">
-                1 个系列 · 7 个数据点
-              </p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">1 个系列 · 7 个数据点</p>
             </div>
 
             <span className="shrink-0 rounded bg-accent px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -248,29 +199,17 @@ export function ScientificChartToolInspector({
         <div className="grid grid-cols-6 gap-1.5">
           {CHART_COLORS.map((color) => (
             <button
-              aria-label={
-                '设置图表颜色为' +
-                color.label
-              }
-              aria-pressed={
-                currentColor === color.value
-              }
+              aria-label={'设置图表颜色为' + color.label}
+              aria-pressed={currentColor === color.value}
               className={
                 'size-7 rounded-md border border-divider transition-transform ' +
                 'hover:scale-105 focus-visible:outline-none ' +
                 'focus-visible:ring-2 focus-visible:ring-primary ' +
-                (
-                  currentColor === color.value
-                    ? 'ring-2 ring-primary ring-offset-1'
-                    : ''
-                )
+                (currentColor === color.value ? 'ring-2 ring-primary ring-offset-1' : '')
               }
               key={color.value}
               onClick={() => {
-                editor.setStyleForNextShapes(
-                  DefaultColorStyle,
-                  color.value,
-                )
+                editor.setStyleForNextShapes(DefaultColorStyle, color.value)
               }}
               style={{
                 backgroundColor: color.css,
@@ -283,31 +222,20 @@ export function ScientificChartToolInspector({
       </InspectorSection>
 
       <InspectorSection title="线条与标记">
-        <div
-          aria-label="图表线条粗细"
-          className="grid grid-cols-4 gap-1.5"
-          role="group"
-        >
+        <div aria-label="图表线条粗细" className="grid grid-cols-4 gap-1.5" role="group">
           {SIZE_OPTIONS.map((option) => (
             <button
-              aria-pressed={
-                currentSize === option.value
-              }
+              aria-pressed={currentSize === option.value}
               className={
                 'flex min-h-10 flex-col items-center justify-center gap-1 ' +
                 'rounded-md border px-1 text-[10px] transition-colors ' +
-                (
-                  currentSize === option.value
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-divider bg-background hover:bg-accent'
-                )
+                (currentSize === option.value
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-divider bg-background hover:bg-accent')
               }
               key={option.value}
               onClick={() => {
-                editor.setStyleForNextShapes(
-                  DefaultSizeStyle,
-                  option.value,
-                )
+                editor.setStyleForNextShapes(DefaultSizeStyle, option.value)
               }}
               type="button"
             >
@@ -315,8 +243,7 @@ export function ScientificChartToolInspector({
                 aria-hidden="true"
                 className="block w-7 rounded-full"
                 style={{
-                  backgroundColor:
-                    currentColorCss,
+                  backgroundColor: currentColorCss,
                   height: option.pixels,
                 }}
               />
@@ -329,26 +256,16 @@ export function ScientificChartToolInspector({
 
       <InspectorSection title="创建默认值">
         <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 rounded-md border border-divider bg-background p-3 text-[10px]">
-          <dt className="text-muted-foreground">
-            默认尺寸
-          </dt>
-          <dd className="font-mono tabular-nums">
-            420 × 260
-          </dd>
+          <dt className="text-muted-foreground">默认尺寸</dt>
+          <dd className="font-mono tabular-nums">420 × 260</dd>
 
-          <dt className="text-muted-foreground">
-            坐标轴
-          </dt>
+          <dt className="text-muted-foreground">坐标轴</dt>
           <dd>显示</dd>
 
-          <dt className="text-muted-foreground">
-            网格线
-          </dt>
+          <dt className="text-muted-foreground">网格线</dt>
           <dd>显示</dd>
 
-          <dt className="text-muted-foreground">
-            图例
-          </dt>
+          <dt className="text-muted-foreground">图例</dt>
           <dd>显示</dd>
         </dl>
       </InspectorSection>
@@ -364,15 +281,10 @@ export function ScientificChartToolInspector({
 interface InspectorSectionProps {
   readonly title: string
   readonly description?: string
-  readonly children:
-    import('react').ReactNode
+  readonly children: import('react').ReactNode
 }
 
-function InspectorSection({
-  title,
-  description,
-  children,
-}: InspectorSectionProps) {
+function InspectorSection({ title, description, children }: InspectorSectionProps) {
   return (
     <section className="space-y-2.5 border-b border-divider pb-4 last:border-b-0">
       <header className="space-y-0.5">
@@ -381,9 +293,7 @@ function InspectorSection({
         </h3>
 
         {description ? (
-          <p className="text-[10px] leading-4 text-muted-foreground/80">
-            {description}
-          </p>
+          <p className="text-[10px] leading-4 text-muted-foreground/80">{description}</p>
         ) : null}
       </header>
 
@@ -399,41 +309,21 @@ function ChartTypePreview({
   readonly type: ScientificChartType
   readonly color: string
 }) {
-  const values = [
-    0.24,
-    0.68,
-    0.42,
-    0.82,
-    0.58,
-  ]
+  const values = [0.24, 0.68, 0.42, 0.82, 0.58]
 
   const width = 92
   const height = 38
   const padding = 3
-  const chartWidth =
-    width - padding * 2
-  const chartHeight =
-    height - padding * 2
+  const chartWidth = width - padding * 2
+  const chartHeight = height - padding * 2
 
   const points = values
     .map((value, index) => {
-      const x =
-        padding +
-        (
-          index /
-          (values.length - 1)
-        ) *
-          chartWidth
+      const x = padding + (index / (values.length - 1)) * chartWidth
 
-      const y =
-        padding +
-        (1 - value) * chartHeight
+      const y = padding + (1 - value) * chartHeight
 
-      return (
-        String(x) +
-        ',' +
-        String(y)
-      )
+      return String(x) + ',' + String(y)
     })
     .join(' ')
 
@@ -442,12 +332,7 @@ function ChartTypePreview({
       aria-hidden="true"
       className="h-10 w-full overflow-visible"
       preserveAspectRatio="none"
-      viewBox={
-        '0 0 ' +
-        String(width) +
-        ' ' +
-        String(height)
-      }
+      viewBox={'0 0 ' + String(width) + ' ' + String(height)}
     >
       <line
         stroke="currentColor"
@@ -491,15 +376,11 @@ function ChartTypePreview({
 
       {type === 'bar'
         ? values.map((value, index) => {
-            const slot =
-              chartWidth /
-              values.length
+            const slot = chartWidth / values.length
 
-            const barWidth =
-              slot * 0.56
+            const barWidth = slot * 0.56
 
-            const barHeight =
-              value * chartHeight
+            const barHeight = value * chartHeight
 
             return (
               <rect
@@ -508,20 +389,8 @@ function ChartTypePreview({
                 key={String(index)}
                 rx="1"
                 width={barWidth}
-                x={
-                  padding +
-                  index * slot +
-                  (
-                    slot -
-                    barWidth
-                  ) /
-                    2
-                }
-                y={
-                  height -
-                  padding -
-                  barHeight
-                }
+                x={padding + index * slot + (slot - barWidth) / 2}
+                y={height - padding - barHeight}
               />
             )
           })
@@ -529,28 +398,11 @@ function ChartTypePreview({
 
       {type === 'scatter'
         ? values.map((value, index) => {
-            const x =
-              padding +
-              (
-                index /
-                (values.length - 1)
-              ) *
-                chartWidth
+            const x = padding + (index / (values.length - 1)) * chartWidth
 
-            const y =
-              padding +
-              (1 - value) *
-                chartHeight
+            const y = padding + (1 - value) * chartHeight
 
-            return (
-              <circle
-                cx={x}
-                cy={y}
-                fill={color}
-                key={String(index)}
-                r="2.5"
-              />
-            )
+            return <circle cx={x} cy={y} fill={color} key={String(index)} r="2.5" />
           })
         : null}
     </svg>

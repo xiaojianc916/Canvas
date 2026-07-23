@@ -3,10 +3,7 @@ import {
   createEditorSessionRegistry,
   type EditorAssetStoreSessionFactory,
 } from '@hybrid-canvas/canvas/application'
-import type {
-  TLAssetStore,
-  TLStoreSnapshot,
-} from 'tldraw'
+import type { TLAssetStore, TLStoreSnapshot } from 'tldraw'
 import { describe, expect, it, vi } from 'vitest'
 
 function invalidPersistedSnapshot(): TLStoreSnapshot {
@@ -18,9 +15,7 @@ function invalidPersistedSnapshot(): TLStoreSnapshot {
 
 function createAssetStoreHarness() {
   const dispose = vi.fn(async (): Promise<void> => {})
-  const getPersistenceToken = vi.fn(
-    async (): Promise<string | null> => null,
-  )
+  const getPersistenceToken = vi.fn(async (): Promise<string | null> => null)
 
   const factory: EditorAssetStoreSessionFactory = () => ({
     assets: {
@@ -39,9 +34,7 @@ function createAssetStoreHarness() {
 describe('EditorSessionRegistry persisted snapshot boundary', () => {
   it('does not register a session when tldraw rejects persisted data', async () => {
     const assets = createAssetStoreHarness()
-    const registry = createEditorSessionRegistry(
-      assets.factory,
-    )
+    const registry = createEditorSessionRegistry(assets.factory)
     const sessionId = 'invalid-persisted-session'
 
     await expect(
@@ -59,9 +52,7 @@ describe('EditorSessionRegistry persisted snapshot boundary', () => {
 
   it('remains usable after a rejected persisted snapshot', async () => {
     const assets = createAssetStoreHarness()
-    const registry = createEditorSessionRegistry(
-      assets.factory,
-    )
+    const registry = createEditorSessionRegistry(assets.factory)
 
     await expect(
       registry.create({
@@ -92,9 +83,7 @@ describe('EditorSessionRegistry persisted snapshot boundary', () => {
   it('binds restored resources and persistence capture to the same session', async () => {
     const persistenceToken = 'restored-native-session'
 
-    const getPersistenceToken = vi.fn(
-      async (): Promise<string | null> => persistenceToken,
-    )
+    const getPersistenceToken = vi.fn(async (): Promise<string | null> => persistenceToken)
     const dispose = vi.fn(async (): Promise<void> => {})
 
     const factoryMock = vi.fn((_restore?: unknown) => ({
@@ -105,8 +94,7 @@ describe('EditorSessionRegistry persisted snapshot boundary', () => {
       dispose,
     }))
 
-    const factory: EditorAssetStoreSessionFactory = (restore) =>
-      factoryMock(restore)
+    const factory: EditorAssetStoreSessionFactory = (restore) => factoryMock(restore)
 
     const registry = createEditorSessionRegistry(factory)
 
@@ -123,9 +111,7 @@ describe('EditorSessionRegistry persisted snapshot boundary', () => {
       persistenceToken,
     })
 
-    await expect(
-      session.captureAssetPersistenceToken(),
-    ).resolves.toBe(persistenceToken)
+    await expect(session.captureAssetPersistenceToken()).resolves.toBe(persistenceToken)
 
     expect(getPersistenceToken).toHaveBeenCalledTimes(1)
 
@@ -146,9 +132,7 @@ describe('EditorSessionRegistry persisted snapshot boundary', () => {
       assets: {
         upload: vi.fn(),
       } as unknown as TLAssetStore,
-      getPersistenceToken: vi.fn(
-        async (): Promise<string | null> => null,
-      ),
+      getPersistenceToken: vi.fn(async (): Promise<string | null> => null),
       dispose,
     }))
 

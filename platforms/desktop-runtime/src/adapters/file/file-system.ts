@@ -1,7 +1,4 @@
-import {
-  IpcInvocationError,
-  isIpcError,
-} from '@hybrid-canvas/desktop-ipc'
+import { IpcInvocationError, isIpcError } from '@hybrid-canvas/desktop-ipc'
 import {
   commands,
   type DocumentCloseRequest,
@@ -50,9 +47,7 @@ export interface DocumentFileCommands {
   readonly close: (documentId: DocumentId) => Promise<void>
 }
 
-async function invokeDocumentCommand<T>(
-  operation: () => Promise<T>,
-): Promise<T> {
+async function invokeDocumentCommand<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation()
   } catch (error) {
@@ -64,9 +59,7 @@ async function invokeDocumentCommand<T>(
   }
 }
 
-function toDocumentDescriptor(
-  descriptor: DocumentDescriptor,
-): {
+function toDocumentDescriptor(descriptor: DocumentDescriptor): {
   readonly id: DocumentId
   readonly displayName: string
   readonly revision: string
@@ -81,8 +74,9 @@ function toDocumentDescriptor(
 export function createDocumentFileCommands(): DocumentFileCommands {
   return {
     async open() {
-      const response: DocumentOpenResponse =
-        await invokeDocumentCommand(() => commands.documentOpen())
+      const response: DocumentOpenResponse = await invokeDocumentCommand(() =>
+        commands.documentOpen(),
+      )
 
       if (!response.document) {
         return null
@@ -105,12 +99,11 @@ export function createDocumentFileCommands(): DocumentFileCommands {
         suggestedName: options?.suggestedName ?? null,
       }
 
-      const response: DocumentSaveAsResult =
-        await invokeDocumentCommand(() => commands.documentSaveAs(request))
+      const response: DocumentSaveAsResult = await invokeDocumentCommand(() =>
+        commands.documentSaveAs(request),
+      )
 
-      return response.document
-        ? toDocumentDescriptor(response.document)
-        : null
+      return response.document ? toDocumentDescriptor(response.document) : null
     },
 
     async save(documentId, expectedRevision, content, assetPersistenceToken) {
@@ -121,10 +114,9 @@ export function createDocumentFileCommands(): DocumentFileCommands {
         assetSessionToken: assetPersistenceToken,
       }
 
-      const response: DocumentSaveResult =
-        await invokeDocumentCommand(() =>
-          commands.documentSave(request),
-        )
+      const response: DocumentSaveResult = await invokeDocumentCommand(() =>
+        commands.documentSave(request),
+      )
 
       return {
         revision: response.revision,

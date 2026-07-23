@@ -23,15 +23,7 @@ const IGNORE_DIRS = new Set([
   'coverage',
 ])
 
-const ALLOWED_EXTS = new Set([
-  '.ts',
-  '.tsx',
-  '.rs',
-  '.js',
-  '.mjs',
-  '.cjs',
-  '.json',
-])
+const ALLOWED_EXTS = new Set(['.ts', '.tsx', '.rs', '.js', '.mjs', '.cjs', '.json'])
 
 const forbidden = [
   'serializeDrawDocument',

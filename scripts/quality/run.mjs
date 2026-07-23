@@ -10,13 +10,7 @@ import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 import process from 'node:process'
 
-const turboCli = resolve(
-  process.cwd(),
-  'node_modules',
-  'turbo',
-  'bin',
-  'turbo',
-)
+const turboCli = resolve(process.cwd(), 'node_modules', 'turbo', 'bin', 'turbo')
 
 const cargo = process.platform === 'win32' ? 'cargo.exe' : 'cargo'
 
@@ -46,10 +40,7 @@ function execute(command, args) {
 }
 
 function turboTask(name) {
-  return [
-    process.execPath,
-    [turboCli, 'run', name, '--continue=always'],
-  ]
+  return [process.execPath, [turboCli, 'run', name, '--continue=always']]
 }
 
 const mode = process.argv[2]
@@ -58,18 +49,9 @@ const tasks =
   mode === 'typecheck'
     ? [turboTask('typecheck')]
     : mode === 'test'
-      ? [
-          turboTask('test'),
-          [cargo, ['test', '--workspace', '--all-features']],
-        ]
+      ? [turboTask('test'), [cargo, ['test', '--workspace', '--all-features']]]
       : mode === 'check'
-        ? [
-            turboTask('check'),
-            [
-              cargo,
-              ['check', '--workspace', '--all-targets', '--all-features'],
-            ],
-          ]
+        ? [turboTask('check'), [cargo, ['check', '--workspace', '--all-targets', '--all-features']]]
         : null
 
 if (!tasks) {

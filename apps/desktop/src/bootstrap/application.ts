@@ -17,10 +17,7 @@ import {
   createWorkbenchSessionController,
 } from '@hybrid-canvas/workspace/application'
 import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
-import {
-  type CanvasWorkflow,
-  createCanvasWorkflow,
-} from '../application/canvas/canvas-workflow'
+import { type CanvasWorkflow, createCanvasWorkflow } from '../application/canvas/canvas-workflow'
 import {
   type ApplicationTerminationCoordinator,
   createApplicationTerminationCoordinator,
@@ -49,18 +46,12 @@ export function createApplicationRuntime({
   const documentsGateway = createDocumentFileCommands()
   const mainWindow = createMainWindowController()
   const settings = createDesktopSettingsStore()
-  const editorSessions = createEditorSessionRegistry(
-    createNativeTLAssetStoreSession,
-  )
+  const editorSessions = createEditorSessionRegistry(createNativeTLAssetStoreSession)
 
   const documents = createCanvasDocumentService({
     editorSessions,
     persistence: documentsGateway,
-    extensions: [
-      flowchartExtension,
-      freehandExtension,
-      scientificPlotExtension,
-    ],
+    extensions: [flowchartExtension, freehandExtension, scientificPlotExtension],
   })
 
   const canvases = createCanvasWorkflow(documents, workspace)

@@ -16,18 +16,13 @@ export interface DocumentCheckpoint {
   readonly canonicalDocument: string
 }
 
-export function createDocumentCheckpoint(
-  document: TLStoreSnapshot,
-): DocumentCheckpoint {
+export function createDocumentCheckpoint(document: TLStoreSnapshot): DocumentCheckpoint {
   return {
     canonicalDocument: stableStringify(document),
   }
 }
 
-export function checkpointsEqual(
-  left: DocumentCheckpoint,
-  right: DocumentCheckpoint,
-): boolean {
+export function checkpointsEqual(left: DocumentCheckpoint, right: DocumentCheckpoint): boolean {
   return left.canonicalDocument === right.canonicalDocument
 }
 
@@ -68,12 +63,7 @@ function stableStringify(value: unknown): string {
 
   return (
     '{' +
-    keys
-      .map(
-        (key) =>
-          JSON.stringify(key) + ':' + stableStringify(record[key]),
-      )
-      .join(',') +
+    keys.map((key) => JSON.stringify(key) + ':' + stableStringify(record[key])).join(',') +
     '}'
   )
 }

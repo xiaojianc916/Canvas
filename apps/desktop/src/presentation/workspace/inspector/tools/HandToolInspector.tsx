@@ -5,14 +5,9 @@ import {
 } from '../common/InspectorPrimitives'
 import type { ToolInspectorProps } from './types'
 
-export function HandToolInspector({
-  editor,
-}: ToolInspectorProps) {
+export function HandToolInspector({ editor }: ToolInspectorProps) {
   return (
-    <ToolPanelHeader
-      description="拖动画布进行平移，滚轮或触控板用于缩放。"
-      title="移动画布"
-    >
+    <ToolPanelHeader description="拖动画布进行平移，滚轮或触控板用于缩放。" title="移动画布">
       <ShapeInspectorSection title="快速视图">
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -41,9 +36,7 @@ export function HandToolInspector({
         </div>
       </ShapeInspectorSection>
 
-      <InspectorHint>
-        导航设置属于本地界面状态，不应写入 TLStore 或文档历史。
-      </InspectorHint>
+      <InspectorHint>导航设置属于本地界面状态，不应写入 TLStore 或文档历史。</InspectorHint>
     </ToolPanelHeader>
   )
 }

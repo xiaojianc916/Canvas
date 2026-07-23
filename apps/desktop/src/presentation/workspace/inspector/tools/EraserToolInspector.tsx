@@ -6,14 +6,9 @@ import {
 } from '../common/InspectorPrimitives'
 import type { ToolInspectorProps } from './types'
 
-export function EraserToolInspector({
-  editor: _editor,
-}: ToolInspectorProps) {
+export function EraserToolInspector({ editor: _editor }: ToolInspectorProps) {
   return (
-    <ToolPanelHeader
-      description="拖过对象或笔触进行擦除。"
-      title="橡皮擦"
-    >
+    <ToolPanelHeader description="拖过对象或笔触进行擦除。" title="橡皮擦">
       <ShapeInspectorSection title="擦除方式">
         <ShapeInspectorSegmentedControl
           ariaLabel="擦除方式"

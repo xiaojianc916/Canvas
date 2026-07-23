@@ -1,7 +1,4 @@
-import {
-  IpcInvocationError,
-  isIpcError,
-} from '@hybrid-canvas/desktop-ipc'
+import { IpcInvocationError, isIpcError } from '@hybrid-canvas/desktop-ipc'
 import {
   commands,
   type AssetRemoveRequest,
@@ -10,11 +7,7 @@ import {
   type AssetUploadResult,
 } from '@hybrid-canvas/desktop-ipc/generated/ipc-bindings'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import type {
-  TLAsset,
-  TLAssetId,
-  TLAssetStore,
-} from 'tldraw'
+import type { TLAsset, TLAssetId, TLAssetStore } from 'tldraw'
 
 const ASSET_PROTOCOL_SCHEME = 'hybrid-canvas-asset'
 const ASSET_PROTOCOL_HOST = 'asset'
@@ -46,9 +39,7 @@ export interface NativeTLAssetStoreSession {
   readonly dispose: () => Promise<void>
 }
 
-async function invokeAssetCommand<T>(
-  operation: () => Promise<T>,
-): Promise<T> {
+async function invokeAssetCommand<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation()
   } catch (error) {
@@ -65,17 +56,10 @@ function throwIfAborted(signal?: AbortSignal): void {
     return
   }
 
-  throw new DOMException(
-    'Asset upload was aborted.',
-    'AbortError',
-  )
+  throw new DOMException('Asset upload was aborted.', 'AbortError')
 }
 
-function validateNativeSource(
-  source: string,
-  sessionToken: string,
-  assetToken: string,
-): void {
+function validateNativeSource(source: string, sessionToken: string, assetToken: string): void {
   let parsed: URL
 
   try {
@@ -95,68 +79,39 @@ function validateNativeSource(
   }
 }
 
-function validatePersistenceToken(
-  token: string,
-): void {
-  if (
-    token.length === 0 ||
-    token.length > 128 ||
-    !/^[A-Za-z0-9_-]+$/u.test(token)
-  ) {
-    throw new Error(
-      'NATIVE_ASSET_PERSISTENCE_TOKEN_INVALID',
-    )
+function validatePersistenceToken(token: string): void {
+  if (token.length === 0 || token.length > 128 || !/^[A-Za-z0-9_-]+$/u.test(token)) {
+    throw new Error('NATIVE_ASSET_PERSISTENCE_TOKEN_INVALID')
   }
 }
 
-function persistedAssetToken(
-  asset: TLAsset,
-): string | null {
-  const token =
-    asset.meta?.['hybridCanvasAssetToken']
+function persistedAssetToken(asset: TLAsset): string | null {
+  const token = asset.meta?.['hybridCanvasAssetToken']
 
-  if (
-    typeof token !== 'string' ||
-    !/^[a-f0-9]{64}$/u.test(token)
-  ) {
+  if (typeof token !== 'string' || !/^[a-f0-9]{64}$/u.test(token)) {
     return null
   }
 
-  const contentHash =
-    asset.meta?.['hybridCanvasContentHash']
+  const contentHash = asset.meta?.['hybridCanvasContentHash']
 
-  if (
-    typeof contentHash !== 'string' ||
-    contentHash !== token
-  ) {
+  if (typeof contentHash !== 'string' || contentHash !== token) {
     return null
   }
 
   return token
 }
 
-function toWebviewAssetUrl(
-  sessionToken: string,
-  assetToken: string,
-): string {
-  return convertFileSrc(
-    `/asset/${sessionToken}/${assetToken}`,
-    ASSET_PROTOCOL_SCHEME,
-  )
+function toWebviewAssetUrl(sessionToken: string, assetToken: string): string {
+  return convertFileSrc(`/asset/${sessionToken}/${assetToken}`, ASSET_PROTOCOL_SCHEME)
 }
 
-async function removeUploadedAsset(
-  sessionToken: string,
-  assetToken: string,
-): Promise<void> {
+async function removeUploadedAsset(sessionToken: string, assetToken: string): Promise<void> {
   const request: AssetRemoveRequest = {
     sessionToken,
     assetToken,
   }
 
-  await invokeAssetCommand(() =>
-    commands.assetRemove(request),
-  )
+  await invokeAssetCommand(() => commands.assetRemove(request))
 }
 
 /**
@@ -171,22 +126,17 @@ export function createNativeTLAssetStoreSession(
 ): NativeTLAssetStoreSession {
   const assetTokens = new Map<TLAssetId, string>()
 
-  const restoredSessionToken =
-    restore?.persistenceToken ?? null
+  const restoredSessionToken = restore?.persistenceToken ?? null
 
   if (restoredSessionToken) {
-    validatePersistenceToken(
-      restoredSessionToken,
-    )
+    validatePersistenceToken(restoredSessionToken)
   }
 
-  let openedSessionPromise:
-    | Promise<OpenedNativeAssetSession>
-    | null = restoredSessionToken
-      ? Promise.resolve({
-          sessionToken: restoredSessionToken,
-        })
-      : null
+  let openedSessionPromise: Promise<OpenedNativeAssetSession> | null = restoredSessionToken
+    ? Promise.resolve({
+        sessionToken: restoredSessionToken,
+      })
+    : null
 
   let operationTail: Promise<void> = Promise.resolve()
   let disposePromise: Promise<void> | null = null
@@ -214,9 +164,7 @@ export function createNativeTLAssetStoreSession(
     return openedSessionPromise
   }
 
-  function enqueue<T>(
-    operation: () => Promise<T>,
-  ): Promise<T> {
+  function enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = operationTail.then(operation)
 
     operationTail = result.then(
@@ -228,11 +176,7 @@ export function createNativeTLAssetStoreSession(
   }
 
   const assets: TLAssetStore = {
-    upload(
-      asset: TLAsset,
-      file: File,
-      abortSignal?: AbortSignal,
-    ) {
+    upload(asset: TLAsset, file: File, abortSignal?: AbortSignal) {
       assertActive()
 
       return enqueue(async () => {
@@ -244,13 +188,10 @@ export function createNativeTLAssetStoreSession(
         throwIfAborted(abortSignal)
 
         if (assetTokens.has(asset.id)) {
-          throw new Error(
-            'NATIVE_ASSET_ID_ALREADY_UPLOADED',
-          )
+          throw new Error('NATIVE_ASSET_ID_ALREADY_UPLOADED')
         }
 
-        const { sessionToken } =
-          await requireOpenedSession()
+        const { sessionToken } = await requireOpenedSession()
 
         throwIfAborted(abortSignal)
 
@@ -260,24 +201,16 @@ export function createNativeTLAssetStoreSession(
           bytes: Array.from(new Uint8Array(buffer)),
         }
 
-        const uploaded: AssetUploadResult =
-          await invokeAssetCommand(() =>
-            commands.assetUpload(request),
-          )
+        const uploaded: AssetUploadResult = await invokeAssetCommand(() =>
+          commands.assetUpload(request),
+        )
 
         try {
-          validateNativeSource(
-            uploaded.source,
-            sessionToken,
-            uploaded.assetToken,
-          )
+          validateNativeSource(uploaded.source, sessionToken, uploaded.assetToken)
 
           throwIfAborted(abortSignal)
         } catch (error) {
-          await removeUploadedAsset(
-            sessionToken,
-            uploaded.assetToken,
-          ).catch(() => {
+          await removeUploadedAsset(sessionToken, uploaded.assetToken).catch(() => {
             /*
              * Preserve the original validation or abort failure. Session
              * disposal remains the final bounded cleanup operation.
@@ -287,25 +220,15 @@ export function createNativeTLAssetStoreSession(
           throw error
         }
 
-        assetTokens.set(
-          asset.id,
-          uploaded.assetToken,
-        )
+        assetTokens.set(asset.id, uploaded.assetToken)
 
         return {
-          src: toWebviewAssetUrl(
-            sessionToken,
-            uploaded.assetToken,
-          ),
+          src: toWebviewAssetUrl(sessionToken, uploaded.assetToken),
           meta: {
-            hybridCanvasAssetToken:
-              uploaded.assetToken,
-            hybridCanvasContentHash:
-              uploaded.contentHash,
-            hybridCanvasByteLength:
-              uploaded.byteLength,
-            hybridCanvasContentType:
-              uploaded.contentType,
+            hybridCanvasAssetToken: uploaded.assetToken,
+            hybridCanvasContentHash: uploaded.contentHash,
+            hybridCanvasByteLength: uploaded.byteLength,
+            hybridCanvasContentType: uploaded.contentType,
           },
         }
       })
@@ -322,8 +245,7 @@ export function createNativeTLAssetStoreSession(
        * against the new Native session created by document_open.
        */
       if (restoredSessionToken) {
-        const assetToken =
-          persistedAssetToken(asset)
+        const assetToken = persistedAssetToken(asset)
 
         if (!assetToken) {
           return null
@@ -331,18 +253,12 @@ export function createNativeTLAssetStoreSession(
 
         assetTokens.set(asset.id, assetToken)
 
-        return toWebviewAssetUrl(
-          restoredSessionToken,
-          assetToken,
-        )
+        return toWebviewAssetUrl(restoredSessionToken, assetToken)
       }
 
       const source = asset.props.src
 
-      return typeof source === 'string' &&
-        source.length > 0
-        ? source
-        : null
+      return typeof source === 'string' && source.length > 0 ? source : null
     },
 
     remove(assetIds: TLAssetId[]) {
@@ -355,32 +271,20 @@ export function createNativeTLAssetStoreSession(
           return
         }
 
-        const removals = assetIds.flatMap(
-          (assetId) => {
-            const assetToken =
-              assetTokens.get(assetId)
+        const removals = assetIds.flatMap((assetId) => {
+          const assetToken = assetTokens.get(assetId)
 
-            return assetToken
-              ? [{ assetId, assetToken }]
-              : []
-          },
-        )
+          return assetToken ? [{ assetId, assetToken }] : []
+        })
 
         if (removals.length === 0) {
           return
         }
 
-        const { sessionToken } =
-          await requireOpenedSession()
+        const { sessionToken } = await requireOpenedSession()
 
-        for (const {
-          assetId,
-          assetToken,
-        } of removals) {
-          await removeUploadedAsset(
-            sessionToken,
-            assetToken,
-          )
+        for (const { assetId, assetToken } of removals) {
+          await removeUploadedAsset(sessionToken, assetToken)
 
           assetTokens.delete(assetId)
         }
@@ -406,8 +310,7 @@ export function createNativeTLAssetStoreSession(
         return null
       }
 
-      const { sessionToken } =
-        await openedSessionPromise
+      const { sessionToken } = await openedSessionPromise
 
       return sessionToken
     },
@@ -420,8 +323,7 @@ export function createNativeTLAssetStoreSession(
       disposed = true
 
       disposePromise = enqueue(async () => {
-        const sessionPromise =
-          openedSessionPromise
+        const sessionPromise = openedSessionPromise
 
         assetTokens.clear()
 
@@ -429,16 +331,13 @@ export function createNativeTLAssetStoreSession(
           return
         }
 
-        const { sessionToken } =
-          await sessionPromise
+        const { sessionToken } = await sessionPromise
 
         const request: AssetSessionCloseRequest = {
           sessionToken,
         }
 
-        await invokeAssetCommand(() =>
-          commands.assetSessionClose(request),
-        )
+        await invokeAssetCommand(() => commands.assetSessionClose(request))
       })
 
       return disposePromise

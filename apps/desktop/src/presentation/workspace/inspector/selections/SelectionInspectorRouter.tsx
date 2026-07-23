@@ -11,17 +11,9 @@ import { NoteSelectionInspector } from './NoteSelectionInspector'
 import { ScientificChartSelectionInspector } from './ScientificChartSelectionInspector'
 import { TextSelectionInspector } from './TextSelectionInspector'
 
-export function SelectionInspectorRouter({
-  editor,
-  shapes,
-}: SelectionInspectorProps) {
+export function SelectionInspectorRouter({ editor, shapes }: SelectionInspectorProps) {
   if (shapes.length > 1) {
-    return (
-      <MultiSelectionInspector
-        editor={editor}
-        shapes={shapes}
-      />
-    )
+    return <MultiSelectionInspector editor={editor} shapes={shapes} />
   }
 
   const shape = shapes[0]
@@ -58,9 +50,7 @@ export function SelectionInspectorRouter({
       return <FrameSelectionInspector {...props} />
 
     case 'scientific-chart':
-      return (
-        <ScientificChartSelectionInspector {...props} />
-      )
+      return <ScientificChartSelectionInspector {...props} />
 
     default:
       return <GenericSelectionInspector {...props} />

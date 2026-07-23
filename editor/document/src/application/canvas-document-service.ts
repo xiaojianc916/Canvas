@@ -1,7 +1,4 @@
-import type {
-  EditorSession,
-  EditorSessionRegistry,
-} from '@hybrid-canvas/canvas/application'
+import type { EditorSession, EditorSessionRegistry } from '@hybrid-canvas/canvas/application'
 import type { HybridCanvasExtension } from '@hybrid-canvas/canvas/extensions'
 import type { TLStoreSnapshot } from 'tldraw'
 
@@ -10,10 +7,7 @@ import {
   type DocumentPersistenceState,
   type DocumentSession,
 } from '../domain/document-session'
-import type {
-  EditorDocumentEvent,
-  EditorDocumentPort,
-} from '../ports/editor-document-port'
+import type { EditorDocumentEvent, EditorDocumentPort } from '../ports/editor-document-port'
 
 export type CanvasId = string
 export type CanvasSessionId = string
@@ -76,9 +70,7 @@ export interface CanvasDocumentLifecycleSnapshot {
 }
 
 export interface CanvasDocumentService {
-  readonly create: (
-    title: string,
-  ) => Promise<OpenedCanvasSession>
+  readonly create: (title: string) => Promise<OpenedCanvasSession>
   readonly open: () => Promise<OpenedCanvasSession | null>
   readonly save: (sessionId: CanvasSessionId) => Promise<void>
   readonly releaseCanvas: (
@@ -87,9 +79,7 @@ export interface CanvasDocumentService {
   ) => Promise<CanvasReleaseResult>
   readonly getLifecycleSnapshot: () => CanvasDocumentLifecycleSnapshot
   readonly getEditorSession: (sessionId: CanvasSessionId) => EditorSession | null
-  readonly getSessionSnapshot: (
-    sessionId: CanvasSessionId,
-  ) => CanvasSessionSnapshot | null
+  readonly getSessionSnapshot: (sessionId: CanvasSessionId) => CanvasSessionSnapshot | null
   readonly getVersion: () => number
   readonly subscribe: (listener: () => void) => () => void
   readonly dispose: () => Promise<void>
@@ -166,9 +156,7 @@ export function createCanvasDocumentService({
     }
   }
 
-  async function create(
-    title: string,
-  ): Promise<OpenedCanvasSession> {
+  async function create(title: string): Promise<OpenedCanvasSession> {
     const canvasId = crypto.randomUUID()
     const sessionId = crypto.randomUUID()
 
@@ -178,10 +166,7 @@ export function createCanvasDocumentService({
       extensions,
     })
 
-    sessions.set(
-      sessionId,
-      createOwnedSession(editor, null, null),
-    )
+    sessions.set(sessionId, createOwnedSession(editor, null, null))
 
     return { canvasId, sessionId, title }
   }
@@ -199,27 +184,20 @@ export function createCanvasDocumentService({
       const initialSnapshot = parseEditorSnapshot(opened.content)
 
       const editor = await editorSessions.create({
-  documentId: canvasId,
-  sessionId,
-  initialSnapshot,
-  ...(opened.assetPersistenceToken
-    ? {
-        assetStoreRestore: {
-          persistenceToken: opened.assetPersistenceToken,
-        },
-      }
-    : {}),
-  extensions,
-})
-
-      sessions.set(
+        documentId: canvasId,
         sessionId,
-        createOwnedSession(
-          editor,
-          opened.id,
-          opened.revision,
-        ),
-      )
+        initialSnapshot,
+        ...(opened.assetPersistenceToken
+          ? {
+              assetStoreRestore: {
+                persistenceToken: opened.assetPersistenceToken,
+              },
+            }
+          : {}),
+        extensions,
+      })
+
+      sessions.set(sessionId, createOwnedSession(editor, opened.id, opened.revision))
 
       return {
         canvasId,
@@ -238,10 +216,7 @@ export function createCanvasDocumentService({
     try {
       await persistence.close(documentId)
     } catch (rollbackError) {
-      throw new AggregateError(
-        [openError, rollbackError],
-        'DOCUMENT_OPEN_ROLLBACK_FAILED',
-      )
+      throw new AggregateError([openError, rollbackError], 'DOCUMENT_OPEN_ROLLBACK_FAILED')
     }
 
     throw openError
@@ -264,25 +239,23 @@ export function createCanvasDocumentService({
       revision,
     }
 
-    owned.stopObservingDocument = editorDocument.subscribeDocumentEvents(
-      (event) => {
-        if (event.kind === 'ready') {
-          if (!document.isInitialized()) {
-            document.initialize(editorDocument.captureDocument())
-            emit()
-          }
-
-          return
-        }
-
+    owned.stopObservingDocument = editorDocument.subscribeDocumentEvents((event) => {
+      if (event.kind === 'ready') {
         if (!document.isInitialized()) {
-          throw new Error('DOCUMENT_CHANGE_BEFORE_EDITOR_READY')
+          document.initialize(editorDocument.captureDocument())
+          emit()
         }
 
-        document.recordDocumentChange(editorDocument.captureDocument())
-        emit()
-      },
-    )
+        return
+      }
+
+      if (!document.isInitialized()) {
+        throw new Error('DOCUMENT_CHANGE_BEFORE_EDITOR_READY')
+      }
+
+      document.recordDocumentChange(editorDocument.captureDocument())
+      emit()
+    })
 
     return owned
   }
@@ -313,8 +286,7 @@ export function createCanvasDocumentService({
 
     try {
       const content = JSON.stringify(documentSnapshot)
-      const assetPersistenceToken =
-        await owned.editor.captureAssetPersistenceToken()
+      const assetPersistenceToken = await owned.editor.captureAssetPersistenceToken()
       const currentDocumentId = owned.document.getDocumentId()
 
       const saved = currentDocumentId
@@ -324,13 +296,9 @@ export function createCanvasDocumentService({
             content,
             assetPersistenceToken,
           )
-        : await persistence.saveAs(
-            content,
-            assetPersistenceToken,
-            {
-              suggestedName: '未命名画布.draw',
-            },
-          )
+        : await persistence.saveAs(content, assetPersistenceToken, {
+            suggestedName: '未命名画布.draw',
+          })
 
       if (!saved) {
         owned.document.failSave(ticket)
@@ -348,9 +316,7 @@ export function createCanvasDocumentService({
     }
   }
 
-  function requireRevision(
-    owned: OwnedCanvasSession,
-  ): string {
+  function requireRevision(owned: OwnedCanvasSession): string {
     if (!owned.revision) {
       throw new Error('DOCUMENT_REVISION_MISSING')
     }
@@ -394,10 +360,7 @@ export function createCanvasDocumentService({
 
     const persistenceState = owned.document.getSnapshot().persistence
 
-    if (
-      intent === 'normal' &&
-      (persistenceState === 'dirty' || persistenceState === 'failed')
-    ) {
+    if (intent === 'normal' && (persistenceState === 'dirty' || persistenceState === 'failed')) {
       return { kind: 'confirmation-required' }
     }
 
