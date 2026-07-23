@@ -1,752 +1,97 @@
 #!/usr/bin/env node
 /**
- * tools/refactor-document-ipc-boundary.mjs
+ * tools/refactor-desktop-runtime-public-api.mjs
  *
- * 基于当前提交 b4fa25d，全量重构桌面文档 IPC：
- *
- * 删除：
- * - ApprovedPathRegistry
- * - file_open / file_save / file_save_as
- * - file_save_draw / file_read_draw / file_create_draw
- * - 前端传递 path 的文件读写模型
- * - 旧 file command adapter
- *
- * 新模型：
- * - Rust 持有真实 PathBuf
- * - 前端仅持有不透明 DocumentId
- * - 打开文件、另存为文件均由 Rust 原生对话框完成
- * - 保存只接收 documentId 和 content
- * - IPC 永远不接收 path，也不返回 path
- * - 单一 document 生命周期：
- *   document_open
- *   document_save_as
- *   document_save
- *   document_close
+ * 删除旧 DrawFileCommands / createDrawFileCommands 公共 API。
+ * 仅导出新的 DocumentFileCommands / createDocumentFileCommands。
  *
  * 用法：
- *   node tools/refactor-document-ipc-boundary.mjs
- *   node tools/refactor-document-ipc-boundary.mjs --check
+ *   node tools/refactor-desktop-runtime-public-api.mjs
+ *   node tools/refactor-desktop-runtime-public-api.mjs --check
  */
 
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import process from 'node:process'
 
 const checkOnly = process.argv.includes('--check')
 
-const files = {
-  legacyFileCommand: resolve('apps/desktop/src-tauri/src/commands/file.rs'),
-  commandsMod: resolve('apps/desktop/src-tauri/src/commands/mod.rs'),
-  documentCommand: resolve('apps/desktop/src-tauri/src/commands/document.rs'),
-  bootstrap: resolve('apps/desktop/src-tauri/src/bootstrap/app.rs'),
-  library: resolve('apps/desktop/src-tauri/src/lib.rs'),
-  legacySecurityDirectory: resolve('apps/desktop/src-tauri/src/security'),
-  desktopFileAdapter: resolve(
-    'platforms/desktop-runtime/src/adapters/file/file-system.ts',
-  ),
-}
+const target = resolve('platforms/desktop-runtime/src/public-api.ts')
 
-const documentCommand = `use crate::error::{Error, Result};
-use hybrid_canvas_file_native::atomic_write;
-use serde::{Deserialize, Serialize};
-use specta::Type;
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::RwLock;
-use tauri::{command, AppHandle, State};
-use tauri_plugin_dialog::{DialogExt, FilePath};
-use uuid::Uuid;
+const replacement = `export type { SettingsStore } from '@hybrid-canvas/settings'
 
-const MAX_DOCUMENT_BYTES: u64 = 32 * 1024 * 1024;
-const DRAW_EXTENSION: &str = "draw";
-const DEFAULT_DOCUMENT_NAME: &str = "untitled.draw";
+export { createDesktopAssetStore } from './adapters/asset/asset-store'
 
-/// Opaque document identity exposed to the renderer.
-///
-/// The renderer never receives or submits filesystem paths. The native process
-/// owns the mapping between this ID and the selected local file.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, Type)]
-#[serde(transparent)]
-pub struct DocumentId(Uuid);
+export { createClipboard } from './adapters/clipboard/clipboard'
 
-impl DocumentId {
-    fn new() -> Self {
-        Self(Uuid::now_v7())
-    }
-}
+export type { FileDialog } from './adapters/dialog/file-dialog'
+export { createFileDialog } from './adapters/dialog/file-dialog'
 
-/// Native-only document handle.
-///
-/// This type deliberately does not implement Serialize or Type. A filesystem
-/// path is an implementation detail and must not cross the IPC boundary.
-#[derive(Clone, Debug)]
-struct DocumentHandle {
-    path: PathBuf,
-}
+export type {
+  DocumentFileCommands,
+  DocumentId,
+  OpenedDocument,
+} from './adapters/file/file-system'
+export { createDocumentFileCommands } from './adapters/file/file-system'
 
-#[derive(Debug, Default)]
-pub struct DocumentRegistry {
-    documents: RwLock<HashMap<DocumentId, DocumentHandle>>,
-}
+export type { NativeRuntimeInfo } from './adapters/native-runtime-info'
 
-impl DocumentRegistry {
-    fn insert(&self, path: PathBuf) -> Result<DocumentId> {
-        let document_id = DocumentId::new();
-        let mut documents = self
-            .documents
-            .write()
-            .map_err(|_| Error::Internal("document registry write lock poisoned".into()))?;
+export {
+  createMainWindowController,
+  type MainWindowController,
+} from './adapters/native-window'
 
-        documents.insert(document_id, DocumentHandle { path });
-        Ok(document_id)
-    }
+export type { ExternalOpener } from './adapters/opener/external-opener'
+export { createExternalOpener } from './adapters/opener/external-opener'
 
-    fn path(&self, document_id: DocumentId) -> Result<PathBuf> {
-        let documents = self
-            .documents
-            .read()
-            .map_err(|_| Error::Internal("document registry read lock poisoned".into()))?;
+export { createDesktopPluginVerifier } from './adapters/plugin/plugin-verifier'
 
-        documents
-            .get(&document_id)
-            .map(|handle| handle.path.clone())
-            .ok_or_else(|| Error::NotFound("document session does not exist".into()))
-    }
+export { createDesktopSettingsStore } from './adapters/settings/settings-store'
 
-    fn replace_path(&self, document_id: DocumentId, path: PathBuf) -> Result<()> {
-        let mut documents = self
-            .documents
-            .write()
-            .map_err(|_| Error::Internal("document registry write lock poisoned".into()))?;
-
-        let handle = documents
-            .get_mut(&document_id)
-            .ok_or_else(|| Error::NotFound("document session does not exist".into()))?;
-
-        handle.path = path;
-        Ok(())
-    }
-
-    fn remove(&self, document_id: DocumentId) -> Result<()> {
-        let mut documents = self
-            .documents
-            .write()
-            .map_err(|_| Error::Internal("document registry write lock poisoned".into()))?;
-
-        if documents.remove(&document_id).is_some() {
-            Ok(())
-        } else {
-            Err(Error::NotFound("document session does not exist".into()))
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DocumentOpenResult {
-    pub document_id: DocumentId,
-    pub display_name: String,
-    pub content: String,
-}
-
-#[derive(Debug, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DocumentOpenResponse {
-    pub document: Option<DocumentOpenResult>,
-}
-
-#[derive(Debug, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DocumentSaveRequest {
-    pub document_id: DocumentId,
-    pub content: String,
-}
-
-#[derive(Debug, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DocumentSaveAsRequest {
-    /// None creates a new native document session.
-    ///
-    /// Some(document_id) moves the existing session to the newly selected file.
-    pub document_id: Option<DocumentId>,
-    pub content: String,
-    pub suggested_name: Option<String>,
-}
-
-#[derive(Debug, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DocumentSaveAsResult {
-    pub document: Option<DocumentDescriptor>,
-}
-
-#[derive(Debug, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DocumentDescriptor {
-    pub document_id: DocumentId,
-    pub display_name: String,
-}
-
-#[derive(Debug, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DocumentCloseRequest {
-    pub document_id: DocumentId,
-}
-
-/// Opens one .draw file selected by the native file dialog.
-///
-/// No caller-controlled path is accepted.
-#[command]
-pub async fn document_open(
-    app: AppHandle,
-    documents: State<'_, DocumentRegistry>,
-) -> Result<DocumentOpenResponse> {
-    let selected = app
-        .dialog()
-        .file()
-        .add_filter("Hybrid Canvas document", &[DRAW_EXTENSION])
-        .blocking_pick_file();
-
-    let Some(selected) = selected else {
-        return Ok(DocumentOpenResponse { document: None });
-    };
-
-    let path = selected_native_path(selected)?;
-    ensure_draw_document_path(&path)?;
-
-    let content = read_document(path.clone()).await?;
-    let document_id = documents.insert(path.clone())?;
-
-    Ok(DocumentOpenResponse {
-        document: Some(DocumentOpenResult {
-            document_id,
-            display_name: display_name(&path),
-            content,
-        }),
-    })
-}
-
-/// Creates a new document session or moves an existing session through a native
-/// Save As dialog. No filesystem path is accepted from the renderer.
-#[command]
-pub async fn document_save_as(
-    app: AppHandle,
-    documents: State<'_, DocumentRegistry>,
-    request: DocumentSaveAsRequest,
-) -> Result<DocumentSaveAsResult> {
-    ensure_document_size(request.content.len() as u64)?;
-
-    if let Some(document_id) = request.document_id {
-        // Validate the document before displaying a dialog. An invalid document
-        // ID must not be able to trigger a native file picker.
-        let _ = documents.path(document_id)?;
-    }
-
-    let suggested_name = normalize_suggested_name(request.suggested_name.as_deref())?;
-
-    let selected = app
-        .dialog()
-        .file()
-        .add_filter("Hybrid Canvas document", &[DRAW_EXTENSION])
-        .set_file_name(&suggested_name)
-        .blocking_save_file();
-
-    let Some(selected) = selected else {
-        return Ok(DocumentSaveAsResult { document: None });
-    };
-
-    let path = selected_native_path(selected)?;
-    ensure_draw_document_path(&path)?;
-
-    write_document(path.clone(), request.content).await?;
-
-    let document_id = match request.document_id {
-        Some(document_id) => {
-            documents.replace_path(document_id, path.clone())?;
-            document_id
-        }
-        None => documents.insert(path.clone())?,
-    };
-
-    Ok(DocumentSaveAsResult {
-        document: Some(DocumentDescriptor {
-            document_id,
-            display_name: display_name(&path),
-        }),
-    })
-}
-
-/// Saves content to the document already selected by a native dialog.
-///
-/// The renderer supplies an opaque document ID, never a local path.
-#[command]
-pub async fn document_save(
-    documents: State<'_, DocumentRegistry>,
-    request: DocumentSaveRequest,
-) -> Result<()> {
-    ensure_document_size(request.content.len() as u64)?;
-
-    let path = documents.path(request.document_id)?;
-    ensure_draw_document_path(&path)?;
-
-    write_document(path, request.content).await
-}
-
-/// Ends the native document session and releases its private file handle.
-#[command]
-pub fn document_close(
-    documents: State<'_, DocumentRegistry>,
-    request: DocumentCloseRequest,
-) -> Result<()> {
-    documents.remove(request.document_id)
-}
-
-async fn read_document(path: PathBuf) -> Result<String> {
-    let metadata = tokio::fs::metadata(&path).await?;
-    ensure_document_size(metadata.len())?;
-
-    let content = tokio::fs::read_to_string(&path).await?;
-    ensure_document_size(content.len() as u64)?;
-
-    Ok(content)
-}
-
-async fn write_document(path: PathBuf, content: String) -> Result<()> {
-    tokio::task::spawn_blocking(move || {
-        atomic_write(path, content.as_bytes())
-    })
-    .await
-    .map_err(|_| Error::Internal("document save task terminated unexpectedly".into()))?
-    .map_err(Error::from)
-}
-
-fn selected_native_path(selected: FilePath) -> Result<PathBuf> {
-    match selected {
-        FilePath::Path(path) => Ok(path),
-        FilePath::Url(_) => Err(Error::Validation(
-            "selected document must be a local filesystem path".into(),
-        )),
-    }
-}
-
-fn ensure_document_size(size: u64) -> Result<()> {
-    if size <= MAX_DOCUMENT_BYTES {
-        return Ok(());
-    }
-
-    Err(Error::Validation("document exceeds the supported size limit".into()))
-}
-
-fn ensure_draw_document_path(path: &Path) -> Result<()> {
-    let is_draw_document = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case(DRAW_EXTENSION));
-
-    if is_draw_document {
-        return Ok(());
-    }
-
-    Err(Error::Validation(
-        "selected file must use the .draw extension".into(),
-    ))
-}
-
-fn normalize_suggested_name(value: Option<&str>) -> Result<String> {
-    let name = value.unwrap_or(DEFAULT_DOCUMENT_NAME).trim();
-
-    if name.is_empty() {
-        return Ok(DEFAULT_DOCUMENT_NAME.to_owned());
-    }
-
-    if name.contains('/')
-        || name.contains('\\\\')
-        || name.contains('\\0')
-        || Path::new(name).components().count() != 1
-    {
-        return Err(Error::Validation(
-            "suggested document name must not contain a path".into(),
-        ));
-    }
-
-    if name
-        .rsplit_once('.')
-        .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case(DRAW_EXTENSION))
-    {
-        return Ok(name.to_owned());
-    }
-
-    Ok(format!("{name}.{DRAW_EXTENSION}"))
-}
-
-fn display_name(path: &Path) -> String {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("untitled.draw")
-        .to_owned()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn registry_keeps_path_private_behind_document_id() {
-        let registry = DocumentRegistry::default();
-        let path = PathBuf::from("/private/example.draw");
-
-        let document_id = registry.insert(path.clone()).expect("document should register");
-
-        assert_eq!(registry.path(document_id).expect("path should resolve"), path);
-    }
-
-    #[test]
-    fn registry_rejects_unknown_document_id() {
-        let registry = DocumentRegistry::default();
-        let result = registry.path(DocumentId::new());
-
-        assert!(matches!(result, Err(Error::NotFound(_))));
-    }
-
-    #[test]
-    fn registry_removes_closed_document() {
-        let registry = DocumentRegistry::default();
-        let document_id = registry
-            .insert(PathBuf::from("/private/example.draw"))
-            .expect("document should register");
-
-        registry.remove(document_id).expect("document should close");
-
-        assert!(matches!(registry.path(document_id), Err(Error::NotFound(_))));
-    }
-
-    #[test]
-    fn suggested_name_never_accepts_a_path() {
-        assert!(normalize_suggested_name(Some("../secret.draw")).is_err());
-        assert!(normalize_suggested_name(Some("folder/document.draw")).is_err());
-        assert!(normalize_suggested_name(Some("folder\\\\document.draw")).is_err());
-    }
-
-    #[test]
-    fn suggested_name_normalizes_draw_extension() {
-        assert_eq!(
-            normalize_suggested_name(Some("diagram")).expect("name should normalize"),
-            "diagram.draw",
-        );
-        assert_eq!(
-            normalize_suggested_name(Some("diagram.DRAW")).expect("name should normalize"),
-            "diagram.DRAW",
-        );
-    }
-}
+export type { SystemTheme } from './adapters/theme/system-theme'
+export { createSystemTheme } from './adapters/theme/system-theme'
 `
 
-const commandsMod = `pub mod document;
-pub mod opener;
-pub mod settings;
-pub mod window;
-`
-
-const bootstrap = `use tauri::Wry;
-use tauri_plugin_store::StoreExt;
-
-use super::logging;
-use crate::commands;
-use crate::commands::document::DocumentRegistry;
-
-pub fn build() -> tauri::Builder<Wry> {
-    tauri::Builder::<Wry>::default()
-        .manage(DocumentRegistry::default())
-        .plugin(logging::plugin().build())
-        .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_notification::init())
-        .setup(|app| {
-            app.store("settings.json")?;
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            commands::window::window_get,
-            commands::window::window_list,
-            commands::window::window_show,
-            commands::window::window_focus,
-            commands::window::window_close,
-            commands::window::window_set_title,
-            commands::window::window_save_state,
-            commands::document::document_open,
-            commands::document::document_save_as,
-            commands::document::document_save,
-            commands::document::document_close,
-            commands::settings::settings_get,
-            commands::settings::settings_set,
-            commands::settings::settings_reset,
-        ])
-}
-`
-
-const library = `#![allow(
-    clippy::needless_pass_by_value,
-    clippy::unused_async,
-    reason = "Tauri command signatures are consumed by generated IPC handlers"
-)]
-
-pub mod bootstrap;
-pub mod commands;
-pub mod error;
-pub mod ipc;
-
-pub use bootstrap::app;
-pub use error::{Error, Result};
-
-/// Single composition root. Called from main.rs.
-pub fn run() {
-    app::build()
-        .run(tauri::generate_context!())
-        .expect("failed to run hybrid-canvas desktop");
-}
-`
-
-const desktopFileAdapter = `import { invoke } from '@hybrid-canvas/desktop-ipc'
-
-export type DocumentId = string
-
-interface NativeDocumentDescriptor {
-  readonly documentId: DocumentId
-  readonly displayName: string
-}
-
-interface NativeOpenedDocument extends NativeDocumentDescriptor {
-  readonly content: string
-}
-
-interface DocumentOpenResponse {
-  readonly document: NativeOpenedDocument | null
-}
-
-interface DocumentSaveAsResponse {
-  readonly document: NativeDocumentDescriptor | null
-}
-
-export interface OpenedDocument {
-  readonly id: DocumentId
-  readonly displayName: string
-  readonly content: string
-}
-
-export interface DocumentFileCommands {
-  /**
-   * Opens one local .draw document through the native picker.
-   *
-   * The renderer never receives the selected filesystem path.
-   */
-  readonly open: () => Promise<OpenedDocument | null>
-
-  /**
-   * Creates a new native document session, or moves an existing session through
-   * the native Save As picker. No filesystem path can be supplied.
-   */
-  readonly saveAs: (
-    content: string,
-    options?: {
-      readonly documentId?: DocumentId
-      readonly suggestedName?: string
-    },
-  ) => Promise<{ readonly id: DocumentId; readonly displayName: string } | null>
-
-  /**
-   * Saves content to a document selected earlier by a native picker.
-   */
-  readonly save: (documentId: DocumentId, content: string) => Promise<void>
-
-  /**
-   * Releases the native document session.
-   */
-  readonly close: (documentId: DocumentId) => Promise<void>
-}
-
-export function createDocumentFileCommands(): DocumentFileCommands {
-  return {
-    async open() {
-      const response = await invoke<DocumentOpenResponse>('document_open')
-
-      if (!response.document) {
-        return null
-      }
-
-      return {
-        id: response.document.documentId,
-        displayName: response.document.displayName,
-        content: response.document.content,
-      }
-    },
-
-    async saveAs(content, options) {
-      const response = await invoke<DocumentSaveAsResponse>('document_save_as', {
-        request: {
-          documentId: options?.documentId ?? null,
-          content,
-          suggestedName: options?.suggestedName ?? null,
-        },
-      })
-
-      if (!response.document) {
-        return null
-      }
-
-      return {
-        id: response.document.documentId,
-        displayName: response.document.displayName,
-      }
-    },
-
-    save(documentId, content) {
-      return invoke<void>('document_save', {
-        request: {
-          documentId,
-          content,
-        },
-      })
-    },
-
-    close(documentId) {
-      return invoke<void>('document_close', {
-        request: {
-          documentId,
-        },
-      })
-    },
-  }
-}
-`
-
-async function exists(path) {
-  try {
-    await access(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function write(path, content) {
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, content, 'utf8')
-}
-
-async function ensureCurrentTopology() {
-  const required = [
-    files.legacyFileCommand,
-    files.commandsMod,
-    files.bootstrap,
-    files.library,
-    files.desktopFileAdapter,
-  ]
-
-  for (const path of required) {
-    if (!(await exists(path))) {
-      throw new Error(`缺少预期文件，停止重构：${path}`)
-    }
-  }
-
-  const oldCommandSource = await readFile(files.legacyFileCommand, 'utf8')
-
-  if (!oldCommandSource.includes('pub async fn file_save_draw')) {
-    throw new Error(
-      [
-        '当前 file.rs 不符合预期旧拓扑。',
-        '脚本拒绝覆盖未知版本，避免与已经开始的手工重构混合。',
-      ].join('\\n'),
-    )
-  }
-}
-
-async function check() {
-  const requiredNewFiles = [
-    files.documentCommand,
-    files.commandsMod,
-    files.bootstrap,
-    files.library,
-    files.desktopFileAdapter,
-  ]
-
-  for (const path of requiredNewFiles) {
-    if (!(await exists(path))) {
-      return false
-    }
-  }
-
-  if (await exists(files.legacyFileCommand)) {
-    return false
-  }
-
-  if (await exists(files.legacySecurityDirectory)) {
-    return false
-  }
-
-  const [
-    documentSource,
-    commandModSource,
-    bootstrapSource,
-    librarySource,
-    adapterSource,
-  ] = await Promise.all([
-    readFile(files.documentCommand, 'utf8'),
-    readFile(files.commandsMod, 'utf8'),
-    readFile(files.bootstrap, 'utf8'),
-    readFile(files.library, 'utf8'),
-    readFile(files.desktopFileAdapter, 'utf8'),
-  ])
-
-  return (
-    documentSource === documentCommand &&
-    commandModSource === commandsMod &&
-    bootstrapSource === bootstrap &&
-    librarySource === library &&
-    adapterSource === desktopFileAdapter
-  )
-}
+const source = await readFile(target, 'utf8')
 
 if (checkOnly) {
-  if (await check()) {
-    console.log('OK: document IPC 边界已完成单轨重构。')
+  if (source === replacement) {
+    console.log('OK: desktop-runtime 公共文件 API 已迁移到 DocumentFileCommands。')
     process.exit(0)
   }
 
-  console.error('ERROR: document IPC 边界尚未完成单轨重构。')
+  console.error(
+    'ERROR: desktop-runtime public-api.ts 仍包含旧 DrawFileCommands 导出或内容不一致。',
+  )
   process.exit(1)
 }
 
-await ensureCurrentTopology()
+await writeFile(target, replacement, 'utf8')
 
-await rm(files.legacyFileCommand)
-await rm(files.legacySecurityDirectory, { recursive: true, force: true })
-
-await Promise.all([
-  write(files.documentCommand, documentCommand),
-  write(files.commandsMod, commandsMod),
-  write(files.bootstrap, bootstrap),
-  write(files.library, library),
-  write(files.desktopFileAdapter, desktopFileAdapter),
-])
-
-console.log('已完成 document IPC 单轨重构：')
-console.log(`- 删除 ${files.legacyFileCommand}`)
-console.log(`- 删除 ${files.legacySecurityDirectory}`)
-console.log(`- 新建 ${files.documentCommand}`)
-console.log(`- 重写 ${files.commandsMod}`)
-console.log(`- 重写 ${files.bootstrap}`)
-console.log(`- 重写 ${files.library}`)
-console.log(`- 重写 ${files.desktopFileAdapter}`)
+console.log(`已全量替换：${target}`)
 console.log('')
-console.log('必须执行：')
-console.log('  pnpm format')
-console.log('  cargo fmt')
+console.log('旧导出已删除：')
+console.log('- DrawFileCommands')
+console.log('- createDrawFileCommands')
+console.log('')
+console.log('新导出：')
+console.log('- DocumentId')
+console.log('- OpenedDocument')
+console.log('- DocumentFileCommands')
+console.log('- createDocumentFileCommands')
+console.log('')
+console.log('接着执行：')
 console.log('  pnpm typecheck')
-console.log('  cargo test --workspace --all-features')
-console.log('  cargo clippy --workspace --all-targets --all-features -- -D warnings')
 console.log('')
-console.log('随后处理 TypeScript 编译错误：')
-console.log('- 将 DrawFileCommands / saveDraw(path, content) / readDraw(path)')
-console.log('- 全部迁移为 DocumentFileCommands / open / saveAs / save / close')
-console.log('- 禁止在任何前端接口、store、DTO 或状态中保存真实 filesystem path')
+console.log('将所有报错调用点统一迁移：')
+console.log('  createDrawFileCommands()')
+console.log('  -> createDocumentFileCommands()')
+console.log('')
+console.log('  saveDraw(path, content)')
+console.log('  -> save(documentId, content)')
+console.log('')
+console.log('  readDraw(path)')
+console.log('  -> open()')
+console.log('')
+console.log('  createDraw(path, content)')
+console.log('  -> saveAs(content, { suggestedName })')
