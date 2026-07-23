@@ -31,6 +31,10 @@ pub fn build() -> tauri::Builder<Wry> {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::asset::asset_session_open,
+            commands::asset::asset_upload,
+            commands::asset::asset_remove,
+            commands::asset::asset_session_close,
             commands::window::window_get,
             commands::window::window_list,
             commands::window::window_show,

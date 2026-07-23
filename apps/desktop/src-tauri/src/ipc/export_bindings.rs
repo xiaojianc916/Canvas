@@ -8,6 +8,10 @@ use tauri::Wry;
 use tauri_specta::{Builder, ErrorHandlingMode};
 
 use crate::commands::{
+    asset::{
+        AssetRemoveRequest, AssetSessionCloseRequest,
+        AssetSessionResult, AssetUploadRequest, AssetUploadResult,
+    },
     document::{
         DocumentCloseRequest, DocumentDescriptor, DocumentId, DocumentOpenResponse,
         DocumentOpenResult, DocumentSaveAsRequest, DocumentSaveAsResult,
@@ -31,6 +35,10 @@ pub fn export_document_bindings() {
     Builder::<Wry>::new()
         .error_handling(ErrorHandlingMode::Throw)
         .commands(tauri_specta::collect_commands![
+            crate::commands::asset::asset_session_open,
+            crate::commands::asset::asset_upload,
+            crate::commands::asset::asset_remove,
+            crate::commands::asset::asset_session_close,
             crate::commands::document::document_open,
             crate::commands::document::document_save_as,
             crate::commands::document::document_save,
@@ -39,6 +47,11 @@ pub fn export_document_bindings() {
             crate::commands::settings::settings_set,
             crate::commands::settings::settings_reset,
         ])
+        .typ::<AssetSessionResult>()
+        .typ::<AssetUploadRequest>()
+        .typ::<AssetUploadResult>()
+        .typ::<AssetRemoveRequest>()
+        .typ::<AssetSessionCloseRequest>()
         .typ::<DocumentId>()
         .typ::<DocumentDescriptor>()
         .typ::<DocumentOpenResult>()

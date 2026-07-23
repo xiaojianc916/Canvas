@@ -54,6 +54,28 @@ pub enum AssetProtocolError {
 }
 
 impl AssetProtocolRegistry {
+    pub fn open_session(
+        &self,
+        session_token: &str,
+    ) -> Result<(), AssetProtocolError> {
+        validate_token(session_token)?;
+
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| AssetProtocolError::Internal)?;
+
+        if state.sessions.contains_key(session_token) {
+            return Err(AssetProtocolError::DuplicateAsset);
+        }
+
+        state
+            .sessions
+            .insert(session_token.to_owned(), HashMap::new());
+
+        Ok(())
+    }
+
     pub fn insert(
         &self,
         session_token: &str,
@@ -74,11 +96,12 @@ impl AssetProtocolRegistry {
             .write()
             .map_err(|_| AssetProtocolError::Internal)?;
 
-        if state
+        let session = state
             .sessions
             .get(session_token)
-            .is_some_and(|assets| assets.contains_key(asset_token))
-        {
+            .ok_or(AssetProtocolError::NotFound)?;
+
+        if session.contains_key(asset_token) {
             return Err(AssetProtocolError::DuplicateAsset);
         }
 
@@ -98,8 +121,8 @@ impl AssetProtocolRegistry {
 
         state
             .sessions
-            .entry(session_token.to_owned())
-            .or_default()
+            .get_mut(session_token)
+            .ok_or(AssetProtocolError::NotFound)?
             .insert(asset_token.to_owned(), registered);
 
         state.total_bytes = next_total;
@@ -126,12 +149,6 @@ impl AssetProtocolRegistry {
 
         let removed = session.remove(asset_token);
 
-        let became_empty = session.is_empty();
-
-        if became_empty {
-            state.sessions.remove(session_token);
-        }
-
         if let Some(removed) = removed {
             state.total_bytes = state
                 .total_bytes
@@ -146,7 +163,7 @@ impl AssetProtocolRegistry {
     pub fn remove_session(
         &self,
         session_token: &str,
-    ) -> Result<(), AssetProtocolError> {
+    ) -> Result<bool, AssetProtocolError> {
         validate_token(session_token)?;
 
         let mut state = self
@@ -154,17 +171,19 @@ impl AssetProtocolRegistry {
             .write()
             .map_err(|_| AssetProtocolError::Internal)?;
 
-        if let Some(assets) = state.sessions.remove(session_token) {
-            let removed_bytes = assets
-                .values()
-                .map(|asset| asset.bytes.len())
-                .sum::<usize>();
+        let Some(assets) = state.sessions.remove(session_token) else {
+            return Ok(false);
+        };
 
-            state.total_bytes =
-                state.total_bytes.saturating_sub(removed_bytes);
-        }
+        let removed_bytes = assets
+            .values()
+            .map(|asset| asset.bytes.len())
+            .sum::<usize>();
 
-        Ok(())
+        state.total_bytes =
+            state.total_bytes.saturating_sub(removed_bytes);
+
+        Ok(true)
     }
 
     pub fn contains(
@@ -220,21 +239,18 @@ impl AssetProtocolRegistry {
 
         let host = uri.host().unwrap_or(ASSET_PROTOCOL_HOST);
 
-        /*
-         * On Windows and Android, Tauri may internally rewrite a custom scheme
-         * to an HTTP origin. The registered handler still owns the request, but
-         * the authority may be either "asset" or the generated localhost host.
-         */
-        if host != ASSET_PROTOCOL_HOST
-            && host != "hybrid-canvas-asset.localhost"
-        {
-            return Err(AssetProtocolError::InvalidToken);
-        }
-
         let mut components = uri
             .path()
             .split('/')
             .filter(|component| !component.is_empty());
+
+        if host == "hybrid-canvas-asset.localhost" {
+            if components.next() != Some(ASSET_PROTOCOL_HOST) {
+                return Err(AssetProtocolError::InvalidToken);
+            }
+        } else if host != ASSET_PROTOCOL_HOST {
+            return Err(AssetProtocolError::InvalidToken);
+        }
 
         let session_token = components
             .next()
@@ -355,6 +371,10 @@ mod tests {
         let registry = AssetProtocolRegistry::default();
 
         registry
+            .open_session("session-1")
+            .expect("session should open");
+
+        registry
             .insert(
                 "session-1",
                 "asset-1",
@@ -396,6 +416,10 @@ mod tests {
         let registry = AssetProtocolRegistry::default();
 
         registry
+            .open_session("session-1")
+            .expect("session should open");
+
+        registry
             .insert(
                 "session-1",
                 "asset-1",
@@ -404,9 +428,11 @@ mod tests {
             )
             .expect("asset should register");
 
-        registry
-            .remove_session("session-1")
-            .expect("session should be removed");
+        assert!(
+            registry
+                .remove_session("session-1")
+                .expect("session should close")
+        );
 
         let response = registry.response(&request(
             "hybrid-canvas-asset://asset/session-1/asset-1",
@@ -418,6 +444,10 @@ mod tests {
     #[test]
     fn refuses_duplicate_asset_identity() {
         let registry = AssetProtocolRegistry::default();
+
+        registry
+            .open_session("session-1")
+            .expect("session should open");
 
         registry
             .insert(
