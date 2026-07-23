@@ -155,11 +155,7 @@ pub async fn document_open(
     app: AppHandle,
     documents: State<'_, DocumentRegistry>,
 ) -> DocumentCommandResult<DocumentOpenResponse> {
-    let selected = app
-        .dialog()
-        .file()
-        .add_filter("Hybrid Canvas document", &[DRAW_EXTENSION])
-        .blocking_pick_file();
+    let selected = select_open_document(&app).await?;
 
     let Some(selected) = selected else {
         return Ok(DocumentOpenResponse { document: None });
@@ -199,12 +195,7 @@ pub async fn document_save_as(
 
     let suggested_name = normalize_suggested_name(request.suggested_name.as_deref())?;
 
-    let selected = app
-        .dialog()
-        .file()
-        .add_filter("Hybrid Canvas document", &[DRAW_EXTENSION])
-        .set_file_name(&suggested_name)
-        .blocking_save_file();
+    let selected = select_save_document(&app, suggested_name).await?;
 
     let Some(selected) = selected else {
         return Ok(DocumentSaveAsResult { document: None });
@@ -256,6 +247,40 @@ pub fn document_close(
     request: DocumentCloseRequest,
 ) -> DocumentCommandResult<()> {
     Ok(documents.remove(request.document_id)?)
+}
+
+async fn select_open_document(app: &AppHandle) -> Result<Option<FilePath>> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+
+    app.dialog()
+        .file()
+        .add_filter("Hybrid Canvas document", &[DRAW_EXTENSION])
+        .pick_file(move |selected| {
+            let _ = sender.send(selected);
+        });
+
+    receiver
+        .await
+        .map_err(|_| Error::Internal("document open dialog callback was dropped".into()))
+}
+
+async fn select_save_document(
+    app: &AppHandle,
+    suggested_name: String,
+) -> Result<Option<FilePath>> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+
+    app.dialog()
+        .file()
+        .add_filter("Hybrid Canvas document", &[DRAW_EXTENSION])
+        .set_file_name(suggested_name)
+        .save_file(move |selected| {
+            let _ = sender.send(selected);
+        });
+
+    receiver
+        .await
+        .map_err(|_| Error::Internal("document save dialog callback was dropped".into()))
 }
 
 async fn read_document(path: PathBuf) -> Result<String> {
