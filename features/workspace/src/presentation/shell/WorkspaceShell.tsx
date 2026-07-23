@@ -55,7 +55,7 @@ export function WorkspaceShell({
 
   const hasCanvas = model.activeSurface.kind === 'canvas'
   const dockSidebar = mode !== 'narrow' && isSidebarOpen
-  const dockInspector = mode === 'wide' && isInspectorOpen && hasCanvas
+  const dockInspector = isInspectorOpen && hasCanvas
 
   useEffect(() => {
     const previousMode = previousModeRef.current
@@ -66,13 +66,8 @@ export function WorkspaceShell({
 
     previousModeRef.current = mode
 
-    if (mode === 'compact') {
-      setInspectorOpen(false)
-    }
-
     if (mode === 'narrow') {
       setSidebarOpen(false)
-      setInspectorOpen(false)
     }
   }, [mode])
 
@@ -259,34 +254,28 @@ export function WorkspaceShell({
       <aside
         aria-hidden={!dockInspector}
         aria-label="属性检查器"
-        className={
-          mode === 'wide'
-            ? 'relative row-[2/-1] min-h-0 min-w-0 overflow-visible'
-            : 'pointer-events-none'
-        }
+        className="relative row-[2/-1] min-h-0 min-w-0 overflow-visible"
         style={{
           gridColumn: 4,
           pointerEvents: dockInspector ? 'auto' : 'none',
         }}
       >
-        {mode === 'wide' ? (
+        {dockInspector ? (
           <div
             className="absolute inset-y-0 right-0 overflow-visible"
             style={{ width: INSPECTOR_WIDTH }}
           >
             <div className="relative h-full">
-              {dockInspector ? (
-                <Button
-                  aria-label="收起属性面板"
-                  className="absolute -left-8 top-3 z-30 size-7 rounded-r-none"
-                  onClick={() => setInspectorOpen(false)}
-                  size="icon"
-                  type="button"
-                  variant="outline"
-                >
-                  <PanelRightClose aria-hidden="true" className="size-3.5" />
-                </Button>
-              ) : null}
+              <Button
+                aria-label="收起属性面板"
+                className="absolute -left-8 top-3 z-30 size-7 rounded-r-none"
+                onClick={() => setInspectorOpen(false)}
+                size="icon"
+                type="button"
+                variant="outline"
+              >
+                <PanelRightClose aria-hidden="true" className="size-3.5" />
+              </Button>
 
               {inspectorContent}
             </div>
@@ -294,7 +283,7 @@ export function WorkspaceShell({
         ) : null}
       </aside>
 
-      {!dockInspector && !isInspectorOpen ? (
+      {!dockInspector ? (
         <Button
           aria-expanded={false}
           aria-label="展开属性面板"
@@ -312,24 +301,6 @@ export function WorkspaceShell({
         >
           <PanelRightOpen aria-hidden="true" className="size-4" />
         </Button>
-      ) : null}
-
-      {mode !== 'wide' && isInspectorOpen ? (
-        <div className="fixed inset-x-0 bottom-0 top-[var(--chrome-height)] z-[var(--ui-z-popover)]">
-          <button
-            aria-label="关闭属性检查器"
-            className="absolute inset-0 cursor-default bg-black/35"
-            onClick={() => setInspectorOpen(false)}
-            type="button"
-          />
-
-          <aside
-            aria-label="属性检查器"
-            className="relative ml-auto h-full w-[min(92vw,340px)] border-l border-divider bg-sidebar shadow-2xl"
-          >
-            {inspectorContent}
-          </aside>
-        </div>
       ) : null}
     </>
   ) : null
