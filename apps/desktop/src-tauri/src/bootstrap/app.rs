@@ -3,19 +3,15 @@ use tauri_plugin_store::StoreExt;
 
 use super::logging;
 use crate::commands;
-use crate::security::ApprovedPathRegistry;
+use crate::commands::document::DocumentRegistry;
 
 pub fn build() -> tauri::Builder<Wry> {
     tauri::Builder::<Wry>::default()
-        .manage(ApprovedPathRegistry::default())
+        .manage(DocumentRegistry::default())
         .plugin(logging::plugin().build())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
@@ -30,14 +26,10 @@ pub fn build() -> tauri::Builder<Wry> {
             commands::window::window_close,
             commands::window::window_set_title,
             commands::window::window_save_state,
-            commands::file::file_open,
-            commands::file::file_save,
-            commands::file::file_save_as,
-            commands::file::file_save_draw,
-            commands::file::file_read_draw,
-            commands::file::file_create_draw,
-            commands::file::file_recent_list,
-            commands::file::file_close,
+            commands::document::document_open,
+            commands::document::document_save_as,
+            commands::document::document_save,
+            commands::document::document_close,
             commands::settings::settings_get,
             commands::settings::settings_set,
             commands::settings::settings_reset,

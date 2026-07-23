@@ -4,12 +4,10 @@
     reason = "Tauri command signatures are consumed by generated IPC handlers"
 )]
 
+pub mod bootstrap;
 pub mod commands;
 pub mod error;
-
-pub mod bootstrap;
 pub mod ipc;
-pub mod security;
 
 pub use bootstrap::app;
 pub use error::{Error, Result};
