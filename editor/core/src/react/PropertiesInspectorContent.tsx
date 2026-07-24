@@ -36,6 +36,11 @@ import type {
 interface SelectionCapabilities {
   readonly canAlign: boolean
   readonly canDistribute: boolean
+  readonly canStretch: boolean
+  readonly canStack: boolean
+  readonly canPack: boolean
+  readonly canArrange: boolean
+  readonly canEnableTextAutoSize: boolean
   readonly canReorder: boolean
   readonly canGroup: boolean
   readonly canUngroup: boolean
@@ -483,17 +488,108 @@ export function PropertiesInspectorContent({
                 ),
           )
 
+        const stretchable =
+          unlocked.filter(
+            (shape) =>
+              editor
+                .getShapeUtil(shape)
+                .canBeLaidOut(
+                  shape,
+                  {
+                    type: 'stretch',
+                    shapes: unlocked,
+                  },
+                ),
+          )
+
+        const stackable =
+          unlocked.filter(
+            (shape) =>
+              editor
+                .getShapeUtil(shape)
+                .canBeLaidOut(
+                  shape,
+                  {
+                    type: 'stack',
+                    shapes: unlocked,
+                  },
+                ),
+          )
+
+        const packable =
+          unlocked.filter(
+            (shape) =>
+              editor
+                .getShapeUtil(shape)
+                .canBeLaidOut(
+                  shape,
+                  {
+                    type: 'pack',
+                    shapes: unlocked,
+                  },
+                ),
+          )
+
+        const canAlign =
+          !readonly &&
+          alignable.length >= 2
+
+        const canDistribute =
+          !readonly &&
+          distributable.length >= 3
+
+        const canStretch =
+          !readonly &&
+          unlocked.length >= 2 &&
+          stretchable.length ===
+            unlocked.length
+
+        const canStack =
+          !readonly &&
+          unlocked.length >= 2 &&
+          stackable.length ===
+            unlocked.length
+
+        const canPack =
+          !readonly &&
+          unlocked.length >= 2 &&
+          packable.length ===
+            unlocked.length
+
+        const canEnableTextAutoSize =
+          !readonly &&
+          selected.some(
+            (shape) =>
+              editor.isShapeOfType(
+                shape,
+                'text',
+              ) &&
+              shape.props.autoSize ===
+                false,
+          )
+
         const onlySelected =
           editor.getOnlySelectedShape()
 
         return {
-          canAlign:
-            !readonly &&
-            alignable.length >= 2,
+          canAlign,
 
-          canDistribute:
-            !readonly &&
-            distributable.length >= 3,
+          canDistribute,
+
+          canStretch,
+
+          canStack,
+
+          canPack,
+
+          canArrange:
+            canAlign ||
+            canDistribute ||
+            canStretch ||
+            canStack ||
+            canPack,
+
+          canEnableTextAutoSize,
 
           canReorder:
             !readonly &&
@@ -1282,16 +1378,18 @@ function SelectionActions({
 
   return (
     <>
-      {capabilities.canAlign ? (
+      {capabilities.canArrange ? (
         <SidebarSection
           title="排列"
         >
           <div className="hc-properties-sidebar__action-grid">
-            <ActionButton
-              actions={actions}
-              id="align-left"
-              label="左对齐"
-            />
+            {capabilities.canAlign ? (
+              <>
+                <ActionButton
+                  actions={actions}
+                  id="align-left"
+                  label="左对齐"
+                />
 
             <ActionButton
               actions={actions}
@@ -1317,11 +1415,13 @@ function SelectionActions({
               label="垂直居中"
             />
 
-            <ActionButton
-              actions={actions}
-              id="align-bottom"
-              label="底部对齐"
-            />
+                <ActionButton
+                  actions={actions}
+                  id="align-bottom"
+                  label="底部对齐"
+                />
+              </>
+            ) : null}
 
             {capabilities.canDistribute ? (
               <>
@@ -1337,6 +1437,46 @@ function SelectionActions({
                   label="垂直分布"
                 />
               </>
+            ) : null}
+
+            {capabilities.canStretch ? (
+              <>
+                <ActionButton
+                  actions={actions}
+                  id="stretch-horizontal"
+                  label="水平拉伸"
+                />
+
+                <ActionButton
+                  actions={actions}
+                  id="stretch-vertical"
+                  label="垂直拉伸"
+                />
+              </>
+            ) : null}
+
+            {capabilities.canStack ? (
+              <>
+                <ActionButton
+                  actions={actions}
+                  id="stack-horizontal"
+                  label="水平堆叠"
+                />
+
+                <ActionButton
+                  actions={actions}
+                  id="stack-vertical"
+                  label="垂直堆叠"
+                />
+              </>
+            ) : null}
+
+            {capabilities.canPack ? (
+              <ActionButton
+                actions={actions}
+                id="pack"
+                label="紧凑排列"
+              />
             ) : null}
           </div>
         </SidebarSection>
@@ -1474,6 +1614,15 @@ function SelectionActions({
                 label="下载原视频"
               />
             </>
+          ) : null}
+
+          {capabilities.canEnableTextAutoSize ? (
+            <ActionButton
+              actions={actions}
+              icon="toggle-on"
+              id="toggle-auto-size"
+              label="恢复自动宽度"
+            />
           ) : null}
 
           {capabilities.canRotate ? (

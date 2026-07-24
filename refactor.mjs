@@ -7,56 +7,41 @@ import {
 import path from 'node:path'
 import process from 'node:process'
 
-const root = process.cwd()
-
-const contentPath = path.join(
-  root,
+const filePath = path.join(
+  process.cwd(),
   'editor/core/src/react/PropertiesInspectorContent.tsx',
 )
 
-const cssPath = path.join(
-  root,
-  'apps/desktop/src/app.css',
-)
-
-const CSS_MARKER =
-  '/* hybrid-canvas:properties-sidebar-v4 */'
-
 let source = normalize(
   await readFile(
-    contentPath,
+    filePath,
     'utf8',
   ),
 )
 
-source = addTooltipImport(source)
-source = addCapabilityType(source)
-source = addCapabilityState(source)
-source = passCapabilities(source)
-source = updateSelectionActions(source)
-source = replaceActionButton(source)
-source = wrapStyleButtons(source)
-source = wrapColorButtons(source)
-source = wrapOpacityButtons(source)
+source = extendCapabilitiesType(source)
+source = extendCapabilitiesState(source)
+source = extendArrangementSection(source)
+source = addTextAutoSizeAction(source)
 
-await write(
-  contentPath,
-  source,
+await writeFile(
+  filePath,
+  source.trimEnd() + '\n',
+  'utf8',
 )
-
-await updateCss()
 
 console.log('')
 console.log(
-  '右侧属性侧边栏第四阶段已完成。',
+  '右侧属性侧边栏通用操作已补充。',
 )
 console.log('')
 console.log('新增：')
-console.log('  - 官方 Tooltip')
-console.log('  - ShapeUtil 能力判断')
-console.log('  - 锁定对象操作限制')
-console.log('  - 只读模式操作限制')
-console.log('  - Mixed 统一视觉')
+console.log('  - 水平拉伸')
+console.log('  - 垂直拉伸')
+console.log('  - 水平堆叠')
+console.log('  - 垂直堆叠')
+console.log('  - 紧凑排列')
+console.log('  - 恢复文本自动宽度')
 console.log('')
 console.log('验证：')
 console.log('  pnpm format')
@@ -66,146 +51,48 @@ console.log('  pnpm test:architecture')
 console.log('  pnpm build:desktop')
 console.log('')
 
-function addTooltipImport(input) {
+function extendCapabilitiesType(input) {
   if (
     input.includes(
-      'TldrawUiTooltip,',
+      'readonly canStretch:',
     )
   ) {
     return input
   }
 
-  const anchor = `  TldrawUiIcon,
-  type TLDefaultColorStyle,`
+  const anchor = `  readonly canDistribute: boolean
+  readonly canReorder: boolean`
 
   if (
     !input.includes(anchor)
   ) {
     throw new Error(
-      '没有找到 TldrawUiIcon 导入。',
+      '没有找到 SelectionCapabilities。',
     )
   }
 
   return input.replace(
     anchor,
-    `  TldrawUiIcon,
-  TldrawUiTooltip,
-  type TLDefaultColorStyle,`,
+    `  readonly canDistribute: boolean
+  readonly canStretch: boolean
+  readonly canStack: boolean
+  readonly canPack: boolean
+  readonly canArrange: boolean
+  readonly canEnableTextAutoSize: boolean
+  readonly canReorder: boolean`,
   )
 }
 
-function addCapabilityType(input) {
+function extendCapabilitiesState(input) {
   if (
     input.includes(
-      'interface SelectionCapabilities',
+      'const stretchable =',
     )
   ) {
     return input
   }
 
-  const marker =
-    'export interface PropertiesInspectorContentProps'
-
-  const index =
-    input.indexOf(marker)
-
-  if (index < 0) {
-    throw new Error(
-      '没有找到 PropertiesInspectorContentProps。',
-    )
-  }
-
-  const type = `interface SelectionCapabilities {
-  readonly canAlign: boolean
-  readonly canDistribute: boolean
-  readonly canReorder: boolean
-  readonly canGroup: boolean
-  readonly canUngroup: boolean
-  readonly canRotate: boolean
-  readonly canFrame: boolean
-  readonly canDuplicate: boolean
-  readonly canDelete: boolean
-}
-
-`
-
-  return (
-    input.slice(
-      0,
-      index,
-    ) +
-    type +
-    input.slice(
-      index,
-    )
-  )
-}
-
-function addCapabilityState(input) {
-  if (
-    input.includes(
-      'right properties sidebar selection capabilities',
-    )
-  ) {
-    return input
-  }
-
-  const returnAnchor = `  return (
-    <div className="hc-properties-sidebar__panel">`
-
-  if (
-    !input.includes(returnAnchor)
-  ) {
-    throw new Error(
-      '没有找到侧边栏返回内容。',
-    )
-  }
-
-  const capabilityState = `  const selectionCapabilities =
-    useValue<SelectionCapabilities>(
-      'right properties sidebar selection capabilities',
-      () => {
-        const selected =
-          editor.getSelectedShapes()
-
-        const readonly =
-          editor.getIsReadonly()
-
-        const unlocked =
-          selected.filter(
-            (shape) =>
-              !shape.isLocked,
-          )
-
-        const alignable =
-          unlocked.filter(
-            (shape) =>
-              editor
-                .getShapeUtil(shape)
-                .canBeLaidOut(
-                  shape,
-                  {
-                    type: 'align',
-                    shapes: unlocked,
-                  },
-                ),
-          )
-
-        const distributable =
-          unlocked.filter(
-            (shape) =>
-              editor
-                .getShapeUtil(shape)
-                .canBeLaidOut(
-                  shape,
-                  {
-                    type: 'distribute',
-                    shapes: unlocked,
-                  },
-                ),
-          )
-
-        const rotatable =
+  const rotatableAnchor = `        const rotatable =
           unlocked.filter(
             (shape) =>
               !editor
@@ -213,766 +100,315 @@ function addCapabilityState(input) {
                 .hideRotateHandle(
                   shape,
                 ),
+          )`
+
+  if (
+    !input.includes(
+      rotatableAnchor,
+    )
+  ) {
+    throw new Error(
+      '没有找到 rotatable 能力计算。',
+    )
+  }
+
+  const extraState = `${rotatableAnchor}
+
+        const stretchable =
+          unlocked.filter(
+            (shape) =>
+              editor
+                .getShapeUtil(shape)
+                .canBeLaidOut(
+                  shape,
+                  {
+                    type: 'stretch',
+                    shapes: unlocked,
+                  },
+                ),
           )
 
-        const onlySelected =
-          editor.getOnlySelectedShape()
+        const stackable =
+          unlocked.filter(
+            (shape) =>
+              editor
+                .getShapeUtil(shape)
+                .canBeLaidOut(
+                  shape,
+                  {
+                    type: 'stack',
+                    shapes: unlocked,
+                  },
+                ),
+          )
 
-        return {
-          canAlign:
+        const packable =
+          unlocked.filter(
+            (shape) =>
+              editor
+                .getShapeUtil(shape)
+                .canBeLaidOut(
+                  shape,
+                  {
+                    type: 'pack',
+                    shapes: unlocked,
+                  },
+                ),
+          )
+
+        const canAlign =
+          !readonly &&
+          alignable.length >= 2
+
+        const canDistribute =
+          !readonly &&
+          distributable.length >= 3
+
+        const canStretch =
+          !readonly &&
+          unlocked.length >= 2 &&
+          stretchable.length ===
+            unlocked.length
+
+        const canStack =
+          !readonly &&
+          unlocked.length >= 2 &&
+          stackable.length ===
+            unlocked.length
+
+        const canPack =
+          !readonly &&
+          unlocked.length >= 2 &&
+          packable.length ===
+            unlocked.length
+
+        const canEnableTextAutoSize =
+          !readonly &&
+          selected.some(
+            (shape) =>
+              editor.isShapeOfType(
+                shape,
+                'text',
+              ) &&
+              shape.props.autoSize ===
+                false,
+          )`
+
+  input = input.replace(
+    rotatableAnchor,
+    extraState,
+  )
+
+  input = input.replace(
+    `          canAlign:
             !readonly &&
             alignable.length >= 2,
 
           canDistribute:
             !readonly &&
-            distributable.length >= 3,
+            distributable.length >= 3,`,
+    `          canAlign,
 
-          canReorder:
-            !readonly &&
-            unlocked.length > 0,
+          canDistribute,
 
-          canGroup:
-            !readonly &&
-            unlocked.length >= 2,
+          canStretch,
 
-          canUngroup:
-            !readonly &&
-            onlySelected?.type ===
-              'group' &&
-            !onlySelected.isLocked,
+          canStack,
 
-          canRotate:
-            !readonly &&
-            unlocked.length > 0 &&
-            rotatable.length ===
-              unlocked.length,
+          canPack,
 
-          canFrame:
-            !readonly &&
-            unlocked.length >= 2,
+          canArrange:
+            canAlign ||
+            canDistribute ||
+            canStretch ||
+            canStack ||
+            canPack,
 
-          canDuplicate:
-            !readonly &&
-            selected.length > 0,
-
-          canDelete:
-            !readonly &&
-            unlocked.length > 0,
-        }
-      },
-      [editor],
-    )
-
-`
-
-  return input.replace(
-    returnAnchor,
-    capabilityState +
-      returnAnchor,
-  )
-}
-
-function passCapabilities(input) {
-  if (
-    input.includes(
-      `capabilities={
-            selectionCapabilities
-          }`,
-    )
-  ) {
-    return input
-  }
-
-  const anchor = `        <SelectionActions
-          onlySelectedShapeType={`
-
-  if (
-    !input.includes(anchor)
-  ) {
-    throw new Error(
-      '没有找到 SelectionActions。',
-    )
-  }
-
-  return input.replace(
-    anchor,
-    `        <SelectionActions
-          capabilities={
-            selectionCapabilities
-          }
-          onlySelectedShapeType={`,
-  )
-}
-
-function updateSelectionActions(input) {
-  if (
-    input.includes(
-      'readonly capabilities:',
-    )
-  ) {
-    return input
-  }
-
-  input = input.replace(
-    `interface SelectionActionsProps {
-  readonly selectedShapeCount: number`,
-    `interface SelectionActionsProps {
-  readonly capabilities:
-    SelectionCapabilities
-  readonly selectedShapeCount: number`,
-  )
-
-  input = input.replace(
-    `function SelectionActions({
-  selectedShapeCount,`,
-    `function SelectionActions({
-  capabilities,
-  selectedShapeCount,`,
-  )
-
-  input = input.replace(
-    `{selectedShapeCount >= 2 ? (
-        <SidebarSection
-          title="排列"`,
-    `{capabilities.canAlign ? (
-        <SidebarSection
-          title="排列"`,
-  )
-
-  input = input.replace(
-    `{selectedShapeCount >= 3 ? (`,
-    `{capabilities.canDistribute ? (`,
-  )
-
-  input = input.replace(
-    `      <SidebarSection
-        title="层级"
-      >
-        <div className="hc-properties-sidebar__action-grid">`,
-    `      {capabilities.canReorder ? (
-        <SidebarSection
-          title="层级"
-        >
-          <div className="hc-properties-sidebar__action-grid">`,
-  )
-
-  const layerEnd = `          <ActionButton
-            actions={actions}
-            id="send-to-back"
-            label="置于底层"
-          />
-        </div>
-      </SidebarSection>`
-
-  if (
-    !input.includes(layerEnd)
-  ) {
-    throw new Error(
-      '没有找到层级操作区结尾。',
-    )
-  }
-
-  input = input.replace(
-    layerEnd,
-    `          <ActionButton
-            actions={actions}
-            id="send-to-back"
-            label="置于底层"
-          />
-          </div>
-        </SidebarSection>
-      ) : null}`,
-  )
-
-  input = input.replace(
-    `{onlySelectedShapeType ===
-          'group' ? (`,
-    `{capabilities.canUngroup ? (`,
-  )
-
-  input = input.replace(
-    `) : selectedShapeCount >=
-            2 ? (`,
-    `) : capabilities.canGroup ? (`,
-  )
-
-  input = input.replace(
-    `{selectedShapeCount >= 2 ? (
-            <ActionButton
-              actions={actions}
-              icon="tool-frame"`,
-    `{capabilities.canFrame ? (
-            <ActionButton
-              actions={actions}
-              icon="tool-frame"`,
-  )
-
-  const rotateButtons = `          <ActionButton
-            actions={actions}
-            id="rotate-ccw"
-            label="逆时针旋转"
-          />
-
-          <ActionButton
-            actions={actions}
-            id="rotate-cw"
-            label="顺时针旋转"
-          />`
-
-  if (
-    !input.includes(
-      rotateButtons,
-    )
-  ) {
-    throw new Error(
-      '没有找到旋转按钮。',
-    )
-  }
-
-  input = input.replace(
-    rotateButtons,
-    `          {capabilities.canRotate ? (
-            <>
-              <ActionButton
-                actions={actions}
-                id="rotate-ccw"
-                label="逆时针旋转"
-              />
-
-              <ActionButton
-                actions={actions}
-                id="rotate-cw"
-                label="顺时针旋转"
-              />
-            </>
-          ) : null}`,
-  )
-
-  const duplicateButton = `          <ActionButton
-            actions={actions}
-            id="duplicate"
-            label="创建副本"
-          />`
-
-  input = input.replace(
-    duplicateButton,
-    `          {capabilities.canDuplicate ? (
-            <ActionButton
-              actions={actions}
-              id="duplicate"
-              label="创建副本"
-            />
-          ) : null}`,
-  )
-
-  const deleteButton = `          <ActionButton
-            actions={actions}
-            destructive
-            id="delete"
-            label="删除"
-          />`
-
-  input = input.replace(
-    deleteButton,
-    `          {capabilities.canDelete ? (
-            <ActionButton
-              actions={actions}
-              destructive
-              id="delete"
-              label="删除"
-            />
-          ) : null}`,
+          canEnableTextAutoSize,`,
   )
 
   return input
 }
 
-function replaceActionButton(input) {
-  const pattern =
-    /function ActionButton\(\{[\s\S]*?\n\}\n\nfunction getToolTitle/
-
-  if (
-    !pattern.test(input)
-  ) {
-    throw new Error(
-      '没有找到 ActionButton。',
-    )
-  }
-
-  return input.replace(
-    pattern,
-    `function ActionButton({
-  actions,
-  id,
-  label,
-  icon,
-  destructive = false,
-}: {
-  readonly actions:
-    ReturnType<typeof useActions>
-  readonly id: string
-  readonly label: string
-  readonly icon?: TLUiIconType
-  readonly destructive?: boolean
-}) {
-  const item:
-    | TLUiActionItem
-    | undefined =
-    actions[id]
-
-  if (!item) {
-    return null
-  }
-
-  const resolvedIcon =
-    icon ?? item.icon
-
-  if (!resolvedIcon) {
-    return null
-  }
-
-  return (
-    <TldrawUiTooltip
-      content={label}
-      side="left"
-      sideOffset={8}
-    >
-      <button
-        aria-label={label}
-        className={
-          destructive
-            ? 'hc-properties-sidebar__action hc-properties-sidebar__action--destructive'
-            : 'hc-properties-sidebar__action'
-        }
-        onClick={() => {
-          void item.onSelect(
-            'toolbar',
-          )
-        }}
-        type="button"
-      >
-        {typeof resolvedIcon ===
-        'string' ? (
-          <TldrawUiIcon
-            icon={
-              resolvedIcon as TLUiIconType
-            }
-            label={label}
-          />
-        ) : (
-          resolvedIcon
-        )}
-      </button>
-    </TldrawUiTooltip>
-  )
-}
-
-function getToolTitle`,
-  )
-}
-
-function wrapStyleButtons(input) {
+function extendArrangementSection(input) {
   if (
     input.includes(
-      `content={
-                option.label
-              }
-              side="left"`,
+      'id="stretch-horizontal"',
     )
   ) {
     return input
   }
 
-  const oldCode = `          return (
-            <button
-              aria-label={
-                option.label
-              }
-              aria-pressed={
-                active
-              }
-              className="hc-properties-sidebar__segment"
-              key={
-                option.value
-              }
-              onClick={() => {
-                styleContext.onHistoryMark(
-                  'change ' +
-                    style.id,
-                )
+  input = input.replace(
+    `{capabilities.canAlign ? (
+        <SidebarSection
+          title="排列"`,
+    `{capabilities.canArrange ? (
+        <SidebarSection
+          title="排列"`,
+  )
 
-                styleContext.onValueChange(
-                  style,
-                  option.value,
-                )
-              }}
-              title={
-                option.label
-              }
-              type="button"
-            >
-              <TldrawUiIcon
-                icon={
-                  option.icon
-                }
-                label={
-                  option.label
-                }
-              />
-            </button>
-          )`
-
-  const newCode = `          return (
-            <TldrawUiTooltip
-              content={
-                option.label
-              }
-              key={
-                option.value
-              }
-              side="left"
-              sideOffset={8}
-            >
-              <button
-                aria-label={
-                  option.label
-                }
-                aria-pressed={
-                  active
-                }
-                className="hc-properties-sidebar__segment"
-                onClick={() => {
-                  styleContext.onHistoryMark(
-                    'change ' +
-                      style.id,
-                  )
-
-                  styleContext.onValueChange(
-                    style,
-                    option.value,
-                  )
-                }}
-                type="button"
-              >
-                <TldrawUiIcon
-                  icon={
-                    option.icon
-                  }
-                  label={
-                    option.label
-                  }
-                />
-              </button>
-            </TldrawUiTooltip>
-          )`
+  const alignStart = `            <ActionButton
+              actions={actions}
+              id="align-left"
+              label="左对齐"
+            />`
 
   if (
-    !input.includes(oldCode)
+    !input.includes(
+      alignStart,
+    )
   ) {
     throw new Error(
-      '没有找到 StyleControl 按钮。',
+      '没有找到对齐操作。',
     )
   }
 
-  return input.replace(
-    oldCode,
-    newCode,
+  input = input.replace(
+    alignStart,
+    `            {capabilities.canAlign ? (
+              <>
+                <ActionButton
+                  actions={actions}
+                  id="align-left"
+                  label="左对齐"
+                />`,
   )
-}
 
-function wrapColorButtons(input) {
-  if (
-    input.includes(
-      `content={label}
-            key={item.value}
-            side="left"`,
-    )
-  ) {
-    return input
-  }
-
-  const oldCode = `        return (
-          <button
-            aria-label={label}
-            aria-pressed={active}
-            className="hc-properties-sidebar__color-button"
-            key={item.value}
-            onClick={() => {
-              styleContext.onHistoryMark(
-                'change color',
-              )
-
-              styleContext.onValueChange(
-                DefaultColorStyle,
-                colorValue,
-              )
-            }}
-            style={{
-              '--hc-swatch-color':
-                getColorValue(
-                  colors,
-                  colorValue,
-                  'solid',
-                ),
-            } as React.CSSProperties}
-            title={label}
-            type="button"
-          >
-            <TldrawUiIcon
-              icon="color"
-              label={label}
+  const alignEnd = `            <ActionButton
+              actions={actions}
+              id="align-bottom"
+              label="底部对齐"
             />
-          </button>
-        )`
 
-  const newCode = `        return (
-          <TldrawUiTooltip
-            content={label}
-            key={item.value}
-            side="left"
-            sideOffset={8}
-          >
-            <button
-              aria-label={label}
-              aria-pressed={active}
-              className="hc-properties-sidebar__color-button"
-              onClick={() => {
-                styleContext.onHistoryMark(
-                  'change color',
-                )
-
-                styleContext.onValueChange(
-                  DefaultColorStyle,
-                  colorValue,
-                )
-              }}
-              style={{
-                '--hc-swatch-color':
-                  getColorValue(
-                    colors,
-                    colorValue,
-                    'solid',
-                  ),
-              } as React.CSSProperties}
-              type="button"
-            >
-              <TldrawUiIcon
-                icon="color"
-                label={label}
-              />
-            </button>
-          </TldrawUiTooltip>
-        )`
+            {capabilities.canDistribute ? (`
 
   if (
-    !input.includes(oldCode)
+    !input.includes(
+      alignEnd,
+    )
   ) {
     throw new Error(
-      '没有找到颜色按钮。',
+      '没有找到对齐操作结尾。',
     )
   }
 
+  input = input.replace(
+    alignEnd,
+    `                <ActionButton
+                  actions={actions}
+                  id="align-bottom"
+                  label="底部对齐"
+                />
+              </>
+            ) : null}
+
+            {capabilities.canDistribute ? (`,
+  )
+
+  const distributeEnd = `                <ActionButton
+                  actions={actions}
+                  id="distribute-vertical"
+                  label="垂直分布"
+                />
+              </>
+            ) : null}`
+
+  if (
+    !input.includes(
+      distributeEnd,
+    )
+  ) {
+    throw new Error(
+      '没有找到分布操作结尾。',
+    )
+  }
+
+  const additions = `${distributeEnd}
+
+            {capabilities.canStretch ? (
+              <>
+                <ActionButton
+                  actions={actions}
+                  id="stretch-horizontal"
+                  label="水平拉伸"
+                />
+
+                <ActionButton
+                  actions={actions}
+                  id="stretch-vertical"
+                  label="垂直拉伸"
+                />
+              </>
+            ) : null}
+
+            {capabilities.canStack ? (
+              <>
+                <ActionButton
+                  actions={actions}
+                  id="stack-horizontal"
+                  label="水平堆叠"
+                />
+
+                <ActionButton
+                  actions={actions}
+                  id="stack-vertical"
+                  label="垂直堆叠"
+                />
+              </>
+            ) : null}
+
+            {capabilities.canPack ? (
+              <ActionButton
+                actions={actions}
+                id="pack"
+                label="紧凑排列"
+              />
+            ) : null}`
+
   return input.replace(
-    oldCode,
-    newCode,
+    distributeEnd,
+    additions,
   )
 }
 
-function wrapOpacityButtons(input) {
+function addTextAutoSizeAction(input) {
   if (
     input.includes(
-      `content={
-                '透明度 ' +
-                option.label
-              }`,
+      'label="恢复自动宽度"',
     )
   ) {
     return input
   }
 
-  const oldCode = `          return (
-            <button
-              aria-label={
-                '透明度 ' +
-                option.label
-              }
-              aria-pressed={
-                active
-              }
-              className="hc-properties-sidebar__opacity-option"
-              key={
-                option.value
-              }
-              onClick={() => {
-                styleContext.onHistoryMark(
-                  'change opacity',
-                )
-
-                styleContext.onOpacityChange(
-                  option.value,
-                )
-              }}
-              title={
-                '透明度 ' +
-                option.label
-              }
-              type="button"
-            >
-              {option.label}
-            </button>
-          )`
-
-  const newCode = `          return (
-            <TldrawUiTooltip
-              content={
-                '透明度 ' +
-                option.label
-              }
-              key={
-                option.value
-              }
-              side="left"
-              sideOffset={8}
-            >
-              <button
-                aria-label={
-                  '透明度 ' +
-                  option.label
-                }
-                aria-pressed={
-                  active
-                }
-                className="hc-properties-sidebar__opacity-option"
-                onClick={() => {
-                  styleContext.onHistoryMark(
-                    'change opacity',
-                  )
-
-                  styleContext.onOpacityChange(
-                    option.value,
-                  )
-                }}
-                type="button"
-              >
-                {option.label}
-              </button>
-            </TldrawUiTooltip>
-          )`
+  const rotateAnchor = `          {capabilities.canRotate ? (
+            <>`
 
   if (
-    !input.includes(oldCode)
+    !input.includes(
+      rotateAnchor,
+    )
   ) {
     throw new Error(
-      '没有找到透明度按钮。',
+      '没有找到对象旋转操作。',
     )
   }
 
-  return input.replace(
-    oldCode,
-    newCode,
-  )
-}
+  const textAction = `          {capabilities.canEnableTextAutoSize ? (
+            <ActionButton
+              actions={actions}
+              icon="toggle-on"
+              id="toggle-auto-size"
+              label="恢复自动宽度"
+            />
+          ) : null}
 
-async function updateCss() {
-  let css = normalize(
-    await readFile(
-      cssPath,
-      'utf8',
-    ),
-  )
-
-  const markerIndex =
-    css.indexOf(
-      CSS_MARKER,
-    )
-
-  if (markerIndex >= 0) {
-    css = css
-      .slice(
-        0,
-        markerIndex,
-      )
-      .trimEnd()
-  }
-
-  css += `
-
-${CSS_MARKER}
-
-/*
- * Mixed 值不伪装成普通未选中状态。
- */
-.hc-properties-sidebar__segmented[data-mixed],
-.hc-properties-sidebar__opacity[data-mixed] {
-  border-style: dashed;
-  border-color:
-    color-mix(
-      in oklab,
-      var(--color-primary) 40%,
-      transparent
-    );
-}
-
-.hc-properties-sidebar__color-grid[data-mixed] {
-  position: relative;
-  padding: 5px;
-  border: 1px dashed
-    color-mix(
-      in oklab,
-      var(--color-primary) 40%,
-      transparent
-    );
-  border-radius: 8px;
-}
-
-.hc-properties-sidebar__color-grid[data-mixed]::after {
-  position: absolute;
-  top: -7px;
-  right: 6px;
-  display: grid;
-  width: 14px;
-  height: 14px;
-  place-items: center;
-  border-radius: 4px;
-  background: var(--color-sidebar);
-  color:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 58%,
-      transparent
-    );
-  content: "—";
-  font-size: 11px;
-  font-weight: 600;
-}
-
-/*
- * Tooltip 接管可见标签后，不依赖浏览器 title。
- */
-.hc-properties-sidebar__action,
-.hc-properties-sidebar__segment,
-.hc-properties-sidebar__color-button,
-.hc-properties-sidebar__opacity-option {
-  -webkit-tap-highlight-color: transparent;
-}
 `
 
-  await write(
-    cssPath,
-    css,
-  )
-}
-
-async function write(
-  filePath,
-  content,
-) {
-  await writeFile(
-    filePath,
-    normalize(
-      content,
-    ).trimEnd() + '\n',
-    'utf8',
+  return input.replace(
+    rotateAnchor,
+    textAction +
+      rotateAnchor,
   )
 }
 
