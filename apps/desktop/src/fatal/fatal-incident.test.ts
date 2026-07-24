@@ -140,19 +140,19 @@ describe('fatal incident contract', () => {
       })
 
     expect(
-      incident.context.accessToken,
+      incident.context['accessToken'],
     ).toBe('[REDACTED]')
 
     expect(
-      incident.context.password,
+      incident.context['password'],
     ).toBe('[REDACTED]')
 
     expect(
-      incident.context.authorization,
+      incident.context['authorization'],
     ).toBe('[REDACTED]')
 
     expect(
-      incident.context.operation,
+      incident.context['operation'],
     ).toBe('connect')
   })
 
