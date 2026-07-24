@@ -2,134 +2,257 @@ import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 
-const ROOT = process.cwd()
-
-const transformStatusPath = path.join(
-  ROOT,
+const filePath = path.join(
+  process.cwd(),
   'editor/core/src/react/CanvasTransformStatus.tsx',
 )
 
-const workspaceContainerPath = path.join(
-  ROOT,
-  'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
-)
+let source = await readFile(filePath, 'utf8')
 
-await updateTransformStatus()
-await removePageCount()
+source = moveAspectRatioButtonToEnd(source)
+source = compactSelectionCount(source)
+source = compactTransformFields(source)
+
+await writeFile(filePath, source, 'utf8')
 
 console.log('')
-console.log('底部状态栏布局已调整：')
-console.log('- 删除右侧页面数量')
-console.log('- 压缩画布标题占用空间')
-console.log('- 扩大 X / Y / W / H / R 数值空间')
-console.log('- 删除 Transform 数值省略号')
-console.log('- 保持各字段位置稳定')
+console.log('底部 Transform 布局已优化：')
+console.log('- 宽高比按钮移至 Transform 信息最右侧')
+console.log('- X/Y/W/H/R 与数值改为紧凑左对齐')
+console.log('- Transform 字段宽度调整为 88px')
+console.log('- “1 个对象”宽度调整为 56px')
+console.log('- 保留固定槽位，快速变化时不会左右抖动')
 console.log('')
 console.log('请运行：')
 console.log('  pnpm format')
 console.log('  pnpm typecheck')
 console.log('')
 
-async function updateTransformStatus() {
-  let source = await readFile(
-    transformStatusPath,
-    'utf8',
-  )
-
+function moveAspectRatioButtonToEnd(source) {
   /*
-   * 画布标题原来固定为 160px，明显浪费状态栏左侧空间。
-   * 112px 足够完整显示“未命名画布”等常见标题。
+   * 从 W 和 H 中间取出宽高比按钮。
    */
-  source = source.replaceAll(
-    'w-40 max-w-40 shrink-0 truncate px-1',
-    'w-[112px] max-w-[112px] shrink-0 truncate px-1',
+  const aspectButtonPattern =
+    /\n\s*<AspectRatioLockButton\s*\n\s*disabled=\{\s*!snapshot\.canResize\s*\|\|\s*snapshot\.hasForcedAspectRatio\s*\}\s*\n\s*forced=\{snapshot\.hasForcedAspectRatio\}\s*\n\s*locked=\{isAspectRatioLocked\}\s*\n\s*onChange=\{setUserAspectRatioLocked\}\s*\n\s*\/>/
+
+  const match = source.match(
+    aspectButtonPattern,
   )
 
-  /*
-   * 对象数量稍微扩大，避免两位、三位选择数量过早截断。
-   */
-  source = source.replaceAll(
-    'h-6 w-[68px] shrink-0',
-    'h-6 w-[76px] shrink-0',
-  )
+  if (!match) {
+    /*
+     * 如果脚本曾执行过，按钮可能已经移动到末尾。
+     */
+    const buttonOccurrences =
+      source.match(
+        /<AspectRatioLockButton/g,
+      )?.length ?? 0
 
-  /*
-   * SelectionCount 不需要内部再做一次省略。
-   */
-  source = source.replace(
-    `<span className="block w-full truncate">
-        {label}
-      </span>`,
-    `<span className="block w-full whitespace-nowrap">
-        {label}
-      </span>`,
-  )
+    if (buttonOccurrences === 1) {
+      return source
+    }
 
-  /*
-   * 数值字段从 76px 扩展到 96px。
-   *
-   * 字段内部还包含：
-   * - X/Y/W/H/R 标签
-   * - Grid gap
-   * - 角度单位槽
-   * - 左右 padding
-   *
-   * 76px 实际留给数字的空间太小。
-   */
-  source = source.replaceAll(
-    'h-6 w-[76px] shrink-0',
-    'h-6 w-[96px] shrink-0',
-  )
-
-  /*
-   * 删除静态数值的省略号。
-   */
-  source = source.replace(
-    `className="
-          block min-w-0 overflow-hidden
-          text-ellipsis whitespace-nowrap
-          text-right font-mono
-          text-foreground/85
-        "`,
-    `className="
-          block min-w-0 whitespace-nowrap
-          text-right font-mono
-          text-foreground/85
-        "`,
-  )
-
-  /*
-   * 防止 pnpm format 改变换行后导致精确替换未命中。
-   */
-  source = source.replace(
-    /\bmin-w-0\s+overflow-hidden\s+text-ellipsis\s+whitespace-nowrap\s+text-right\s+font-mono\b/g,
-    'min-w-0 whitespace-nowrap text-right font-mono',
-  )
-
-  source = source.replace(
-    /\boverflow-hidden\s+text-ellipsis\s+whitespace-nowrap\s+text-right\b/g,
-    'whitespace-nowrap text-right',
-  )
-
-  if (source.includes('text-ellipsis')) {
     throw new Error(
-      'CanvasTransformStatus.tsx 中仍存在 Transform 数值省略号样式。',
+      '找不到宽高比按钮，或存在多个宽高比按钮。',
     )
   }
 
+  source = source.replace(
+    aspectButtonPattern,
+    '',
+  )
+
+  const closingMarker =
+    '\n        </>\n      ) : null}'
+
+  const insertionIndex =
+    source.lastIndexOf(closingMarker)
+
+  if (insertionIndex === -1) {
+    throw new Error(
+      '找不到 Transform 状态内容结束位置。',
+    )
+  }
+
+  const aspectButtonAtEnd = `
+
+          <StatusDivider />
+
+          <AspectRatioLockButton
+            disabled={
+              !snapshot.canResize ||
+              snapshot.hasForcedAspectRatio
+            }
+            forced={snapshot.hasForcedAspectRatio}
+            locked={isAspectRatioLocked}
+            onChange={setUserAspectRatioLocked}
+          />`
+
+  source =
+    source.slice(0, insertionIndex) +
+    aspectButtonAtEnd +
+    source.slice(insertionIndex)
+
+  const occurrences =
+    source.match(
+      /<AspectRatioLockButton/g,
+    )?.length ?? 0
+
+  if (occurrences !== 1) {
+    throw new Error(
+      '宽高比按钮移动后数量异常：' +
+        String(occurrences),
+    )
+  }
+
+  return source
+}
+
+function compactSelectionCount(source) {
+  const startMarker =
+    'function SelectionCount('
+
+  const endMarker =
+    '\ninterface TransformGroupProps'
+
+  const startIndex =
+    source.indexOf(startMarker)
+
+  const endIndex =
+    source.indexOf(
+      endMarker,
+      startIndex,
+    )
+
   if (
-    !source.includes(
-      'w-[112px] max-w-[112px]',
+    startIndex === -1 ||
+    endIndex === -1
+  ) {
+    throw new Error(
+      '找不到 SelectionCount 组件。',
+    )
+  }
+
+  const section = source.slice(
+    startIndex,
+    endIndex,
+  )
+
+  let nextSection = section
+
+  /*
+   * 兼容前几版脚本可能产生的 68、76 或 96px。
+   */
+  nextSection = nextSection.replace(
+    /h-6 w-\[(?:68|76|96)px\] shrink-0/g,
+    'h-6 w-[56px] shrink-0',
+  )
+
+  nextSection = nextSection.replace(
+    /items-center\s+overflow-hidden px-1\.5/g,
+    'items-center overflow-hidden px-1',
+  )
+
+  if (
+    !nextSection.includes(
+      'w-[56px]',
     )
   ) {
     throw new Error(
-      '没有成功调整画布标题宽度。',
+      '没有成功收紧对象数量宽度。',
+    )
+  }
+
+  return (
+    source.slice(0, startIndex) +
+    nextSection +
+    source.slice(endIndex)
+  )
+}
+
+function compactTransformFields(source) {
+  const startMarker =
+    'function InlineTransformField('
+
+  const endMarker =
+    '\ninterface AspectRatioLockButtonProps'
+
+  const startIndex =
+    source.indexOf(startMarker)
+
+  const endIndex =
+    source.indexOf(
+      endMarker,
+      startIndex,
+    )
+
+  if (
+    startIndex === -1 ||
+    endIndex === -1
+  ) {
+    throw new Error(
+      '找不到 InlineTransformField 组件。',
+    )
+  }
+
+  let section = source.slice(
+    startIndex,
+    endIndex,
+  )
+
+  /*
+   * 固定宽度仍保留，但从 96px 收紧到 88px。
+   */
+  section = section.replace(
+    /h-6 w-\[(?:76|88|96)px\] shrink-0/g,
+    'h-6 w-[88px] shrink-0',
+  )
+
+  /*
+   * 数值不再靠字段右边缘对齐。
+   *
+   * X 229.33
+   * 而不是：
+   * X             229.33
+   */
+  section = section.replaceAll(
+    'text-right font-mono',
+    'text-left font-mono',
+  )
+
+  section = section.replaceAll(
+    'text-right font-mono text-[11px]',
+    'text-left font-mono text-[11px]',
+  )
+
+  /*
+   * 兼容 Tailwind class 被格式化成不同顺序。
+   */
+  section = section.replace(
+    /\btext-right\b/g,
+    'text-left',
+  )
+
+  /*
+   * 标签列从 14px 调整为 12px，
+   * 标签与数值之间只保留正常的 4px gap。
+   */
+  section = section.replaceAll(
+    'grid-cols-[14px_minmax(0,1fr)_10px]',
+    'grid-cols-[12px_minmax(0,1fr)_10px]',
+  )
+
+  if (
+    section.includes('text-right')
+  ) {
+    throw new Error(
+      'InlineTransformField 中仍有右对齐数值。',
     )
   }
 
   if (
-    !source.includes(
-      'h-6 w-[96px] shrink-0',
+    !section.includes(
+      'w-[88px]',
     )
   ) {
     throw new Error(
@@ -137,66 +260,9 @@ async function updateTransformStatus() {
     )
   }
 
-  await writeFile(
-    transformStatusPath,
-    source,
-    'utf8',
-  )
-}
-
-async function removePageCount() {
-  let source = await readFile(
-    workspaceContainerPath,
-    'utf8',
-  )
-
-  /*
-   * 删除 WorkspaceShell 的右侧页面计数。
-   */
-  source = source.replace(
-    /\n\s*statusRight=\{<CanvasStatusRightContent pageCount=\{pages\.length\} \/>\}/,
-    '',
-  )
-
-  /*
-   * 删除已经没有消费者的页面计数组件。
-   */
-  source = source.replace(
-    /\nfunction CanvasStatusRightContent\(\{\s*pageCount\s*\}:\s*\{\s*readonly pageCount:\s*number\s*\}\)\s*\{\s*return pageCount > 0 \? <span>\{pageCount\} 个页面<\/span> : null\s*\}\n/m,
-    '\n',
-  )
-
-  /*
-   * 兼容格式化后的多行版本。
-   */
-  source = source.replace(
-    /\nfunction CanvasStatusRightContent[\s\S]*?\n\}\n\n(?=function createUntitledCanvasTitle)/m,
-    '\n',
-  )
-
-  if (
-    source.includes(
-      'CanvasStatusRightContent',
-    )
-  ) {
-    throw new Error(
-      'WorkspaceContainer.tsx 中仍存在 CanvasStatusRightContent。',
-    )
-  }
-
-  if (
-    source.includes(
-      'statusRight={<CanvasStatusRightContent',
-    )
-  ) {
-    throw new Error(
-      'WorkspaceShell 中仍然挂载了页面数量。',
-    )
-  }
-
-  await writeFile(
-    workspaceContainerPath,
-    source,
-    'utf8',
+  return (
+    source.slice(0, startIndex) +
+    section +
+    source.slice(endIndex)
   )
 }
