@@ -7,7 +7,8 @@ use specta_typescript::Typescript;
 use tauri::Wry;
 use tauri_specta::{Builder, ErrorHandlingMode};
 
-use crate::commands::{
+use crate::{
+    commands::{
     asset::{
         AssetRemoveRequest, AssetSessionCloseRequest, AssetSessionResult, AssetUploadRequest,
         AssetUploadResult,
@@ -17,6 +18,9 @@ use crate::commands::{
         DocumentOpenResult, DocumentSaveAsRequest, DocumentSaveAsResult, DocumentSaveRequest,
     },
     settings::{AppSettings, CanvasSettings, EditorSettings, ExportSettings, PrivacySettings},
+
+    },
+    diagnostics::NativeCrashReport,
 };
 
 const OUTPUT_PATH: &str = concat!(
@@ -36,6 +40,7 @@ pub fn export_document_bindings() {
             crate::commands::asset::asset_upload,
             crate::commands::asset::asset_remove,
             crate::commands::asset::asset_session_close,
+            crate::commands::diagnostics::diagnostics_take_previous_crash,
             crate::commands::document::document_open,
             crate::commands::document::document_save_as,
             crate::commands::document::document_save,
@@ -49,6 +54,7 @@ pub fn export_document_bindings() {
         .typ::<AssetUploadResult>()
         .typ::<AssetRemoveRequest>()
         .typ::<AssetSessionCloseRequest>()
+        .typ::<NativeCrashReport>()
         .typ::<DocumentId>()
         .typ::<DocumentDescriptor>()
         .typ::<DocumentOpenResult>()

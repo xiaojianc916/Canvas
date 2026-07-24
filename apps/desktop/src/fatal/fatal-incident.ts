@@ -5,6 +5,7 @@ export type FatalIncidentKind =
   | 'invariant'
   | 'vite'
   | 'webview'
+  | 'native-crash'
 
 export type FatalIncidentPhase =
   | 'preflight'

@@ -1,0 +1,269 @@
+use std::{
+    backtrace::Backtrace,
+    fs::{self, File},
+    io::Write,
+    panic::PanicHookInfo,
+    path::{Path, PathBuf},
+};
+
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use tauri::{AppHandle, Manager};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+use uuid::Uuid;
+
+use crate::Result;
+
+const CRASH_REPORT_FILE_NAME: &str = "last-native-crash.json";
+const CRASH_REPORT_TEMP_FILE_NAME: &str = "last-native-crash.tmp";
+const MAX_MESSAGE_LENGTH: usize = 8_192;
+const MAX_BACKTRACE_LENGTH: usize = 64_000;
+const MAX_LOCATION_LENGTH: usize = 4_096;
+
+#[derive(Clone, Debug, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeCrashReport {
+    pub incident_id: String,
+    pub occurred_at: String,
+    pub process: String,
+    pub thread: String,
+    pub message: String,
+    pub location: Option<String>,
+    pub backtrace: String,
+    pub app_version: String,
+    pub target_os: String,
+    pub target_arch: String,
+}
+
+/// Installs the process-level panic recorder.
+///
+/// A Rust panic can terminate the native process before the WebView is able to
+/// render anything. The panic hook therefore writes a local crash report that
+/// is consumed on the next launch.
+pub fn install(app: &AppHandle) -> Result<()> {
+    let report_directory = app.path().app_log_dir()?;
+    fs::create_dir_all(&report_directory)?;
+
+    let app_version = app.package_info().version.to_string();
+    let previous_hook = std::panic::take_hook();
+
+    std::panic::set_hook(Box::new(move |panic_info| {
+        let report = create_report(panic_info, &app_version);
+
+        if let Err(error) = write_report_atomically(&report_directory, &report) {
+            eprintln!(
+                "[Hybrid Canvas] failed to persist native crash report: {error}"
+            );
+        }
+
+        previous_hook(panic_info);
+    }));
+
+    Ok(())
+}
+
+/// Reads and consumes the previous crash report.
+///
+/// Reports are removed after a successful read so reloading the renderer does
+/// not display the same historical crash indefinitely.
+pub fn take_previous_crash_report(
+    app: &AppHandle,
+) -> Result<Option<NativeCrashReport>> {
+    let report_path = crash_report_path(app)?;
+
+    if !report_path.exists() {
+        return Ok(None);
+    }
+
+    let source = match fs::read_to_string(&report_path) {
+        Ok(source) => source,
+        Err(error) => {
+            log::error!(
+                "failed to read native crash report: {}",
+                error
+            );
+
+            let _ = fs::remove_file(&report_path);
+            return Ok(None);
+        }
+    };
+
+    let report = match serde_json::from_str::<NativeCrashReport>(&source) {
+        Ok(report) => report,
+        Err(error) => {
+            log::error!(
+                "invalid native crash report was discarded: {}",
+                error
+            );
+
+            let _ = fs::remove_file(&report_path);
+            return Ok(None);
+        }
+    };
+
+    fs::remove_file(&report_path)?;
+
+    Ok(Some(report))
+}
+
+fn create_report(
+    panic_info: &PanicHookInfo<'_>,
+    app_version: &str,
+) -> NativeCrashReport {
+    let current_thread = std::thread::current();
+
+    let thread_name = current_thread
+        .name()
+        .unwrap_or("unnamed")
+        .to_owned();
+
+    let message = panic_payload_message(panic_info);
+
+    let location = panic_info.location().map(|location| {
+        truncate(
+            format!(
+                "{}:{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            ),
+            MAX_LOCATION_LENGTH,
+        )
+    });
+
+    let backtrace = truncate(
+        Backtrace::force_capture().to_string(),
+        MAX_BACKTRACE_LENGTH,
+    );
+
+    NativeCrashReport {
+        incident_id: format!("native-{}", Uuid::new_v4()),
+        occurred_at: current_timestamp(),
+        process: "hybrid-canvas-desktop".to_owned(),
+        thread: truncate(thread_name, 256),
+        message: truncate(message, MAX_MESSAGE_LENGTH),
+        location,
+        backtrace,
+        app_version: app_version.to_owned(),
+        target_os: std::env::consts::OS.to_owned(),
+        target_arch: std::env::consts::ARCH.to_owned(),
+    }
+}
+
+fn panic_payload_message(
+    panic_info: &PanicHookInfo<'_>,
+) -> String {
+    if let Some(message) = panic_info.payload().downcast_ref::<&str>() {
+        return (*message).to_owned();
+    }
+
+    if let Some(message) = panic_info.payload().downcast_ref::<String>() {
+        return message.clone();
+    }
+
+    "Rust panic with a non-string payload".to_owned()
+}
+
+fn write_report_atomically(
+    directory: &Path,
+    report: &NativeCrashReport,
+) -> std::io::Result<()> {
+    fs::create_dir_all(directory)?;
+
+    let target_path = directory.join(CRASH_REPORT_FILE_NAME);
+    let temporary_path = directory.join(CRASH_REPORT_TEMP_FILE_NAME);
+
+    let serialized = serde_json::to_vec_pretty(report)
+        .map_err(std::io::Error::other)?;
+
+    let mut file = File::create(&temporary_path)?;
+    file.write_all(&serialized)?;
+    file.sync_all()?;
+    drop(file);
+
+    if target_path.exists() {
+        fs::remove_file(&target_path)?;
+    }
+
+    fs::rename(&temporary_path, &target_path)?;
+
+    sync_directory(directory);
+
+    Ok(())
+}
+
+fn sync_directory(directory: &Path) {
+    #[cfg(unix)]
+    {
+        if let Ok(file) = File::open(directory) {
+            let _ = file.sync_all();
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = directory;
+    }
+}
+
+fn crash_report_path(
+    app: &AppHandle,
+) -> Result<PathBuf> {
+    Ok(
+        app.path()
+            .app_log_dir()?
+            .join(CRASH_REPORT_FILE_NAME),
+    )
+}
+
+fn current_timestamp() -> String {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| {
+            OffsetDateTime::now_utc()
+                .unix_timestamp()
+                .to_string()
+        })
+}
+
+fn truncate(mut value: String, maximum_length: usize) -> String {
+    if value.len() <= maximum_length {
+        return value;
+    }
+
+    while !value.is_char_boundary(maximum_length.min(value.len())) {
+        value.pop();
+    }
+
+    value.truncate(maximum_length);
+    value.push_str("\n[Native diagnostic value truncated]");
+
+    value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{truncate, MAX_MESSAGE_LENGTH};
+
+    #[test]
+    fn short_values_are_not_changed() {
+        assert_eq!(truncate("panic".to_owned(), 32), "panic");
+    }
+
+    #[test]
+    fn long_values_are_bounded() {
+        let source = "a".repeat(MAX_MESSAGE_LENGTH + 100);
+        let result = truncate(source, MAX_MESSAGE_LENGTH);
+
+        assert!(result.len() < MAX_MESSAGE_LENGTH + 100);
+        assert!(result.contains("truncated"));
+    }
+
+    #[test]
+    fn unicode_truncation_preserves_utf8_boundaries() {
+        let result = truncate("画布崩溃测试".to_owned(), 5);
+
+        assert!(result.is_char_boundary(result.len()));
+        assert!(result.contains("truncated"));
+    }
+}

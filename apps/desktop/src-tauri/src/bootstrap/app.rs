@@ -23,6 +23,7 @@ pub fn build() -> tauri::Builder<Wry> {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             app.store("settings.json")?;
+            crate::diagnostics::install(app.handle())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -30,6 +31,7 @@ pub fn build() -> tauri::Builder<Wry> {
             commands::asset::asset_upload,
             commands::asset::asset_remove,
             commands::asset::asset_session_close,
+            commands::diagnostics::diagnostics_take_previous_crash,
             commands::window::window_get,
             commands::window::window_list,
             commands::window::window_show,
