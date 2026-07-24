@@ -1,15 +1,15 @@
-import { commands, type NativeCrashReport } from '@hybrid-canvas/desktop-ipc'
-
-export type { NativeCrashReport }
-
-export async function takePreviousNativeCrashReport(): Promise<NativeCrashReport | null> {
-  if (!isTauriRuntime()) {
-    return null
-  }
-
-  return commands.diagnosticsTakePreviousCrash()
+/**
+ * 原生诊断崩溃报告尚未注册为 Tauri IPC 命令。
+ *
+ * 待 native 端实现 diagnostics_take_previous_crash 并重新生成
+ * desktop-ipc/src/generated/ipc-bindings.ts 后，再以生成类型替换此占位类型。
+ */
+export interface NativeCrashReport {
+  readonly message: string
+  readonly timestamp: string
+  readonly stack?: string
 }
 
-function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+export async function takePreviousNativeCrashReport(): Promise<NativeCrashReport | null> {
+  return null
 }

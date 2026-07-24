@@ -6,7 +6,4 @@ export {
 
 export { invoke } from './invoke'
 
-export {
-  commands,
-  type NativeCrashReport,
-} from './generated/ipc-bindings'
+export { commands } from './generated/ipc-bindings'

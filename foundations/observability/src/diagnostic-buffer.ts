@@ -38,13 +38,16 @@ export function recordDiagnosticLog(
   timestamp: string,
 ): void {
   try {
+    const scope = normalizeOptionalText(context.scope, 256)
+    const correlationId = normalizeOptionalText(context.correlationId, 256)
+
     const entry: DiagnosticLogEntry = {
       sequence: nextSequence,
       timestamp: normalizeTimestamp(timestamp),
       level,
       message: normalizeText(message, MAX_MESSAGE_LENGTH),
-      scope: normalizeOptionalText(context.scope, 256),
-      correlationId: normalizeOptionalText(context.correlationId, 256),
+      ...(scope === undefined ? {} : { scope }),
+      ...(correlationId === undefined ? {} : { correlationId }),
       context: sanitizeContext(context),
     }
 
