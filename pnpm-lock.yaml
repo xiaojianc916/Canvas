@@ -463,17 +463,17 @@ importers:
         specifier: 'catalog:'
         version: 5.2.5(@floating-ui/dom@1.8.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
 
-  tests/cross-domain-contract:
+  tests:
     dependencies:
       '@hybrid-canvas/canvas':
         specifier: workspace:*
-        version: link:../../editor/core
+        version: link:../editor/core
       '@hybrid-canvas/document':
         specifier: workspace:*
-        version: link:../../editor/document
+        version: link:../editor/document
       '@hybrid-canvas/file':
         specifier: workspace:*
-        version: link:../../editor/persistence
+        version: link:../editor/persistence
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

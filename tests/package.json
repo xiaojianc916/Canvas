@@ -1,12 +1,14 @@
 {
-  "name": "@hybrid-canvas/test-cross-domain-contract",
+  "name": "@hybrid-canvas/tests",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "check": "tsc --project tsconfig.json --noEmit",
     "typecheck": "tsc --project tsconfig.json --noEmit",
-    "test": "vitest run document-lifecycle"
+    "test": "vitest run unit integration",
+    "test:unit": "vitest run unit",
+    "test:integration": "vitest run integration"
   },
   "dependencies": {
     "@hybrid-canvas/canvas": "workspace:*",

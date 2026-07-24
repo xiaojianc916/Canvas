@@ -5,7 +5,7 @@ packages:
   - "foundations/*"
   - "platforms/*"
   - "tooling/*"
-  - "tests/*"
+  - "tests"
 
 allowBuilds:
   "@parcel/watcher": true
