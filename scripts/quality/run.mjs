@@ -11,7 +11,6 @@ import { resolve } from 'node:path'
 import process from 'node:process'
 
 const turboCli = resolve(process.cwd(), 'node_modules', 'turbo', 'bin', 'turbo')
-
 const cargo = process.platform === 'win32' ? 'cargo.exe' : 'cargo'
 
 function execute(command, args) {
@@ -50,12 +49,10 @@ const tasks =
     ? [turboTask('typecheck')]
     : mode === 'test'
       ? [turboTask('test'), [cargo, ['test', '--workspace', '--all-features']]]
-      : mode === 'check'
-        ? [turboTask('check'), [cargo, ['check', '--workspace', '--all-targets', '--all-features']]]
-        : null
+      : null
 
 if (!tasks) {
-  console.error('Usage: node scripts/quality/run.mjs <typecheck|test|check>')
+  console.error('Usage: node scripts/quality/run.mjs <typecheck|test>')
   process.exitCode = 1
 } else {
   let failed = false

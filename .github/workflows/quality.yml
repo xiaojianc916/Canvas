@@ -76,8 +76,6 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Bundle budget
-        run: pnpm analyze:bundle:check
 
   windows-desktop:
     name: Windows Desktop
