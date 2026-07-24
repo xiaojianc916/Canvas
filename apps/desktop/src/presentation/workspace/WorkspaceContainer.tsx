@@ -351,7 +351,6 @@ export function WorkspaceContainer({
         </DesktopTitleBar>
       )}
       statusLeft={<CanvasTransformStatus canvasTitle={activeCanvasTitle} />}
-      statusRight={<CanvasStatusRightContent pageCount={pages.length} />}
     />
   )
 }
@@ -396,9 +395,6 @@ function renderActiveSurface({
   }
 }
 
-function CanvasStatusRightContent({ pageCount }: { readonly pageCount: number }) {
-  return pageCount > 0 ? <span>{pageCount} 个页面</span> : null
-}
 
 function createUntitledCanvasTitle(existingTitles: readonly string[]): string {
   const baseTitle = '未命名画布'

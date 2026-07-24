@@ -350,7 +350,7 @@ export function CanvasTransformStatus({
       {canvasTitle ? (
         <span
           className="
-            w-40 max-w-40 shrink-0 truncate px-1
+            w-[112px] max-w-[112px] shrink-0 truncate px-1
             font-medium text-foreground/80
           "
           title={canvasTitle}
@@ -494,7 +494,7 @@ function SelectionCount({
   return (
     <span
       className="
-        inline-flex h-6 w-[68px] shrink-0 items-center
+        inline-flex h-6 w-[96px] shrink-0 items-center
         overflow-hidden px-1.5 text-foreground/65
         tabular-nums whitespace-nowrap
       "
@@ -504,7 +504,7 @@ function SelectionCount({
           : '已选择 ' + String(count) + ' 个对象'
       }
     >
-      <span className="block w-full truncate">
+      <span className="block w-full whitespace-nowrap">
         {label}
       </span>
     </span>
@@ -752,7 +752,7 @@ function InlineTransformField({
     return (
       <span
         className="
-          inline-grid h-6 w-[76px] shrink-0
+          inline-grid h-6 w-[96px] shrink-0
           grid-cols-[14px_minmax(0,1fr)_10px]
           items-center gap-1 rounded-md px-1.5
           text-[11px] tabular-nums
@@ -812,7 +812,7 @@ function InlineTransformField({
           : '双击编辑 ' + label
       }
       className={[
-        'inline-grid h-6 w-[76px] shrink-0',
+        'inline-grid h-6 w-[96px] shrink-0',
         'grid-cols-[14px_minmax(0,1fr)_10px]',
         'items-center gap-1 rounded-md px-1.5',
         'text-[11px] tabular-nums',
@@ -846,8 +846,7 @@ function InlineTransformField({
 
       <span
         className="
-          block min-w-0 overflow-hidden
-          text-ellipsis whitespace-nowrap
+          block min-w-0 whitespace-nowrap
           text-right font-mono
           text-foreground/85
         "

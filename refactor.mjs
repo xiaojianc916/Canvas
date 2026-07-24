@@ -2,96 +2,201 @@ import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 
-const filePath = path.join(
-  process.cwd(),
+const ROOT = process.cwd()
+
+const transformStatusPath = path.join(
+  ROOT,
   'editor/core/src/react/CanvasTransformStatus.tsx',
 )
 
-let source = await readFile(filePath, 'utf8')
-
-const before = source
-
-/*
- * 修复上一版脚本错误插入的字面量：
- *
- * }\\n
- * interface ...
- *
- * 替换为真正的源码换行。
- */
-source = source.replace(
-  /\\n(?=\s*interface\s+)/g,
-  '\n',
+const workspaceContainerPath = path.join(
+  ROOT,
+  'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
 )
 
-source = source.replace(
-  /\\n(?=\s*(?:export\s+)?function\s+)/g,
-  '\n',
-)
+await updateTransformStatus()
+await removePageCount()
 
-/*
- * 防止连续运行上一版脚本后出现多个字面量换行。
- */
-source = source.replace(
-  /(?:\\n)+(?=\s*interface\s+)/g,
-  '\n',
-)
+console.log('')
+console.log('底部状态栏布局已调整：')
+console.log('- 删除右侧页面数量')
+console.log('- 压缩画布标题占用空间')
+console.log('- 扩大 X / Y / W / H / R 数值空间')
+console.log('- 删除 Transform 数值省略号')
+console.log('- 保持各字段位置稳定')
+console.log('')
+console.log('请运行：')
+console.log('  pnpm format')
+console.log('  pnpm typecheck')
+console.log('')
 
-if (source === before) {
-  console.log(
-    '没有发现字面量换行，文件可能已经被其他操作修复。',
-  )
-} else {
-  await writeFile(filePath, source, 'utf8')
-
-  console.log(
-    'CanvasTransformStatus.tsx 非法换行已修复。',
-  )
-}
-
-/*
- * 修正上一版脚本生成器本身，避免再次执行时重新产生错误。
- */
-const generatorPath = path.join(
-  process.cwd(),
-  'refine-transform-inline-edit-v12-3.mjs',
-)
-
-try {
-  let generator = await readFile(
-    generatorPath,
+async function updateTransformStatus() {
+  let source = await readFile(
+    transformStatusPath,
     'utf8',
   )
 
   /*
-   * 在生成器源文件中：
-   * '\\\\n' 会生成字面量反斜杠+n；
-   * '\\n' 才会生成真正换行。
+   * 画布标题原来固定为 160px，明显浪费状态栏左侧空间。
+   * 112px 足够完整显示“未命名画布”等常见标题。
    */
-  generator = generator.replace(
-    `replacement.trimEnd() +
-    '\\\\n' +
-    source.slice(endIndex)`,
-    `replacement.trimEnd() +
-    '\\n' +
-    source.slice(endIndex)`,
+  source = source.replaceAll(
+    'w-40 max-w-40 shrink-0 truncate px-1',
+    'w-[112px] max-w-[112px] shrink-0 truncate px-1',
   )
 
+  /*
+   * 对象数量稍微扩大，避免两位、三位选择数量过早截断。
+   */
+  source = source.replaceAll(
+    'h-6 w-[68px] shrink-0',
+    'h-6 w-[76px] shrink-0',
+  )
+
+  /*
+   * SelectionCount 不需要内部再做一次省略。
+   */
+  source = source.replace(
+    `<span className="block w-full truncate">
+        {label}
+      </span>`,
+    `<span className="block w-full whitespace-nowrap">
+        {label}
+      </span>`,
+  )
+
+  /*
+   * 数值字段从 76px 扩展到 96px。
+   *
+   * 字段内部还包含：
+   * - X/Y/W/H/R 标签
+   * - Grid gap
+   * - 角度单位槽
+   * - 左右 padding
+   *
+   * 76px 实际留给数字的空间太小。
+   */
+  source = source.replaceAll(
+    'h-6 w-[76px] shrink-0',
+    'h-6 w-[96px] shrink-0',
+  )
+
+  /*
+   * 删除静态数值的省略号。
+   */
+  source = source.replace(
+    `className="
+          block min-w-0 overflow-hidden
+          text-ellipsis whitespace-nowrap
+          text-right font-mono
+          text-foreground/85
+        "`,
+    `className="
+          block min-w-0 whitespace-nowrap
+          text-right font-mono
+          text-foreground/85
+        "`,
+  )
+
+  /*
+   * 防止 pnpm format 改变换行后导致精确替换未命中。
+   */
+  source = source.replace(
+    /\bmin-w-0\s+overflow-hidden\s+text-ellipsis\s+whitespace-nowrap\s+text-right\s+font-mono\b/g,
+    'min-w-0 whitespace-nowrap text-right font-mono',
+  )
+
+  source = source.replace(
+    /\boverflow-hidden\s+text-ellipsis\s+whitespace-nowrap\s+text-right\b/g,
+    'whitespace-nowrap text-right',
+  )
+
+  if (source.includes('text-ellipsis')) {
+    throw new Error(
+      'CanvasTransformStatus.tsx 中仍存在 Transform 数值省略号样式。',
+    )
+  }
+
+  if (
+    !source.includes(
+      'w-[112px] max-w-[112px]',
+    )
+  ) {
+    throw new Error(
+      '没有成功调整画布标题宽度。',
+    )
+  }
+
+  if (
+    !source.includes(
+      'h-6 w-[96px] shrink-0',
+    )
+  ) {
+    throw new Error(
+      '没有成功调整 Transform 字段宽度。',
+    )
+  }
+
   await writeFile(
-    generatorPath,
-    generator,
+    transformStatusPath,
+    source,
+    'utf8',
+  )
+}
+
+async function removePageCount() {
+  let source = await readFile(
+    workspaceContainerPath,
     'utf8',
   )
 
-  console.log(
-    'refine-transform-inline-edit-v12-3.mjs 生成器也已修复。',
+  /*
+   * 删除 WorkspaceShell 的右侧页面计数。
+   */
+  source = source.replace(
+    /\n\s*statusRight=\{<CanvasStatusRightContent pageCount=\{pages\.length\} \/>\}/,
+    '',
   )
-} catch {
-  // 用户可能已经删除了临时重构脚本，不影响产品代码修复。
-}
 
-console.log('')
-console.log('现在运行：')
-console.log('  pnpm format')
-console.log('  pnpm typecheck')
-console.log('')
+  /*
+   * 删除已经没有消费者的页面计数组件。
+   */
+  source = source.replace(
+    /\nfunction CanvasStatusRightContent\(\{\s*pageCount\s*\}:\s*\{\s*readonly pageCount:\s*number\s*\}\)\s*\{\s*return pageCount > 0 \? <span>\{pageCount\} 个页面<\/span> : null\s*\}\n/m,
+    '\n',
+  )
+
+  /*
+   * 兼容格式化后的多行版本。
+   */
+  source = source.replace(
+    /\nfunction CanvasStatusRightContent[\s\S]*?\n\}\n\n(?=function createUntitledCanvasTitle)/m,
+    '\n',
+  )
+
+  if (
+    source.includes(
+      'CanvasStatusRightContent',
+    )
+  ) {
+    throw new Error(
+      'WorkspaceContainer.tsx 中仍存在 CanvasStatusRightContent。',
+    )
+  }
+
+  if (
+    source.includes(
+      'statusRight={<CanvasStatusRightContent',
+    )
+  ) {
+    throw new Error(
+      'WorkspaceShell 中仍然挂载了页面数量。',
+    )
+  }
+
+  await writeFile(
+    workspaceContainerPath,
+    source,
+    'utf8',
+  )
+}
