@@ -186,6 +186,25 @@ async function updateTestsPackage() {
 	console.log('updated tests/package.json')
 }
 
+async function writeTestsTsconfig() {
+	const tsconfig = {
+		extends: '../tsconfig.base.json',
+		compilerOptions: {
+			tsBuildInfoFile:
+				'./node_modules/.cache/typescript/tests.tsbuildinfo',
+		},
+		include: ['unit/**/*.ts', 'integration/**/*.ts'],
+		exclude: ['node_modules', 'coverage', 'dist'],
+	}
+
+	await writeFile(
+		join(testsRoot, 'tsconfig.json'),
+		`${JSON.stringify(tsconfig, null, 2)}\n`,
+	)
+
+	console.log('updated tests/tsconfig.json')
+}
+
 async function replaceServiceFixture() {
 	const path = join(
 		testsRoot,
@@ -311,7 +330,8 @@ async function main() {
 	 * 3. 把工作区与测试运行入口更新为新的根 tests 包。
 	 */
 	await updateWorkspaceManifest()
-	await updateTestsPackage()
+await updateTestsPackage()
+await writeTestsTsconfig()
 
 	/*
 	 * 4. 清除已发现的“输入被丢弃”的 fixture，避免测试以固定快照掩盖状态问题。

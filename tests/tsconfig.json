@@ -1,7 +1,15 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.cache/typescript/cross-domain-contract.tsbuildinfo"
+    "tsBuildInfoFile": "./node_modules/.cache/typescript/tests.tsbuildinfo"
   },
-  "include": ["document-lifecycle/**/*.ts"]
+  "include": [
+    "unit/**/*.ts",
+    "integration/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "coverage",
+    "dist"
+  ]
 }
