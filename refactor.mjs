@@ -1,104 +1,149 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+#!/usr/bin/env node
 
-const workflowPath = resolve(".github/workflows/quality.yml");
+import { execFile } from 'node:child_process'
+import { access, readFile, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import process from 'node:process'
+import { promisify } from 'node:util'
 
-let workflow = await readFile(workflowPath, "utf8");
+const execFileAsync = promisify(execFile)
 
-const replacements = [
-  [
-    `    runs-on: ubuntu-latest`,
-    `    runs-on: windows-latest`,
-  ],
-  [
-    `      - name: Verify JavaScript toolchain
-        shell: bash
-        run: |
-          set -euo pipefail
+const root = process.cwd()
+const packageJsonPath = path.join(root, 'package.json')
+const gitignorePath = path.join(root, '.gitignore')
 
-          expected_node="$(tr -d '[:space:]' < .node-version)"
-          actual_node="$(node --version | sed 's/^v//')"
-          actual_pnpm="$(pnpm --version)"
+const iconPath = 'apps/desktop/src-tauri/icons/icon.ico'
 
-          test "$actual_node" = "$expected_node"
-          test "$actual_pnpm" = "11.15.0"`,
-    `      - name: Verify JavaScript toolchain
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
+const requiredRules = [
+	'# Tauri 应用图标是源码资产，必须纳入版本控制。',
+	'!apps/desktop/src-tauri/icons/',
+	'!apps/desktop/src-tauri/icons/**',
+]
 
-          $expectedNode = (Get-Content .node-version -Raw).Trim()
-          $actualNode = (node --version).Trim().TrimStart("v")
-          $actualPnpm = (pnpm --version).Trim()
-
-          if ($actualNode -ne $expectedNode) {
-            throw "Expected Node.js $expectedNode, got $actualNode"
-          }
-
-          if ($actualPnpm -ne "11.15.0") {
-            throw "Expected pnpm 11.15.0, got $actualPnpm"
-          }`,
-  ],
-  [
-    `      - name: Verify Rust toolchain
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          expected="1.88.0"
-          actual="$(rustc --version | awk '{print $2}')"
-
-          test "$actual" = "$expected"`,
-    `      - name: Verify Rust toolchain
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $expected = "1.88.0"
-          $actual = ((rustc --version).Trim() -split "\\s+")[1]
-
-          if ($actual -ne $expected) {
-            throw "Expected Rust $expected, got $actual"
-          }`,
-  ],
-  [
-    `      - name: Verify generated IPC bindings
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cargo run -p hybrid-canvas-desktop --bin export-ipc-bindings
-          git diff --exit-code -- platforms/desktop-ipc/src/generated/ipc-bindings.ts`,
-    `      - name: Verify generated IPC bindings
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          cargo run -p hybrid-canvas-desktop --bin export-ipc-bindings
-          git diff --exit-code -- platforms/desktop-ipc/src/generated/ipc-bindings.ts
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Generated IPC bindings are out of date."
-          }`,
-  ],
-];
-
-for (const [from, to] of replacements) {
-  if (!workflow.includes(from)) {
-    throw new Error(
-      `Expected workflow section was not found. Aborting without modifying ${workflowPath}.`,
-    );
-  }
-
-  workflow = workflow.replaceAll(from, to);
+async function exists(filePath) {
+	try {
+		await access(filePath)
+		return true
+	} catch {
+		return false
+	}
 }
 
-if (workflow.includes("ubuntu-latest") || workflow.includes("shell: bash")) {
-  throw new Error(
-    "Migration validation failed: Linux runner or Bash shell remains in the quality workflow.",
-  );
+async function git(args, allowFailure = false) {
+	try {
+		const { stdout, stderr } = await execFileAsync('git', args, {
+			cwd: root,
+			windowsHide: true,
+		})
+
+		return {
+			ok: true,
+			stdout: stdout.trim(),
+			stderr: stderr.trim(),
+		}
+	} catch (error) {
+		if (!allowFailure) {
+			throw new Error(
+				[
+					`git ${args.join(' ')} failed`,
+					error.stdout?.trim(),
+					error.stderr?.trim(),
+				]
+					.filter(Boolean)
+					.join('\n'),
+			)
+		}
+
+		return {
+			ok: false,
+			stdout: error.stdout?.trim() ?? '',
+			stderr: error.stderr?.trim() ?? '',
+		}
+	}
 }
 
-await writeFile(workflowPath, workflow, "utf8");
+async function main() {
+	if (!(await exists(packageJsonPath))) {
+		throw new Error(
+			`请在仓库根目录运行脚本。当前目录：${root}`,
+		)
+	}
 
-console.log(`Updated ${workflowPath}: all quality jobs now run on Windows.`);
+	if (!(await exists(gitignorePath))) {
+		throw new Error(`找不到 .gitignore：${gitignorePath}`)
+	}
+
+	let gitignore = await readFile(gitignorePath, 'utf8')
+
+	const missingRules = requiredRules.filter(
+		(rule) => !gitignore.includes(rule),
+	)
+
+	if (missingRules.length > 0) {
+		gitignore = `${gitignore.trimEnd()}\n\n${missingRules.join('\n')}\n`
+
+		await writeFile(gitignorePath, gitignore, 'utf8')
+
+		console.log('已更新 .gitignore：')
+		console.log(missingRules.join('\n'))
+	} else {
+		console.log('跳过：.gitignore 已包含 Tauri 图标反忽略规则。')
+	}
+
+	/*
+	 * --no-index 用于即使文件已经被 Git 跟踪时，也检查 ignore 规则是否会
+	 * 匹配该路径。修复成功时，此命令应返回非零且不输出规则。
+	 */
+	const ignored = await git(
+		['check-ignore', '-v', '--no-index', '--', iconPath],
+		true,
+	)
+
+	const matchedRule = ignored.stdout
+	.split('\t')[0]
+	.split(':')
+	.slice(2)
+	.join(':')
+
+if (ignored.ok && !matchedRule.startsWith('!')) {
+	throw new Error(
+		[
+			'修复失败：icon.ico 仍然被普通 ignore 规则匹配。',
+			ignored.stdout,
+			'请检查 .gitignore 中是否有位于反忽略规则之后的更高优先级规则。',
+		].join('\n'),
+	)
+}
+
+if (ignored.ok && matchedRule.startsWith('!')) {
+	console.log(
+		'\n验证通过：最后命中的是反忽略规则，icon.ico 已解除忽略。',
+	)
+} else {
+	console.log('\n验证通过：icon.ico 没有命中任何 ignore 规则。')
+}
+
+	const tracked = await git(
+		['ls-files', '--error-unmatch', '--', iconPath],
+		true,
+	)
+
+	if (tracked.ok) {
+		console.log('验证通过：icon.ico 当前已被 Git 跟踪。')
+	} else {
+		console.log(
+			[
+				'注意：icon.ico 当前尚未被 Git 跟踪。',
+				'请执行：',
+				`git add -- "${iconPath}"`,
+			].join('\n'),
+		)
+	}
+}
+
+main().catch((error) => {
+	console.error(
+		error instanceof Error ? error.message : String(error),
+	)
+	process.exitCode = 1
+})
