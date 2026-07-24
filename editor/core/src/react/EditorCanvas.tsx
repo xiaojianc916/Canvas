@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  DefaultToolbar,
   type Editor,
   type TLComponents,
   type TLUiActionsContextType,
@@ -30,9 +31,25 @@ export const HYBRID_CANVAS_SAVE_ACTION_ID =
  * Canvas 使用原来的 Workspace CanvasInspectorContent，
  * 避免同时出现两套右侧属性面板。
  */
+function CanvasTopToolbar() {
+  return (
+    <div className="hc-canvas-top-toolbar">
+      {/*
+       * 使用 tldraw 官方 DefaultToolbar。
+       *
+       * 工具定义、按钮样式、激活状态、快捷键、
+       * QuickActions 和 overflow 均由 tldraw 管理。
+       */}
+      <DefaultToolbar />
+    </div>
+  )
+}
+
 const CANVAS_COMPONENTS: TLComponents = {
   PageMenu: null,
   StylePanel: null,
+  Toolbar: null,
+  TopPanel: CanvasTopToolbar,
 }
 
 export interface EditorCanvasProps {
@@ -81,6 +98,7 @@ export function EditorCanvas({
       components: CANVAS_COMPONENTS,
       options: {
         maxPages: 100,
+        actionShortcutsLocation: 'toolbar',
       },
       shapeUtils: registration.shapeUtils,
       bindingUtils: registration.bindingUtils,
