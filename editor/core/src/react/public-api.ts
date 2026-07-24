@@ -25,3 +25,8 @@ export {
   type CanvasInspectorStylePanelProps,
   useCanvasInspectorAvailability,
 } from './canvas-inspector-portal'
+
+export {
+  CanvasTransformStatus,
+  type CanvasTransformStatusProps,
+} from './CanvasTransformStatus'

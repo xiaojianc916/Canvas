@@ -6,9 +6,9 @@ import type {
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
 import {
   CanvasInspectorRightSidebar,
+  CanvasTransformStatus,
   EditorSessionHost,
   useCanvasInspectorAvailability,
-  useEditor,
 } from '@hybrid-canvas/canvas/react'
 import { ConfirmationDialog } from '@hybrid-canvas/design-system'
 import type {
@@ -28,7 +28,6 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
 import { DesktopTitleBar } from '../chrome/DesktopTitleBar'
 import { reportUiError as reportError } from '../ui/ui-feedback'
-import { SelectionTransformStatus } from './status/SelectionTransformStatus'
 
 const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({
   pages: Object.freeze([]),
@@ -78,8 +77,6 @@ export function WorkspaceContainer({
   onWindowClose,
   onWindowStartDragging,
 }: WorkspaceContainerProps) {
-  const editor = useEditor()
-
   const inspectorAvailable = useCanvasInspectorAvailability()
 
   const workbench = useSyncExternalStore(
@@ -353,7 +350,7 @@ export function WorkspaceContainer({
           />
         </DesktopTitleBar>
       )}
-      statusLeft={<SelectionTransformStatus canvasTitle={activeCanvasTitle} />}
+      statusLeft={<CanvasTransformStatus canvasTitle={activeCanvasTitle} />}
       statusRight={<CanvasStatusRightContent pageCount={pages.length} />}
     />
   )
