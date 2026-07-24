@@ -21,7 +21,7 @@ env:
 jobs:
   frontend:
     name: Frontend
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 20
 
     steps:
@@ -41,16 +41,21 @@ jobs:
           cache: pnpm
 
       - name: Verify JavaScript toolchain
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
+          $ErrorActionPreference = "Stop"
 
-          expected_node="$(tr -d '[:space:]' < .node-version)"
-          actual_node="$(node --version | sed 's/^v//')"
-          actual_pnpm="$(pnpm --version)"
+          $expectedNode = (Get-Content .node-version -Raw).Trim()
+          $actualNode = (node --version).Trim().TrimStart("v")
+          $actualPnpm = (pnpm --version).Trim()
 
-          test "$actual_node" = "$expected_node"
-          test "$actual_pnpm" = "11.15.0"
+          if ($actualNode -ne $expectedNode) {
+            throw "Expected Node.js $expectedNode, got $actualNode"
+          }
+
+          if ($actualPnpm -ne "11.15.0") {
+            throw "Expected pnpm 11.15.0, got $actualPnpm"
+          }
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -122,7 +127,7 @@ jobs:
 
   rust:
     name: Rust
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 30
 
     steps:
@@ -138,14 +143,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Verify Rust toolchain
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
+          $ErrorActionPreference = "Stop"
 
-          expected="1.88.0"
-          actual="$(rustc --version | awk '{print $2}')"
+          $expected = "1.88.0"
+          $actual = ((rustc --version).Trim() -split "\s+")[1]
 
-          test "$actual" = "$expected"
+          if ($actual -ne $expected) {
+            throw "Expected Rust $expected, got $actual"
+          }
 
       - name: Format
         run: cargo fmt --check
@@ -154,12 +161,16 @@ jobs:
         run: cargo check --workspace --all-targets --all-features
 
       - name: Verify generated IPC bindings
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
+          $ErrorActionPreference = "Stop"
 
           cargo run -p hybrid-canvas-desktop --bin export-ipc-bindings
           git diff --exit-code -- platforms/desktop-ipc/src/generated/ipc-bindings.ts
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Generated IPC bindings are out of date."
+          }
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
