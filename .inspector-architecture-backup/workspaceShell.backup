@@ -35,6 +35,7 @@ export function WorkspaceShell({
   renderChrome,
   mainContent,
   inspector,
+  inspectorSelectionKey,
   statusLeft,
   statusRight,
   assistantOverlay,
@@ -42,6 +43,7 @@ export function WorkspaceShell({
 }: WorkspaceShellProps) {
   const mode = useWorkspaceLayoutMode()
   const previousModeRef = useRef(mode)
+  const previousInspectorSelectionKeyRef = useRef(inspectorSelectionKey ?? '')
 
   const [isSidebarOpen, setSidebarOpen] = useState(true)
   const [isInspectorOpen, setInspectorOpen] = useState(false)
@@ -68,6 +70,23 @@ export function WorkspaceShell({
       setSidebarOpen(false)
     }
   }, [mode])
+
+  useEffect(() => {
+    const previousKey = previousInspectorSelectionKeyRef.current
+    const nextKey = inspectorSelectionKey ?? ''
+
+    previousInspectorSelectionKeyRef.current = nextKey
+
+    if (!nextKey || nextKey === previousKey) {
+      return
+    }
+
+    if (mode !== 'wide') {
+      setSidebarOpen(false)
+    }
+
+    setInspectorOpen(true)
+  }, [inspectorSelectionKey, mode])
 
   const openSidebar = () => {
     if (mode === 'narrow') {

@@ -1,607 +1,761 @@
 #!/usr/bin/env node
 
 /**
- * 将 tldraw 官方默认 Toolbar 放到画布顶部。
+ * Properties Inspector 架构重构：第一阶段
  *
- * 保留：
- * - tldraw 官方 DefaultToolbar
- * - tldraw 官方 QuickActions
- * - tldraw 官方 ActionsMenu
- * - tldraw 官方 overflow
- * - 原 Workspace 左右侧栏
- * - 原 CanvasInspectorContent
- * - 原 NavigationPanel
- * - 原状态栏
+ * 目标：
+ * 1. 恢复 tldraw 官方 StylePanel 作为样式检查器的唯一状态所有者。
+ * 2. Workspace 不再读取 Editor selection / current tool。
+ * 3. 删除 inspectorSelectionKey 这种 Editor 状态向 Workspace 的泄漏。
+ * 4. 停止创建 App-owned ToolInspectorRegistry。
+ * 5. 暂时不设计最终 Properties Inspector 的具体内容。
+ * 6. 保留 Workspace 通用右栏容器，供后续通过 tldraw StylePanel slot / Portal 接入。
  *
- * 不修改：
- * - WorkspaceShell.tsx
- * - WorkspaceContainer.tsx
- * - Inspector
- * - Workspace grid
+ * 本阶段不会：
+ * - 决定最终属性栏有哪些控件；
+ * - 创建另一套 Inspector 状态机；
+ * - 修改 TLStore；
+ * - 创建 selection/tool 的 React 镜像状态；
+ * - 删除现有 Inspector 内容文件，避免在架构稳定前混合迁移内容。
  *
  * 执行：
- *   node refactor.mjs
+ *   node refactor-inspector-architecture.mjs
  *
- * 撤销本脚本：
- *   node refactor.mjs --undo
+ * 撤销：
+ *   node refactor-inspector-architecture.mjs --undo
  */
 
 import {
+  access,
+  copyFile,
+  mkdir,
   readFile,
+  rm,
   writeFile,
 } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 
 const root = process.cwd()
-const shouldUndo =
-  process.argv.includes('--undo')
+const shouldUndo = process.argv.includes('--undo')
 
-const editorCanvasPath = path.join(
+const BACKUP_DIRECTORY = path.join(
   root,
-  'editor/core/src/react/EditorCanvas.tsx',
+  '.inspector-architecture-backup',
 )
 
-const appCssPath = path.join(
-  root,
-  'apps/desktop/src/app.css',
-)
+const files = {
+  editorCanvas: path.join(
+    root,
+    'editor/core/src/react/EditorCanvas.tsx',
+  ),
 
-const CSS_MARKER =
-  '/* hybrid-canvas:official-top-toolbar */'
+  workspaceContainer: path.join(
+    root,
+    'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
+  ),
 
-if (shouldUndo) {
-  await undoChanges()
-} else {
-  await applyChanges()
+  workspaceShell: path.join(
+    root,
+    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
+  ),
+
+  shellContract: path.join(
+    root,
+    'features/workspace/src/contracts/shell-contract.ts',
+  ),
 }
 
-async function applyChanges() {
+if (shouldUndo) {
+  await undo()
+} else {
+  await apply()
+}
+
+async function apply() {
+  await assertRepositoryRoot()
+  await assertBackupDoesNotExist()
+
+  const originals = await readAllFiles()
+
   /*
-   * 先在内存中完成所有转换。
-   * 任一步失败都不会写入半成品。
+   * 所有转换先在内存中完成。
+   * 只要任一断言失败，就不会修改仓库文件。
    */
-  const originalEditorCanvas =
-    await readFile(editorCanvasPath, 'utf8')
+  const transformed = {
+    editorCanvas: transformEditorCanvas(
+      originals.editorCanvas,
+    ),
 
-  const originalAppCss =
-    await readFile(appCssPath, 'utf8')
+    workspaceContainer: transformWorkspaceContainer(
+      originals.workspaceContainer,
+    ),
 
-  const nextEditorCanvas =
-    transformEditorCanvas(
-      originalEditorCanvas,
+    workspaceShell: transformWorkspaceShell(
+      originals.workspaceShell,
+    ),
+
+    shellContract: transformShellContract(
+      originals.shellContract,
+    ),
+  }
+
+  validateTransformedFiles(transformed)
+
+  await createBackups(originals)
+  await writeAllFiles(transformed)
+
+  printApplySummary()
+}
+
+async function undo() {
+  await assertRepositoryRoot()
+
+  if (!(await exists(BACKUP_DIRECTORY))) {
+    throw new Error(
+      [
+        '没有找到 Inspector 架构重构备份。',
+        '',
+        `预期目录：${BACKUP_DIRECTORY}`,
+        '',
+        '无法安全执行撤销。',
+      ].join('\n'),
     )
+  }
 
-  const nextAppCss =
-    transformAppCss(originalAppCss)
+  for (const [key, targetPath] of Object.entries(files)) {
+    const backupPath = backupPathFor(key)
+
+    if (!(await exists(backupPath))) {
+      throw new Error(
+        [
+          '备份不完整，停止撤销。',
+          '',
+          `缺少：${backupPath}`,
+          '',
+          '仓库文件没有被修改。',
+        ].join('\n'),
+      )
+    }
+
+    await copyFile(backupPath, targetPath)
+  }
+
+  await rm(BACKUP_DIRECTORY, {
+    recursive: true,
+    force: true,
+  })
+
+  console.log('')
+  console.log('已撤销 Properties Inspector 架构重构。')
+  console.log('')
+  console.log('已恢复：')
+
+  for (const filePath of Object.values(files)) {
+    console.log(`  ${relative(filePath)}`)
+  }
+
+  console.log('')
+}
+
+async function assertRepositoryRoot() {
+  const agentsPath = path.join(root, 'AGENTS.md')
+  const packagePath = path.join(root, 'package.json')
+
+  if (
+    !(await exists(agentsPath)) ||
+    !(await exists(packagePath))
+  ) {
+    throw new Error(
+      [
+        '请在 Canvas 仓库根目录执行本脚本。',
+        '',
+        `当前目录：${root}`,
+      ].join('\n'),
+    )
+  }
+
+  for (const filePath of Object.values(files)) {
+    if (!(await exists(filePath))) {
+      throw new Error(
+        [
+          '缺少架构重构需要的文件。',
+          '',
+          `文件：${relative(filePath)}`,
+          '',
+          '脚本没有修改任何文件。',
+        ].join('\n'),
+      )
+    }
+  }
+}
+
+async function assertBackupDoesNotExist() {
+  if (!(await exists(BACKUP_DIRECTORY))) {
+    return
+  }
+
+  throw new Error(
+    [
+      '检测到上一次重构留下的备份目录。',
+      '',
+      `目录：${relative(BACKUP_DIRECTORY)}`,
+      '',
+      '为了避免覆盖可撤销备份，本次没有修改任何文件。',
+      '',
+      '如果要撤销上一次修改：',
+      '  node refactor-inspector-architecture.mjs --undo',
+      '',
+      '如果已经确认不需要备份，请手动删除该目录后重新运行。',
+    ].join('\n'),
+  )
+}
+
+async function readAllFiles() {
+  return {
+    editorCanvas: normalizeNewlines(
+      await readFile(files.editorCanvas, 'utf8'),
+    ),
+
+    workspaceContainer: normalizeNewlines(
+      await readFile(files.workspaceContainer, 'utf8'),
+    ),
+
+    workspaceShell: normalizeNewlines(
+      await readFile(files.workspaceShell, 'utf8'),
+    ),
+
+    shellContract: normalizeNewlines(
+      await readFile(files.shellContract, 'utf8'),
+    ),
+  }
+}
+
+async function createBackups(originals) {
+  await mkdir(BACKUP_DIRECTORY, {
+    recursive: false,
+  })
+
+  for (const [key, content] of Object.entries(originals)) {
+    await writeFile(
+      backupPathFor(key),
+      content,
+      'utf8',
+    )
+  }
 
   await writeFile(
-    editorCanvasPath,
-    nextEditorCanvas,
+    path.join(BACKUP_DIRECTORY, 'README.txt'),
+    [
+      'Properties Inspector architecture refactor backup.',
+      '',
+      'Restore with:',
+      '  node refactor-inspector-architecture.mjs --undo',
+      '',
+    ].join('\n'),
+    'utf8',
+  )
+}
+
+async function writeAllFiles(transformed) {
+  /*
+   * 到达这里说明所有文件都已成功转换和验证。
+   * 备份也已经完整创建。
+   */
+  await writeFile(
+    files.editorCanvas,
+    transformed.editorCanvas,
     'utf8',
   )
 
   await writeFile(
-    appCssPath,
-    nextAppCss,
+    files.workspaceContainer,
+    transformed.workspaceContainer,
     'utf8',
   )
 
-  console.log('')
-  console.log('修改完成。')
-  console.log('')
-  console.log('只修改了：')
-  console.log(
-    '  editor/core/src/react/EditorCanvas.tsx',
+  await writeFile(
+    files.workspaceShell,
+    transformed.workspaceShell,
+    'utf8',
   )
-  console.log(
-    '  apps/desktop/src/app.css',
+
+  await writeFile(
+    files.shellContract,
+    transformed.shellContract,
+    'utf8',
   )
-  console.log('')
-  console.log('效果：')
-  console.log(
-    '  - tldraw 官方 DefaultToolbar 位于顶部',
-  )
-  console.log(
-    '  - 官方撤销、重做、删除、复制/重复操作可见',
-  )
-  console.log(
-    '  - 官方 overflow 与默认按钮样式保持不变',
-  )
-  console.log(
-    '  - NavigationPanel 保持原位置',
-  )
-  console.log(
-    '  - Workspace 和左右侧栏不变',
-  )
-  console.log('')
-  console.log('请验证：')
-  console.log('  pnpm typecheck')
-  console.log('  pnpm build:desktop')
-  console.log('')
-  console.log('撤销本次修改：')
-  console.log('  node refactor.mjs --undo')
 }
 
 function transformEditorCanvas(source) {
-  let nextSource = source
+  let next = source
 
-  nextSource =
-    addDefaultToolbarImport(nextSource)
+  /*
+   * 删除旧注释中“Canvas 使用 Workspace Inspector”
+   * 这项已经不再成立的架构声明。
+   */
+  next = replaceRequired(
+    next,
+    ` * StylePanel：
+ * Canvas 使用原来的 Workspace CanvasInspectorContent，
+ * 避免同时出现两套右侧属性面板。
+`,
+    ` * StylePanel：
+ * 不在 Workspace 中复制 selection / tool / shared styles 状态。
+ * 样式相关状态与响应式更新继续由 tldraw 官方 StylePanel 管理。
+ *
+ * 后续如需将官方 StylePanel 停靠到 Workspace 右栏，
+ * 应通过 StylePanel component slot 和 Portal 完成，
+ * 而不是在 Workspace 外部重新实现样式状态。
+`,
+    '更新 EditorCanvas 的 StylePanel 架构注释',
+  )
 
-  nextSource =
-    addCanvasTopToolbarComponent(
-      nextSource,
-    )
+  /*
+   * 恢复官方 StylePanel。
+   *
+   * 删除 StylePanel: null 后，tldraw 会使用官方默认组件。
+   * 这是架构重构的过渡状态：
+   *
+   * - 状态所有权已经回到 tldraw；
+   * - 后续只替换 StylePanel 的呈现位置和内容组合；
+   * - 不再由 Workspace 判断 selectedShapes / currentTool。
+   */
+  next = replaceRequired(
+    next,
+    `  StylePanel: null,
+`,
+    '',
+    '恢复 tldraw 官方 StylePanel',
+  )
 
-  nextSource =
-    configureTldrawComponents(nextSource)
-
-  nextSource =
-    enableOfficialQuickActions(
-      nextSource,
-    )
-
-  return normalizeNewlines(nextSource)
+  return ensureTrailingNewline(next)
 }
 
-function addDefaultToolbarImport(source) {
+function transformWorkspaceContainer(source) {
+  let next = source
+
   /*
-   * 只匹配 from 'tldraw' 的具名 import。
-   *
-   * 兼容：
-   * - 单引号或双引号
-   * - 任意换行
-   * - 有无分号
-   * - Biome / Prettier 格式
+   * Workspace 不再直接订阅 tldraw selection / current tool。
    */
-  const pattern =
-    /import\s*\{([^{}]*)\}\s*from\s*(['"])tldraw\2;?/
+  next = replaceRequired(
+    next,
+    `import { useValue } from 'tldraw'
+`,
+    '',
+    '删除 WorkspaceContainer 的 tldraw useValue import',
+  )
 
-  const match = source.match(pattern)
+  next = replaceRequired(
+    next,
+    `import { CanvasInspectorContent } from './inspector/CanvasInspectorContent'
+`,
+    '',
+    '删除 CanvasInspectorContent import',
+  )
 
-  if (!match) {
+  next = replaceRequired(
+    next,
+    `import { createToolInspectorRegistry } from './inspector/tools/ToolInspectorRegistry'
+`,
+    '',
+    '删除 ToolInspectorRegistry import',
+  )
+
+  /*
+   * 删除 Workspace 通过 Editor 状态生成 inspectorSelectionKey 的逻辑。
+   *
+   * selection 和 current tool 都应由 tldraw 内部的
+   * StylePanel slot / useRelevantStyles 响应。
+   */
+  next = replaceBetweenRequired(
+    next,
+    `  const inspectorSelectionKey = useValue(
+`,
+    `  const workbench = useSyncExternalStore(
+`,
+    `  const workbench = useSyncExternalStore(
+`,
+    '删除 Workspace 的 Inspector selection/tool 订阅',
+  )
+
+  /*
+   * 删除 App-owned ToolInspectorRegistry 的组合。
+   *
+   * Feature 的最终 Inspector 扩展契约会在内容阶段重新定义为：
+   * - selection-specific contribution
+   * - creation-specific contribution
+   *
+   * 这里不再创建“一工具一面板”的 Registry。
+   */
+  next = replaceBetweenRequired(
+    next,
+    `  /*
+   * Core Inspector 与 Feature Inspector 合并。
+`,
+    `  const pages = useSyncExternalStore(
+`,
+    `  const pages = useSyncExternalStore(
+`,
+    '删除 ToolInspectorRegistry 组合逻辑',
+  )
+
+  /*
+   * Workspace 右栏暂时不承载 Properties Inspector 内容。
+   *
+   * 这里传 null 的目的不是取消右栏能力，而是确保：
+   * - 当前不会出现第二套 Inspector；
+   * - Workspace 不再拥有 Editor 派生状态；
+   * - 最终内容将在 tldraw StylePanel 上下文中确定。
+   */
+  next = replaceBetweenRequired(
+    next,
+    `      inspector={
+        <CanvasInspectorContent
+`,
+    `      mainContent={mainContent}
+`,
+    `      inspector={null}
+      mainContent={mainContent}
+`,
+    '断开旧 CanvasInspectorContent',
+  )
+
+  return ensureTrailingNewline(next)
+}
+
+function transformWorkspaceShell(source) {
+  let next = source
+
+  /*
+   * 删除只为观察 Editor selection/tool 而存在的 ref。
+   */
+  next = replaceRequired(
+    next,
+    `  const previousInspectorSelectionKeyRef = useRef(inspectorSelectionKey ?? '')
+`,
+    '',
+    '删除 previousInspectorSelectionKeyRef',
+  )
+
+  /*
+   * WorkspaceShell props 不再接收 Editor selection key。
+   */
+  next = replaceRequired(
+    next,
+    `  inspectorSelectionKey,
+`,
+    '',
+    '删除 WorkspaceShell inspectorSelectionKey 参数',
+  )
+
+  /*
+   * 删除 selection/tool 变化后强制展开 Inspector 的 effect。
+   *
+   * 最终右栏是否可用，应由实际 StylePanel 内容决定；
+   * 用户是否展开，则属于 Workspace 本地 UI 偏好。
+   */
+  next = replaceBetweenRequired(
+    next,
+    `  useEffect(() => {
+    const previousKey = previousInspectorSelectionKeyRef.current
+`,
+    `  const openSidebar = () => {
+`,
+    `  const openSidebar = () => {
+`,
+    '删除 Inspector selection key 自动展开逻辑',
+  )
+
+  return ensureTrailingNewline(next)
+}
+
+function transformShellContract(source) {
+  let next = source
+
+  /*
+   * 删除 WorkspaceShell 对 Editor selection 标识的依赖。
+   */
+  next = replaceRequired(
+    next,
+    `  /**
+   * 当前编辑器选区标识。
+   * 仅用于请求显示属性面板，不承载画布文档状态。
+   */
+  readonly inspectorSelectionKey?: string
+`,
+    '',
+    '删除 shell-contract inspectorSelectionKey',
+  )
+
+  return ensureTrailingNewline(next)
+}
+
+function validateTransformedFiles(transformed) {
+  const errors = []
+
+  /*
+   * EditorCanvas 必须恢复官方 StylePanel。
+   */
+  if (
+    /StylePanel\s*:\s*null/.test(
+      transformed.editorCanvas,
+    )
+  ) {
+    errors.push(
+      'EditorCanvas 仍然禁用了官方 StylePanel。',
+    )
+  }
+
+  /*
+   * WorkspaceContainer 不得再读取 selection/tool。
+   */
+  const forbiddenWorkspaceContainerPatterns = [
+    {
+      pattern: /\buseValue\b/,
+      message:
+        'WorkspaceContainer 仍然直接使用 tldraw useValue。',
+    },
+    {
+      pattern: /getSelectedShapeIds\s*\(/,
+      message:
+        'WorkspaceContainer 仍然读取 selected shape ids。',
+    },
+    {
+      pattern: /getSelectedShapes\s*\(/,
+      message:
+        'WorkspaceContainer 仍然读取 selected shapes。',
+    },
+    {
+      pattern: /getCurrentToolId\s*\(/,
+      message:
+        'WorkspaceContainer 仍然读取 current tool。',
+    },
+    {
+      pattern: /\binspectorSelectionKey\b/,
+      message:
+        'WorkspaceContainer 仍然包含 inspectorSelectionKey。',
+    },
+    {
+      pattern: /\bCanvasInspectorContent\b/,
+      message:
+        'WorkspaceContainer 仍然挂载旧 CanvasInspectorContent。',
+    },
+    {
+      pattern: /\bcreateToolInspectorRegistry\b/,
+      message:
+        'WorkspaceContainer 仍然创建 ToolInspectorRegistry。',
+    },
+  ]
+
+  for (
+    const {
+      pattern,
+      message,
+    } of forbiddenWorkspaceContainerPatterns
+  ) {
+    if (
+      pattern.test(
+        transformed.workspaceContainer,
+      )
+    ) {
+      errors.push(message)
+    }
+  }
+
+  if (
+    /\binspectorSelectionKey\b/.test(
+      transformed.workspaceShell,
+    )
+  ) {
+    errors.push(
+      'WorkspaceShell 仍然依赖 inspectorSelectionKey。',
+    )
+  }
+
+  if (
+    /\binspectorSelectionKey\b/.test(
+      transformed.shellContract,
+    )
+  ) {
+    errors.push(
+      'WorkspaceShellProps 仍然声明 inspectorSelectionKey。',
+    )
+  }
+
+  /*
+   * 必须保留 Workspace 通用 Inspector host。
+   * 后续官方 StylePanel 可以通过 Portal 使用该位置。
+   */
+  if (
+    !transformed.workspaceShell.includes(
+      '<InspectorHost>{inspector}</InspectorHost>',
+    )
+  ) {
+    errors.push(
+      'WorkspaceShell 的通用 InspectorHost 被意外删除。',
+    )
+  }
+
+  if (
+    !transformed.workspaceContainer.includes(
+      'inspector={null}',
+    )
+  ) {
+    errors.push(
+      'WorkspaceContainer 没有显式停用旧 Inspector 内容。',
+    )
+  }
+
+  if (errors.length > 0) {
     throw new Error(
       [
-        '无法找到 tldraw 具名 import。',
+        'Inspector 架构重构验证失败：',
         '',
-        `文件：${editorCanvasPath}`,
+        ...errors.map(
+          (message) => `- ${message}`,
+        ),
         '',
-        '文件中应该存在类似：',
-        "import { Tldraw } from 'tldraw'",
+        '脚本没有修改任何仓库文件。',
+      ].join('\n'),
+    )
+  }
+}
+
+function replaceRequired(
+  source,
+  search,
+  replacement,
+  operation,
+) {
+  const count = countOccurrences(
+    source,
+    search,
+  )
+
+  if (count !== 1) {
+    throw new Error(
+      [
+        `无法安全执行：${operation}`,
         '',
-        '脚本没有写入任何文件。',
+        `预期匹配 1 次，实际匹配 ${count} 次。`,
+        '',
+        '仓库代码可能已经变化，脚本没有修改任何文件。',
       ].join('\n'),
     )
   }
 
-  const importedNames = match[1]
-
-  const alreadyImported =
-    importedNames
-      .split(',')
-      .map((item) =>
-        item
-          .replaceAll('\n', ' ')
-          .trim(),
-      )
-      .some(
-        (item) =>
-          item === 'DefaultToolbar',
-      )
-
-  if (alreadyImported) {
-    return source
-  }
-
-  const quote = match[2]
-
-  const normalizedNames =
-    normalizeImportNames(importedNames)
-
-  const replacement = `import {
-  DefaultToolbar,
-${normalizedNames}
-} from ${quote}tldraw${quote}`
-
   return source.replace(
-    pattern,
+    search,
     replacement,
   )
 }
 
-function normalizeImportNames(importedNames) {
-  return importedNames
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => `  ${line}`)
-    .join('\n')
-}
-
-function addCanvasTopToolbarComponent(
+function replaceBetweenRequired(
   source,
+  startMarker,
+  endMarker,
+  replacement,
+  operation,
 ) {
-  if (
-    source.includes(
-      'function CanvasTopToolbar()',
-    )
-  ) {
-    return source
-  }
+  const startIndex = source.indexOf(startMarker)
 
-  const componentsDeclaration =
-    /const\s+CANVAS_COMPONENTS\s*:\s*TLComponents\s*=\s*\{/
-
-  if (
-    !componentsDeclaration.test(source)
-  ) {
+  if (startIndex < 0) {
     throw new Error(
       [
-        '无法定位 CANVAS_COMPONENTS。',
+        `无法安全执行：${operation}`,
         '',
-        `文件：${editorCanvasPath}`,
+        '没有找到起始标记。',
         '',
-        '脚本没有写入任何文件。',
+        `起始标记：${JSON.stringify(startMarker)}`,
+        '',
+        '脚本没有修改任何文件。',
       ].join('\n'),
     )
   }
 
-  const component = `function CanvasTopToolbar() {
-  return (
-    <div className="hc-canvas-top-toolbar">
-      {/*
-       * 使用 tldraw 官方 DefaultToolbar。
-       *
-       * 工具定义、按钮样式、激活状态、快捷键、
-       * QuickActions 和 overflow 均由 tldraw 管理。
-       */}
-      <DefaultToolbar />
-    </div>
+  const secondStartIndex = source.indexOf(
+    startMarker,
+    startIndex + startMarker.length,
   )
-}
 
-`
-
-  return source.replace(
-    componentsDeclaration,
-    component +
-      'const CANVAS_COMPONENTS: TLComponents = {',
-  )
-}
-
-function configureTldrawComponents(
-  source,
-) {
-  /*
-   * 当前 CANVAS_COMPONENTS 是简单配置对象，
-   * 没有嵌套对象，因此可安全匹配到第一个独立结束括号。
-   */
-  const pattern =
-    /const\s+CANVAS_COMPONENTS\s*:\s*TLComponents\s*=\s*\{([\s\S]*?)\n\}/
-
-  const match = source.match(pattern)
-
-  if (!match) {
+  if (secondStartIndex >= 0) {
     throw new Error(
       [
-        '无法读取 CANVAS_COMPONENTS。',
+        `无法安全执行：${operation}`,
         '',
-        `文件：${editorCanvasPath}`,
+        '起始标记出现多次，无法确定安全修改范围。',
         '',
-        '脚本没有写入任何文件。',
+        '脚本没有修改任何文件。',
       ].join('\n'),
     )
   }
 
-  let body = match[1]
-
-  /*
-   * 删除可能由前一次运行写入的配置，
-   * 保证脚本可重复执行。
-   */
-  body = body
-    .replace(
-      /^\s*Toolbar\s*:\s*[^,\n]+,?\s*$/gm,
-      '',
-    )
-    .replace(
-      /^\s*TopPanel\s*:\s*[^,\n]+,?\s*$/gm,
-      '',
-    )
-    .trimEnd()
-
-  /*
-   * Toolbar: null
-   * 禁止默认 Toolbar 在底部重复渲染。
-   *
-   * TopPanel
-   * 使用 tldraw 官方组件插槽放置顶部 Toolbar。
-   */
-  const replacement =
-    `const CANVAS_COMPONENTS: TLComponents = {${body}
-  Toolbar: null,
-  TopPanel: CanvasTopToolbar,
-}`
-
-  return source.replace(
-    pattern,
-    replacement,
+  const endIndex = source.indexOf(
+    endMarker,
+    startIndex + startMarker.length,
   )
-}
 
-function enableOfficialQuickActions(
-  source,
-) {
-  if (
-    /actionShortcutsLocation\s*:\s*['"]toolbar['"]/.test(
-      source,
-    )
-  ) {
-    return source
-  }
-
-  /*
-   * 默认值为 swap：
-   *
-   * - 窄画布：QuickActions 在 Toolbar
-   * - 宽画布：QuickActions 在 MainMenu
-   *
-   * 当前项目隐藏了 MainMenu，所以宽画布时官方
-   * 撤销、重做、删除和复制/重复操作会消失。
-   *
-   * toolbar 会让官方 QuickActions 始终出现在
-   * DefaultToolbar 中。
-   */
-  const maxPagesPattern =
-    /(maxPages\s*:\s*100\s*,?)/
-
-  if (!maxPagesPattern.test(source)) {
+  if (endIndex < 0) {
     throw new Error(
       [
-        '无法定位 options.maxPages。',
+        `无法安全执行：${operation}`,
         '',
-        `文件：${editorCanvasPath}`,
+        '找到起始标记，但没有找到结束标记。',
         '',
-        '脚本没有写入任何文件。',
+        `结束标记：${JSON.stringify(endMarker)}`,
+        '',
+        '脚本没有修改任何文件。',
       ].join('\n'),
     )
   }
-
-  return source.replace(
-    maxPagesPattern,
-    `$1
-        actionShortcutsLocation: 'toolbar',`,
-  )
-}
-
-function transformAppCss(source) {
-  /*
-   * 删除上一次运行添加的同名区域，
-   * 然后重新追加，保证脚本可重复执行。
-   */
-  const withoutOldSection =
-    removeCssSection(source)
 
   return (
-    withoutOldSection.trimEnd() +
-    '\n\n' +
-    createTopToolbarCss() +
-    '\n'
+    source.slice(0, startIndex) +
+    replacement +
+    source.slice(
+      endIndex + endMarker.length,
+    )
   )
 }
 
-function removeCssSection(source) {
-  const markerIndex =
-    source.indexOf(CSS_MARKER)
-
-  if (markerIndex < 0) {
-    return source
+function countOccurrences(source, search) {
+  if (!search) {
+    return 0
   }
 
-  /*
-   * 此脚本的 CSS 始终追加在 app.css 末尾，
-   * 因此从 marker 到文件末尾都是本脚本内容。
-   */
-  return source
-    .slice(0, markerIndex)
-    .trimEnd()
-}
+  let count = 0
+  let offset = 0
 
-function createTopToolbarCss() {
-  return `${CSS_MARKER}
+  while (true) {
+    const index = source.indexOf(
+      search,
+      offset,
+    )
 
-/*
- * 只定位 tldraw 的 TopPanel 插槽。
- *
- * 不修改：
- * - .tlui-layout
- * - .tlui-layout__bottom
- * - .tlui-navigation-panel
- * - Workspace grid
- * - Inspector grid
- * - 状态栏
- */
-.workspace-shell
-  .tlui-layout__top__center {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  z-index: var(--tl-layer-panels);
-  width: min(760px, calc(100% - 24px));
-  min-width: 0;
-  transform: translateX(-50%);
-  pointer-events: none;
-}
+    if (index < 0) {
+      return count
+    }
 
-/*
- * 产品包装层只负责水平居中。
- */
-.workspace-shell
-  .hc-canvas-top-toolbar {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  justify-content: center;
-  pointer-events: none;
-}
-
-/*
- * DefaultToolbar 原本默认显示在底部，
- * 因此带有底部 safe-area padding。
- *
- * 放入 TopPanel 后只移除这段 padding；
- * 不重写背景、圆角、阴影和按钮尺寸。
- */
-.workspace-shell
-  .hc-canvas-top-toolbar
-  .tlui-main-toolbar--horizontal {
-  width: 100%;
-  max-width: 100%;
-  padding-top: 0;
-  padding-bottom: 0;
-  pointer-events: none;
-}
-
-/*
- * 保持官方 Toolbar 按自身内容宽度居中。
- */
-.workspace-shell
-  .hc-canvas-top-toolbar
-  .tlui-main-toolbar__inner {
-  width: fit-content;
-  max-width: 100%;
-  margin-right: auto;
-  margin-left: auto;
-}
-
-/*
- * 允许官方 Toolbar 与 QuickActions 接收交互。
- */
-.workspace-shell
-  .hc-canvas-top-toolbar
-  .tlui-main-toolbar__tools,
-.workspace-shell
-  .hc-canvas-top-toolbar
-  .tlui-main-toolbar__extras,
-.workspace-shell
-  .hc-canvas-top-toolbar
-  .tlui-main-toolbar__extras__controls,
-.workspace-shell
-  .hc-canvas-top-toolbar
-  button {
-  pointer-events: auto;
-}
-
-/*
- * 确保官方 QuickActions 可见。
- *
- * QuickActions 包括 tldraw 根据当前状态提供的：
- * - Undo
- * - Redo
- * - Delete
- * - Duplicate / Copy 类操作
- * - ActionsMenu
- */
-.workspace-shell
-  .hc-canvas-top-toolbar
-  .tlui-main-toolbar__extras {
-  visibility: visible;
-  opacity: 1;
-}
-
-/*
- * 窄窗口只调整 TopPanel 的可用宽度，
- * 不触碰 Workspace 的列布局。
- */
-@media (max-width: 760px) {
-  .workspace-shell
-    .tlui-layout__top__center {
-    top: 8px;
-    width: calc(100% - 16px);
+    count += 1
+    offset = index + search.length
   }
-}`
 }
 
-async function undoChanges() {
-  const originalEditorCanvas =
-    await readFile(editorCanvasPath, 'utf8')
-
-  const originalAppCss =
-    await readFile(appCssPath, 'utf8')
-
-  const nextEditorCanvas =
-    undoEditorCanvas(originalEditorCanvas)
-
-  const nextAppCss =
-    removeCssSection(originalAppCss)
-      .trimEnd() + '\n'
-
-  await writeFile(
-    editorCanvasPath,
-    nextEditorCanvas,
-    'utf8',
-  )
-
-  await writeFile(
-    appCssPath,
-    nextAppCss,
-    'utf8',
-  )
-
-  console.log('')
-  console.log('已撤销本脚本的修改。')
-  console.log('')
-  console.log('已恢复：')
-  console.log(
-    '  editor/core/src/react/EditorCanvas.tsx',
-  )
-  console.log(
-    '  apps/desktop/src/app.css',
+function backupPathFor(key) {
+  return path.join(
+    BACKUP_DIRECTORY,
+    `${key}.backup`,
   )
 }
 
-function undoEditorCanvas(source) {
-  let nextSource = source
-
-  /*
-   * 删除 DefaultToolbar import。
-   */
-  nextSource = nextSource.replace(
-    /^\s*DefaultToolbar,\s*\n/m,
-    '',
-  )
-
-  /*
-   * 删除本脚本添加的 CanvasTopToolbar。
-   */
-  nextSource = nextSource.replace(
-    /function\s+CanvasTopToolbar\(\)\s*\{[\s\S]*?\n\}\n\n(?=const\s+CANVAS_COMPONENTS)/,
-    '',
-  )
-
-  /*
-   * 删除 Toolbar / TopPanel 插槽配置。
-   */
-  nextSource = nextSource
-    .replace(
-      /^\s*Toolbar\s*:\s*null,\s*\n/m,
-      '',
-    )
-    .replace(
-      /^\s*TopPanel\s*:\s*CanvasTopToolbar,\s*\n/m,
-      '',
-    )
-
-  /*
-   * 恢复 tldraw 默认 actionShortcutsLocation。
-   */
-  nextSource = nextSource.replace(
-    /^\s*actionShortcutsLocation\s*:\s*['"]toolbar['"],?\s*\n/m,
-    '',
-  )
-
-  return normalizeNewlines(nextSource)
+async function exists(filePath) {
+  try {
+    await access(filePath)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function normalizeNewlines(source) {
@@ -609,4 +763,91 @@ function normalizeNewlines(source) {
     '\r\n',
     '\n',
   )
+}
+
+function ensureTrailingNewline(source) {
+  return normalizeNewlines(
+    source,
+  ).trimEnd() + '\n'
+}
+
+function relative(filePath) {
+  return path.relative(
+    root,
+    filePath,
+  )
+}
+
+function printApplySummary() {
+  console.log('')
+  console.log(
+    'Properties Inspector 第一阶段架构重构完成。',
+  )
+  console.log('')
+
+  console.log('已修改：')
+
+  for (const filePath of Object.values(files)) {
+    console.log(`  ${relative(filePath)}`)
+  }
+
+  console.log('')
+  console.log('架构结果：')
+  console.log(
+    '  - tldraw 官方 StylePanel 已恢复',
+  )
+  console.log(
+    '  - Workspace 不再读取 selection',
+  )
+  console.log(
+    '  - Workspace 不再读取 current tool',
+  )
+  console.log(
+    '  - inspectorSelectionKey 已删除',
+  )
+  console.log(
+    '  - App 不再创建 ToolInspectorRegistry',
+  )
+  console.log(
+    '  - 旧 Workspace Inspector 已停止挂载',
+  )
+  console.log(
+    '  - Workspace 通用右栏容器仍然保留',
+  )
+
+  console.log('')
+  console.log('本阶段刻意没有修改：')
+  console.log(
+    '  - Properties Inspector 的具体属性内容',
+  )
+  console.log(
+    '  - 多选 mixed 控件设计',
+  )
+  console.log(
+    '  - Shape 专属属性内容',
+  )
+  console.log(
+    '  - Creation preset 的具体内容',
+  )
+  console.log(
+    '  - 最终 StylePanel Portal 实现',
+  )
+  console.log(
+    '  - 旧 Inspector 内容文件',
+  )
+
+  console.log('')
+  console.log('请执行验证：')
+  console.log('  pnpm format')
+  console.log('  pnpm lint')
+  console.log('  pnpm typecheck')
+  console.log('  pnpm test')
+  console.log('  pnpm build:desktop')
+
+  console.log('')
+  console.log('撤销：')
+  console.log(
+    '  node refactor-inspector-architecture.mjs --undo',
+  )
+  console.log('')
 }

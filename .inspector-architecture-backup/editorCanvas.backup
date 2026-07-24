@@ -28,12 +28,8 @@ export const HYBRID_CANVAS_SAVE_ACTION_ID =
  * Canvas 已经有自己的页面与工作区管理，所以禁用。
  *
  * StylePanel：
- * 不在 Workspace 中复制 selection / tool / shared styles 状态。
- * 样式相关状态与响应式更新继续由 tldraw 官方 StylePanel 管理。
- *
- * 后续如需将官方 StylePanel 停靠到 Workspace 右栏，
- * 应通过 StylePanel component slot 和 Portal 完成，
- * 而不是在 Workspace 外部重新实现样式状态。
+ * Canvas 使用原来的 Workspace CanvasInspectorContent，
+ * 避免同时出现两套右侧属性面板。
  */
 function CanvasTopToolbar() {
   return (
@@ -51,6 +47,7 @@ function CanvasTopToolbar() {
 
 const CANVAS_COMPONENTS: TLComponents = {
   PageMenu: null,
+  StylePanel: null,
   Toolbar: null,
   TopPanel: CanvasTopToolbar,
 }
