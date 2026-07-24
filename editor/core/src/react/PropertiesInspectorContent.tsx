@@ -54,6 +54,10 @@ interface SelectionCapabilities {
   readonly canFrame: boolean
   readonly canDuplicate: boolean
   readonly canDelete: boolean
+  readonly canFlip: boolean
+  readonly canOpenEmbedLink: boolean
+  readonly canConvertEmbedToBookmark: boolean
+  readonly canConvertBookmarkToEmbed: boolean
 }
 
 export interface PropertiesInspectorContentProps {
@@ -389,145 +393,273 @@ export function PropertiesInspectorContent({
   }, [editor])
 
   const selectionCapabilities =
-    useValue<SelectionCapabilities>('right properties sidebar selection capabilities', () => {
-      const selected = editor.getSelectedShapes()
+    useValue<SelectionCapabilities>(
+      'right properties sidebar selection capabilities',
+      () => {
+        const selected =
+          editor.getSelectedShapes()
 
-      const readonly = editor.getIsReadonly()
+        const readonly =
+          editor.getIsReadonly()
 
-      const unlocked = selected.filter((shape) => !shape.isLocked)
+        const hasSelection =
+          selected.length > 0
 
-      const alignable = unlocked.filter((shape) =>
-        editor.getShapeUtil(shape).canBeLaidOut(shape, {
-          type: 'align',
-          shapes: unlocked,
-        }),
-      )
+        const allUnlocked =
+          hasSelection &&
+          selected.every(
+            (shape) => !shape.isLocked,
+          )
 
-      const distributable = unlocked.filter((shape) =>
-        editor.getShapeUtil(shape).canBeLaidOut(shape, {
-          type: 'distribute',
-          shapes: unlocked,
-        }),
-      )
+        /*
+         * 多选操作采用 all-or-nothing。
+         *
+         * 不再过滤 locked 或 unsupported 对象后，
+         * 静默地只处理选择中的一部分。
+         */
+        const everyCanLayout = (
+          type:
+            | 'align'
+            | 'distribute'
+            | 'stretch'
+            | 'stack'
+            | 'pack'
+            | 'flip',
+        ) =>
+          allUnlocked &&
+          selected.every((shape) =>
+            editor
+              .getShapeUtil(shape)
+              .canBeLaidOut(shape, {
+                type,
+                shapes: selected,
+              }),
+          )
 
-      const rotatable = unlocked.filter(
-        (shape) => !editor.getShapeUtil(shape).hideRotateHandle(shape),
-      )
+        const canAlign =
+          !readonly &&
+          selected.length >= 2 &&
+          everyCanLayout('align')
 
-      const stretchable = unlocked.filter((shape) =>
-        editor.getShapeUtil(shape).canBeLaidOut(shape, {
-          type: 'stretch',
-          shapes: unlocked,
-        }),
-      )
+        const canDistribute =
+          !readonly &&
+          selected.length >= 3 &&
+          everyCanLayout('distribute')
 
-      const stackable = unlocked.filter((shape) =>
-        editor.getShapeUtil(shape).canBeLaidOut(shape, {
-          type: 'stack',
-          shapes: unlocked,
-        }),
-      )
+        const canStretch =
+          !readonly &&
+          selected.length >= 2 &&
+          everyCanLayout('stretch')
 
-      const packable = unlocked.filter((shape) =>
-        editor.getShapeUtil(shape).canBeLaidOut(shape, {
-          type: 'pack',
-          shapes: unlocked,
-        }),
-      )
+        const canStack =
+          !readonly &&
+          selected.length >= 2 &&
+          everyCanLayout('stack')
 
-      const canAlign = !readonly && alignable.length >= 2
+        const canPack =
+          !readonly &&
+          selected.length >= 2 &&
+          everyCanLayout('pack')
 
-      const canDistribute = !readonly && distributable.length >= 3
+        const canFlip =
+          !readonly &&
+          hasSelection &&
+          everyCanLayout('flip')
 
-      const canStretch = !readonly && unlocked.length >= 2 && stretchable.length === unlocked.length
+        const allRotatable =
+          allUnlocked &&
+          selected.every(
+            (shape) =>
+              !editor
+                .getShapeUtil(shape)
+                .hideRotateHandle(shape),
+          )
 
-      const canStack = !readonly && unlocked.length >= 2 && stackable.length === unlocked.length
+        const canEnableTextAutoSize =
+          !readonly &&
+          allUnlocked &&
+          selected.some(
+            (shape) =>
+              editor.isShapeOfType(
+                shape,
+                'text',
+              ) &&
+              shape.props.autoSize === false,
+          )
 
-      const canPack = !readonly && unlocked.length >= 2 && packable.length === unlocked.length
+        const onlySelected =
+          editor.getOnlySelectedShape()
 
-      const canEnableTextAutoSize =
-        !readonly &&
-        selected.some(
-          (shape) => editor.isShapeOfType(shape, 'text') && shape.props.autoSize === false,
-        )
+        const onlySelectedIsUnlocked =
+          onlySelected !== null &&
+          !onlySelected.isLocked
 
-      const onlySelected = editor.getOnlySelectedShape()
+        const onlySelectedIsFrameLike =
+          onlySelected
+            ? editor.isShapeFrameLike(
+                onlySelected,
+              )
+            : false
 
-      const onlySelectedIsFrameLike = onlySelected ? editor.isShapeFrameLike(onlySelected) : false
+        const onlySelectedIsImage =
+          onlySelected
+            ? editor.isShapeOfType(
+                onlySelected,
+                'image',
+              )
+            : false
 
-      const onlySelectedIsImage = onlySelected ? editor.isShapeOfType(onlySelected, 'image') : false
+        const onlySelectedIsVideo =
+          onlySelected
+            ? editor.isShapeOfType(
+                onlySelected,
+                'video',
+              )
+            : false
 
-      const onlySelectedIsVideo = onlySelected ? editor.isShapeOfType(onlySelected, 'video') : false
+        const onlySelectedIsEmbed =
+          onlySelected
+            ? editor.isShapeOfType(
+                onlySelected,
+                'embed',
+              )
+            : false
 
-      const onlySelectedIsUnlocked =
-        onlySelected !== null && onlySelected !== undefined && !onlySelected.isLocked
+        const onlySelectedIsBookmark =
+          onlySelected
+            ? editor.isShapeOfType(
+                onlySelected,
+                'bookmark',
+              )
+            : false
 
-      const onlySelectedHasUrl =
-        onlySelected !== null &&
-        onlySelected !== undefined &&
-        'url' in onlySelected.props &&
-        typeof onlySelected.props.url === 'string'
+        const onlySelectedHasUrl =
+          onlySelected !== null &&
+          'url' in onlySelected.props &&
+          typeof onlySelected.props.url ===
+            'string' &&
+          onlySelected.props.url.length > 0
 
-      const onlySelectedHasMediaAsset =
-        onlySelected !== null &&
-        onlySelected !== undefined &&
-        'assetId' in onlySelected.props &&
-        onlySelected.props.assetId !== null &&
-        onlySelected.props.assetId !== undefined
+        const onlySelectedHasMediaAsset =
+          onlySelected !== null &&
+          'assetId' in onlySelected.props &&
+          onlySelected.props.assetId !== null &&
+          onlySelected.props.assetId !==
+            undefined
 
-      return {
-        canAlign,
-
-        canDistribute,
-
-        canStretch,
-
-        canStack,
-
-        canPack,
-
-        canArrange: canAlign || canDistribute || canStretch || canStack || canPack,
-
-        canEnableTextAutoSize,
-
-        canEditLink: !readonly && onlySelectedIsUnlocked && onlySelectedHasUrl,
-
-        canFitFrame: !readonly && onlySelectedIsUnlocked && onlySelectedIsFrameLike,
-
-        canRemoveFrame: !readonly && onlySelectedIsUnlocked && onlySelectedIsFrameLike,
-
-        canReplaceImage: !readonly && onlySelectedIsUnlocked && onlySelectedIsImage,
-
-        canReplaceVideo: !readonly && onlySelectedIsUnlocked && onlySelectedIsVideo,
-
-        canDownloadMedia:
-          (onlySelectedIsImage || onlySelectedIsVideo) &&
-          onlySelectedHasMediaAsset,
-
-        canCropImage:
+        const canCropImage =
           !readonly &&
           onlySelectedIsUnlocked &&
-          onlySelectedIsImage,
+          onlySelectedIsImage &&
+          editor.canCropShape(onlySelected)
 
-        canToggleLock:
-          !readonly &&
-          selected.length > 0,
+        return {
+          canAlign,
+          canDistribute,
+          canStretch,
+          canStack,
+          canPack,
+          canFlip,
 
-        canReorder: !readonly && unlocked.length > 0,
+          canArrange:
+            canAlign ||
+            canDistribute ||
+            canStretch ||
+            canStack ||
+            canPack ||
+            canFlip,
 
-        canGroup: !readonly && unlocked.length >= 2,
+          canEnableTextAutoSize,
 
-        canUngroup: !readonly && onlySelected?.type === 'group' && !onlySelected.isLocked,
+          canEditLink:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedHasUrl,
 
-        canRotate: !readonly && unlocked.length > 0 && rotatable.length === unlocked.length,
+          canOpenEmbedLink:
+            onlySelectedIsEmbed &&
+            onlySelectedHasUrl,
 
-        canFrame: !readonly && unlocked.length >= 2,
+          canConvertEmbedToBookmark:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsEmbed &&
+            onlySelectedHasUrl,
 
-        canDuplicate: !readonly && selected.length > 0,
+          canConvertBookmarkToEmbed:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsBookmark &&
+            onlySelectedHasUrl,
 
-        canDelete: !readonly && unlocked.length > 0,
-      }
-    }, [editor])
+          canFitFrame:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsFrameLike,
+
+          canRemoveFrame:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsFrameLike,
+
+          canReplaceImage:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsImage,
+
+          canReplaceVideo:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsVideo,
+
+          canDownloadMedia:
+            (
+              onlySelectedIsImage ||
+              onlySelectedIsVideo
+            ) &&
+            onlySelectedHasMediaAsset,
+
+          canCropImage,
+
+          canToggleLock:
+            !readonly &&
+            hasSelection,
+
+          canReorder:
+            !readonly &&
+            allUnlocked,
+
+          canGroup:
+            !readonly &&
+            allUnlocked &&
+            selected.length >= 2,
+
+          canUngroup:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelected?.type === 'group',
+
+          canRotate:
+            !readonly &&
+            hasSelection &&
+            allRotatable,
+
+          canFrame:
+            !readonly &&
+            allUnlocked &&
+            selected.length >= 2,
+
+          canDuplicate:
+            !readonly &&
+            hasSelection,
+
+          canDelete:
+            !readonly &&
+            allUnlocked,
+        }
+      },
+      [editor],
+    )
 
   return (
     <div className="hc-properties-sidebar__panel">
@@ -895,8 +1027,16 @@ function SidebarField({ title, mixed, children }: SidebarFieldProps) {
         <span>{title}</span>
 
         {mixed ? (
-          <span aria-label="多个值" className="hc-properties-sidebar__mixed" title="多个值">
-            —
+          <span
+            aria-label="多个值"
+            className="hc-properties-sidebar__mixed"
+            title="多个值"
+          >
+            <TldrawUiIcon
+              icon="mixed"
+              label="多个值"
+              small
+            />
           </span>
         ) : null}
       </div>
@@ -971,6 +1111,24 @@ function SelectionActions({
             {capabilities.canPack ? (
               <ActionButton actions={actions} id="pack" label="紧凑排列" />
             ) : null}
+
+            {capabilities.canFlip ? (
+              <>
+                <ActionButton
+                  actions={actions}
+                  icon="chevrons-ne"
+                  id="flip-horizontal"
+                  label="水平翻转"
+                />
+
+                <ActionButton
+                  actions={actions}
+                  icon="chevrons-sw"
+                  id="flip-vertical"
+                  label="垂直翻转"
+                />
+              </>
+            ) : null}
           </div>
         </SidebarSection>
       ) : null}
@@ -993,6 +1151,33 @@ function SelectionActions({
         <div className="hc-properties-sidebar__action-grid">
           {capabilities.canEditLink ? (
             <ActionButton actions={actions} id="edit-link" label="编辑链接" />
+          ) : null}
+
+          {capabilities.canOpenEmbedLink ? (
+            <ActionButton
+              actions={actions}
+              icon="external-link"
+              id="open-embed-link"
+              label="打开嵌入链接"
+            />
+          ) : null}
+
+          {capabilities.canConvertEmbedToBookmark ? (
+            <ActionButton
+              actions={actions}
+              icon="bookmark"
+              id="convert-to-bookmark"
+              label="转换为书签"
+            />
+          ) : null}
+
+          {capabilities.canConvertBookmarkToEmbed ? (
+            <ActionButton
+              actions={actions}
+              icon="external-link"
+              id="convert-to-embed"
+              label="转换为嵌入"
+            />
           ) : null}
 
           {capabilities.canToggleLock ? (
@@ -1250,6 +1435,8 @@ function getShapeTitle(shapeType: string | undefined): string {
     frame: '画框',
     image: '图片',
     video: '视频',
+    embed: '嵌入',
+    bookmark: '书签',
     group: '编组',
   }
 

@@ -11,13 +11,15 @@ import {
 import { useValue } from 'tldraw'
 
 import { useEditor } from './editor-context'
+import {
+  commitSelectionTransform,
+  getSelectionTransformSnapshot,
+  type SelectionTransformField,
+  type SelectionTransformSnapshot,
+} from './selection-transform-geometry'
 
 type TransformFieldId =
-  | 'x'
-  | 'y'
-  | 'width'
-  | 'height'
-  | 'rotation'
+  SelectionTransformField
 
 const TRANSFORM_FIELDS: readonly TransformFieldId[] = [
   'x',
@@ -34,22 +36,6 @@ export interface CanvasTransformStatusProps {
   readonly canvasTitle: string | null
 }
 
-interface SelectionTransformSnapshot {
-  readonly selectionKey: string
-  readonly count: number
-  readonly x: number
-  readonly y: number
-  readonly width: number
-  readonly height: number
-  readonly rotation: number
-  readonly isReadonly: boolean
-  readonly hasLockedShape: boolean
-  readonly canMove: boolean
-  readonly canResize: boolean
-  readonly canRotate: boolean
-  readonly hasForcedAspectRatio: boolean
-}
-
 export function CanvasTransformStatus({
   canvasTitle,
 }: CanvasTransformStatusProps) {
@@ -63,83 +49,14 @@ export function CanvasTransformStatus({
 
   const snapshot = useValue(
     'canvas transform status',
-    (): SelectionTransformSnapshot | null => {
+    () => {
       if (!editor) {
         return null
       }
 
-      const selectedShapes = editor.getSelectedShapes()
-
-      if (selectedShapes.length === 0) {
-        return null
-      }
-
-      /*
-       * resizeToBounds 使用页面轴对齐范围。
-       *
-       * 因此这里有意读取 getSelectionPageBounds，而不是把旋转后的
-       * selection bounds 冒充成 resizeToBounds 的输入。
-       */
-      const bounds = editor.getSelectionPageBounds()
-
-      if (!bounds) {
-        return null
-      }
-
-      const isReadonly = editor.getIsReadonly()
-
-      const hasLockedShape = selectedShapes.some(
-        (shape) => shape.isLocked,
+      return getSelectionTransformSnapshot(
+        editor,
       )
-
-      const canResize = selectedShapes.every((shape) => {
-        const util = editor.getShapeUtil(shape)
-
-        return (
-          util.canResize(shape) &&
-          util.canBeLaidOut(shape, {
-            type: 'resize_to_bounds',
-            shapes: selectedShapes,
-          })
-        )
-      })
-
-      const canRotate = selectedShapes.every((shape) => {
-        const util = editor.getShapeUtil(shape)
-
-        return !util.hideRotateHandle(shape)
-      })
-
-      const hasForcedAspectRatio = selectedShapes.some((shape) => {
-        const util = editor.getShapeUtil(shape)
-
-        return util.isAspectRatioLocked(shape)
-      })
-
-      return {
-        selectionKey: editor.getSelectedShapeIds().join('|'),
-        count: selectedShapes.length,
-        x: bounds.x,
-        y: bounds.y,
-        width: bounds.w,
-        height: bounds.h,
-        rotation:
-          normalizeDegrees(
-            radiansToDegrees(editor.getSelectionRotation()),
-          ),
-        isReadonly,
-        hasLockedShape,
-        canMove: !isReadonly && !hasLockedShape,
-        canResize:
-          !isReadonly &&
-          !hasLockedShape &&
-          canResize,
-        canRotate:
-          !isReadonly &&
-          !hasLockedShape &&
-          canRotate,
-        hasForcedAspectRatio,
-      }
     },
     [editor],
   )
@@ -161,146 +78,15 @@ export function CanvasTransformStatus({
     field: TransformFieldId,
     value: number,
   ) => {
-    if (
-      !editor ||
-      !snapshot ||
-      !Number.isFinite(value)
-    ) {
+    if (!editor || !snapshot) {
       return
     }
 
-    const selectedShapeIds = editor.getSelectedShapeIds()
-
-    if (selectedShapeIds.length === 0) {
-      return
-    }
-
-    if (field === 'rotation') {
-      if (!snapshot.canRotate) {
-        return
-      }
-
-      const currentRadians = editor.getSelectionRotation()
-      const targetRadians = degreesToRadians(value)
-      const delta = normalizeRadians(
-        targetRadians - currentRadians,
-      )
-
-      if (Math.abs(delta) < EPSILON) {
-        return
-      }
-
-      editor.markHistoryStoppingPoint(
-        'edit selection rotation from status bar',
-      )
-
-      editor.rotateShapesBy(selectedShapeIds, delta)
-      return
-    }
-
-    if (
-      (field === 'x' || field === 'y') &&
-      !snapshot.canMove
-    ) {
-      return
-    }
-
-    if (
-      (field === 'width' || field === 'height') &&
-      !snapshot.canResize
-    ) {
-      return
-    }
-
-    const bounds = editor.getSelectionPageBounds()
-
-    if (!bounds) {
-      return
-    }
-
-    let nextX = bounds.x
-    let nextY = bounds.y
-    let nextWidth = bounds.w
-    let nextHeight = bounds.h
-
-    switch (field) {
-      case 'x': {
-        nextX = value
-        break
-      }
-
-      case 'y': {
-        nextY = value
-        break
-      }
-
-      case 'width': {
-        nextWidth = Math.max(
-          value,
-          MINIMUM_SIZE,
-        )
-
-        if (
-          isAspectRatioLocked &&
-          bounds.w > EPSILON
-        ) {
-          nextHeight = Math.max(
-            bounds.h * (nextWidth / bounds.w),
-            MINIMUM_SIZE,
-          )
-        }
-
-        break
-      }
-
-      case 'height': {
-        nextHeight = Math.max(
-          value,
-          MINIMUM_SIZE,
-        )
-
-        if (
-          isAspectRatioLocked &&
-          bounds.h > EPSILON
-        ) {
-          nextWidth = Math.max(
-            bounds.w * (nextHeight / bounds.h),
-            MINIMUM_SIZE,
-          )
-        }
-
-        break
-      }
-
-    }
-
-    if (
-      !Number.isFinite(nextX) ||
-      !Number.isFinite(nextY) ||
-      !Number.isFinite(nextWidth) ||
-      !Number.isFinite(nextHeight)
-    ) {
-      return
-    }
-
-    if (
-      approximatelyEqual(nextX, bounds.x) &&
-      approximatelyEqual(nextY, bounds.y) &&
-      approximatelyEqual(nextWidth, bounds.w) &&
-      approximatelyEqual(nextHeight, bounds.h)
-    ) {
-      return
-    }
-
-    editor.markHistoryStoppingPoint(
-      'edit selection bounds from status bar',
-    )
-
-    editor.resizeToBounds(selectedShapeIds, {
-      x: nextX,
-      y: nextY,
-      w: nextWidth,
-      h: nextHeight,
+    commitSelectionTransform({
+      editor,
+      field,
+      value,
+      isAspectRatioLocked,
     })
   }
 
@@ -431,7 +217,11 @@ export function CanvasTransformStatus({
 
           <TransformGroup
             label="旋转"
-            title="选择旋转角度"
+            title={
+              snapshot.hasMixedRotation
+                ? '多个旋转角度'
+                : '选择旋转角度'
+            }
           >
             <InlineTransformField
               active={activeField === 'rotation'}
@@ -542,7 +332,7 @@ function TransformGroup({
 interface InlineTransformFieldProps {
   readonly field: TransformFieldId
   readonly label: string
-  readonly value: number
+  readonly value: number | null
   readonly suffix?: string
   readonly minimum?: number
   readonly active: boolean
@@ -709,7 +499,7 @@ function InlineTransformField({
       event.preventDefault()
 
       const current =
-        parseDraft() ?? value
+        parseDraft() ?? value ?? 0
 
       const direction =
         event.key === 'ArrowUp'
@@ -982,10 +772,13 @@ function isFieldEditable(
 }
 
 function formatStatusNumber(
-  value: number,
+  value: number | null,
 ): string {
-  if (!Number.isFinite(value)) {
-    return '0'
+  if (
+    value === null ||
+    !Number.isFinite(value)
+  ) {
+    return '—'
   }
 
   const rounded =
