@@ -5,7 +5,7 @@ import type {
 } from '@hybrid-canvas/document'
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
 import {
-  CanvasInspectorDock,
+  CanvasInspectorRightSidebar,
   EditorSessionHost,
   useCanvasInspectorAvailability,
   useEditor,
@@ -282,7 +282,7 @@ export function WorkspaceContainer({
     <WorkspaceShell
       actions={actions}
       inspector={
-        <CanvasInspectorDock />
+        <CanvasInspectorRightSidebar />
       }
       inspectorAvailable={
         inspectorAvailable

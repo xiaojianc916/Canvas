@@ -308,173 +308,258 @@ body {
 
 /* hybrid-canvas:properties-inspector-v1 */
 
-/*
- * Workspace Inspector Dock
- */
 .hc-properties-inspector-host,
-.hc-properties-inspector-dock {
+.hc-properties-sidebar {
   width: 100%;
   min-width: 0;
   min-height: 100%;
 }
 
-/*
- * DefaultStylePanel 在这里仅提供官方 Context 和交互逻辑。
- * 移除它作为浮动面板的视觉外壳。
- */
-.hc-properties-inspector-dock
-  .tlui-style-panel {
-  position: relative;
-  inset: auto;
-  width: 100%;
-  max-width: none;
-  min-width: 0;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  background: transparent;
-}
-
-/*
- * 自定义停靠式 Properties Inspector
- */
-.hc-properties-panel {
+.hc-properties-sidebar__panel {
   width: 100%;
   min-width: 0;
-  padding: 8px 0 16px;
-  color: var(
-    --color-text-1,
-    var(--color-foreground)
-  );
+  padding-bottom: 20px;
+  color: var(--color-foreground);
+  user-select: none;
 }
 
-.hc-properties-panel__section {
-  width: 100%;
-  padding: 10px 12px 12px;
+.hc-properties-sidebar__header {
+  display: flex;
+  height: 42px;
+  align-items: center;
+  padding: 0 16px;
   border-bottom: 1px solid
     color-mix(
       in oklab,
-      currentColor 10%,
+      var(--color-foreground) 8%,
       transparent
     );
 }
 
-.hc-properties-panel__section:last-child {
-  border-bottom: 0;
+.hc-properties-sidebar__title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.hc-properties-panel__heading {
-  margin: 0 0 8px;
-  color: color-mix(
-    in oklab,
-    currentColor 62%,
-    transparent
-  );
+.hc-properties-sidebar__section {
+  padding: 16px;
+}
+
+.hc-properties-sidebar__section
+  + .hc-properties-sidebar__section {
+  padding-top: 4px;
+}
+
+.hc-properties-sidebar__section-title {
+  margin: 0 0 12px;
+  color:
+    color-mix(
+      in oklab,
+      var(--color-foreground) 62%,
+      transparent
+    );
   font: inherit;
   font-size: 11px;
   font-weight: 600;
   line-height: 16px;
 }
 
-.hc-properties-panel__content,
-.hc-properties-panel__stack {
+.hc-properties-sidebar__section-content {
+  display: grid;
+  gap: 16px;
+}
+
+.hc-properties-sidebar__field {
+  display: grid;
+  gap: 7px;
+}
+
+.hc-properties-sidebar__field-header {
+  display: flex;
+  min-height: 16px;
+  align-items: center;
+  justify-content: space-between;
+  color:
+    color-mix(
+      in oklab,
+      var(--color-foreground) 58%,
+      transparent
+    );
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.hc-properties-sidebar__mixed {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hc-properties-sidebar__color-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(7, 24px);
+  justify-content: space-between;
+  gap: 8px 6px;
+}
+
+.hc-properties-sidebar__color-button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--hc-swatch-color);
+  cursor: pointer;
+}
+
+.hc-properties-sidebar__color-button
+  .tlui-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.hc-properties-sidebar__color-button:hover {
+  background:
+    color-mix(
+      in oklab,
+      currentColor 9%,
+      transparent
+    );
+}
+
+.hc-properties-sidebar__color-button[aria-pressed="true"] {
+  border-color:
+    color-mix(
+      in oklab,
+      var(--color-primary) 72%,
+      transparent
+    );
+  background:
+    color-mix(
+      in oklab,
+      var(--color-primary) 10%,
+      transparent
+    );
+}
+
+.hc-properties-sidebar__segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  min-width: 0;
+  padding: 2px;
+  border: 1px solid
+    color-mix(
+      in oklab,
+      var(--color-foreground) 9%,
+      transparent
+    );
+  border-radius: 8px;
+  background:
+    color-mix(
+      in oklab,
+      var(--color-foreground) 3%,
+      transparent
+    );
+}
+
+.hc-properties-sidebar__segment {
   display: grid;
   min-width: 0;
-  gap: 8px;
+  height: 32px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
 
-/*
- * 保留官方 Picker 自身图标、选中态和 mixed 表达，
- * 只让它们适应停靠式侧栏宽度。
- */
-.hc-properties-panel
-  .tlui-style-panel__section {
-  display: contents;
+.hc-properties-sidebar__segment:hover {
+  background:
+    color-mix(
+      in oklab,
+      var(--color-foreground) 6%,
+      transparent
+    );
 }
 
-.hc-properties-panel
-  .tlui-toolbar {
-  width: 100%;
-  min-width: 0;
+.hc-properties-sidebar__segment[aria-pressed="true"] {
+  background: var(--color-surface);
+  color: var(--color-primary);
+  box-shadow:
+    0 1px 2px
+    rgb(0 0 0 / 8%);
 }
 
-/*
- * 官方 action 图标，自定义紧凑网格。
- */
-.hc-properties-panel__action-grid {
+.hc-properties-sidebar__segment
+  .tlui-icon,
+.hc-properties-sidebar__action
+  .tlui-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.hc-properties-sidebar__action-grid {
   display: grid;
   grid-template-columns:
     repeat(6, minmax(0, 1fr));
   gap: 4px;
 }
 
-.hc-properties-panel__icon-button {
+.hc-properties-sidebar__action {
   display: grid;
-  width: 100%;
   min-width: 0;
   height: 34px;
   place-items: center;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: 7px;
   background: transparent;
   color: inherit;
   cursor: pointer;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease;
 }
 
-.hc-properties-panel__icon-button:hover {
+.hc-properties-sidebar__action:hover {
   border-color:
     color-mix(
       in oklab,
-      currentColor 8%,
+      var(--color-foreground) 7%,
       transparent
     );
   background:
     color-mix(
       in oklab,
-      currentColor 6%,
+      var(--color-foreground) 6%,
       transparent
     );
 }
 
-.hc-properties-panel__icon-button:active {
+.hc-properties-sidebar__action--destructive {
+  color: var(--color-destructive);
+}
+
+.hc-properties-sidebar__action--destructive:hover {
   background:
     color-mix(
       in oklab,
-      currentColor 10%,
+      var(--color-destructive) 9%,
       transparent
     );
 }
 
-.hc-properties-panel__icon-button:focus-visible {
-  outline: 2px solid
-    var(--color-primary);
-  outline-offset: -2px;
-}
-
-.hc-properties-panel__icon-button
-  .tlui-icon {
-  width: 18px;
-  height: 18px;
-}
-
-.hc-properties-panel__icon-button--destructive {
-  color: var(
-    --color-destructive,
-    #d14343
-  );
-}
-
-.hc-properties-panel__icon-button--destructive:hover {
-  background:
-    color-mix(
-      in oklab,
-      var(
-        --color-destructive,
-        #d14343
-      ) 9%,
-      transparent
-    );
+.hc-properties-sidebar__color-button:focus-visible,
+.hc-properties-sidebar__segment:focus-visible,
+.hc-properties-sidebar__action:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
 }

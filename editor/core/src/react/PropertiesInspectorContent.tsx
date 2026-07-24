@@ -1,38 +1,26 @@
 import {
-  ArrowShapeArrowheadEndStyle,
-  ArrowShapeArrowheadStartStyle,
-  ArrowShapeKindStyle,
   DefaultColorStyle,
   DefaultDashStyle,
   DefaultFillStyle,
   DefaultFontStyle,
-  DefaultHorizontalAlignStyle,
   DefaultSizeStyle,
   DefaultTextAlignStyle,
-  DefaultVerticalAlignStyle,
-  GeoShapeGeoStyle,
-  isDefined,
-  LineShapeSplineStyle,
+  getColorStyleItems,
+  getColorValue,
   type ReadonlySharedStyleMap,
-  StylePanelArrowheadPicker,
-  StylePanelArrowKindPicker,
-  StylePanelColorPicker,
-  StylePanelDashPicker,
-  StylePanelFillPicker,
-  StylePanelFontPicker,
-  StylePanelGeoShapePicker,
-  StylePanelLabelAlignPicker,
-  StylePanelOpacityPicker,
-  StylePanelSizePicker,
-  StylePanelSplinePicker,
-  StylePanelTextAlignPicker,
+  type SharedStyle,
+  type StyleProp,
   TldrawUiIcon,
+  type TLDefaultColorStyle,
   type TLUiActionItem,
+  type TLUiIconType,
   useActions,
+  useEditor,
+  useStylePanelContext,
+  useValue,
 } from 'tldraw'
-import {
-  isValidElement,
-  type ReactNode,
+import type {
+  ReactNode,
 } from 'react'
 
 export interface PropertiesInspectorContentProps {
@@ -42,197 +30,186 @@ export interface PropertiesInspectorContentProps {
   readonly selectedShapeCount: number
 }
 
-/**
- * 专门为停靠式右栏设计的 Properties Inspector。
- *
- * 官方能力负责：
- * - shared / mixed styles
- * - StyleProp 写入
- * - next-shape styles
- * - History
- * - Actions
- * - 图标
- *
- * 本组件负责：
- * - 分区
- * - 密度
- * - 排列
- * - 显隐
- */
+interface StyleOption<
+  TValue extends string,
+> {
+  readonly value: TValue
+  readonly icon: TLUiIconType
+  readonly label: string
+}
+
+const fillOptions = [
+  {
+    value: 'none',
+    icon: 'fill-none',
+    label: '无填充',
+  },
+  {
+    value: 'semi',
+    icon: 'fill-semi',
+    label: '半透明',
+  },
+  {
+    value: 'solid',
+    icon: 'fill-solid',
+    label: '实色',
+  },
+  {
+    value: 'pattern',
+    icon: 'fill-pattern',
+    label: '图案',
+  },
+] as const
+
+const dashOptions = [
+  {
+    value: 'draw',
+    icon: 'dash-draw',
+    label: '手绘',
+  },
+  {
+    value: 'solid',
+    icon: 'dash-solid',
+    label: '实线',
+  },
+  {
+    value: 'dashed',
+    icon: 'dash-dashed',
+    label: '虚线',
+  },
+  {
+    value: 'dotted',
+    icon: 'dash-dotted',
+    label: '点线',
+  },
+] as const
+
+const sizeOptions = [
+  {
+    value: 's',
+    icon: 'size-small',
+    label: '小',
+  },
+  {
+    value: 'm',
+    icon: 'size-medium',
+    label: '中',
+  },
+  {
+    value: 'l',
+    icon: 'size-large',
+    label: '大',
+  },
+  {
+    value: 'xl',
+    icon: 'size-extra-large',
+    label: '特大',
+  },
+] as const
+
+const fontOptions = [
+  {
+    value: 'draw',
+    icon: 'font-draw',
+    label: '手写',
+  },
+  {
+    value: 'sans',
+    icon: 'font-sans',
+    label: '无衬线',
+  },
+  {
+    value: 'serif',
+    icon: 'font-serif',
+    label: '衬线',
+  },
+  {
+    value: 'mono',
+    icon: 'font-mono',
+    label: '等宽',
+  },
+] as const
+
+const textAlignOptions = [
+  {
+    value: 'start',
+    icon: 'text-align-left',
+    label: '左对齐',
+  },
+  {
+    value: 'middle',
+    icon: 'text-align-center',
+    label: '居中',
+  },
+  {
+    value: 'end',
+    icon: 'text-align-right',
+    label: '右对齐',
+  },
+] as const
+
 export function PropertiesInspectorContent({
   styles,
   selectedShapeCount,
 }: PropertiesInspectorContentProps) {
-  const hasSelection =
-    selectedShapeCount > 0
+  const editor = useEditor()
 
-  const hasAppearance =
-    styles !== null &&
-    (
-      hasStyle(
-        styles,
-        DefaultColorStyle,
-      ) ||
-      hasSelection
+  const title =
+    useValue(
+      'right properties sidebar title',
+      () => {
+        const selected =
+          editor.getSelectedShapes()
+
+        if (selected.length > 1) {
+          return (
+            String(selected.length) +
+            ' 个对象'
+          )
+        }
+
+        if (selected.length === 1) {
+          return getShapeTitle(
+            selected[0]?.type,
+          )
+        }
+
+        return getToolTitle(
+          editor.getCurrentToolId(),
+        )
+      },
+      [editor],
     )
 
-  const hasStrokeAndFill =
-    styles !== null &&
-    hasAnyStyle(
-      styles,
-      [
-        DefaultFillStyle,
-        DefaultDashStyle,
-        DefaultSizeStyle,
-      ],
-    )
-
-  const hasText =
-    styles !== null &&
-    hasAnyStyle(
-      styles,
-      [
-        DefaultFontStyle,
-        DefaultTextAlignStyle,
-        DefaultHorizontalAlignStyle,
-        DefaultVerticalAlignStyle,
-      ],
-    )
-
-  const hasShape =
-    styles !== null &&
-    hasAnyStyle(
-      styles,
-      [
-        GeoShapeGeoStyle,
-        ArrowShapeKindStyle,
-        ArrowShapeArrowheadStartStyle,
-        ArrowShapeArrowheadEndStyle,
-        LineShapeSplineStyle,
-      ],
+  const onlySelectedShapeType =
+    useValue(
+      'right properties sidebar selected shape type',
+      () =>
+        editor
+          .getOnlySelectedShape()
+          ?.type ?? null,
+      [editor],
     )
 
   return (
-    <div className="hc-properties-panel">
-      {hasAppearance ? (
-        <InspectorSection
-          title="外观"
-        >
-          <div className="hc-properties-panel__stack">
-            {hasStyle(
-              styles,
-              DefaultColorStyle,
-            ) ? (
-              <StylePanelColorPicker />
-            ) : null}
+    <div className="hc-properties-sidebar__panel">
+      <header className="hc-properties-sidebar__header">
+        <span className="hc-properties-sidebar__title">
+          {title}
+        </span>
+      </header>
 
-            {hasSelection ? (
-              <StylePanelOpacityPicker />
-            ) : null}
-          </div>
-        </InspectorSection>
+      {styles ? (
+        <StyleSections
+          styles={styles}
+        />
       ) : null}
 
-      {hasStrokeAndFill ? (
-        <InspectorSection
-          title="样式"
-        >
-          <div className="hc-properties-panel__stack">
-            {hasStyle(
-              styles,
-              DefaultFillStyle,
-            ) ? (
-              <StylePanelFillPicker />
-            ) : null}
-
-            {hasStyle(
-              styles,
-              DefaultDashStyle,
-            ) ? (
-              <StylePanelDashPicker />
-            ) : null}
-
-            {hasStyle(
-              styles,
-              DefaultSizeStyle,
-            ) ? (
-              <StylePanelSizePicker />
-            ) : null}
-          </div>
-        </InspectorSection>
-      ) : null}
-
-      {hasText ? (
-        <InspectorSection
-          title="文本"
-        >
-          <div className="hc-properties-panel__stack">
-            {hasStyle(
-              styles,
-              DefaultFontStyle,
-            ) ? (
-              <StylePanelFontPicker />
-            ) : null}
-
-            {hasStyle(
-              styles,
-              DefaultTextAlignStyle,
-            ) ? (
-              <StylePanelTextAlignPicker />
-            ) : null}
-
-            {hasStyle(
-              styles,
-              DefaultHorizontalAlignStyle,
-            ) ? (
-              <StylePanelLabelAlignPicker />
-            ) : null}
-          </div>
-        </InspectorSection>
-      ) : null}
-
-      {hasShape ? (
-        <InspectorSection
-          title="形状"
-        >
-          <div className="hc-properties-panel__stack">
-            {hasStyle(
-              styles,
-              GeoShapeGeoStyle,
-            ) ? (
-              <StylePanelGeoShapePicker />
-            ) : null}
-
-            {hasStyle(
-              styles,
-              ArrowShapeKindStyle,
-            ) ? (
-              <StylePanelArrowKindPicker />
-            ) : null}
-
-            {hasStyle(
-              styles,
-              ArrowShapeArrowheadStartStyle,
-            ) &&
-            hasStyle(
-              styles,
-              ArrowShapeArrowheadEndStyle,
-            ) ? (
-              <StylePanelArrowheadPicker />
-            ) : null}
-
-            {hasStyle(
-              styles,
-              LineShapeSplineStyle,
-            ) ? (
-              <StylePanelSplinePicker />
-            ) : null}
-          </div>
-        </InspectorSection>
-      ) : null}
-
-      {hasSelection ? (
+      {selectedShapeCount > 0 ? (
         <SelectionActions
+          onlySelectedShapeType={
+            onlySelectedShapeType
+          }
           selectedShapeCount={
             selectedShapeCount
           }
@@ -242,225 +219,316 @@ export function PropertiesInspectorContent({
   )
 }
 
-interface InspectorSectionProps {
-  readonly title: string
-  readonly children: ReactNode
-}
+function StyleSections({
+  styles,
+}: {
+  readonly styles:
+    ReadonlySharedStyleMap
+}) {
+  const color =
+    styles.get(
+      DefaultColorStyle,
+    )
 
-function InspectorSection({
-  title,
-  children,
-}: InspectorSectionProps) {
-  return (
-    <section
-      aria-label={title}
-      className="hc-properties-panel__section"
-    >
-      <h2 className="hc-properties-panel__heading">
-        {title}
-      </h2>
+  const fill =
+    styles.get(
+      DefaultFillStyle,
+    )
 
-      <div className="hc-properties-panel__content">
-        {children}
-      </div>
-    </section>
-  )
-}
+  const dash =
+    styles.get(
+      DefaultDashStyle,
+    )
 
-interface SelectionActionsProps {
-  readonly selectedShapeCount: number
-}
+  const size =
+    styles.get(
+      DefaultSizeStyle,
+    )
 
-function SelectionActions({
-  selectedShapeCount,
-}: SelectionActionsProps) {
-  const actions =
-    useActions()
+  const font =
+    styles.get(
+      DefaultFontStyle,
+    )
 
-  const alignActions =
-    selectedShapeCount >= 2
-      ? [
-          action(
-            actions,
-            'align-left',
-            '左对齐',
-          ),
-
-          action(
-            actions,
-            'align-center-horizontal',
-            '水平居中',
-          ),
-
-          action(
-            actions,
-            'align-right',
-            '右对齐',
-          ),
-
-          action(
-            actions,
-            'align-top',
-            '顶部对齐',
-          ),
-
-          action(
-            actions,
-            'align-center-vertical',
-            '垂直居中',
-          ),
-
-          action(
-            actions,
-            'align-bottom',
-            '底部对齐',
-          ),
-        ]
-      : []
-
-  const distributeActions =
-    selectedShapeCount >= 3
-      ? [
-          action(
-            actions,
-            'distribute-horizontal',
-            '水平分布',
-          ),
-
-          action(
-            actions,
-            'distribute-vertical',
-            '垂直分布',
-          ),
-        ]
-      : []
-
-  const arrangementActions = [
-    ...alignActions,
-    ...distributeActions,
-  ].filter(isDefined)
-
-  const objectActions = [
-    action(
-      actions,
-      'group',
-      '编组或取消编组',
-    ),
-
-    action(
-      actions,
-      'duplicate',
-      '创建副本',
-    ),
-
-    action(
-      actions,
-      'delete',
-      '删除',
-      true,
-    ),
-  ].filter(isDefined)
+  const textAlign =
+    styles.get(
+      DefaultTextAlignStyle,
+    )
 
   return (
     <>
-      {arrangementActions.length >
-      0 ? (
-        <InspectorSection
-          title="排列"
+      {color ? (
+        <SidebarSection
+          title="颜色"
         >
-          <ActionGrid
-            actions={
-              arrangementActions
-            }
+          <ColorControl
+            value={color}
           />
-        </InspectorSection>
+        </SidebarSection>
       ) : null}
 
-      <InspectorSection
-        title="对象"
-      >
-        <ActionGrid
-          actions={objectActions}
-        />
-      </InspectorSection>
+      {fill ||
+      dash ||
+      size ? (
+        <SidebarSection
+          title="样式"
+        >
+          {fill ? (
+            <SidebarField
+              mixed={
+                fill.type === 'mixed'
+              }
+              title="填充"
+            >
+              <StyleControl
+                options={fillOptions}
+                style={DefaultFillStyle}
+                value={fill}
+              />
+            </SidebarField>
+          ) : null}
+
+          {dash ? (
+            <SidebarField
+              mixed={
+                dash.type === 'mixed'
+              }
+              title="线条"
+            >
+              <StyleControl
+                options={dashOptions}
+                style={DefaultDashStyle}
+                value={dash}
+              />
+            </SidebarField>
+          ) : null}
+
+          {size ? (
+            <SidebarField
+              mixed={
+                size.type === 'mixed'
+              }
+              title="粗细"
+            >
+              <StyleControl
+                options={sizeOptions}
+                style={DefaultSizeStyle}
+                value={size}
+              />
+            </SidebarField>
+          ) : null}
+        </SidebarSection>
+      ) : null}
+
+      {font ||
+      textAlign ? (
+        <SidebarSection
+          title="文本"
+        >
+          {font ? (
+            <SidebarField
+              mixed={
+                font.type === 'mixed'
+              }
+              title="字体"
+            >
+              <StyleControl
+                options={fontOptions}
+                style={DefaultFontStyle}
+                value={font}
+              />
+            </SidebarField>
+          ) : null}
+
+          {textAlign ? (
+            <SidebarField
+              mixed={
+                textAlign.type ===
+                'mixed'
+              }
+              title="对齐"
+            >
+              <StyleControl
+                options={
+                  textAlignOptions
+                }
+                style={
+                  DefaultTextAlignStyle
+                }
+                value={textAlign}
+              />
+            </SidebarField>
+          ) : null}
+        </SidebarSection>
+      ) : null}
     </>
   )
 }
 
-interface InspectorAction {
-  readonly item: TLUiActionItem
-  readonly title: string
-  readonly destructive: boolean
-}
-
-function action(
-  actions: ReturnType<
-    typeof useActions
-  >,
-  id: string,
-  title: string,
-  destructive = false,
-): InspectorAction | null {
-  const item =
-    actions[id]
-
-  if (
-    !item ||
-    !item.icon
-  ) {
-    return null
-  }
-
-  return {
-    item,
-    title,
-    destructive,
-  }
-}
-
-function ActionGrid({
-  actions,
+function ColorControl({
+  value,
 }: {
-  readonly actions:
-    readonly InspectorAction[]
+  readonly value:
+    SharedStyle<TLDefaultColorStyle>
 }) {
+  const editor = useEditor()
+  const styleContext =
+    useStylePanelContext()
+
+  const colors =
+    useValue(
+      'right properties sidebar colors',
+      () =>
+        editor
+          .getCurrentTheme()
+          .colors[
+            editor.getColorMode()
+          ],
+      [editor],
+    )
+
+  const items =
+    getColorStyleItems(
+      colors,
+    )
+
   return (
-    <div className="hc-properties-panel__action-grid">
-      {actions.map(
-        ({
-          item,
-          title,
-          destructive,
-        }) => {
-          const icon =
-            typeof item.icon ===
-              'string' ||
-            isValidElement(
-              item.icon,
-            )
-              ? item.icon
-              : 'question-mark-circle'
+    <div
+      aria-label="颜色"
+      className="hc-properties-sidebar__color-grid"
+      data-mixed={
+        value.type === 'mixed'
+          ? ''
+          : undefined
+      }
+      role="group"
+    >
+      {items.map((item) => {
+        const colorValue =
+          item.value as TLDefaultColorStyle
+
+        const active =
+          value.type === 'shared' &&
+          value.value === colorValue
+
+        const label =
+          '颜色 — ' +
+          getColorLabel(
+            colorValue,
+          )
+
+        return (
+          <button
+            aria-label={label}
+            aria-pressed={active}
+            className="hc-properties-sidebar__color-button"
+            key={item.value}
+            onClick={() => {
+              styleContext.onHistoryMark(
+                'change color',
+              )
+
+              styleContext.onValueChange(
+                DefaultColorStyle,
+                colorValue,
+              )
+            }}
+            style={{
+              '--hc-swatch-color':
+                getColorValue(
+                  colors,
+                  colorValue,
+                  'solid',
+                ),
+            } as React.CSSProperties}
+            title={label}
+            type="button"
+          >
+            <TldrawUiIcon
+              icon="color"
+              label={label}
+            />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+interface StyleControlProps<
+  TValue extends string,
+> {
+  readonly style:
+    StyleProp<TValue>
+  readonly value:
+    SharedStyle<TValue>
+  readonly options:
+    readonly StyleOption<TValue>[]
+}
+
+function StyleControl<
+  TValue extends string,
+>({
+  style,
+  value,
+  options,
+}: StyleControlProps<TValue>) {
+  const styleContext =
+    useStylePanelContext()
+
+  return (
+    <div
+      className="hc-properties-sidebar__segmented"
+      data-mixed={
+        value.type === 'mixed'
+          ? ''
+          : undefined
+      }
+      role="group"
+    >
+      {options.map(
+        (option) => {
+          const active =
+            value.type ===
+              'shared' &&
+            value.value ===
+              option.value
 
           return (
             <button
-              aria-label={title}
-              className={
-                destructive
-                  ? 'hc-properties-panel__icon-button hc-properties-panel__icon-button--destructive'
-                  : 'hc-properties-panel__icon-button'
+              aria-label={
+                option.label
               }
-              key={item.id}
+              aria-pressed={
+                active
+              }
+              className="hc-properties-sidebar__segment"
+              key={
+                option.value
+              }
               onClick={() => {
-                void item.onSelect(
-                  'toolbar',
+                styleContext.onHistoryMark(
+                  'change ' +
+                    style.id,
+                )
+
+                styleContext.onValueChange(
+                  style,
+                  option.value,
                 )
               }}
-              title={title}
+              title={
+                option.label
+              }
               type="button"
             >
               <TldrawUiIcon
-                icon={icon}
-                label={title}
+                icon={
+                  option.icon
+                }
+                label={
+                  option.label
+                }
               />
             </button>
           )
@@ -470,33 +538,295 @@ function ActionGrid({
   )
 }
 
-function hasStyle(
-  styles:
-    | ReadonlySharedStyleMap
-    | null,
-  style: Parameters<
-    ReadonlySharedStyleMap['get']
-  >[0],
-): boolean {
+interface SidebarSectionProps {
+  readonly title: string
+  readonly children: ReactNode
+}
+
+function SidebarSection({
+  title,
+  children,
+}: SidebarSectionProps) {
   return (
-    styles?.get(style) !==
-    undefined
+    <section className="hc-properties-sidebar__section">
+      <h2 className="hc-properties-sidebar__section-title">
+        {title}
+      </h2>
+
+      <div className="hc-properties-sidebar__section-content">
+        {children}
+      </div>
+    </section>
   )
 }
 
-function hasAnyStyle(
-  styles:
-    | ReadonlySharedStyleMap
-    | null,
-  styleProps: readonly Parameters<
-    ReadonlySharedStyleMap['get']
-  >[0][],
-): boolean {
-  return styleProps.some(
-    (style) =>
-      hasStyle(
-        styles,
-        style,
-      ),
+interface SidebarFieldProps {
+  readonly title: string
+  readonly mixed: boolean
+  readonly children: ReactNode
+}
+
+function SidebarField({
+  title,
+  mixed,
+  children,
+}: SidebarFieldProps) {
+  return (
+    <div className="hc-properties-sidebar__field">
+      <div className="hc-properties-sidebar__field-header">
+        <span>
+          {title}
+        </span>
+
+        {mixed ? (
+          <span
+            aria-label="多个值"
+            className="hc-properties-sidebar__mixed"
+            title="多个值"
+          >
+            —
+          </span>
+        ) : null}
+      </div>
+
+      {children}
+    </div>
+  )
+}
+
+interface SelectionActionsProps {
+  readonly selectedShapeCount: number
+  readonly onlySelectedShapeType:
+    | string
+    | null
+}
+
+function SelectionActions({
+  selectedShapeCount,
+  onlySelectedShapeType,
+}: SelectionActionsProps) {
+  const actions =
+    useActions()
+
+  return (
+    <>
+      {selectedShapeCount >= 2 ? (
+        <SidebarSection
+          title="排列"
+        >
+          <div className="hc-properties-sidebar__action-grid">
+            <ActionButton
+              actions={actions}
+              id="align-left"
+              label="左对齐"
+            />
+
+            <ActionButton
+              actions={actions}
+              id="align-center-horizontal"
+              label="水平居中"
+            />
+
+            <ActionButton
+              actions={actions}
+              id="align-right"
+              label="右对齐"
+            />
+
+            <ActionButton
+              actions={actions}
+              id="align-top"
+              label="顶部对齐"
+            />
+
+            <ActionButton
+              actions={actions}
+              id="align-center-vertical"
+              label="垂直居中"
+            />
+
+            <ActionButton
+              actions={actions}
+              id="align-bottom"
+              label="底部对齐"
+            />
+
+            {selectedShapeCount >= 3 ? (
+              <>
+                <ActionButton
+                  actions={actions}
+                  id="distribute-horizontal"
+                  label="水平分布"
+                />
+
+                <ActionButton
+                  actions={actions}
+                  id="distribute-vertical"
+                  label="垂直分布"
+                />
+              </>
+            ) : null}
+          </div>
+        </SidebarSection>
+      ) : null}
+
+      <SidebarSection
+        title="对象"
+      >
+        <div className="hc-properties-sidebar__action-grid">
+          {onlySelectedShapeType ===
+          'group' ? (
+            <ActionButton
+              actions={actions}
+              id="ungroup"
+              label="取消编组"
+            />
+          ) : selectedShapeCount >=
+            2 ? (
+            <ActionButton
+              actions={actions}
+              id="group"
+              label="编组"
+            />
+          ) : null}
+
+          <ActionButton
+            actions={actions}
+            id="duplicate"
+            label="创建副本"
+          />
+
+          <ActionButton
+            actions={actions}
+            destructive
+            id="delete"
+            label="删除"
+          />
+        </div>
+      </SidebarSection>
+    </>
+  )
+}
+
+function ActionButton({
+  actions,
+  id,
+  label,
+  destructive = false,
+}: {
+  readonly actions:
+    ReturnType<typeof useActions>
+  readonly id: string
+  readonly label: string
+  readonly destructive?: boolean
+}) {
+  const item:
+    | TLUiActionItem
+    | undefined =
+    actions[id]
+
+  if (
+    !item ||
+    !item.icon
+  ) {
+    return null
+  }
+
+  return (
+    <button
+      aria-label={label}
+      className={
+        destructive
+          ? 'hc-properties-sidebar__action hc-properties-sidebar__action--destructive'
+          : 'hc-properties-sidebar__action'
+      }
+      onClick={() => {
+        void item.onSelect(
+          'toolbar',
+        )
+      }}
+      title={label}
+      type="button"
+    >
+      <TldrawUiIcon
+        icon={item.icon}
+        label={label}
+      />
+    </button>
+  )
+}
+
+function getToolTitle(
+  toolId: string,
+): string {
+  const titles:
+    Record<string, string> = {
+      draw: '画笔',
+      geo: '形状',
+      arrow: '箭头',
+      text: '文本',
+      note: '便签',
+      line: '线条',
+      highlight: '高亮',
+    }
+
+  return (
+    titles[toolId] ??
+    '属性'
+  )
+}
+
+function getShapeTitle(
+  shapeType:
+    | string
+    | undefined,
+): string {
+  const titles:
+    Record<string, string> = {
+      geo: '形状',
+      draw: '画笔',
+      arrow: '箭头',
+      text: '文本',
+      note: '便签',
+      line: '线条',
+      highlight: '高亮',
+      frame: '画框',
+      image: '图片',
+      video: '视频',
+      group: '编组',
+    }
+
+  return shapeType
+    ? titles[shapeType] ??
+        '对象'
+    : '对象'
+}
+
+function getColorLabel(
+  color: TLDefaultColorStyle,
+): string {
+  const labels:
+    Partial<
+      Record<
+        TLDefaultColorStyle,
+        string
+      >
+    > = {
+      black: '黑色',
+      grey: '灰色',
+      violet: '紫色',
+      blue: '蓝色',
+      'light-blue': '浅蓝色',
+      yellow: '黄色',
+      orange: '橙色',
+      green: '绿色',
+      'light-green': '浅绿色',
+      red: '红色',
+      'light-red': '浅红色',
+    }
+
+  return (
+    labels[color] ??
+    color
   )
 }

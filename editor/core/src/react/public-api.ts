@@ -18,7 +18,7 @@ export {
 } from './editor-context'
 
 export {
-  CanvasInspectorDock,
+  CanvasInspectorRightSidebar,
   CanvasInspectorPortalProvider,
   type CanvasInspectorPortalProviderProps,
   CanvasInspectorStylePanel,

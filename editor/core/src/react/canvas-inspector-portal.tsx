@@ -11,7 +11,7 @@ import {
 import { createPortal } from 'react-dom'
 import { PropertiesInspectorContent } from './PropertiesInspectorContent'
 import {
-  DefaultStylePanel,
+  StylePanelContextProvider,
   useEditor,
   useRelevantStyles,
   useValue,
@@ -130,7 +130,7 @@ export function CanvasInspectorPortalProvider({
   )
 }
 
-export function CanvasInspectorDock() {
+export function CanvasInspectorRightSidebar() {
   const context =
     useRequiredCanvasInspectorPortal()
 
@@ -150,7 +150,7 @@ export function CanvasInspectorDock() {
 
   return (
     <div
-      className="hc-properties-inspector-dock"
+      className="hc-properties-sidebar"
       data-properties-inspector-dock=""
       ref={ref}
     />
@@ -236,8 +236,7 @@ export function CanvasInspectorStylePanel({
 
   return createPortal(
     styles ? (
-      <DefaultStylePanel
-        isMobile={false}
+      <StylePanelContextProvider
         styles={styles}
       >
         <PropertiesInspectorContent
@@ -246,7 +245,7 @@ export function CanvasInspectorStylePanel({
           }
           styles={styles}
         />
-      </DefaultStylePanel>
+      </StylePanelContextProvider>
     ) : (
       <div
         className="hc-properties-panel hc-properties-panel--actions-only"
