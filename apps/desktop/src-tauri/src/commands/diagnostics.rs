@@ -2,8 +2,10 @@ use tauri::AppHandle;
 
 use crate::{
     diagnostics::{self, NativeCrashReport},
-    Result,
+    error::IpcError,
 };
+
+type DiagnosticsCommandResult<T> = std::result::Result<T, IpcError>;
 
 /// Returns and consumes the previous native process crash report.
 ///
@@ -13,6 +15,6 @@ use crate::{
 #[specta::specta]
 pub fn diagnostics_take_previous_crash(
     app: AppHandle,
-) -> Result<Option<NativeCrashReport>> {
-    diagnostics::take_previous_crash_report(&app)
+) -> DiagnosticsCommandResult<Option<NativeCrashReport>> {
+    diagnostics::take_previous_crash_report(&app).map_err(Into::into)
 }
