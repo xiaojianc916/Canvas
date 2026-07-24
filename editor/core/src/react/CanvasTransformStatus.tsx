@@ -350,7 +350,7 @@ export function CanvasTransformStatus({
       {canvasTitle ? (
         <span
           className="
-            max-w-48 truncate px-1
+            w-40 max-w-40 shrink-0 truncate px-1
             font-medium text-foreground/80
           "
           title={canvasTitle}
@@ -486,25 +486,30 @@ function SelectionCount({
 }: {
   readonly count: number
 }) {
+  const label =
+    count === 1
+      ? '1 个对象'
+      : String(count) + ' 个对象'
+
   return (
     <span
       className="
-        inline-flex h-6 shrink-0 items-center px-1.5
-        text-foreground/65
+        inline-flex h-6 w-[68px] shrink-0 items-center
+        overflow-hidden px-1.5 text-foreground/65
+        tabular-nums whitespace-nowrap
       "
       title={
         count === 1
           ? '已选择 1 个对象'
-          : '当前多选范围'
+          : '已选择 ' + String(count) + ' 个对象'
       }
     >
-      {count === 1
-        ? '1 个对象'
-        : String(count) + ' 个对象'}
+      <span className="block w-full truncate">
+        {label}
+      </span>
     </span>
   )
-}
-
+}\n
 interface TransformGroupProps {
   readonly children: ReactNode
   readonly label: string
@@ -563,19 +568,30 @@ function InlineTransformField({
   onCommit,
   onNavigate,
 }: InlineTransformFieldProps) {
-  const [draft, setDraft] = useState(
-    formatStatusNumber(value),
-  )
+  const formattedValue = formatStatusNumber(value)
 
-  const inputRef = useRef<HTMLInputElement>(null)
-  const skipBlurCommitRef = useRef(false)
+  const [draft, setDraft] =
+    useState(formattedValue)
+
+  const inputRef =
+    useRef<HTMLInputElement>(null)
+
+  /*
+   * Enter / Tab 会先主动提交，然后输入框卸载并触发 blur。
+   * 这个标记防止同一个值被提交两次。
+   *
+   * 普通鼠标失焦不会设置该标记，因此会正常提交。
+   */
+  const skipNextBlurRef = useRef(false)
 
   useEffect(() => {
-    setDraft(formatStatusNumber(value))
-
     if (!active) {
+      setDraft(formattedValue)
       return
     }
+
+    skipNextBlurRef.current = false
+    setDraft(formattedValue)
 
     const frame = requestAnimationFrame(() => {
       inputRef.current?.focus()
@@ -585,10 +601,19 @@ function InlineTransformField({
     return () => {
       cancelAnimationFrame(frame)
     }
-  }, [active, value])
+  }, [active, formattedValue])
 
   const parseDraft = (): number | null => {
-    const parsed = Number(draft)
+    /*
+     * 允许用户输入前后空格，但不允许空字符串被当作 0。
+     */
+    const normalizedDraft = draft.trim()
+
+    if (normalizedDraft.length === 0) {
+      return null
+    }
+
+    const parsed = Number(normalizedDraft)
 
     if (
       !Number.isFinite(parsed) ||
@@ -603,11 +628,11 @@ function InlineTransformField({
     return parsed
   }
 
-  const commit = (): boolean => {
+  const commitDraft = (): boolean => {
     const parsed = parseDraft()
 
     if (parsed === null) {
-      setDraft(formatStatusNumber(value))
+      setDraft(formattedValue)
       return false
     }
 
@@ -615,26 +640,31 @@ function InlineTransformField({
     return true
   }
 
-  const finish = () => {
-    commit()
+  const finishWithCommit = () => {
+    commitDraft()
     onActivate(null)
   }
 
-  const cancel = () => {
-    skipBlurCommitRef.current = true
-    setDraft(formatStatusNumber(value))
+  const cancelEditing = () => {
+    skipNextBlurRef.current = true
+    setDraft(formattedValue)
     onActivate(null)
   }
 
   const handleBlur = (
     _event: FocusEvent<HTMLInputElement>,
   ) => {
-    if (skipBlurCommitRef.current) {
-      skipBlurCommitRef.current = false
+    if (skipNextBlurRef.current) {
+      skipNextBlurRef.current = false
       return
     }
 
-    finish()
+    /*
+     * 普通失焦路径：
+     * 编辑 1 为 2，再点击画布或其他控件，
+     * 此处会提交 2，然后退出编辑状态。
+     */
+    finishWithCommit()
   }
 
   const handleKeyDown = (
@@ -642,22 +672,24 @@ function InlineTransformField({
   ) => {
     if (event.key === 'Enter') {
       event.preventDefault()
-      skipBlurCommitRef.current = true
-      commit()
+
+      skipNextBlurRef.current = true
+      commitDraft()
       onActivate(null)
       return
     }
 
     if (event.key === 'Escape') {
       event.preventDefault()
-      cancel()
+      cancelEditing()
       return
     }
 
     if (event.key === 'Tab') {
       event.preventDefault()
-      skipBlurCommitRef.current = true
-      commit()
+
+      skipNextBlurRef.current = true
+      commitDraft()
 
       onNavigate(
         field,
@@ -672,9 +704,13 @@ function InlineTransformField({
     ) {
       event.preventDefault()
 
-      const current = parseDraft() ?? value
+      const current =
+        parseDraft() ?? value
+
       const direction =
-        event.key === 'ArrowUp' ? 1 : -1
+        event.key === 'ArrowUp'
+          ? 1
+          : -1
 
       const increment = event.shiftKey
         ? 10
@@ -701,19 +737,30 @@ function InlineTransformField({
     }
   }
 
+  /*
+   * 编辑态和静态使用完全相同的：
+   * - 宽度
+   * - 高度
+   * - Grid 列
+   * - Padding
+   *
+   * 切换时只改变文本节点与 input，
+   * 不改变任何外部几何尺寸。
+   */
   if (active && !disabled) {
     return (
       <span
         className="
-          inline-flex h-6 shrink-0 items-center
-          rounded-md bg-background
-          ring-1 ring-primary/65
+          inline-grid h-6 w-[76px] shrink-0
+          grid-cols-[14px_minmax(0,1fr)_10px]
+          items-center gap-1 rounded-md px-1.5
+          text-[11px] tabular-nums
         "
       >
         <span
           className="
-            pl-1.5 text-[10px]
-            text-muted-foreground
+            font-sans text-[10px]
+            text-muted-foreground/80
           "
         >
           {label}
@@ -723,9 +770,14 @@ function InlineTransformField({
           ref={inputRef}
           aria-label={'编辑 ' + label}
           className="
-            h-6 w-16 border-0 bg-transparent px-1
+            h-6 min-w-0 w-full appearance-none
+            border-0 bg-transparent p-0
             text-right font-mono text-[11px]
-            tabular-nums text-foreground outline-none
+            tabular-nums text-foreground
+            outline-none ring-0
+            [appearance:textfield]
+            [&::-webkit-inner-spin-button]:appearance-none
+            [&::-webkit-outer-spin-button]:appearance-none
           "
           inputMode="decimal"
           onBlur={handleBlur}
@@ -738,16 +790,15 @@ function InlineTransformField({
           value={draft}
         />
 
-        {suffix ? (
-          <span
-            className="
-              pr-1.5 text-[10px]
-              text-muted-foreground
-            "
-          >
-            {suffix}
-          </span>
-        ) : null}
+        <span
+          className="
+            overflow-hidden text-left
+            font-sans text-[10px]
+            text-muted-foreground/75
+          "
+        >
+          {suffix ?? ''}
+        </span>
       </span>
     )
   }
@@ -757,48 +808,68 @@ function InlineTransformField({
       aria-label={
         disabled
           ? label + ' 不可编辑'
-          : '编辑 ' + label
+          : '双击编辑 ' + label
       }
       className={[
-        'inline-flex h-6 shrink-0 items-center gap-1',
-        'rounded-md px-1.5',
-        'font-mono text-[11px] tabular-nums',
+        'inline-grid h-6 w-[76px] shrink-0',
+        'grid-cols-[14px_minmax(0,1fr)_10px]',
+        'items-center gap-1 rounded-md px-1.5',
+        'text-[11px] tabular-nums',
         'transition-colors',
         'focus-visible:outline-none',
         'focus-visible:ring-1',
-        'focus-visible:ring-primary',
+        'focus-visible:ring-primary/60',
         disabled
           ? 'cursor-not-allowed opacity-45'
-          : 'hover:bg-background/85',
+          : 'cursor-default hover:bg-background/55',
       ].join(' ')}
       disabled={disabled}
-      onClick={() => {
+      onDoubleClick={() => {
         onActivate(field)
       }}
       title={
         disabled
           ? label + ' 当前不可编辑'
-          : '编辑 ' + label
+          : '双击编辑 ' + label
       }
       type="button"
     >
       <span
         className="
           font-sans text-[10px]
-          text-muted-foreground/75
+          text-muted-foreground/80
         "
       >
         {label}
       </span>
 
-      <span className="min-w-7 text-right text-foreground/85">
-        {formatStatusNumber(value)}
-        {suffix}
+      <span
+        className="
+          block min-w-0 overflow-hidden
+          text-ellipsis whitespace-nowrap
+          text-right font-mono
+          text-foreground/85
+        "
+        title={
+          formattedValue +
+          (suffix ?? '')
+        }
+      >
+        {formattedValue}
+      </span>
+
+      <span
+        className="
+          overflow-hidden text-left
+          font-sans text-[10px]
+          text-muted-foreground/75
+        "
+      >
+        {suffix ?? ''}
       </span>
     </button>
   )
-}
-
+}\n
 interface AspectRatioLockButtonProps {
   readonly locked: boolean
   readonly forced: boolean

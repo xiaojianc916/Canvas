@@ -9,163 +9,462 @@ const filePath = path.join(
 
 let source = await readFile(filePath, 'utf8')
 
-/*
- * TldrawUiIcon 依赖 tldraw UI 内部的 AssetUrls Provider。
- * CanvasTransformStatus 位于 Workspace 状态栏，不在该 Provider 内。
- */
 source = source.replace(
-  /import\s*\{\s*TldrawUiIcon,\s*useValue,\s*\}\s*from\s*'tldraw'/m,
-  "import { useValue } from 'tldraw'",
+  /className="[\s\S]*?max-w-48 truncate px-1[\s\S]*?font-medium text-foreground\/80[\s\S]*?"/m,
+  `className="
+            w-40 max-w-40 shrink-0 truncate px-1
+            font-medium text-foreground/80
+          "`,
 )
 
-source = source.replace(
-  /import\s*\{\s*useValue,\s*TldrawUiIcon,\s*\}\s*from\s*'tldraw'/m,
-  "import { useValue } from 'tldraw'",
+source = replaceSection(
+  source,
+  'function SelectionCount(',
+  '\ninterface TransformGroupProps',
+  `function SelectionCount({
+  count,
+}: {
+  readonly count: number
+}) {
+  const label =
+    count === 1
+      ? '1 个对象'
+      : String(count) + ' 个对象'
+
+  return (
+    <span
+      className="
+        inline-flex h-6 w-[68px] shrink-0 items-center
+        overflow-hidden px-1.5 text-foreground/65
+        tabular-nums whitespace-nowrap
+      "
+      title={
+        count === 1
+          ? '已选择 1 个对象'
+          : '已选择 ' + String(count) + ' 个对象'
+      }
+    >
+      <span className="block w-full truncate">
+        {label}
+      </span>
+    </span>
+  )
+}
+`,
 )
 
-/*
- * 尺寸组已经有标准 W / H 图例，不再额外插入依赖 UI Context 的图标。
- */
-source = source.replace(
-  /(\s*)<TransformGroup\s*\n\s*icon="corners"\s*\n\s*label="尺寸"/g,
-  '$1<TransformGroup\n$1  label="尺寸"',
-)
-
-/*
- * 删除 TransformGroup 的 icon 属性。
- */
-source = source.replace(
-  /\n\s*readonly icon\?: 'corners'/g,
-  '',
-)
-
-source = source.replace(
-  /,\s*\n\s*icon,\s*\n\}: TransformGroupProps\)/g,
-  ',\n}: TransformGroupProps)',
-)
-
-/*
- * 删除 TransformGroup 内部的 TldrawUiIcon 渲染。
- */
-source = source.replace(
-  /\n\s*\{icon \? \(\s*<span[\s\S]*?<TldrawUiIcon[\s\S]*?<\/span>\s*\) : null\}\n/m,
-  '\n',
-)
-
-/*
- * 比例锁定按钮改为专业的 W:H / W/H 图例。
- *
- * W:H = 保持宽高比
- * W/H = 宽高可独立修改
- */
-source = source.replace(
-  /<TldrawUiIcon\s*\n\s*icon=\{locked \? 'lock' : 'unlock'\}\s*\n\s*label=\{title\}\s*\n\s*small\s*\n\s*\/>/m,
-  `<span
-        aria-hidden="true"
-        className="font-mono text-[9px] font-semibold tracking-[-0.08em]"
-      >
-        {locked ? 'W:H' : 'W/H'}
-      </span>`,
-)
-
-/*
- * 状态文字本身已经明确表达“只读”和“已锁定”，
- * 不再使用依赖 tldraw Provider 的 lock 图标。
- */
-source = source.replaceAll(
-  `              <StatusState
-                icon="lock"
-                label="只读"
-                title="当前画布为只读状态"
-              />`,
-  `              <StatusState
-                label="只读"
-                title="当前画布为只读状态"
-              />`,
-)
-
-source = source.replaceAll(
-  `              <StatusState
-                icon="lock"
-                label="已锁定"
-                title="选择中包含锁定对象"
-              />`,
-  `              <StatusState
-                label="已锁定"
-                title="选择中包含锁定对象"
-              />`,
-)
-
-source = source.replace(
-  /\n\s*readonly icon: 'lock'/g,
-  '',
-)
-
-source = source.replace(
-  /function StatusState\(\{\s*\n\s*icon,\s*\n\s*label,\s*\n\s*title,\s*\n\}: StatusStateProps\)/m,
-  `function StatusState({
+source = replaceSection(
+  source,
+  'function InlineTransformField(',
+  '\ninterface AspectRatioLockButtonProps',
+  `function InlineTransformField({
+  field,
   label,
-  title,
-}: StatusStateProps)`,
+  value,
+  suffix,
+  minimum,
+  active,
+  disabled,
+  onActivate,
+  onCommit,
+  onNavigate,
+}: InlineTransformFieldProps) {
+  const formattedValue = formatStatusNumber(value)
+
+  const [draft, setDraft] =
+    useState(formattedValue)
+
+  const inputRef =
+    useRef<HTMLInputElement>(null)
+
+  /*
+   * Enter / Tab 会先主动提交，然后输入框卸载并触发 blur。
+   * 这个标记防止同一个值被提交两次。
+   *
+   * 普通鼠标失焦不会设置该标记，因此会正常提交。
+   */
+  const skipNextBlurRef = useRef(false)
+
+  useEffect(() => {
+    if (!active) {
+      setDraft(formattedValue)
+      return
+    }
+
+    skipNextBlurRef.current = false
+    setDraft(formattedValue)
+
+    const frame = requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    })
+
+    return () => {
+      cancelAnimationFrame(frame)
+    }
+  }, [active, formattedValue])
+
+  const parseDraft = (): number | null => {
+    /*
+     * 允许用户输入前后空格，但不允许空字符串被当作 0。
+     */
+    const normalizedDraft = draft.trim()
+
+    if (normalizedDraft.length === 0) {
+      return null
+    }
+
+    const parsed = Number(normalizedDraft)
+
+    if (
+      !Number.isFinite(parsed) ||
+      (
+        minimum !== undefined &&
+        parsed < minimum
+      )
+    ) {
+      return null
+    }
+
+    return parsed
+  }
+
+  const commitDraft = (): boolean => {
+    const parsed = parseDraft()
+
+    if (parsed === null) {
+      setDraft(formattedValue)
+      return false
+    }
+
+    onCommit(field, parsed)
+    return true
+  }
+
+  const finishWithCommit = () => {
+    commitDraft()
+    onActivate(null)
+  }
+
+  const cancelEditing = () => {
+    skipNextBlurRef.current = true
+    setDraft(formattedValue)
+    onActivate(null)
+  }
+
+  const handleBlur = (
+    _event: FocusEvent<HTMLInputElement>,
+  ) => {
+    if (skipNextBlurRef.current) {
+      skipNextBlurRef.current = false
+      return
+    }
+
+    /*
+     * 普通失焦路径：
+     * 编辑 1 为 2，再点击画布或其他控件，
+     * 此处会提交 2，然后退出编辑状态。
+     */
+    finishWithCommit()
+  }
+
+  const handleKeyDown = (
+    event: KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+
+      skipNextBlurRef.current = true
+      commitDraft()
+      onActivate(null)
+      return
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      cancelEditing()
+      return
+    }
+
+    if (event.key === 'Tab') {
+      event.preventDefault()
+
+      skipNextBlurRef.current = true
+      commitDraft()
+
+      onNavigate(
+        field,
+        event.shiftKey ? -1 : 1,
+      )
+      return
+    }
+
+    if (
+      event.key === 'ArrowUp' ||
+      event.key === 'ArrowDown'
+    ) {
+      event.preventDefault()
+
+      const current =
+        parseDraft() ?? value
+
+      const direction =
+        event.key === 'ArrowUp'
+          ? 1
+          : -1
+
+      const increment = event.shiftKey
+        ? 10
+        : event.altKey
+          ? 0.1
+          : 1
+
+      const nextValue =
+        current + direction * increment
+
+      if (
+        minimum !== undefined &&
+        nextValue < minimum
+      ) {
+        setDraft(
+          formatStatusNumber(minimum),
+        )
+        return
+      }
+
+      setDraft(
+        formatStatusNumber(nextValue),
+      )
+    }
+  }
+
+  /*
+   * 编辑态和静态使用完全相同的：
+   * - 宽度
+   * - 高度
+   * - Grid 列
+   * - Padding
+   *
+   * 切换时只改变文本节点与 input，
+   * 不改变任何外部几何尺寸。
+   */
+  if (active && !disabled) {
+    return (
+      <span
+        className="
+          inline-grid h-6 w-[76px] shrink-0
+          grid-cols-[14px_minmax(0,1fr)_10px]
+          items-center gap-1 rounded-md px-1.5
+          text-[11px] tabular-nums
+        "
+      >
+        <span
+          className="
+            font-sans text-[10px]
+            text-muted-foreground/80
+          "
+        >
+          {label}
+        </span>
+
+        <input
+          ref={inputRef}
+          aria-label={'编辑 ' + label}
+          className="
+            h-6 min-w-0 w-full appearance-none
+            border-0 bg-transparent p-0
+            text-right font-mono text-[11px]
+            tabular-nums text-foreground
+            outline-none ring-0
+            [appearance:textfield]
+            [&::-webkit-inner-spin-button]:appearance-none
+            [&::-webkit-outer-spin-button]:appearance-none
+          "
+          inputMode="decimal"
+          onBlur={handleBlur}
+          onChange={(event) => {
+            setDraft(event.currentTarget.value)
+          }}
+          onKeyDown={handleKeyDown}
+          step="any"
+          type="number"
+          value={draft}
+        />
+
+        <span
+          className="
+            overflow-hidden text-left
+            font-sans text-[10px]
+            text-muted-foreground/75
+          "
+        >
+          {suffix ?? ''}
+        </span>
+      </span>
+    )
+  }
+
+  return (
+    <button
+      aria-label={
+        disabled
+          ? label + ' 不可编辑'
+          : '双击编辑 ' + label
+      }
+      className={[
+        'inline-grid h-6 w-[76px] shrink-0',
+        'grid-cols-[14px_minmax(0,1fr)_10px]',
+        'items-center gap-1 rounded-md px-1.5',
+        'text-[11px] tabular-nums',
+        'transition-colors',
+        'focus-visible:outline-none',
+        'focus-visible:ring-1',
+        'focus-visible:ring-primary/60',
+        disabled
+          ? 'cursor-not-allowed opacity-45'
+          : 'cursor-default hover:bg-background/55',
+      ].join(' ')}
+      disabled={disabled}
+      onDoubleClick={() => {
+        onActivate(field)
+      }}
+      title={
+        disabled
+          ? label + ' 当前不可编辑'
+          : '双击编辑 ' + label
+      }
+      type="button"
+    >
+      <span
+        className="
+          font-sans text-[10px]
+          text-muted-foreground/80
+        "
+      >
+        {label}
+      </span>
+
+      <span
+        className="
+          block min-w-0 overflow-hidden
+          text-ellipsis whitespace-nowrap
+          text-right font-mono
+          text-foreground/85
+        "
+        title={
+          formattedValue +
+          (suffix ?? '')
+        }
+      >
+        {formattedValue}
+      </span>
+
+      <span
+        className="
+          overflow-hidden text-left
+          font-sans text-[10px]
+          text-muted-foreground/75
+        "
+      >
+        {suffix ?? ''}
+      </span>
+    </button>
+  )
+}
+`,
+)
+
+source = source.replace(
+  `className="mx-1 h-3 w-px shrink-0 bg-divider"`,
+  `className="mx-1 h-3 w-px shrink-0 bg-divider"`,
 )
 
 /*
- * 删除 StatusState 中残余的 TldrawUiIcon。
+ * 检查旧版突兀编辑样式是否仍然存在。
  */
-source = source.replace(
-  /\n\s*<TldrawUiIcon\s*\n\s*icon=\{icon\}\s*\n\s*label=\{label\}\s*\n\s*small\s*\n\s*\/>\n/m,
-  '\n',
+const forbiddenFragments = [
+  'ring-1 ring-primary/65',
+  'bg-background\\n          ring-1',
+  'onClick={() => {\\n        onActivate(field)',
+]
+
+const remainingFragments = forbiddenFragments.filter(
+  (fragment) => source.includes(fragment),
 )
 
-/*
- * 防止格式化结果不同导致上述精确替换没有覆盖。
- */
-source = source.replace(
-  /<TldrawUiIcon[\s\S]*?\/>/g,
-  '',
-)
-
-/*
- * 清理可能残留的 icon 解构与类型。
- */
-source = source.replace(
-  /\n\s*readonly icon\?: 'corners'/g,
-  '',
-)
-
-source = source.replace(
-  /\n\s*readonly icon: 'lock'/g,
-  '',
-)
-
-source = source.replace(
-  /,\s*\n\s*icon,\s*\n/g,
-  ',\n',
-)
-
-if (source.includes('TldrawUiIcon')) {
+if (remainingFragments.length > 0) {
   throw new Error(
-    'CanvasTransformStatus.tsx 中仍存在 TldrawUiIcon，请不要启动应用。',
+    [
+      '仍发现旧内联编辑样式：',
+      ...remainingFragments.map(
+        (fragment) => '- ' + fragment,
+      ),
+    ].join('\\n'),
   )
 }
 
-if (source.includes('icon="corners"')) {
+if (!source.includes('onBlur={handleBlur}')) {
   throw new Error(
-    'CanvasTransformStatus.tsx 中仍存在 corners 图标引用。',
+    '失焦提交逻辑未正确写入。',
+  )
+}
+
+if (!source.includes('onDoubleClick')) {
+  throw new Error(
+    '双击编辑逻辑未正确写入。',
   )
 }
 
 await writeFile(filePath, source, 'utf8')
 
 console.log('')
-console.log('底部 Transform 状态栏运行时错误已修复：')
-console.log('- 删除 Workspace 状态栏中的 TldrawUiIcon')
-console.log('- 删除对 tldraw AssetUrls Provider 的隐式依赖')
-console.log('- 保留 Editor、ShapeUtil、History 官方能力')
-console.log('- 比例锁定改为 W:H / W/H 专业图例')
-console.log('- 未使用 emoji 或自绘 SVG')
+console.log('Transform 内联编辑优化完成：')
+console.log('- 编辑态取消边框、背景和高亮框')
+console.log('- 编辑前后使用同一固定尺寸槽位')
+console.log('- 双击进入编辑')
+console.log('- 普通失焦提交修改')
+console.log('- Enter 提交')
+console.log('- Escape 取消')
+console.log('- Tab 提交并切换字段')
+console.log('- X/Y/W/H/R 使用固定宽度')
+console.log('- 选中数量使用固定宽度')
+console.log('- 画布标题使用固定宽度')
+console.log('- 快速变化时不再推动后续信息')
 console.log('')
 console.log('请运行：')
 console.log('  pnpm format')
 console.log('  pnpm typecheck')
 console.log('')
+
+function replaceSection(
+  source,
+  startMarker,
+  endMarker,
+  replacement,
+) {
+  const startIndex = source.indexOf(startMarker)
+
+  if (startIndex === -1) {
+    throw new Error(
+      '找不到开始标记：' + startMarker,
+    )
+  }
+
+  const endIndex = source.indexOf(
+    endMarker,
+    startIndex,
+  )
+
+  if (endIndex === -1) {
+    throw new Error(
+      '找不到结束标记：' + endMarker,
+    )
+  }
+
+  return (
+    source.slice(0, startIndex) +
+    replacement.trimEnd() +
+    '\\n' +
+    source.slice(endIndex)
+  )
+}
