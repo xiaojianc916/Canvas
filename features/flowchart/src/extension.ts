@@ -10,7 +10,7 @@ export const flowchartExtension: HybridCanvasExtension = {
   shapeLabels: {
     'flow-node': '流程图节点',
   },
-  toolInspectors: [
+  creationInspectors: [
     {
       toolId: 'arrow',
       owner: '@hybrid-canvas/flowchart',

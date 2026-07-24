@@ -35,6 +35,7 @@ export function WorkspaceShell({
   renderChrome,
   mainContent,
   inspector,
+  inspectorAvailable,
   statusLeft,
   statusRight,
   assistantOverlay,
@@ -44,7 +45,7 @@ export function WorkspaceShell({
   const previousModeRef = useRef(mode)
 
   const [isSidebarOpen, setSidebarOpen] = useState(true)
-  const [isInspectorOpen, setInspectorOpen] = useState(false)
+  const [isInspectorOpen, setInspectorOpen] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT)
   const [isResizing, setResizing] = useState(false)
 
@@ -53,7 +54,10 @@ export function WorkspaceShell({
 
   const hasCanvas = model.activeSurface.kind === 'canvas'
   const dockSidebar = mode !== 'narrow' && isSidebarOpen
-  const dockInspector = inspector !== null && inspector !== undefined && isInspectorOpen && hasCanvas
+  const dockInspector =
+    inspectorAvailable &&
+    isInspectorOpen &&
+    hasCanvas
 
   useEffect(() => {
     const previousMode = previousModeRef.current
@@ -230,7 +234,8 @@ export function WorkspaceShell({
 
   const inspectorContent = <InspectorHost>{inspector}</InspectorHost>
 
-  const inspectorRegion = hasCanvas && inspector !== null && inspector !== undefined ? (
+  const inspectorRegion =
+    hasCanvas && inspectorAvailable ? (
     <>
       <aside
         aria-hidden={!dockInspector}

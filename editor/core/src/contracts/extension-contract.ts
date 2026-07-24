@@ -6,32 +6,36 @@ import type {
   TLStateNodeConstructor,
 } from 'tldraw'
 
-export const HYBRID_CANVAS_EXTENSION_API_VERSION = '1'
+export const HYBRID_CANVAS_EXTENSION_API_VERSION = '2'
 
-export interface HybridCanvasToolInspectorProps {
+/**
+ * 创作预设扩展。
+ *
+ * 这里只允许提供“下一对象”的额外创作参数。
+ * 它不是通用 Tool Inspector，也不能为 select、hand、
+ * eraser、laser 等被动或瞬时工具创建说明页面。
+ */
+export interface HybridCanvasCreationInspectorProps {
   readonly editor: Editor
 }
 
-export interface HybridCanvasToolInspectorContribution {
+export interface HybridCanvasCreationInspectorContribution {
   /**
-   * Exact tldraw StateNode tool id.
+   * 精确的 tldraw StateNode tool id。
    */
   readonly toolId: string
 
   /**
-   * Stable Feature owner id used for diagnostics.
+   * 稳定的 Feature owner id。
    */
   readonly owner: string
 
   /**
-   * Higher priorities override lower priorities.
-   *
-   * Core fallback inspectors use 0. Feature-owned inspectors
-   * should normally use 100.
+   * 高优先级覆盖低优先级。
    */
   readonly priority?: number
 
-  readonly component: ComponentType<HybridCanvasToolInspectorProps>
+  readonly component: ComponentType<HybridCanvasCreationInspectorProps>
 }
 
 export interface HybridCanvasExtension {
@@ -42,7 +46,14 @@ export interface HybridCanvasExtension {
   readonly bindingUtils?: readonly TLAnyBindingUtilConstructor[]
   readonly tools?: readonly TLStateNodeConstructor[]
   readonly shapeLabels?: Readonly<Record<string, string>>
-  readonly toolInspectors?: readonly HybridCanvasToolInspectorContribution[]
+
+  /**
+   * 仅用于真正会创建持久 Shape 的工具。
+   *
+   * selection-specific Inspector 将在确认具体属性内容后
+   * 使用独立契约设计，不能复用这个入口。
+   */
+  readonly creationInspectors?: readonly HybridCanvasCreationInspectorContribution[]
 }
 
 export interface ExtensionRegistration {
@@ -51,7 +62,7 @@ export interface ExtensionRegistration {
   readonly bindingUtils: readonly TLAnyBindingUtilConstructor[]
   readonly tools: readonly TLStateNodeConstructor[]
   readonly shapeLabels: Readonly<Record<string, string>>
-  readonly toolInspectors: readonly HybridCanvasToolInspectorContribution[]
+  readonly creationInspectors: readonly HybridCanvasCreationInspectorContribution[]
 }
 
 export function buildExtensionRegistration(
@@ -62,7 +73,7 @@ export function buildExtensionRegistration(
   const bindingUtils: TLAnyBindingUtilConstructor[] = []
   const tools: TLStateNodeConstructor[] = []
   const shapeLabels: Record<string, string> = {}
-  const toolInspectors: HybridCanvasToolInspectorContribution[] = []
+  const creationInspectors: HybridCanvasCreationInspectorContribution[] = []
 
   for (const extension of input) {
     if (!extension.id || ids.has(extension.id)) {
@@ -79,10 +90,13 @@ export function buildExtensionRegistration(
     tools.push(...(extension.tools ?? []))
     Object.assign(shapeLabels, extension.shapeLabels)
 
-    for (const contribution of extension.toolInspectors ?? []) {
-      validateToolInspectorContribution(extension.id, contribution)
+    for (const contribution of extension.creationInspectors ?? []) {
+      validateCreationInspectorContribution(
+        extension.id,
+        contribution,
+      )
 
-      toolInspectors.push(contribution)
+      creationInspectors.push(contribution)
     }
   }
 
@@ -92,27 +106,42 @@ export function buildExtensionRegistration(
     bindingUtils: Object.freeze(bindingUtils),
     tools: Object.freeze(tools),
     shapeLabels: Object.freeze(shapeLabels),
-    toolInspectors: Object.freeze(toolInspectors),
+    creationInspectors: Object.freeze(creationInspectors),
   })
 }
 
-function validateToolInspectorContribution(
+function validateCreationInspectorContribution(
   extensionId: string,
-  contribution: HybridCanvasToolInspectorContribution,
+  contribution: HybridCanvasCreationInspectorContribution,
 ): void {
   if (!contribution.toolId.trim()) {
-    throw new Error('EXTENSION_TOOL_INSPECTOR_TOOL_ID_REQUIRED:' + extensionId)
+    throw new Error(
+      'EXTENSION_CREATION_INSPECTOR_TOOL_ID_REQUIRED:' +
+        extensionId,
+    )
   }
 
   if (!contribution.owner.trim()) {
-    throw new Error('EXTENSION_TOOL_INSPECTOR_OWNER_REQUIRED:' + extensionId)
+    throw new Error(
+      'EXTENSION_CREATION_INSPECTOR_OWNER_REQUIRED:' +
+        extensionId,
+    )
   }
 
   if (typeof contribution.component !== 'function') {
-    throw new Error('EXTENSION_TOOL_INSPECTOR_COMPONENT_REQUIRED:' + extensionId)
+    throw new Error(
+      'EXTENSION_CREATION_INSPECTOR_COMPONENT_REQUIRED:' +
+        extensionId,
+    )
   }
 
-  if (contribution.priority !== undefined && !Number.isFinite(contribution.priority)) {
-    throw new Error('EXTENSION_TOOL_INSPECTOR_PRIORITY_INVALID:' + extensionId)
+  if (
+    contribution.priority !== undefined &&
+    !Number.isFinite(contribution.priority)
+  ) {
+    throw new Error(
+      'EXTENSION_CREATION_INSPECTOR_PRIORITY_INVALID:' +
+        extensionId,
+    )
   }
 }

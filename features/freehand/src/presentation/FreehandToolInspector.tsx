@@ -1,4 +1,4 @@
-import type { HybridCanvasToolInspectorProps } from '@hybrid-canvas/canvas/extensions'
+import type { HybridCanvasCreationInspectorProps } from '@hybrid-canvas/canvas/extensions'
 import { DefaultColorStyle, DefaultDashStyle, DefaultSizeStyle, useValue } from 'tldraw'
 
 const COLORS = [
@@ -140,15 +140,15 @@ const HIGHLIGHT_PRESETS = [
   },
 ] as const
 
-export function FreehandToolInspector({ editor }: HybridCanvasToolInspectorProps) {
+export function FreehandToolInspector({ editor }: HybridCanvasCreationInspectorProps) {
   return <FreehandInspector editor={editor} variant="draw" />
 }
 
-export function HighlightToolInspector({ editor }: HybridCanvasToolInspectorProps) {
+export function HighlightToolInspector({ editor }: HybridCanvasCreationInspectorProps) {
   return <FreehandInspector editor={editor} variant="highlight" />
 }
 
-interface FreehandInspectorProps extends HybridCanvasToolInspectorProps {
+interface FreehandInspectorProps extends HybridCanvasCreationInspectorProps {
   readonly variant: 'draw' | 'highlight'
 }
 

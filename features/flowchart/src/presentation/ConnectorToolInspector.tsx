@@ -1,4 +1,4 @@
-import type { HybridCanvasToolInspectorProps } from '@hybrid-canvas/canvas/extensions'
+import type { HybridCanvasCreationInspectorProps } from '@hybrid-canvas/canvas/extensions'
 import {
   ArrowShapeArrowheadEndStyle,
   ArrowShapeArrowheadStartStyle,
@@ -199,7 +199,7 @@ const ARROWHEAD_OPTIONS = [
   },
 ] as const
 
-export function ConnectorToolInspector({ editor }: HybridCanvasToolInspectorProps) {
+export function ConnectorToolInspector({ editor }: HybridCanvasCreationInspectorProps) {
   const currentColor = useValue(
     'flowchart connector next color',
     () => editor.getStyleForNextShape(DefaultColorStyle),

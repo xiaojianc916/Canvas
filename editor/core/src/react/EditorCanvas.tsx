@@ -1,4 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import {
   DefaultToolbar,
   type Editor,
@@ -11,6 +15,9 @@ import {
 
 import type { EditorSession } from '../runtime/editor-session'
 import {
+  CanvasInspectorStylePanel,
+} from './canvas-inspector-portal'
+import {
   useBindEditorSession,
   useTldrawLicenseKey,
 } from './editor-context'
@@ -19,37 +26,28 @@ export const HYBRID_CANVAS_SAVE_ACTION_ID =
   'hybrid-canvas.save'
 
 /**
- * 使用 tldraw 默认 UI，只替换产品已经有自己实现的区域。
+ * tldraw 负责：
+ * - Editor selection
+ * - current tool
+ * - relevant styles
+ * - shared/mixed styles
+ * - next-shape styles
+ * - StylePanel React context
  *
- * Toolbar 不覆盖，因此由 tldraw 自动渲染默认 Toolbar。
- * NavigationPanel、QuickActions、ActionsMenu 同样使用官方默认实现。
- *
- * PageMenu：
- * Canvas 已经有自己的页面与工作区管理，所以禁用。
- *
- * StylePanel：
- * 不在 Workspace 中复制 selection / tool / shared styles 状态。
- * 样式相关状态与响应式更新继续由 tldraw 官方 StylePanel 管理。
- *
- * 后续如需将官方 StylePanel 停靠到 Workspace 右栏，
- * 应通过 StylePanel component slot 和 Portal 完成，
- * 而不是在 Workspace 外部重新实现样式状态。
+ * Workspace 只负责：
+ * - 右栏布局
+ * - 展开/收起
+ * - 响应式宽度
  */
 function CanvasTopToolbar() {
   return (
     <div className="hc-canvas-top-toolbar">
-      {/*
-       * 使用 tldraw 官方 DefaultToolbar。
-       *
-       * 工具定义、按钮样式、激活状态、快捷键、
-       * QuickActions 和 overflow 均由 tldraw 管理。
-       */}
       <DefaultToolbar />
     </div>
   )
 }
 
-const CANVAS_COMPONENTS: TLComponents = {
+const BASE_CANVAS_COMPONENTS: TLComponents = {
   PageMenu: null,
   Toolbar: null,
   TopPanel: CanvasTopToolbar,
@@ -66,11 +64,16 @@ export function EditorCanvas({
   isActive = true,
   onSave,
 }: EditorCanvasProps) {
-  const licenseKey = useTldrawLicenseKey()
+  const licenseKey =
+    useTldrawLicenseKey()
+
   const [editor, setEditor] =
     useState<Editor | null>(null)
 
-  const { registration, store } = session
+  const {
+    registration,
+    store,
+  } = session
 
   useBindEditorSession(
     isActive ? editor : null,
@@ -80,45 +83,73 @@ export function EditorCanvas({
   const hasTools =
     registration.tools.length > 0
 
-  const overrides = useMemo<TLUiOverrides>(
-    () => createCanvasUiOverrides(onSave),
-    [onSave],
-  )
+  const overrides =
+    useMemo<TLUiOverrides>(
+      () =>
+        createCanvasUiOverrides(
+          onSave,
+        ),
+      [onSave],
+    )
 
-  const tldrawProps = useMemo((): TldrawProps => {
-    const base: TldrawProps = {
-      /*
-       * 关键点：
-       *
-       * 不再 hideUi。
-       * 让 tldraw 渲染完整的默认 UI 与默认布局。
-       */
-      hideUi: false,
+  /*
+   * 每个 Editor Session 都有自己的 StylePanel slot，
+   * 但只有 active session 可以发布到 Workspace Dock。
+   */
+  const components =
+    useMemo<TLComponents>(
+      () => ({
+        ...BASE_CANVAS_COMPONENTS,
+
+        StylePanel:
+          function WorkspacePropertiesInspector() {
+            return (
+              <CanvasInspectorStylePanel
+                active={isActive}
+              />
+            )
+          },
+      }),
+      [isActive],
+    )
+
+  const tldrawProps =
+    useMemo((): TldrawProps => {
+      const base: TldrawProps = {
+        hideUi: false,
+        licenseKey,
+        store,
+        onMount: setEditor,
+        overrides,
+        components,
+
+        options: {
+          maxPages: 100,
+          actionShortcutsLocation:
+            'toolbar',
+        },
+
+        shapeUtils:
+          registration.shapeUtils,
+
+        bindingUtils:
+          registration.bindingUtils,
+      }
+
+      if (hasTools) {
+        base.tools =
+          registration.tools
+      }
+
+      return base
+    }, [
+      components,
+      hasTools,
       licenseKey,
-      store,
-      onMount: setEditor,
       overrides,
-      components: CANVAS_COMPONENTS,
-      options: {
-        maxPages: 100,
-        actionShortcutsLocation: 'toolbar',
-      },
-      shapeUtils: registration.shapeUtils,
-      bindingUtils: registration.bindingUtils,
-    }
-
-    if (hasTools) {
-      base.tools = registration.tools
-    }
-
-    return base
-  }, [
-    hasTools,
-    licenseKey,
-    overrides,
-    registration,
-    store,
-  ])
+      registration,
+      store,
+    ])
 
   useEffect(() => {
     if (!editor) {
@@ -155,8 +186,12 @@ export function EditorCanvas({
   return (
     <div
       className="relative size-full overflow-hidden bg-canvas"
-      data-document-id={session.documentId}
-      data-session-id={session.sessionId}
+      data-document-id={
+        session.documentId
+      }
+      data-session-id={
+        session.sessionId
+      }
     >
       <Tldraw {...tldrawProps} />
     </div>
@@ -164,7 +199,9 @@ export function EditorCanvas({
 }
 
 function createCanvasUiOverrides(
-  onSave: (() => void) | undefined,
+  onSave:
+    | (() => void)
+    | undefined,
 ): TLUiOverrides {
   return {
     actions(
@@ -179,7 +216,9 @@ function createCanvasUiOverrides(
         ...actions,
 
         [HYBRID_CANVAS_SAVE_ACTION_ID]: {
-          id: HYBRID_CANVAS_SAVE_ACTION_ID,
+          id:
+            HYBRID_CANVAS_SAVE_ACTION_ID,
+
           label: '保存',
           kbd: 'cmd+s,ctrl+s',
 

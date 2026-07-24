@@ -13,7 +13,7 @@ export const scientificPlotExtension: HybridCanvasExtension = {
   shapeLabels: {
     'scientific-chart': '图表',
   },
-  toolInspectors: [
+  creationInspectors: [
     {
       toolId: 'scientific-chart',
       owner: '@hybrid-canvas/scientific-plot',

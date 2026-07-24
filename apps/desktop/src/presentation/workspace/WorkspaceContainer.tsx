@@ -4,7 +4,12 @@ import type {
   CanvasSessionSnapshot,
 } from '@hybrid-canvas/document'
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
-import { EditorSessionHost, useEditor } from '@hybrid-canvas/canvas/react'
+import {
+  CanvasInspectorDock,
+  EditorSessionHost,
+  useCanvasInspectorAvailability,
+  useEditor,
+} from '@hybrid-canvas/canvas/react'
 import { ConfirmationDialog } from '@hybrid-canvas/design-system'
 import type {
   CanvasSessionId,
@@ -74,6 +79,9 @@ export function WorkspaceContainer({
   onWindowStartDragging,
 }: WorkspaceContainerProps) {
   const editor = useEditor()
+
+  const inspectorAvailable =
+    useCanvasInspectorAvailability()
 
   const workbench = useSyncExternalStore(
     port.workspace.subscribe,
@@ -273,7 +281,12 @@ export function WorkspaceContainer({
   return (
     <WorkspaceShell
       actions={actions}
-      inspector={null}
+      inspector={
+        <CanvasInspectorDock />
+      }
+      inspectorAvailable={
+        inspectorAvailable
+      }
       mainContent={mainContent}
       model={model}
       overlays={

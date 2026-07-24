@@ -1,28 +1,19 @@
 #!/usr/bin/env node
 
 /**
- * Properties Inspector 架构重构（无备份版）
+ * Properties Inspector 一次性架构重构
  *
- * 目标：
- * - 恢复 tldraw 官方 StylePanel 的状态所有权
- * - Workspace 不读取 selection/current tool/shared styles
- * - 删除 inspectorSelectionKey
- * - 停止挂载旧 CanvasInspectorContent
- * - 停止创建 ToolInspectorRegistry
- * - 保留通用右栏容器，不讨论最终属性内容
- * - 增加架构测试，防止状态所有权重新泄漏
- *
- * 回滚直接使用 Git：
- *   git diff
+ * 回滚：
  *   git restore .
+ *   git clean -fd
  *
- * 执行：
- *   node refactor-inspector-architecture.mjs
+ * 本脚本不创建备份文件。
  */
 
 import {
   mkdir,
   readFile,
+  readdir,
   rm,
   writeFile,
 } from 'node:fs/promises'
@@ -32,8 +23,26 @@ import process from 'node:process'
 const root = process.cwd()
 
 const paths = {
+  packageJson: resolve('package.json'),
+
+  extensionContract: resolve(
+    'editor/core/src/contracts/extension-contract.ts',
+  ),
+
+  editorContext: resolve(
+    'editor/core/src/react/editor-context.tsx',
+  ),
+
   editorCanvas: resolve(
     'editor/core/src/react/EditorCanvas.tsx',
+  ),
+
+  editorReactPublicApi: resolve(
+    'editor/core/src/react/public-api.ts',
+  ),
+
+  inspectorPortal: resolve(
+    'editor/core/src/react/canvas-inspector-portal.tsx',
   ),
 
   workspaceContainer: resolve(
@@ -48,10 +57,12 @@ const paths = {
     'features/workspace/src/contracts/shell-contract.ts',
   ),
 
-  packageJson: resolve('package.json'),
+  legacyInspectorDirectory: resolve(
+    'apps/desktop/src/presentation/workspace/inspector',
+  ),
 
   architectureTest: resolve(
-    'tests/architecture/check-inspector-ownership.mjs',
+    'tests/architecture/check-properties-inspector-architecture.mjs',
   ),
 
   obsoleteBackupDirectory: resolve(
@@ -62,10 +73,9 @@ const paths = {
 await main()
 
 async function main() {
-  await assertRepositoryRoot()
+  await assertRepository()
 
   /*
-   * 删除上一个脚本可能生成的备份目录。
    * Git 是唯一回滚机制。
    */
   await rm(
@@ -76,196 +86,895 @@ async function main() {
     },
   )
 
-  const sources = {
-    editorCanvas: normalize(
-      await readFile(
-        paths.editorCanvas,
-        'utf8',
-      ),
-    ),
-
-    workspaceContainer: normalize(
-      await readFile(
-        paths.workspaceContainer,
-        'utf8',
-      ),
-    ),
-
-    workspaceShell: normalize(
-      await readFile(
-        paths.workspaceShell,
-        'utf8',
-      ),
-    ),
-
-    shellContract: normalize(
-      await readFile(
-        paths.shellContract,
-        'utf8',
-      ),
-    ),
-
-    packageJson: normalize(
-      await readFile(
-        paths.packageJson,
-        'utf8',
-      ),
-    ),
-  }
+  /*
+   * 先迁移 Feature Extension API。
+   *
+   * toolInspectors 这个名字暗示“每个工具都有面板”。
+   * creationInspectors 明确表示它只能扩展创作预设。
+   */
+  await migrateInspectorApiAcrossRepository()
 
   /*
-   * 所有转换先在内存完成。
-   * 转换或验证失败时不会写入半成品。
+   * 写入新的 Extension API。
    */
-  const transformed = {
-    editorCanvas:
-      transformEditorCanvas(
-        sources.editorCanvas,
-      ),
+  await write(
+    paths.extensionContract,
+    createExtensionContract(),
+  )
 
-    workspaceContainer:
-      transformWorkspaceContainer(
-        sources.workspaceContainer,
-      ),
-
-    workspaceShell:
-      transformWorkspaceShell(
-        sources.workspaceShell,
-      ),
-
-    shellContract:
-      transformShellContract(
-        sources.shellContract,
-      ),
-
-    packageJson:
-      transformPackageJson(
-        sources.packageJson,
-      ),
-
-    architectureTest:
-      createArchitectureTest(),
-  }
-
-  validate(transformed)
-
+  /*
+   * 建立 tldraw StylePanel -> Workspace Dock Portal。
+   */
   await mkdir(
-    path.dirname(
-      paths.architectureTest,
-    ),
+    path.dirname(paths.inspectorPortal),
     {
       recursive: true,
     },
   )
 
-  await Promise.all([
-    write(
-      paths.editorCanvas,
-      transformed.editorCanvas,
-    ),
+  await write(
+    paths.inspectorPortal,
+    createInspectorPortal(),
+  )
 
-    write(
-      paths.workspaceContainer,
-      transformed.workspaceContainer,
-    ),
+  await transformEditorContext()
+  await write(
+    paths.editorCanvas,
+    createEditorCanvas(),
+  )
+  await transformEditorReactPublicApi()
 
-    write(
-      paths.workspaceShell,
-      transformed.workspaceShell,
-    ),
+  /*
+   * Workspace 只负责布局。
+   */
+  await transformWorkspaceContainer()
+  await transformWorkspaceShell()
+  await transformShellContract()
 
-    write(
-      paths.shellContract,
-      transformed.shellContract,
-    ),
+  /*
+   * 删除旧 tool-first Inspector。
+   */
+  await rm(
+    paths.legacyInspectorDirectory,
+    {
+      recursive: true,
+      force: true,
+    },
+  )
 
-    write(
-      paths.packageJson,
-      transformed.packageJson,
-    ),
+  /*
+   * 加入架构守卫。
+   */
+  await mkdir(
+    path.dirname(paths.architectureTest),
+    {
+      recursive: true,
+    },
+  )
 
-    write(
-      paths.architectureTest,
-      transformed.architectureTest,
-    ),
-  ])
+  await write(
+    paths.architectureTest,
+    createArchitectureTest(),
+  )
 
+  await transformPackageJson()
+  await validateFinalRepository()
   printSummary()
 }
 
-function transformEditorCanvas(source) {
-  let next = source
+async function migrateInspectorApiAcrossRepository() {
+  const files = await collectSourceFiles(root)
 
-  /*
-   * 恢复官方 StylePanel。
-   */
-  next = next.replace(
-    /^\s*StylePanel\s*:\s*null,\s*\n/m,
-    '',
-  )
+  for (const filePath of files) {
+    if (
+      filePath.startsWith(
+        paths.legacyInspectorDirectory + path.sep,
+      )
+    ) {
+      continue
+    }
 
-  /*
-   * 清理旧架构说明。
-   */
-  next = next.replace(
-    /\s*\* StylePanel：\n\s*\* Canvas 使用原来的 Workspace CanvasInspectorContent，\n\s*\* 避免同时出现两套右侧属性面板。\n/,
-    [
-      ' * StylePanel：',
-      ' * 样式状态、选区相关性与下一图形预设由 tldraw 官方能力负责。',
-      ' * Workspace 不读取 selection、current tool 或 shared styles。',
-      ' *',
-      ' * 最终停靠式 Properties Inspector 将通过 tldraw StylePanel',
-      ' * component slot 接入，而不是在 Workspace 外部重建状态模型。',
-      '',
-    ].join('\n'),
-  )
+    let source = normalize(
+      await readFile(filePath, 'utf8'),
+    )
 
-  return finish(next)
+    const original = source
+
+    source = source
+      .replaceAll(
+        'HybridCanvasToolInspectorContribution',
+        'HybridCanvasCreationInspectorContribution',
+      )
+      .replaceAll(
+        'HybridCanvasToolInspectorProps',
+        'HybridCanvasCreationInspectorProps',
+      )
+      .replaceAll(
+        'toolInspectors',
+        'creationInspectors',
+      )
+
+    if (source !== original) {
+      await write(filePath, source)
+    }
+  }
 }
 
-function transformWorkspaceContainer(
-  source,
-) {
-  let next = source
+function createExtensionContract() {
+  return `import type { ComponentType } from 'react'
+import type {
+  Editor,
+  TLAnyBindingUtilConstructor,
+  TLAnyShapeUtilConstructor,
+  TLStateNodeConstructor,
+} from 'tldraw'
+
+export const HYBRID_CANVAS_EXTENSION_API_VERSION = '2'
+
+/**
+ * 创作预设扩展。
+ *
+ * 这里只允许提供“下一对象”的额外创作参数。
+ * 它不是通用 Tool Inspector，也不能为 select、hand、
+ * eraser、laser 等被动或瞬时工具创建说明页面。
+ */
+export interface HybridCanvasCreationInspectorProps {
+  readonly editor: Editor
+}
+
+export interface HybridCanvasCreationInspectorContribution {
+  /**
+   * 精确的 tldraw StateNode tool id。
+   */
+  readonly toolId: string
+
+  /**
+   * 稳定的 Feature owner id。
+   */
+  readonly owner: string
+
+  /**
+   * 高优先级覆盖低优先级。
+   */
+  readonly priority?: number
+
+  readonly component: ComponentType<HybridCanvasCreationInspectorProps>
+}
+
+export interface HybridCanvasExtension {
+  readonly id: string
+  readonly version: string
+  readonly apiVersion: string
+  readonly shapeUtils?: readonly TLAnyShapeUtilConstructor[]
+  readonly bindingUtils?: readonly TLAnyBindingUtilConstructor[]
+  readonly tools?: readonly TLStateNodeConstructor[]
+  readonly shapeLabels?: Readonly<Record<string, string>>
+
+  /**
+   * 仅用于真正会创建持久 Shape 的工具。
+   *
+   * selection-specific Inspector 将在确认具体属性内容后
+   * 使用独立契约设计，不能复用这个入口。
+   */
+  readonly creationInspectors?: readonly HybridCanvasCreationInspectorContribution[]
+}
+
+export interface ExtensionRegistration {
+  readonly extensions: readonly HybridCanvasExtension[]
+  readonly shapeUtils: readonly TLAnyShapeUtilConstructor[]
+  readonly bindingUtils: readonly TLAnyBindingUtilConstructor[]
+  readonly tools: readonly TLStateNodeConstructor[]
+  readonly shapeLabels: Readonly<Record<string, string>>
+  readonly creationInspectors: readonly HybridCanvasCreationInspectorContribution[]
+}
+
+export function buildExtensionRegistration(
+  input: readonly HybridCanvasExtension[] = [],
+): ExtensionRegistration {
+  const ids = new Set<string>()
+  const shapeUtils: TLAnyShapeUtilConstructor[] = []
+  const bindingUtils: TLAnyBindingUtilConstructor[] = []
+  const tools: TLStateNodeConstructor[] = []
+  const shapeLabels: Record<string, string> = {}
+  const creationInspectors: HybridCanvasCreationInspectorContribution[] = []
+
+  for (const extension of input) {
+    if (!extension.id || ids.has(extension.id)) {
+      throw new Error('EXTENSION_DUPLICATE_ID')
+    }
+
+    if (extension.apiVersion !== HYBRID_CANVAS_EXTENSION_API_VERSION) {
+      throw new Error('EXTENSION_API_VERSION_MISMATCH')
+    }
+
+    ids.add(extension.id)
+    shapeUtils.push(...(extension.shapeUtils ?? []))
+    bindingUtils.push(...(extension.bindingUtils ?? []))
+    tools.push(...(extension.tools ?? []))
+    Object.assign(shapeLabels, extension.shapeLabels)
+
+    for (const contribution of extension.creationInspectors ?? []) {
+      validateCreationInspectorContribution(
+        extension.id,
+        contribution,
+      )
+
+      creationInspectors.push(contribution)
+    }
+  }
+
+  return Object.freeze({
+    extensions: Object.freeze([...input]),
+    shapeUtils: Object.freeze(shapeUtils),
+    bindingUtils: Object.freeze(bindingUtils),
+    tools: Object.freeze(tools),
+    shapeLabels: Object.freeze(shapeLabels),
+    creationInspectors: Object.freeze(creationInspectors),
+  })
+}
+
+function validateCreationInspectorContribution(
+  extensionId: string,
+  contribution: HybridCanvasCreationInspectorContribution,
+): void {
+  if (!contribution.toolId.trim()) {
+    throw new Error(
+      'EXTENSION_CREATION_INSPECTOR_TOOL_ID_REQUIRED:' +
+        extensionId,
+    )
+  }
+
+  if (!contribution.owner.trim()) {
+    throw new Error(
+      'EXTENSION_CREATION_INSPECTOR_OWNER_REQUIRED:' +
+        extensionId,
+    )
+  }
+
+  if (typeof contribution.component !== 'function') {
+    throw new Error(
+      'EXTENSION_CREATION_INSPECTOR_COMPONENT_REQUIRED:' +
+        extensionId,
+    )
+  }
+
+  if (
+    contribution.priority !== undefined &&
+    !Number.isFinite(contribution.priority)
+  ) {
+    throw new Error(
+      'EXTENSION_CREATION_INSPECTOR_PRIORITY_INVALID:' +
+        extensionId,
+    )
+  }
+}
+`
+}
+
+function createInspectorPortal() {
+  return `import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { createPortal } from 'react-dom'
+import {
+  DefaultStylePanel,
+  useRelevantStyles,
+} from 'tldraw'
+
+interface CanvasInspectorPortalContextValue {
+  readonly host: HTMLElement | null
+  readonly available: boolean
+  readonly setHost: (host: HTMLElement | null) => void
+  readonly publishAvailability: (
+    owner: symbol,
+    available: boolean,
+  ) => void
+  readonly releaseAvailability: (owner: symbol) => void
+}
+
+const CanvasInspectorPortalContext =
+  createContext<CanvasInspectorPortalContextValue | null>(null)
+
+export interface CanvasInspectorPortalProviderProps {
+  readonly children: ReactNode
+}
+
+/**
+ * tldraw StylePanel 与 Workspace Dock 之间唯一的 UI 桥。
+ *
+ * 这里只传递：
+ * - Portal DOM host
+ * - 是否存在实际 Inspector 内容
+ *
+ * 不传递：
+ * - selected shapes
+ * - current tool
+ * - shared styles
+ * - shape props
+ *
+ * 因此 Workspace 不会成为 Editor 状态的第二事实来源。
+ */
+export function CanvasInspectorPortalProvider({
+  children,
+}: CanvasInspectorPortalProviderProps) {
+  const [host, setHostState] =
+    useState<HTMLElement | null>(null)
+
+  const [available, setAvailable] =
+    useState(false)
+
+  const publishers =
+    useRef(new Map<symbol, boolean>())
+
+  const setHost = useCallback(
+    (nextHost: HTMLElement | null) => {
+      setHostState(nextHost)
+    },
+    [],
+  )
+
+  const recomputeAvailability =
+    useCallback(() => {
+      setAvailable(
+        Array.from(
+          publishers.current.values(),
+        ).some(Boolean),
+      )
+    }, [])
+
+  const publishAvailability =
+    useCallback(
+      (
+        owner: symbol,
+        nextAvailable: boolean,
+      ) => {
+        publishers.current.set(
+          owner,
+          nextAvailable,
+        )
+
+        recomputeAvailability()
+      },
+      [recomputeAvailability],
+    )
+
+  const releaseAvailability =
+    useCallback(
+      (owner: symbol) => {
+        publishers.current.delete(owner)
+        recomputeAvailability()
+      },
+      [recomputeAvailability],
+    )
+
+  const value =
+    useMemo<CanvasInspectorPortalContextValue>(
+      () => ({
+        host,
+        available,
+        setHost,
+        publishAvailability,
+        releaseAvailability,
+      }),
+      [
+        host,
+        available,
+        setHost,
+        publishAvailability,
+        releaseAvailability,
+      ],
+    )
+
+  return (
+    <CanvasInspectorPortalContext.Provider
+      value={value}
+    >
+      {children}
+    </CanvasInspectorPortalContext.Provider>
+  )
+}
+
+/**
+ * Workspace 右栏中的 Portal 挂载点。
+ *
+ * Workspace 只渲染容器，不解析 Editor 状态。
+ */
+export function CanvasInspectorDock() {
+  const context =
+    useRequiredCanvasInspectorPortal()
+
+  const setHost = context.setHost
+
+  const ref = useCallback(
+    (node: HTMLDivElement | null) => {
+      setHost(node)
+    },
+    [setHost],
+  )
+
+  return (
+    <div
+      className="hc-properties-inspector-dock min-h-0 min-w-0"
+      data-properties-inspector-dock=""
+      ref={ref}
+    />
+  )
+}
+
+export function useCanvasInspectorAvailability(): boolean {
+  return useRequiredCanvasInspectorPortal()
+    .available
+}
+
+export interface CanvasInspectorStylePanelProps {
+  readonly active: boolean
+}
+
+/**
+ * tldraw 官方 StylePanel slot。
+ *
+ * useRelevantStyles 是 Inspector 是否存在的官方依据：
+ * - 有选区时：返回选区相关共享样式；
+ * - 无选区且当前工具创建 Shape 时：返回下一 Shape 样式；
+ * - 无相关样式时：返回 null。
+ *
+ * 当前阶段只渲染官方 DefaultStylePanel，
+ * 不加入自定义对象属性、排列或 Feature 专属 Section。
+ */
+export function CanvasInspectorStylePanel({
+  active,
+}: CanvasInspectorStylePanelProps) {
+  const context =
+    useRequiredCanvasInspectorPortal()
+
+  const styles = useRelevantStyles()
+
+  const owner =
+    useRef(Symbol('canvas-inspector-style-panel'))
+
+  const available =
+    active &&
+    styles !== null
+
+  useEffect(() => {
+    const currentOwner = owner.current
+
+    context.publishAvailability(
+      currentOwner,
+      available,
+    )
+
+    return () => {
+      context.releaseAvailability(
+        currentOwner,
+      )
+    }
+  }, [
+    available,
+    context.publishAvailability,
+    context.releaseAvailability,
+  ])
+
+  if (
+    !active ||
+    !styles ||
+    !context.host
+  ) {
+    return null
+  }
 
   /*
-   * 删除 tldraw 响应式状态订阅。
+   * Portal 不会切断 React Context。
+   * DefaultStylePanel 仍然处于 tldraw UI Provider 内，
+   * 因而可以继续安全使用官方 hooks、actions、translations
+   * 和 StylePanelContext。
    */
-  next = next.replace(
+  return createPortal(
+    <DefaultStylePanel
+      isMobile={false}
+      styles={styles}
+    />,
+    context.host,
+  )
+}
+
+function useRequiredCanvasInspectorPortal(): CanvasInspectorPortalContextValue {
+  const context =
+    useContext(
+      CanvasInspectorPortalContext,
+    )
+
+  if (!context) {
+    throw new Error(
+      'CANVAS_INSPECTOR_PORTAL_PROVIDER_MISSING',
+    )
+  }
+
+  return context
+}
+`
+}
+
+async function transformEditorContext() {
+  let source = normalize(
+    await readFile(
+      paths.editorContext,
+      'utf8',
+    ),
+  )
+
+  if (
+    !source.includes(
+      "from './canvas-inspector-portal'",
+    )
+  ) {
+    const importAnchor =
+      "import type { ExtensionRegistration } from '../contracts/public-api'\n"
+
+    source = replaceRequired(
+      source,
+      importAnchor,
+      `${importAnchor}import { CanvasInspectorPortalProvider } from './canvas-inspector-portal'\n`,
+      'EditorProvider 添加 Inspector Portal Provider import',
+    )
+  }
+
+  source = source.replace(
+    /return <EditorCtx\.Provider value=\{value\}>\{children\}<\/EditorCtx\.Provider>/,
+    `return (
+    <EditorCtx.Provider value={value}>
+      <CanvasInspectorPortalProvider>
+        {children}
+      </CanvasInspectorPortalProvider>
+    </EditorCtx.Provider>
+  )`,
+  )
+
+  if (
+    !source.includes(
+      '<CanvasInspectorPortalProvider>',
+    )
+  ) {
+    throw new Error(
+      '无法把 CanvasInspectorPortalProvider 加入 EditorProvider。',
+    )
+  }
+
+  await write(
+    paths.editorContext,
+    source,
+  )
+}
+
+function createEditorCanvas() {
+  return `import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
+import {
+  DefaultToolbar,
+  type Editor,
+  type TLComponents,
+  type TLUiActionsContextType,
+  type TLUiOverrides,
+  Tldraw,
+  type TldrawProps,
+} from 'tldraw'
+
+import type { EditorSession } from '../runtime/editor-session'
+import {
+  CanvasInspectorStylePanel,
+} from './canvas-inspector-portal'
+import {
+  useBindEditorSession,
+  useTldrawLicenseKey,
+} from './editor-context'
+
+export const HYBRID_CANVAS_SAVE_ACTION_ID =
+  'hybrid-canvas.save'
+
+/**
+ * tldraw 负责：
+ * - Editor selection
+ * - current tool
+ * - relevant styles
+ * - shared/mixed styles
+ * - next-shape styles
+ * - StylePanel React context
+ *
+ * Workspace 只负责：
+ * - 右栏布局
+ * - 展开/收起
+ * - 响应式宽度
+ */
+function CanvasTopToolbar() {
+  return (
+    <div className="hc-canvas-top-toolbar">
+      <DefaultToolbar />
+    </div>
+  )
+}
+
+const BASE_CANVAS_COMPONENTS: TLComponents = {
+  PageMenu: null,
+  Toolbar: null,
+  TopPanel: CanvasTopToolbar,
+}
+
+export interface EditorCanvasProps {
+  readonly session: EditorSession
+  readonly isActive?: boolean
+  readonly onSave?: () => void
+}
+
+export function EditorCanvas({
+  session,
+  isActive = true,
+  onSave,
+}: EditorCanvasProps) {
+  const licenseKey =
+    useTldrawLicenseKey()
+
+  const [editor, setEditor] =
+    useState<Editor | null>(null)
+
+  const {
+    registration,
+    store,
+  } = session
+
+  useBindEditorSession(
+    isActive ? editor : null,
+    isActive ? registration : null,
+  )
+
+  const hasTools =
+    registration.tools.length > 0
+
+  const overrides =
+    useMemo<TLUiOverrides>(
+      () =>
+        createCanvasUiOverrides(
+          onSave,
+        ),
+      [onSave],
+    )
+
+  /*
+   * 每个 Editor Session 都有自己的 StylePanel slot，
+   * 但只有 active session 可以发布到 Workspace Dock。
+   */
+  const components =
+    useMemo<TLComponents>(
+      () => ({
+        ...BASE_CANVAS_COMPONENTS,
+
+        StylePanel:
+          function WorkspacePropertiesInspector() {
+            return (
+              <CanvasInspectorStylePanel
+                active={isActive}
+              />
+            )
+          },
+      }),
+      [isActive],
+    )
+
+  const tldrawProps =
+    useMemo((): TldrawProps => {
+      const base: TldrawProps = {
+        hideUi: false,
+        licenseKey,
+        store,
+        onMount: setEditor,
+        overrides,
+        components,
+
+        options: {
+          maxPages: 100,
+          actionShortcutsLocation:
+            'toolbar',
+        },
+
+        shapeUtils:
+          registration.shapeUtils,
+
+        bindingUtils:
+          registration.bindingUtils,
+      }
+
+      if (hasTools) {
+        base.tools =
+          registration.tools
+      }
+
+      return base
+    }, [
+      components,
+      hasTools,
+      licenseKey,
+      overrides,
+      registration,
+      store,
+    ])
+
+  useEffect(() => {
+    if (!editor) {
+      return
+    }
+
+    if (isActive) {
+      editor.setCameraOptions({
+        ...editor.getCameraOptions(),
+        wheelBehavior: 'zoom',
+        zoomSpeed: 1,
+      })
+
+      editor.updateInstanceState({
+        isGridMode: false,
+        isToolLocked: true,
+      })
+
+      session.attachEditor(editor)
+
+      return () =>
+        session.detachEditor(editor)
+    }
+
+    session.detachEditor(editor)
+
+    return undefined
+  }, [
+    editor,
+    isActive,
+    session,
+  ])
+
+  return (
+    <div
+      className="relative size-full overflow-hidden bg-canvas"
+      data-document-id={
+        session.documentId
+      }
+      data-session-id={
+        session.sessionId
+      }
+    >
+      <Tldraw {...tldrawProps} />
+    </div>
+  )
+}
+
+function createCanvasUiOverrides(
+  onSave:
+    | (() => void)
+    | undefined,
+): TLUiOverrides {
+  return {
+    actions(
+      _editor,
+      actions,
+    ): TLUiActionsContextType {
+      if (!onSave) {
+        return actions
+      }
+
+      return {
+        ...actions,
+
+        [HYBRID_CANVAS_SAVE_ACTION_ID]: {
+          id:
+            HYBRID_CANVAS_SAVE_ACTION_ID,
+
+          label: '保存',
+          kbd: 'cmd+s,ctrl+s',
+
+          onSelect() {
+            onSave()
+          },
+        },
+      }
+    },
+  }
+}
+
+export {
+  useEditor,
+} from './editor-context'
+`
+}
+
+async function transformEditorReactPublicApi() {
+  let source = normalize(
+    await readFile(
+      paths.editorReactPublicApi,
+      'utf8',
+    ),
+  )
+
+  if (
+    !source.includes(
+      "from './canvas-inspector-portal'",
+    )
+  ) {
+    source += `
+export {
+  CanvasInspectorDock,
+  CanvasInspectorPortalProvider,
+  type CanvasInspectorPortalProviderProps,
+  CanvasInspectorStylePanel,
+  type CanvasInspectorStylePanelProps,
+  useCanvasInspectorAvailability,
+} from './canvas-inspector-portal'
+`
+  }
+
+  await write(
+    paths.editorReactPublicApi,
+    source,
+  )
+}
+
+async function transformWorkspaceContainer() {
+  let source = normalize(
+    await readFile(
+      paths.workspaceContainer,
+      'utf8',
+    ),
+  )
+
+  source = source.replace(
+    /import\s+\{\s*EditorSessionHost,\s*useEditor\s*\}\s+from\s+['"]@hybrid-canvas\/canvas\/react['"]/,
+    `import {
+  CanvasInspectorDock,
+  EditorSessionHost,
+  useCanvasInspectorAvailability,
+  useEditor,
+} from '@hybrid-canvas/canvas/react'`,
+  )
+
+  if (
+    !source.includes(
+      'useCanvasInspectorAvailability',
+    )
+  ) {
+    throw new Error(
+      '无法迁移 WorkspaceContainer canvas/react import。',
+    )
+  }
+
+  source = source.replace(
     /^import\s+\{\s*useValue\s*\}\s+from\s+['"]tldraw['"]\s*\n/m,
     '',
   )
 
-  /*
-   * 删除旧 Inspector 内容入口。
-   */
-  next = next.replace(
-    /^import\s+\{\s*CanvasInspectorContent\s*\}\s+from\s+['"]\.\/inspector\/CanvasInspectorContent['"]\s*\n/m,
+  source = source.replace(
+    /^import .*CanvasInspectorContent.*\n/m,
     '',
   )
 
-  next = next.replace(
-    /^import\s+\{\s*createToolInspectorRegistry\s*\}\s+from\s+['"]\.\/inspector\/tools\/ToolInspectorRegistry['"]\s*\n/m,
+  source = source.replace(
+    /^import .*ToolInspectorRegistry.*\n/m,
     '',
   )
 
-  /*
-   * 删除 inspectorSelectionKey。
-   *
-   * 使用边界标记而不是复杂 AST 替换，是因为这段代码本身
-   * 就是接下来要彻底移除的旧架构。
-   */
-  next = removeRangeIfPresent(
-    next,
+  source = removeRangeIfPresent(
+    source,
     '  const inspectorSelectionKey = useValue(\n',
     '  const workbench = useSyncExternalStore(\n',
   )
 
-  /*
-   * 删除 ToolInspectorRegistry 组合。
-   */
-  next = removeRangeIfPresent(
-    next,
+  source = removeRangeIfPresent(
+    source,
     [
       '  /*',
       '   * Core Inspector 与 Feature Inspector 合并。',
@@ -273,54 +982,87 @@ function transformWorkspaceContainer(
     '  const pages = useSyncExternalStore(\n',
   )
 
-  /*
-   * 停止挂载旧 CanvasInspectorContent。
-   */
-  next = next.replace(
-    /\s{6}inspector=\{\s*<CanvasInspectorContent[\s\S]*?\/>\s*\}\s*\n\s{6}inspectorSelectionKey=\{inspectorSelectionKey\}\s*\n/,
-    '      inspector={null}\n',
+  if (
+    !source.includes(
+      'const inspectorAvailable =',
+    )
+  ) {
+    source = replaceRequired(
+      source,
+      `  const editor = useEditor()
+`,
+      `  const editor = useEditor()
+
+  const inspectorAvailable =
+    useCanvasInspectorAvailability()
+`,
+      'WorkspaceContainer 添加 Inspector availability',
+    )
+  }
+
+  source = source.replace(
+    /\s{6}inspector=\{\s*<CanvasInspectorContent[\s\S]*?\/>\s*\}\s*\n(?:\s{6}inspectorSelectionKey=\{inspectorSelectionKey\}\s*\n)?/,
+    `      inspector={
+        <CanvasInspectorDock />
+      }
+      inspectorAvailable={
+        inspectorAvailable
+      }
+`,
   )
 
-  /*
-   * 兼容已经由上一版脚本删除 selectionKey、
-   * 但仍保留 CanvasInspectorContent 的情况。
-   */
-  next = next.replace(
-    /\s{6}inspector=\{\s*<CanvasInspectorContent[\s\S]*?\/>\s*\}\s*\n/,
-    '      inspector={null}\n',
+  source = source.replace(
+    /\s{6}inspector=\{null\}\s*\n(?:\s{6}inspectorSelectionKey=\{inspectorSelectionKey\}\s*\n)?/,
+    `      inspector={
+        <CanvasInspectorDock />
+      }
+      inspectorAvailable={
+        inspectorAvailable
+      }
+`,
   )
 
-  /*
-   * 兼容旧 Inspector 已替换，但 selectionKey 单独残留。
-   */
-  next = next.replace(
+  source = source.replace(
     /^\s*inspectorSelectionKey=\{inspectorSelectionKey\}\s*\n/m,
     '',
   )
 
-  return finish(next)
+  if (
+    !source.includes(
+      '<CanvasInspectorDock />',
+    )
+  ) {
+    throw new Error(
+      'WorkspaceContainer 没有成功接入 CanvasInspectorDock。',
+    )
+  }
+
+  await write(
+    paths.workspaceContainer,
+    source,
+  )
 }
 
-function transformWorkspaceShell(
-  source,
-) {
-  let next = source
+async function transformWorkspaceShell() {
+  let source = normalize(
+    await readFile(
+      paths.workspaceShell,
+      'utf8',
+    ),
+  )
 
-  next = next.replace(
+  source = source.replace(
     /^\s*const previousInspectorSelectionKeyRef = useRef\(inspectorSelectionKey \?\? ''\)\s*\n/m,
     '',
   )
 
-  next = next.replace(
+  source = source.replace(
     /^\s*inspectorSelectionKey,\s*\n/m,
     '',
   )
 
-  /*
-   * 删除 selection/tool 变化后强制展开右栏的 effect。
-   */
-  next = removeRangeIfPresent(
-    next,
+  source = removeRangeIfPresent(
+    source,
     [
       '  useEffect(() => {',
       '    const previousKey = previousInspectorSelectionKeyRef.current',
@@ -328,72 +1070,109 @@ function transformWorkspaceShell(
     '  const openSidebar = () => {\n',
   )
 
-  return finish(next)
+  if (
+    !/^\s*inspectorAvailable,\s*$/m.test(
+      source,
+    )
+  ) {
+    source = replaceRequired(
+      source,
+      `  inspector,
+`,
+      `  inspector,
+  inspectorAvailable,
+`,
+      'WorkspaceShell 添加 inspectorAvailable',
+    )
+  }
+
+  /*
+   * 默认允许显示。
+   * 当内容第一次可用时直接出现；
+   * 用户手动关闭后不会因 selection 改变而重新打开。
+   */
+  source = source.replace(
+    /const \[isInspectorOpen, setInspectorOpen\] = useState\(false\)/,
+    'const [isInspectorOpen, setInspectorOpen] = useState(true)',
+  )
+
+  source = source.replace(
+    /const dockInspector =\s*inspector !== null && inspector !== undefined && isInspectorOpen && hasCanvas/,
+    `const dockInspector =
+    inspectorAvailable &&
+    isInspectorOpen &&
+    hasCanvas`,
+  )
+
+  source = source.replace(
+    /const inspectorRegion = hasCanvas && inspector !== null && inspector !== undefined \? \(/,
+    `const inspectorRegion =
+    hasCanvas && inspectorAvailable ? (`,
+  )
+
+  if (
+    !source.includes(
+      'inspectorAvailable &&',
+    )
+  ) {
+    throw new Error(
+      'WorkspaceShell 没有成功切换到 availability 驱动。',
+    )
+  }
+
+  await write(
+    paths.workspaceShell,
+    source,
+  )
 }
 
-function transformShellContract(
-  source,
-) {
-  let next = source
+async function transformShellContract() {
+  let source = normalize(
+    await readFile(
+      paths.shellContract,
+      'utf8',
+    ),
+  )
 
-  next = next.replace(
+  source = source.replace(
     /\s{2}\/\*\*\n\s{3}\* 当前编辑器选区标识。\n\s{3}\* 仅用于请求显示属性面板，不承载画布文档状态。\n\s{3}\*\/\n\s{2}readonly inspectorSelectionKey\?: string\n/,
     '',
   )
 
-  next = next.replace(
+  source = source.replace(
     /^\s*readonly inspectorSelectionKey\?: string\s*\n/m,
     '',
   )
 
-  return finish(next)
-}
-
-function transformPackageJson(
-  source,
-) {
-  const parsed = JSON.parse(source)
-
-  const current =
-    parsed.scripts?.[
-      'test:architecture'
-    ]
-
-  if (typeof current !== 'string') {
-    throw new Error(
-      'package.json 缺少 scripts.test:architecture。',
+  if (
+    !source.includes(
+      'readonly inspectorAvailable: boolean',
+    )
+  ) {
+    source = replaceRequired(
+      source,
+      `  readonly inspector: ReactNode
+`,
+      `  readonly inspector: ReactNode
+  /**
+   * 仅表示右栏是否有实际可渲染内容。
+   *
+   * 不包含 selection、tool、styles 或 Shape 数据。
+   */
+  readonly inspectorAvailable: boolean
+`,
+      'WorkspaceShellProps 添加 inspectorAvailable',
     )
   }
 
-  const command =
-    'node tests/architecture/check-inspector-ownership.mjs'
-
-  if (!current.includes(command)) {
-    parsed.scripts[
-      'test:architecture'
-    ] = `${current} && ${command}`
-  }
-
-  return (
-    JSON.stringify(
-      parsed,
-      null,
-      2,
-    ) + '\n'
+  await write(
+    paths.shellContract,
+    source,
   )
 }
 
 function createArchitectureTest() {
   return `#!/usr/bin/env node
-
-/**
- * Properties Inspector ownership architecture guard.
- *
- * Invariants:
- * - tldraw owns selection/tool/relevant-style state.
- * - Workspace owns only shell layout and local open/collapse state.
- * - Workspace must not construct tool-first inspector routing.
- */
 
 import {
   readFile,
@@ -409,6 +1188,11 @@ const files = {
     'editor/core/src/react/EditorCanvas.tsx',
   ),
 
+  portal: path.join(
+    root,
+    'editor/core/src/react/canvas-inspector-portal.tsx',
+  ),
+
   workspaceContainer: path.join(
     root,
     'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
@@ -422,6 +1206,11 @@ const files = {
   shellContract: path.join(
     root,
     'features/workspace/src/contracts/shell-contract.ts',
+  ),
+
+  extensionContract: path.join(
+    root,
+    'editor/core/src/contracts/extension-contract.ts',
   ),
 }
 
@@ -441,130 +1230,124 @@ const sources = Object.fromEntries(
 
 const violations = []
 
-assertAbsent(
+requirePattern(
   'EditorCanvas',
   sources.editorCanvas,
-  /StylePanel\\s*:\\s*null/,
-  '不得禁用 tldraw 官方 StylePanel 状态入口',
+  /StylePanel:\\s*function WorkspacePropertiesInspector/,
+  '必须通过 tldraw StylePanel slot 接入 Inspector',
 )
 
-const forbiddenWorkspaceContainer = [
-  [
-    /from\\s+['"]tldraw['"]/,
-    'WorkspaceContainer 不得直接依赖 tldraw UI 状态',
-  ],
-  [
-    /\\buseValue\\b/,
-    'WorkspaceContainer 不得订阅 tldraw 响应式状态',
-  ],
-  [
-    /getSelectedShapeIds\\s*\\(/,
-    'WorkspaceContainer 不得读取选区 ID',
-  ],
-  [
-    /getSelectedShapes\\s*\\(/,
-    'WorkspaceContainer 不得读取选区对象',
-  ],
-  [
-    /getOnlySelectedShape\\s*\\(/,
-    'WorkspaceContainer 不得读取单一选区对象',
-  ],
-  [
-    /getCurrentToolId\\s*\\(/,
-    'WorkspaceContainer 不得读取当前工具',
-  ],
-  [
-    /getSharedStyles\\s*\\(/,
-    'WorkspaceContainer 不得计算 shared styles',
-  ],
-  [
-    /useRelevantStyles\\s*\\(/,
-    'WorkspaceContainer 不得计算 relevant styles',
-  ],
-  [
-    /inspectorSelectionKey/,
-    'WorkspaceContainer 不得传递 Inspector 选区镜像',
-  ],
-  [
-    /CanvasInspectorContent/,
-    'WorkspaceContainer 不得挂载旧外部 Inspector',
-  ],
-  [
-    /ToolInspectorRegistry/,
-    'WorkspaceContainer 不得创建 tool-first Inspector Registry',
-  ],
+requirePattern(
+  'InspectorPortal',
+  sources.portal,
+  /useRelevantStyles\\s*\\(/,
+  '必须使用 tldraw 官方 useRelevantStyles',
+)
+
+requirePattern(
+  'InspectorPortal',
+  sources.portal,
+  /createPortal\\s*\\(/,
+  '必须通过 Portal 渲染到 Workspace Dock',
+)
+
+requirePattern(
+  'InspectorPortal',
+  sources.portal,
+  /<DefaultStylePanel/,
+  '架构阶段必须使用官方 DefaultStylePanel 验证上下文',
+)
+
+const forbiddenWorkspacePatterns = [
+  /getSelectedShapeIds\\s*\\(/,
+  /getSelectedShapes\\s*\\(/,
+  /getOnlySelectedShape\\s*\\(/,
+  /getCurrentToolId\\s*\\(/,
+  /getSharedStyles\\s*\\(/,
+  /useRelevantStyles\\s*\\(/,
+  /inspectorSelectionKey/,
+  /CanvasInspectorContent/,
+  /ToolInspectorRegistry/,
 ]
 
-for (
-  const [
-    pattern,
-    message,
-  ] of forbiddenWorkspaceContainer
-) {
-  assertAbsent(
+for (const pattern of forbiddenWorkspacePatterns) {
+  forbidPattern(
     'WorkspaceContainer',
     sources.workspaceContainer,
     pattern,
-    message,
+    'Workspace 不得读取或路由 Editor Inspector 状态',
   )
 }
 
-assertAbsent(
+requirePattern(
+  'WorkspaceContainer',
+  sources.workspaceContainer,
+  /<CanvasInspectorDock\\s*\\/>/,
+  'Workspace 必须只提供 Inspector Portal Dock',
+)
+
+requirePattern(
+  'WorkspaceShell',
+  sources.workspaceShell,
+  /inspectorAvailable/,
+  'Workspace 必须使用内容 availability 控制布局',
+)
+
+forbidPattern(
   'WorkspaceShell',
   sources.workspaceShell,
   /inspectorSelectionKey/,
-  'WorkspaceShell 不得接收 Editor selection 标识',
+  'Workspace 不得接收 selection key',
 )
 
-assertAbsent(
+forbidPattern(
   'WorkspaceShellProps',
   sources.shellContract,
   /inspectorSelectionKey/,
-  'Workspace contract 不得暴露 Editor selection 标识',
+  'Workspace contract 不得暴露 selection key',
 )
 
-assertPresent(
-  'WorkspaceShell',
-  sources.workspaceShell,
-  /<InspectorHost>\\{inspector\\}<\\/InspectorHost>/,
-  'Workspace 应保留通用右栏布局容器',
+requirePattern(
+  'WorkspaceShellProps',
+  sources.shellContract,
+  /readonly inspectorAvailable: boolean/,
+  'Workspace contract 必须只暴露 availability',
+)
+
+forbidPattern(
+  'ExtensionContract',
+  sources.extensionContract,
+  /toolInspectors/,
+  'Extension API 不得恢复 tool-first Inspector',
+)
+
+requirePattern(
+  'ExtensionContract',
+  sources.extensionContract,
+  /creationInspectors/,
+  'Extension API 必须使用 creation-specific contribution',
 )
 
 if (violations.length > 0) {
   console.error('')
   console.error(
-    'Properties Inspector 架构检查失败：',
+    'Properties Inspector architecture: FAILED',
   )
   console.error('')
 
   for (const violation of violations) {
-    console.error(
-      '- ' + violation,
-    )
+    console.error('- ' + violation)
   }
 
   console.error('')
   process.exitCode = 1
 } else {
   console.log(
-    'Properties Inspector ownership architecture: OK',
+    'Properties Inspector architecture: OK',
   )
 }
 
-function assertAbsent(
-  owner,
-  source,
-  pattern,
-  message,
-) {
-  if (pattern.test(source)) {
-    violations.push(
-      owner + ': ' + message,
-    )
-  }
-}
-
-function assertPresent(
+function requirePattern(
   owner,
   source,
   pattern,
@@ -576,104 +1359,184 @@ function assertPresent(
     )
   }
 }
+
+function forbidPattern(
+  owner,
+  source,
+  pattern,
+  message,
+) {
+  if (pattern.test(source)) {
+    violations.push(
+      owner + ': ' + message,
+    )
+  }
+}
 `
 }
 
-function validate(transformed) {
-  const violations = []
+async function transformPackageJson() {
+  const parsed = JSON.parse(
+    await readFile(
+      paths.packageJson,
+      'utf8',
+    ),
+  )
 
-  if (
-    /StylePanel\s*:\s*null/.test(
-      transformed.editorCanvas,
-    )
-  ) {
-    violations.push(
-      'EditorCanvas 仍然禁用了官方 StylePanel。',
+  const current =
+    parsed.scripts?.[
+      'test:architecture'
+    ]
+
+  if (typeof current !== 'string') {
+    throw new Error(
+      'package.json 缺少 scripts.test:architecture。',
     )
   }
 
-  const workspaceForbidden = [
-    /\buseValue\b/,
-    /getSelectedShapeIds\s*\(/,
-    /getSelectedShapes\s*\(/,
-    /getOnlySelectedShape\s*\(/,
-    /getCurrentToolId\s*\(/,
-    /getSharedStyles\s*\(/,
-    /useRelevantStyles\s*\(/,
-    /inspectorSelectionKey/,
-    /CanvasInspectorContent/,
-    /createToolInspectorRegistry/,
-  ]
+  const command =
+    'node tests/architecture/check-properties-inspector-architecture.mjs'
 
-  for (
-    const pattern of workspaceForbidden
-  ) {
+  if (!current.includes(command)) {
+    parsed.scripts[
+      'test:architecture'
+    ] = `${current} && ${command}`
+  }
+
+  await write(
+    paths.packageJson,
+    JSON.stringify(
+      parsed,
+      null,
+      2,
+    ),
+  )
+}
+
+async function validateFinalRepository() {
+  const files =
+    await collectSourceFiles(root)
+
+  const violations = []
+
+  for (const filePath of files) {
+    const source =
+      await readFile(
+        filePath,
+        'utf8',
+      )
+
     if (
-      pattern.test(
-        transformed.workspaceContainer,
+      /\btoolInspectors\b/.test(
+        source,
       )
     ) {
       violations.push(
-        `WorkspaceContainer 仍然匹配禁用模式：${String(pattern)}`,
+        `${relative(filePath)} 仍然包含 toolInspectors`,
+      )
+    }
+
+    if (
+      /\bHybridCanvasToolInspector/.test(
+        source,
+      )
+    ) {
+      violations.push(
+        `${relative(filePath)} 仍然包含旧 ToolInspector 类型`,
       )
     }
   }
 
-  if (
-    /inspectorSelectionKey/.test(
-      transformed.workspaceShell,
+  const workspaceContainer =
+    await readFile(
+      paths.workspaceContainer,
+      'utf8',
     )
-  ) {
-    violations.push(
-      'WorkspaceShell 仍然包含 inspectorSelectionKey。',
-    )
+
+  const forbidden = [
+    'getSelectedShapeIds(',
+    'getSelectedShapes(',
+    'getCurrentToolId(',
+    'getSharedStyles(',
+    'useRelevantStyles(',
+    'inspectorSelectionKey',
+    'CanvasInspectorContent',
+    'ToolInspectorRegistry',
+  ]
+
+  for (const token of forbidden) {
+    if (
+      workspaceContainer.includes(
+        token,
+      )
+    ) {
+      violations.push(
+        `WorkspaceContainer 仍然包含 ${token}`,
+      )
+    }
   }
 
-  if (
-    /inspectorSelectionKey/.test(
-      transformed.shellContract,
-    )
-  ) {
-    violations.push(
-      'WorkspaceShellProps 仍然包含 inspectorSelectionKey。',
-    )
-  }
-
-  if (
-    !transformed.workspaceContainer.includes(
-      'inspector={null}',
-    )
-  ) {
-    violations.push(
-      'WorkspaceContainer 没有明确停用旧 Inspector。',
-    )
-  }
-
-  if (
-    !transformed.workspaceShell.includes(
-      '<InspectorHost>{inspector}</InspectorHost>',
-    )
-  ) {
-    violations.push(
-      'Workspace 通用 InspectorHost 被意外删除。',
-    )
-  }
-
-  if (
-    violations.length > 0
-  ) {
+  if (violations.length > 0) {
     throw new Error(
       [
-        '重构结果验证失败：',
+        '最终架构验证失败：',
         '',
         ...violations.map(
           (item) => `- ${item}`,
         ),
-        '',
-        '没有写入任何文件。',
       ].join('\n'),
     )
   }
+}
+
+async function collectSourceFiles(
+  directory,
+) {
+  const result = []
+
+  async function visit(current) {
+    const entries =
+      await readdir(
+        current,
+        {
+          withFileTypes: true,
+        },
+      )
+
+    for (const entry of entries) {
+      if (
+        entry.name === 'node_modules' ||
+        entry.name === '.git' ||
+        entry.name === 'target' ||
+        entry.name === 'dist' ||
+        entry.name === '.turbo'
+      ) {
+        continue
+      }
+
+      const entryPath =
+        path.join(
+          current,
+          entry.name,
+        )
+
+      if (entry.isDirectory()) {
+        await visit(entryPath)
+        continue
+      }
+
+      if (
+        /\.(?:ts|tsx)$/.test(
+          entry.name,
+        )
+      ) {
+        result.push(entryPath)
+      }
+    }
+  }
+
+  await visit(directory)
+  return result
 }
 
 function removeRangeIfPresent(
@@ -688,15 +1551,16 @@ function removeRangeIfPresent(
     return source
   }
 
-  const end = source.indexOf(
-    endMarker,
-    start + startMarker.length,
-  )
+  const end =
+    source.indexOf(
+      endMarker,
+      start + startMarker.length,
+    )
 
   if (end < 0) {
     throw new Error(
       [
-        '找到待删除区域的起点，但没有找到终点。',
+        '找到删除区域起点，但没有找到终点。',
         '',
         `起点：${JSON.stringify(startMarker)}`,
         `终点：${JSON.stringify(endMarker)}`,
@@ -710,26 +1574,43 @@ function removeRangeIfPresent(
   )
 }
 
-async function assertRepositoryRoot() {
-  const packagePath =
-    resolve('package.json')
+function replaceRequired(
+  source,
+  search,
+  replacement,
+  operation,
+) {
+  if (!source.includes(search)) {
+    throw new Error(
+      `无法安全执行：${operation}`,
+    )
+  }
 
-  const agentsPath =
-    resolve('AGENTS.md')
+  return source.replace(
+    search,
+    replacement,
+  )
+}
 
+async function assertRepository() {
   await Promise.all([
     readFile(
-      packagePath,
+      resolve('AGENTS.md'),
       'utf8',
     ),
 
     readFile(
-      agentsPath,
+      paths.packageJson,
       'utf8',
     ),
 
     readFile(
       paths.editorCanvas,
+      'utf8',
+    ),
+
+    readFile(
+      paths.editorContext,
       'utf8',
     ),
 
@@ -754,6 +1635,13 @@ async function write(
   filePath,
   content,
 ) {
+  await mkdir(
+    path.dirname(filePath),
+    {
+      recursive: true,
+    },
+  )
+
   await writeFile(
     filePath,
     finish(content),
@@ -765,6 +1653,13 @@ function resolve(relativePath) {
   return path.join(
     root,
     relativePath,
+  )
+}
+
+function relative(filePath) {
+  return path.relative(
+    root,
+    filePath,
   )
 }
 
@@ -785,42 +1680,49 @@ function finish(source) {
 function printSummary() {
   console.log('')
   console.log(
-    'Properties Inspector 所有权重构完成。',
+    'Properties Inspector 架构重构完成。',
   )
   console.log('')
 
-  console.log('架构结果：')
+  console.log('已完成：')
   console.log(
-    '  - tldraw 官方 StylePanel 已恢复',
+    '  - 删除旧 App-owned Inspector 目录',
   )
   console.log(
-    '  - Workspace 不读取 selection/current tool',
+    '  - 删除 tool-first Inspector composition',
   )
   console.log(
-    '  - Workspace 不计算 shared/relevant styles',
+    '  - toolInspectors 迁移为 creationInspectors',
   )
   console.log(
-    '  - inspectorSelectionKey 已删除',
+    '  - Extension API 升级为 v2',
   )
   console.log(
-    '  - 旧 CanvasInspectorContent 已停止挂载',
+    '  - tldraw StylePanel 成为唯一入口',
   )
   console.log(
-    '  - ToolInspectorRegistry 已离开 composition root',
+    '  - useRelevantStyles 成为官方相关性来源',
   )
   console.log(
-    '  - Workspace 通用右栏容器继续保留',
+    '  - 官方 DefaultStylePanel 通过 Portal 停靠到右栏',
   )
   console.log(
-    '  - 已添加 Inspector 所有权架构测试',
+    '  - Workspace 只接收 inspectorAvailable',
+  )
+  console.log(
+    '  - 多画布只允许 active Editor 发布 Inspector',
+  )
+  console.log(
+    '  - 加入架构守卫测试',
   )
 
   console.log('')
-  console.log('没有创建任何备份文件。')
-  console.log('回滚请使用 Git。')
+  console.log(
+    '没有创建备份文件，回滚请使用 Git。',
+  )
 
   console.log('')
-  console.log('执行验证：')
+  console.log('接下来执行：')
   console.log('  pnpm format')
   console.log('  pnpm lint')
   console.log('  pnpm typecheck')

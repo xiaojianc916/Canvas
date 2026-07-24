@@ -6,7 +6,7 @@ export const freehandExtension: HybridCanvasExtension = {
   version: '0.1.0',
   apiVersion: '1',
 
-  toolInspectors: [
+  creationInspectors: [
     {
       toolId: 'draw',
       owner: '@hybrid-canvas/freehand',

@@ -16,3 +16,12 @@ export {
   useEditor,
   useTldrawLicenseKey,
 } from './editor-context'
+
+export {
+  CanvasInspectorDock,
+  CanvasInspectorPortalProvider,
+  type CanvasInspectorPortalProviderProps,
+  CanvasInspectorStylePanel,
+  type CanvasInspectorStylePanelProps,
+  useCanvasInspectorAvailability,
+} from './canvas-inspector-portal'

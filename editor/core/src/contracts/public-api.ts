@@ -11,6 +11,6 @@ export {
   type ExtensionRegistration,
   HYBRID_CANVAS_EXTENSION_API_VERSION,
   type HybridCanvasExtension,
-  type HybridCanvasToolInspectorContribution,
-  type HybridCanvasToolInspectorProps,
+  type HybridCanvasCreationInspectorContribution,
+  type HybridCanvasCreationInspectorProps,
 } from './extension-contract'

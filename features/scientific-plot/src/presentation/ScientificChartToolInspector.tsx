@@ -1,4 +1,4 @@
-import type { HybridCanvasToolInspectorProps } from '@hybrid-canvas/canvas/extensions'
+import type { HybridCanvasCreationInspectorProps } from '@hybrid-canvas/canvas/extensions'
 import { DefaultColorStyle, DefaultSizeStyle, useValue } from 'tldraw'
 import { type ScientificChartType, ScientificChartTypeStyle } from '../styles/chart-styles'
 
@@ -111,7 +111,7 @@ const SIZE_OPTIONS = [
   },
 ] as const
 
-export function ScientificChartToolInspector({ editor }: HybridCanvasToolInspectorProps) {
+export function ScientificChartToolInspector({ editor }: HybridCanvasCreationInspectorProps) {
   const currentChartType = useValue(
     'scientific chart next type',
     () => editor.getStyleForNextShape(ScientificChartTypeStyle),

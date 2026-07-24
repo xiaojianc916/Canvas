@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { Editor } from 'tldraw'
 
 import type { ExtensionRegistration } from '../contracts/public-api'
+import { CanvasInspectorPortalProvider } from './canvas-inspector-portal'
 
 export type { ExtensionRegistration } from '../contracts/public-api'
 
@@ -58,7 +59,13 @@ export function EditorProvider({ children, licenseKey }: EditorProviderProps) {
     [session, licenseKey, bindSession, unbindSession],
   )
 
-  return <EditorCtx.Provider value={value}>{children}</EditorCtx.Provider>
+  return (
+    <EditorCtx.Provider value={value}>
+      <CanvasInspectorPortalProvider>
+        {children}
+      </CanvasInspectorPortalProvider>
+    </EditorCtx.Provider>
+  )
 }
 
 export function useEditor(): Editor | null {
