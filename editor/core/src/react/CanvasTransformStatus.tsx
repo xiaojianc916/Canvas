@@ -468,6 +468,8 @@ export function CanvasTransformStatus({
 
           <StatusDivider />
 
+          <StatusDivider />
+
           <AspectRatioLockButton
             disabled={
               !snapshot.canResize ||
