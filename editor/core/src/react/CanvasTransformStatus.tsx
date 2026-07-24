@@ -509,7 +509,8 @@ function SelectionCount({
       </span>
     </span>
   )
-}\n
+}
+
 interface TransformGroupProps {
   readonly children: ReactNode
   readonly label: string
@@ -869,7 +870,8 @@ function InlineTransformField({
       </span>
     </button>
   )
-}\n
+}
+
 interface AspectRatioLockButtonProps {
   readonly locked: boolean
   readonly forced: boolean
