@@ -1,0 +1,48 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- 主渐变：Linear 风格的冷静蓝紫 -->
+    <linearGradient id="mainGradient" x1="104" y1="360" x2="356" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5E6AD2"/>
+      <stop offset="1" stop-color="#8290FF"/>
+    </linearGradient>
+
+    <!-- 轻微高光渐变 -->
+    <linearGradient id="highlightGradient" x1="120" y1="340" x2="340" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.18"/>
+    </linearGradient>
+
+    <!-- 阴影范围扩大，避免放大后裁切 -->
+    <filter id="softShadow" x="-300" y="-300" width="1600" height="1600" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#2C357A" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <!--
+    仅做几何变换：
+    - 原始设计不变
+    - 按主体外接矩形放大
+    - 画布 1024×1024
+    - 上下约 80px 安全区，左右约 54px 安全区
+  -->
+  <g transform="translate(-176.2745 -199.9446) scale(3.030678)" filter="url(#softShadow)">
+    <!-- 第一笔：最长主笔画 -->
+    <g transform="rotate(22 145 272)">
+      <rect x="111" y="92" width="68" height="280" rx="34" fill="url(#mainGradient)"/>
+      <rect x="124" y="105" width="18" height="254" rx="9" fill="white" fill-opacity="0.08"/>
+    </g>
+
+    <!-- 第二笔：中段，与主笔画形成节奏差 -->
+    <g transform="rotate(22 246 240)">
+      <rect x="215" y="116" width="64" height="200" rx="32" fill="url(#mainGradient)"/>
+      <rect x="227" y="128" width="16" height="176" rx="8" fill="white" fill-opacity="0.08"/>
+    </g>
+
+    <!-- 第三笔：短促收尾，更像一个完成度高的符号 -->
+    <g transform="rotate(22 332 202)">
+      <rect x="304" y="148" width="56" height="112" rx="28" fill="url(#mainGradient)"/>
+      <rect x="315" y="158" width="14" height="92" rx="7" fill="white" fill-opacity="0.08"/>
+    </g>
+  </g>
+</svg>
