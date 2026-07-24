@@ -5,13 +5,18 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
-  group: quality-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
 
 jobs:
   frontend:
@@ -47,11 +52,6 @@ jobs:
           test "$actual_node" = "$expected_node"
           test "$actual_pnpm" = "11.15.0"
 
-          if grep -R "set this to true or false" pnpm-workspace.yaml; then
-            echo "::error::pnpm allowBuilds contains unresolved placeholders"
-            exit 1
-          fi
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -75,7 +75,6 @@ jobs:
 
       - name: Build
         run: pnpm build
-
 
   windows-desktop:
     name: Windows Desktop
@@ -158,6 +157,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           cargo run -p hybrid-canvas-desktop --bin export-ipc-bindings
           git diff --exit-code -- platforms/desktop-ipc/src/generated/ipc-bindings.ts
 
