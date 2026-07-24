@@ -100,7 +100,15 @@ describe('Canvas document native-release contract', () => {
     const opened = await harness.service.create('未命名画布')
 
     harness.ready()
-    harness.change(snapshot({ shapes: [{ id: 'shape:1' }] }))
+
+    // createHarness 的 snapshot() 当前仅返回一个空的有效 TLStoreSnapshot，
+    // 因此必须显式构造内容不同的快照，才能覆盖 dirty-close 合约。
+    const dirtySnapshot = {
+      ...validSnapshot(),
+      __testDocumentRevision: 'shape:1',
+    } as unknown as TLStoreSnapshot
+
+    harness.change(dirtySnapshot)
 
     await expect(harness.service.releaseCanvas(opened.sessionId, 'normal')).resolves.toEqual({
       kind: 'confirmation-required',
