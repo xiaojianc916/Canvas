@@ -5,7 +5,7 @@ use crate::{
     error::IpcError,
 };
 
-type DiagnosticsCommandResult<T> = std::result::Result<T, IpcError>;
+type DiagnosticsCommandResult<T> = Result<T, IpcError>;
 
 /// Returns and consumes the previous native process crash report.
 ///

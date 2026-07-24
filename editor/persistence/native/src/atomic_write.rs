@@ -56,7 +56,13 @@ pub fn atomic_write(path: impl AsRef<Path>, content: &[u8]) -> Result<()> {
     temporary.write_all(content)?;
     temporary.as_file().sync_all()?;
 
-    replace_destination(temporary.path(), destination)?;
+    // Windows 的 ReplaceFileW 无法替换仍被当前进程持有句柄的源文件。
+    // into_temp_path 会关闭 NamedTempFile 的文件句柄，同时保留 TempPath：
+    // - 替换成功后，源路径已被移动；
+    // - 替换失败时，TempPath Drop 会清理临时文件。
+    let temporary_path = temporary.into_temp_path();
+
+    replace_destination(temporary_path.as_ref(), destination)?;
     sync_directory(parent)?;
 
     Ok(())
