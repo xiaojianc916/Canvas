@@ -2,130 +2,25 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta
+      content="width=device-width, initial-scale=1.0"
+      name="viewport"
+    />
     <meta content="#f3f3f3" name="theme-color" />
+
     <!--
-      Native window, WebView and document bootstrap surface must remain aligned.
+      Native window, WebView and document surfaces must remain aligned.
       See docs/adr/ADR-003-opaque-window-surface.md.
     -->
-    <style id="bootstrap-fallback-styles">
-      #bootstrap-fallback {
-        box-sizing: border-box;
-        display: grid;
-        width: 100%;
-        height: 100%;
-        place-items: center;
-        padding: 32px;
-        color: #18181b;
-        font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-          "Segoe UI", sans-serif;
-      }
-
-      #bootstrap-fallback-card {
-        box-sizing: border-box;
-        width: min(100%, 680px);
-        padding: 24px;
-        overflow: hidden;
-        background: #ffffff;
-        border: 1px solid #dedede;
-        border-radius: 16px;
-        box-shadow:
-          0 16px 48px rgb(0 0 0 / 10%),
-          0 2px 8px rgb(0 0 0 / 6%);
-      }
-
-      #bootstrap-fallback-icon {
-        display: grid;
-        width: 40px;
-        height: 40px;
-        place-items: center;
-        color: #b42318;
-        font-size: 20px;
-        font-weight: 700;
-        background: #fee4e2;
-        border-radius: 12px;
-      }
-
-      #bootstrap-fallback-title {
-        margin: 18px 0 0;
-        font-size: 18px;
-        line-height: 28px;
-      }
-
-      #bootstrap-fallback-description {
-        margin: 8px 0 0;
-        color: #667085;
-        font-size: 14px;
-        line-height: 22px;
-      }
-
-      #bootstrap-fallback-details {
-        display: none;
-        margin-top: 16px;
-        padding: 12px;
-        overflow: hidden;
-        background: #f4f4f5;
-        border-radius: 10px;
-      }
-
-      #bootstrap-fallback-details[data-visible="true"] {
-        display: block;
-      }
-
-      #bootstrap-fallback-diagnostic {
-        max-height: 320px;
-        margin: 0;
-        overflow: auto;
-        color: #3f3f46;
-        font-family:
-          "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono",
-          monospace;
-        font-size: 11px;
-        line-height: 18px;
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-        user-select: text;
-      }
-
-      #bootstrap-fallback-actions {
-        display: none;
-        gap: 8px;
-        margin-top: 16px;
-        flex-wrap: wrap;
-      }
-
-      #bootstrap-fallback-actions[data-visible="true"] {
-        display: flex;
-      }
-
-      .bootstrap-fallback-button {
-        min-height: 36px;
-        padding: 0 14px;
-        color: #18181b;
-        font: inherit;
-        font-size: 13px;
-        font-weight: 600;
-        background: #ffffff;
-        border: 1px solid #d4d4d8;
-        border-radius: 8px;
-        cursor: pointer;
-      }
-
-      .bootstrap-fallback-button:hover {
-        background: #f4f4f5;
-      }
-
-      .bootstrap-fallback-button[data-primary="true"] {
-        color: #ffffff;
-        background: #18181b;
-        border-color: #18181b;
-      }
-    </style>
-
     <style id="window-backing-surface">
       :root {
         --window-backing-surface: #f3f3f3;
+        --fatal-foreground: #18181b;
+        --fatal-muted: #71717a;
+        --fatal-border: #d4d4d8;
+        --fatal-hover: rgb(24 24 27 / 5%);
+        --fatal-danger: #b42318;
+        --fatal-danger-surface: #fee4e2;
       }
 
       html,
@@ -136,54 +31,228 @@
         margin: 0;
         background: var(--window-backing-surface);
       }
+
+      .fatal-surface,
+      .fatal-surface * {
+        box-sizing: border-box;
+      }
+
+      .fatal-surface {
+        display: grid;
+        width: 100%;
+        min-height: 100%;
+        place-items: center;
+        overflow: auto;
+        padding: 48px 32px;
+        color: var(--fatal-foreground);
+        background: var(--window-backing-surface);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      .fatal-content {
+        width: min(100%, 620px);
+      }
+
+      .fatal-icon {
+        display: grid;
+        width: 44px;
+        height: 44px;
+        place-items: center;
+        color: var(--fatal-danger);
+        background: var(--fatal-danger-surface);
+        border-radius: 50%;
+      }
+
+      .fatal-icon svg {
+        width: 22px;
+        height: 22px;
+      }
+
+      .fatal-title {
+        margin: 22px 0 0;
+        font-size: 20px;
+        font-weight: 650;
+        line-height: 1.4;
+        letter-spacing: -0.015em;
+      }
+
+      .fatal-description {
+        max-width: 560px;
+        margin: 10px 0 0;
+        color: var(--fatal-muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .fatal-summary,
+      .fatal-secondary {
+        margin: 12px 0 0;
+        color: var(--fatal-muted);
+        font-family:
+          "Cascadia Code",
+          "SFMono-Regular",
+          Consolas,
+          "Liberation Mono",
+          monospace;
+        font-size: 11px;
+        line-height: 1.6;
+        overflow-wrap: anywhere;
+      }
+
+      .fatal-secondary {
+        font-family: inherit;
+      }
+
+      .fatal-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 24px;
+      }
+
+      .fatal-button {
+        display: inline-flex;
+        min-height: 36px;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        padding: 0 13px;
+        color: var(--fatal-foreground);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        background: transparent;
+        border: 1px solid var(--fatal-border);
+        border-radius: 8px;
+        cursor: pointer;
+        transition:
+          background-color 120ms ease,
+          border-color 120ms ease;
+      }
+
+      .fatal-button:hover {
+        background: var(--fatal-hover);
+      }
+
+      .fatal-button:focus-visible,
+      .fatal-details summary:focus-visible {
+        outline: 2px solid rgb(24 24 27 / 35%);
+        outline-offset: 2px;
+      }
+
+      .fatal-button-primary {
+        color: #ffffff;
+        background: var(--fatal-foreground);
+        border-color: var(--fatal-foreground);
+      }
+
+      .fatal-button-primary:hover {
+        background: #27272a;
+      }
+
+      .fatal-button-icon {
+        width: 15px;
+        height: 15px;
+      }
+
+      .fatal-details {
+        margin-top: 28px;
+        padding-top: 18px;
+        border-top: 1px solid var(--fatal-border);
+      }
+
+      .fatal-details summary {
+        width: fit-content;
+        color: var(--fatal-muted);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .fatal-diagnostic {
+        max-height: 320px;
+        margin: 16px 0 0;
+        overflow: auto;
+        color: #3f3f46;
+        font-family:
+          "Cascadia Code",
+          "SFMono-Regular",
+          Consolas,
+          "Liberation Mono",
+          monospace;
+        font-size: 11px;
+        line-height: 1.7;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        user-select: text;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --window-backing-surface: #18181b;
+          --fatal-foreground: #f4f4f5;
+          --fatal-muted: #a1a1aa;
+          --fatal-border: #3f3f46;
+          --fatal-hover: rgb(255 255 255 / 6%);
+          --fatal-danger: #f97066;
+          --fatal-danger-surface: rgb(240 68 56 / 14%);
+        }
+
+        .fatal-button-primary {
+          color: #18181b;
+          background: #f4f4f5;
+          border-color: #f4f4f5;
+        }
+
+        .fatal-button-primary:hover {
+          background: #e4e4e7;
+        }
+
+        .fatal-diagnostic {
+          color: #d4d4d8;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .fatal-surface {
+          place-items: start;
+          padding: 40px 24px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .fatal-button {
+          transition: none;
+        }
+      }
     </style>
+
     <title>Hybrid Canvas</title>
   </head>
+
   <body>
-    <div id="root">
-      <main id="bootstrap-fallback" role="status">
-        <section
-          aria-labelledby="bootstrap-fallback-title"
-          id="bootstrap-fallback-card"
-        >
-          <div aria-hidden="true" id="bootstrap-fallback-icon">!</div>
-          <h1 id="bootstrap-fallback-title">Hybrid Canvas 正在启动</h1>
-          <p id="bootstrap-fallback-description">
-            正在加载应用组件，请稍候。
-          </p>
+    <div id="root"></div>
 
-          <section
-            aria-label="技术详情"
-            id="bootstrap-fallback-details"
-          >
-            <pre id="bootstrap-fallback-diagnostic"></pre>
-          </section>
-
-          <div id="bootstrap-fallback-actions">
-            <button
-              class="bootstrap-fallback-button"
-              data-primary="true"
-              id="bootstrap-fallback-reload"
-              type="button"
-            >
-              重新加载
-            </button>
-            <button
-              class="bootstrap-fallback-button"
-              id="bootstrap-fallback-copy"
-              type="button"
-            >
-              复制诊断信息
-            </button>
-          </div>
-        </section>
-      </main>
-    </div>
-    <!-- 必须先于 React 入口加载，确保应用模块失败时仍有错误 UI。 -->
+    <!--
+      This module installs fatal collectors before the React entry executes.
+      It renders nothing during a healthy startup.
+    -->
     <script
-      src="/src/bootstrap/bootstrap-fallback.ts"
+      src="/src/fatal/pre-react-entry.ts"
       type="module"
     ></script>
-    <script src="/src/main.tsx" type="module"></script>
+
+    <script
+      src="/src/main.tsx"
+      type="module"
+    ></script>
   </body>
 </html>

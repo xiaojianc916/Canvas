@@ -9,7 +9,6 @@ import type { WorkbenchSessionStore } from '@hybrid-canvas/workspace/contracts'
 import { CommandPalette } from '@hybrid-canvas/workspace/react'
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { ApplicationTerminationCoordinator } from '../application/termination/application-termination-coordinator'
-import { UiErrorBoundary } from './boundaries/UiErrorBoundary'
 import { useGlobalCommandShortcuts } from './commands/useGlobalCommandShortcuts'
 import { reportUiError as reportError, UiFeedbackRegion } from './ui/ui-feedback'
 import { type WorkspaceCanvasUIPort, WorkspaceContainer } from './workspace/WorkspaceContainer'
@@ -179,7 +178,6 @@ export function AppShell({ runtime }: AppShellProps) {
 
   return (
     <EditorProvider licenseKey={runtime.tldrawLicenseKey}>
-      <UiErrorBoundary area="工作区">
         <WorkspaceContainer
           isWindowMaximized={isWindowMaximized}
           onCommandPaletteOpen={openCommandPalette}
@@ -191,7 +189,6 @@ export function AppShell({ runtime }: AppShellProps) {
           onWindowStartDragging={startWindowDragging}
           port={workspacePort}
         />
-      </UiErrorBoundary>
 
       <CommandPalette
         onOpenChange={setCommandPaletteOpen}

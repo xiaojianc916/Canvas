@@ -1,0 +1,55 @@
+import {
+  Component,
+  type ErrorInfo,
+  type ReactNode,
+} from 'react'
+import { fatalIncidentController } from './fatal-controller'
+
+export interface FatalErrorBoundaryProps {
+  readonly children: ReactNode
+}
+
+interface FatalErrorBoundaryState {
+  readonly crashed: boolean
+}
+
+export class FatalErrorBoundary extends Component<
+  FatalErrorBoundaryProps,
+  FatalErrorBoundaryState
+> {
+  override state: FatalErrorBoundaryState = {
+    crashed: false,
+  }
+
+  static getDerivedStateFromError(): FatalErrorBoundaryState {
+    return {
+      crashed: true,
+    }
+  }
+
+  override componentDidCatch(
+    error: Error,
+    info: ErrorInfo,
+  ): void {
+    fatalIncidentController.report({
+      error,
+      kind: 'render',
+      phase: 'running',
+      code: 'FATAL_REACT_RENDER_ERROR',
+      componentStack:
+        info.componentStack ?? undefined,
+      context: {
+        collector: 'react-error-boundary',
+      },
+    })
+  }
+
+  override render(): ReactNode {
+    if (this.state.crashed) {
+      // FatalErrorHost owns the only global error UI.
+      return null
+    }
+
+    return this.props.children
+  }
+}

@@ -1,28 +1,57 @@
 import type { Root } from 'react-dom/client'
 import { createRoot } from 'react-dom/client'
+import {
+  fatalIncidentController,
+} from '../fatal/fatal-controller'
+import { FatalErrorHost } from '../fatal/FatalErrorHost'
 import { AppShell } from '../presentation/AppShell'
-import { ApplicationErrorBoundary } from './ApplicationErrorBoundary'
 import { createApplicationRuntime } from './application'
 
 export interface MountedReactApplication {
-  readonly runtime: ReturnType<typeof createApplicationRuntime>
+  readonly runtime: ReturnType<
+    typeof createApplicationRuntime
+  >
   readonly unmount: () => Promise<void>
 }
 
-export function mountReactApplication(container: HTMLElement): MountedReactApplication {
-  const runtime = createApplicationRuntime({
-    tldrawLicenseKey: readTldrawLicenseKey(),
-  })
+export function mountReactApplication(
+  container: HTMLElement,
+): MountedReactApplication {
+  let runtime: ReturnType<
+    typeof createApplicationRuntime
+  >
+
+  try {
+    runtime = createApplicationRuntime({
+      tldrawLicenseKey: readTldrawLicenseKey(),
+    })
+  } catch (error: unknown) {
+    fatalIncidentController.report({
+      error,
+      kind: 'bootstrap',
+      phase: 'runtime-construction',
+      code: 'FATAL_APPLICATION_RUNTIME_CONSTRUCTION',
+      context: {
+        collector: 'react-root',
+      },
+    })
+
+    throw error
+  }
+
   const root: Root = createRoot(container)
 
+  fatalIncidentController.markReactMounted()
+
   root.render(
-    <ApplicationErrorBoundary>
+    <FatalErrorHost>
       <AppShell runtime={runtime} />
-    </ApplicationErrorBoundary>,
+    </FatalErrorHost>,
   )
 
   return {
     runtime,
+
     async unmount() {
       root.unmount()
       await runtime.dispose()
@@ -31,10 +60,13 @@ export function mountReactApplication(container: HTMLElement): MountedReactAppli
 }
 
 function readTldrawLicenseKey(): string {
-  const licenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY?.trim()
+  const licenseKey =
+    import.meta.env.VITE_TLDRAW_LICENSE_KEY?.trim()
 
   if (!licenseKey) {
-    throw new Error('VITE_TLDRAW_LICENSE_KEY_MISSING')
+    throw new Error(
+      'Required tldraw license configuration is missing.',
+    )
   }
 
   return licenseKey
