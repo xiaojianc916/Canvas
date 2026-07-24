@@ -1,4 +1,5 @@
 import type {
+  CreateFatalIncidentInput,
   FatalIncidentPhase,
 } from './fatal-incident'
 import {
@@ -27,8 +28,8 @@ let installed = false
 /**
  * Installs process-lifetime browser collectors.
  *
- * Resource element failures are intentionally ignored here because an image,
- * font or media load failure is not automatically an application-fatal error.
+ * Resource element failures are deliberately ignored. An image, font or media
+ * loading failure is not automatically an application-fatal incident.
  */
 export function installFatalCollectors(): void {
   if (installed) {
@@ -70,34 +71,40 @@ function handleWindowError(
   const reactMounted =
     isReactFatalHostMounted()
 
-  const error =
-    event.error ??
+  const capturedError =
+    event['error'] ??
     event.message ??
     'Unhandled window error'
 
+  const input: CreateFatalIncidentInput = {
+    error: capturedError,
+    kind: reactMounted
+      ? 'async'
+      : 'bootstrap',
+    phase: currentPhase(),
+    code: reactMounted
+      ? 'FATAL_UNHANDLED_WINDOW_ERROR'
+      : 'FATAL_BOOTSTRAP_WINDOW_ERROR',
+    ...optionalProperty(
+      'source',
+      nonEmptyString(event.filename),
+    ),
+    ...optionalProperty(
+      'line',
+      positiveNumber(event.lineno),
+    ),
+    ...optionalProperty(
+      'column',
+      positiveNumber(event.colno),
+    ),
+    context: {
+      collector: 'window-error',
+      eventType: event.type,
+    },
+  }
+
   const incident =
-    fatalIncidentController.report({
-      error,
-      kind: reactMounted
-        ? 'async'
-        : 'bootstrap',
-      phase: currentPhase(),
-      code: reactMounted
-        ? 'FATAL_UNHANDLED_WINDOW_ERROR'
-        : 'FATAL_BOOTSTRAP_WINDOW_ERROR',
-      source:
-        event.filename || undefined,
-      line:
-        event.lineno || undefined,
-      column:
-        event.colno || undefined,
-      context: {
-        collector:
-          'window-error',
-        eventType:
-          event.type,
-      },
-    })
+    fatalIncidentController.report(input)
 
   emergencyLogIncident(incident)
 }
@@ -108,23 +115,23 @@ function handleUnhandledRejection(
   const reactMounted =
     isReactFatalHostMounted()
 
+  const input: CreateFatalIncidentInput = {
+    error: event.reason,
+    kind: reactMounted
+      ? 'async'
+      : 'bootstrap',
+    phase: currentPhase(),
+    code: reactMounted
+      ? 'FATAL_UNHANDLED_PROMISE_REJECTION'
+      : 'FATAL_BOOTSTRAP_PROMISE_REJECTION',
+    context: {
+      collector: 'unhandled-rejection',
+      eventType: event.type,
+    },
+  }
+
   const incident =
-    fatalIncidentController.report({
-      error: event.reason,
-      kind: reactMounted
-        ? 'async'
-        : 'bootstrap',
-      phase: currentPhase(),
-      code: reactMounted
-        ? 'FATAL_UNHANDLED_PROMISE_REJECTION'
-        : 'FATAL_BOOTSTRAP_PROMISE_REJECTION',
-      context: {
-        collector:
-          'unhandled-rejection',
-        eventType:
-          event.type,
-      },
-    })
+    fatalIncidentController.report(input)
 
   emergencyLogIncident(incident)
 }
@@ -135,18 +142,29 @@ function handleViteDiagnostic(
   const viteError =
     parseViteError(payload)
 
+  const input: CreateFatalIncidentInput = {
+    error: viteError.error,
+    kind: 'vite',
+    phase: currentPhase(),
+    code:
+      'FATAL_VITE_DEVELOPMENT_ERROR',
+    ...optionalProperty(
+      'source',
+      viteError.source,
+    ),
+    ...optionalProperty(
+      'line',
+      viteError.line,
+    ),
+    ...optionalProperty(
+      'column',
+      viteError.column,
+    ),
+    context: viteError.context,
+  }
+
   const incident =
-    fatalIncidentController.report({
-      error: viteError.error,
-      kind: 'vite',
-      phase: currentPhase(),
-      code:
-        'FATAL_VITE_DEVELOPMENT_ERROR',
-      source: viteError.source,
-      line: viteError.line,
-      column: viteError.column,
-      context: viteError.context,
-    })
+    fatalIncidentController.report(input)
 
   emergencyLogIncident(incident)
 }
@@ -167,19 +185,26 @@ function parseViteError(
         stringifyUnknown(payload),
       ),
       context: {
+        collector: 'vite-diagnostic',
         diagnosticSource: 'vite',
       },
     }
   }
 
-  const rawError = isRecord(payload.error)
-    ? payload.error
+  const payloadError =
+    payload['error']
+
+  const rawError = isRecord(payloadError)
+    ? payloadError
     : payload
 
+  const locationValue =
+    rawError['location']
+
   const rawLocation = isRecord(
-    rawError.location,
+    locationValue,
   )
-    ? rawError.location
+    ? locationValue
     : undefined
 
   const error = createError(
@@ -191,27 +216,32 @@ function parseViteError(
     readString(rawError, 'stack'),
   )
 
+  const source =
+    readString(rawLocation, 'file') ??
+    readString(rawError, 'id')
+
+  const line =
+    readNumber(rawLocation, 'line')
+
+  const column =
+    readNumber(rawLocation, 'column')
+
   return {
     error,
-    source:
-      readString(
-        rawLocation,
-        'file',
-      ) ??
-      readString(rawError, 'id'),
-    line:
-      readNumber(
-        rawLocation,
-        'line',
-      ),
-    column:
-      readNumber(
-        rawLocation,
-        'column',
-      ),
+    ...optionalProperty(
+      'source',
+      source,
+    ),
+    ...optionalProperty(
+      'line',
+      line,
+    ),
+    ...optionalProperty(
+      'column',
+      column,
+    ),
     context: {
-      collector:
-        'vite-diagnostic',
+      collector: 'vite-diagnostic',
       diagnosticSource:
         readString(
           payload,
@@ -249,7 +279,7 @@ function createError(
   const error = new Error(message)
   error.name = name
 
-  if (stack) {
+  if (stack !== undefined) {
     error.stack = stack
   }
 
@@ -264,9 +294,16 @@ function stringifyUnknown(
   }
 
   try {
-    return JSON.stringify(value)
+    const serialized =
+      JSON.stringify(value)
+
+    return serialized ?? String(value)
   } catch {
-    return String(value)
+    try {
+      return String(value)
+    } catch {
+      return '[Unserializable Vite error]'
+    }
   }
 }
 
@@ -303,6 +340,38 @@ function readNumber(
   return typeof value === 'number'
     ? value
     : undefined
+}
+
+function nonEmptyString(
+  value: string,
+): string | undefined {
+  return value.length > 0
+    ? value
+    : undefined
+}
+
+function positiveNumber(
+  value: number,
+): number | undefined {
+  return value > 0
+    ? value
+    : undefined
+}
+
+function optionalProperty<
+  Key extends string,
+  Value,
+>(
+  key: Key,
+  value: Value | undefined,
+): Partial<Record<Key, Value>> {
+  if (value === undefined) {
+    return {}
+  }
+
+  return {
+    [key]: value,
+  } as Record<Key, Value>
 }
 
 function emergencyLogIncident(

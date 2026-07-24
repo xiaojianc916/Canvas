@@ -26,11 +26,9 @@ const HEALTHY_SNAPSHOT: FatalSnapshot =
   })
 
 /**
- * Owns the terminal fatal-incident state.
+ * Owns only the terminal fatal-incident state.
  *
- * This class deliberately has no browser, React, Vite, logging or native
- * dependencies. Error collectors adapt external failures into
- * CreateFatalIncidentInput before reporting them here.
+ * Browser, React, Vite and native failure sources are adapted elsewhere.
  */
 export class FatalIncidentController {
   private snapshot: FatalSnapshot =
@@ -42,11 +40,16 @@ export class FatalIncidentController {
   private readonly fingerprints =
     new Set<string>()
 
+  private readonly createIncident:
+    FatalIncidentFactory
+
   constructor(
-    private readonly createIncident:
+    createIncident:
       FatalIncidentFactory =
       createFatalIncident,
-  ) {}
+  ) {
+    this.createIncident = createIncident
+  }
 
   readonly getSnapshot =
     (): FatalSnapshot => {

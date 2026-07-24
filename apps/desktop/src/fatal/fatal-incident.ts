@@ -121,15 +121,32 @@ export function createFatalIncident(
       'Hybrid Canvas 无法安全地继续当前运行。请复制诊断信息后重新加载应用。',
     technicalMessage,
     errorName: normalized.name,
-    stack: normalized.stack,
-    componentStack:
+    ...optionalProperty(
+      'stack',
+      normalized.stack,
+    ),
+    ...optionalProperty(
+      'componentStack',
       normalizeOptionalText(
         input.componentStack ?? undefined,
         MAX_STACK_LENGTH,
       ),
-    source: normalizeOptionalText(input.source, MAX_MESSAGE_LENGTH),
-    line: input.line,
-    column: input.column,
+    ),
+    ...optionalProperty(
+      'source',
+      normalizeOptionalText(
+        input.source,
+        MAX_MESSAGE_LENGTH,
+      ),
+    ),
+    ...optionalProperty(
+      'line',
+      input.line,
+    ),
+    ...optionalProperty(
+      'column',
+      input.column,
+    ),
     occurredAt,
     pageUrl: redactText(
       globalThis.location?.href ?? 'unknown',
@@ -204,9 +221,12 @@ export function normalizeUnknownError(
         value.message || 'Unknown error',
         MAX_MESSAGE_LENGTH,
       ),
-      stack: normalizeOptionalText(
-        value.stack,
-        MAX_STACK_LENGTH,
+      ...optionalProperty(
+        'stack',
+        normalizeOptionalText(
+          value.stack,
+          MAX_STACK_LENGTH,
+        ),
       ),
     }
   }
@@ -312,6 +332,21 @@ function safeStringify(value: unknown): string {
   }
 }
 
+function optionalProperty<
+  Key extends string,
+  Value,
+>(
+  key: Key,
+  value: Value | undefined,
+): Partial<Record<Key, Value>> {
+  if (value === undefined) {
+    return {}
+  }
+
+  return {
+    [key]: value,
+  } as Record<Key, Value>
+}
 function normalizeOptionalText(
   value: string | undefined,
   maximumLength: number,

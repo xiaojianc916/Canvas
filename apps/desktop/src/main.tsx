@@ -63,7 +63,11 @@ function reportPreviousNativeCrash(
     phase: 'preflight',
     code: 'FATAL_PREVIOUS_NATIVE_PROCESS_CRASH',
     title: '应用上次运行时异常终止',
-    source: report.location ?? undefined,
+    ...(report.location === null
+      ? {}
+      : {
+          source: report.location,
+        }),
     recovery: 'reload',
     context: {
       nativeIncidentId: report.incidentId,

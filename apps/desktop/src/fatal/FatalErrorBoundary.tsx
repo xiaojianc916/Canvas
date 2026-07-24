@@ -31,13 +31,19 @@ export class FatalErrorBoundary extends Component<
     error: Error,
     info: ErrorInfo,
   ): void {
+    const componentStack =
+      info.componentStack ?? undefined
+
     fatalIncidentController.report({
       error,
       kind: 'render',
       phase: 'running',
       code: 'FATAL_REACT_RENDER_ERROR',
-      componentStack:
-        info.componentStack ?? undefined,
+      ...(componentStack === undefined
+        ? {}
+        : {
+            componentStack,
+          }),
       context: {
         collector: 'react-error-boundary',
       },
@@ -46,7 +52,7 @@ export class FatalErrorBoundary extends Component<
 
   override render(): ReactNode {
     if (this.state.crashed) {
-      // FatalErrorHost owns the only global error UI.
+      // FatalErrorHost owns the only global fatal UI.
       return null
     }
 

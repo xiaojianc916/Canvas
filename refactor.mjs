@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import {
-  mkdir,
   readFile,
   writeFile,
 } from 'node:fs/promises'
@@ -16,57 +15,37 @@ const PATHS = Object.freeze({
   controller:
     'apps/desktop/src/fatal/fatal-controller.ts',
 
-  runtime:
-    'apps/desktop/src/fatal/fatal-runtime.ts',
-
   collectors:
     'apps/desktop/src/fatal/fatal-collectors.ts',
-
-  controllerTest:
-    'apps/desktop/src/fatal/fatal-controller.test.ts',
-
-  preReact:
-    'apps/desktop/src/fatal/pre-react-entry.ts',
 
   boundary:
     'apps/desktop/src/fatal/FatalErrorBoundary.tsx',
 
-  host:
-    'apps/desktop/src/fatal/FatalErrorHost.tsx',
-
-  reactRoot:
-    'apps/desktop/src/bootstrap/react-root.tsx',
+  incident:
+    'apps/desktop/src/fatal/fatal-incident.ts',
 
   main:
     'apps/desktop/src/main.tsx',
-
-  architectureCheck:
-    'tests/architecture/check-fatal-state-machine.mjs',
 })
 
 async function main() {
   await assertRepository()
 
-  await replacePureController()
-  await createFatalRuntime()
-  await createFatalCollectors()
-  await createControllerTests()
-  await updatePreReactEntry()
-  await updateRuntimeImports()
-  await createArchitectureCheck()
-  await registerArchitectureCheck()
-  await verifyNoLegacyImports()
+  await replaceController()
+  await replaceCollectors()
+  await replaceBoundary()
+  await repairFatalIncident()
+  await repairNativeCrashBootstrap()
+  await verifyStrictTypePatterns()
 
   console.log('')
   console.log(
-    'Fatal state machine refactor applied.',
+    'Fatal strict TypeScript errors repaired.',
   )
   console.log('')
   console.log('Run:')
   console.log('  pnpm format')
   console.log('  pnpm typecheck')
-  console.log('  pnpm test')
-  console.log('  pnpm test:architecture')
 }
 
 async function assertRepository() {
@@ -84,7 +63,7 @@ async function assertRepository() {
   }
 }
 
-async function replacePureController() {
+async function replaceController() {
   await writeText(
     PATHS.controller,
     String.raw`
@@ -116,11 +95,9 @@ const HEALTHY_SNAPSHOT: FatalSnapshot =
   })
 
 /**
- * Owns the terminal fatal-incident state.
+ * Owns only the terminal fatal-incident state.
  *
- * This class deliberately has no browser, React, Vite, logging or native
- * dependencies. Error collectors adapt external failures into
- * CreateFatalIncidentInput before reporting them here.
+ * Browser, React, Vite and native failure sources are adapted elsewhere.
  */
 export class FatalIncidentController {
   private snapshot: FatalSnapshot =
@@ -132,11 +109,16 @@ export class FatalIncidentController {
   private readonly fingerprints =
     new Set<string>()
 
+  private readonly createIncident:
+    FatalIncidentFactory
+
   constructor(
-    private readonly createIncident:
+    createIncident:
       FatalIncidentFactory =
       createFatalIncident,
-  ) {}
+  ) {
+    this.createIncident = createIncident
+  }
 
   readonly getSnapshot =
     (): FatalSnapshot => {
@@ -231,33 +213,12 @@ function emergencyReportListenerFailure(
   )
 }
 
-async function createFatalRuntime() {
-  await writeText(
-    PATHS.runtime,
-    String.raw`
-import { FatalIncidentController } from './fatal-controller'
-
-export const fatalIncidentController =
-  new FatalIncidentController()
-
-let reactFatalHostMounted = false
-
-export function markReactFatalHostMounted(): void {
-  reactFatalHostMounted = true
-}
-
-export function isReactFatalHostMounted(): boolean {
-  return reactFatalHostMounted
-}
-`,
-  )
-}
-
-async function createFatalCollectors() {
+async function replaceCollectors() {
   await writeText(
     PATHS.collectors,
     String.raw`
 import type {
+  CreateFatalIncidentInput,
   FatalIncidentPhase,
 } from './fatal-incident'
 import {
@@ -286,8 +247,8 @@ let installed = false
 /**
  * Installs process-lifetime browser collectors.
  *
- * Resource element failures are intentionally ignored here because an image,
- * font or media load failure is not automatically an application-fatal error.
+ * Resource element failures are deliberately ignored. An image, font or media
+ * loading failure is not automatically an application-fatal incident.
  */
 export function installFatalCollectors(): void {
   if (installed) {
@@ -329,34 +290,40 @@ function handleWindowError(
   const reactMounted =
     isReactFatalHostMounted()
 
-  const error =
-    event.error ??
+  const capturedError =
+    event['error'] ??
     event.message ??
     'Unhandled window error'
 
+  const input: CreateFatalIncidentInput = {
+    error: capturedError,
+    kind: reactMounted
+      ? 'async'
+      : 'bootstrap',
+    phase: currentPhase(),
+    code: reactMounted
+      ? 'FATAL_UNHANDLED_WINDOW_ERROR'
+      : 'FATAL_BOOTSTRAP_WINDOW_ERROR',
+    ...optionalProperty(
+      'source',
+      nonEmptyString(event.filename),
+    ),
+    ...optionalProperty(
+      'line',
+      positiveNumber(event.lineno),
+    ),
+    ...optionalProperty(
+      'column',
+      positiveNumber(event.colno),
+    ),
+    context: {
+      collector: 'window-error',
+      eventType: event.type,
+    },
+  }
+
   const incident =
-    fatalIncidentController.report({
-      error,
-      kind: reactMounted
-        ? 'async'
-        : 'bootstrap',
-      phase: currentPhase(),
-      code: reactMounted
-        ? 'FATAL_UNHANDLED_WINDOW_ERROR'
-        : 'FATAL_BOOTSTRAP_WINDOW_ERROR',
-      source:
-        event.filename || undefined,
-      line:
-        event.lineno || undefined,
-      column:
-        event.colno || undefined,
-      context: {
-        collector:
-          'window-error',
-        eventType:
-          event.type,
-      },
-    })
+    fatalIncidentController.report(input)
 
   emergencyLogIncident(incident)
 }
@@ -367,23 +334,23 @@ function handleUnhandledRejection(
   const reactMounted =
     isReactFatalHostMounted()
 
+  const input: CreateFatalIncidentInput = {
+    error: event.reason,
+    kind: reactMounted
+      ? 'async'
+      : 'bootstrap',
+    phase: currentPhase(),
+    code: reactMounted
+      ? 'FATAL_UNHANDLED_PROMISE_REJECTION'
+      : 'FATAL_BOOTSTRAP_PROMISE_REJECTION',
+    context: {
+      collector: 'unhandled-rejection',
+      eventType: event.type,
+    },
+  }
+
   const incident =
-    fatalIncidentController.report({
-      error: event.reason,
-      kind: reactMounted
-        ? 'async'
-        : 'bootstrap',
-      phase: currentPhase(),
-      code: reactMounted
-        ? 'FATAL_UNHANDLED_PROMISE_REJECTION'
-        : 'FATAL_BOOTSTRAP_PROMISE_REJECTION',
-      context: {
-        collector:
-          'unhandled-rejection',
-        eventType:
-          event.type,
-      },
-    })
+    fatalIncidentController.report(input)
 
   emergencyLogIncident(incident)
 }
@@ -394,18 +361,29 @@ function handleViteDiagnostic(
   const viteError =
     parseViteError(payload)
 
+  const input: CreateFatalIncidentInput = {
+    error: viteError.error,
+    kind: 'vite',
+    phase: currentPhase(),
+    code:
+      'FATAL_VITE_DEVELOPMENT_ERROR',
+    ...optionalProperty(
+      'source',
+      viteError.source,
+    ),
+    ...optionalProperty(
+      'line',
+      viteError.line,
+    ),
+    ...optionalProperty(
+      'column',
+      viteError.column,
+    ),
+    context: viteError.context,
+  }
+
   const incident =
-    fatalIncidentController.report({
-      error: viteError.error,
-      kind: 'vite',
-      phase: currentPhase(),
-      code:
-        'FATAL_VITE_DEVELOPMENT_ERROR',
-      source: viteError.source,
-      line: viteError.line,
-      column: viteError.column,
-      context: viteError.context,
-    })
+    fatalIncidentController.report(input)
 
   emergencyLogIncident(incident)
 }
@@ -426,19 +404,26 @@ function parseViteError(
         stringifyUnknown(payload),
       ),
       context: {
+        collector: 'vite-diagnostic',
         diagnosticSource: 'vite',
       },
     }
   }
 
-  const rawError = isRecord(payload.error)
-    ? payload.error
+  const payloadError =
+    payload['error']
+
+  const rawError = isRecord(payloadError)
+    ? payloadError
     : payload
 
+  const locationValue =
+    rawError['location']
+
   const rawLocation = isRecord(
-    rawError.location,
+    locationValue,
   )
-    ? rawError.location
+    ? locationValue
     : undefined
 
   const error = createError(
@@ -450,27 +435,32 @@ function parseViteError(
     readString(rawError, 'stack'),
   )
 
+  const source =
+    readString(rawLocation, 'file') ??
+    readString(rawError, 'id')
+
+  const line =
+    readNumber(rawLocation, 'line')
+
+  const column =
+    readNumber(rawLocation, 'column')
+
   return {
     error,
-    source:
-      readString(
-        rawLocation,
-        'file',
-      ) ??
-      readString(rawError, 'id'),
-    line:
-      readNumber(
-        rawLocation,
-        'line',
-      ),
-    column:
-      readNumber(
-        rawLocation,
-        'column',
-      ),
+    ...optionalProperty(
+      'source',
+      source,
+    ),
+    ...optionalProperty(
+      'line',
+      line,
+    ),
+    ...optionalProperty(
+      'column',
+      column,
+    ),
     context: {
-      collector:
-        'vite-diagnostic',
+      collector: 'vite-diagnostic',
       diagnosticSource:
         readString(
           payload,
@@ -508,7 +498,7 @@ function createError(
   const error = new Error(message)
   error.name = name
 
-  if (stack) {
+  if (stack !== undefined) {
     error.stack = stack
   }
 
@@ -523,9 +513,16 @@ function stringifyUnknown(
   }
 
   try {
-    return JSON.stringify(value)
+    const serialized =
+      JSON.stringify(value)
+
+    return serialized ?? String(value)
   } catch {
-    return String(value)
+    try {
+      return String(value)
+    } catch {
+      return '[Unserializable Vite error]'
+    }
   }
 }
 
@@ -564,6 +561,38 @@ function readNumber(
     : undefined
 }
 
+function nonEmptyString(
+  value: string,
+): string | undefined {
+  return value.length > 0
+    ? value
+    : undefined
+}
+
+function positiveNumber(
+  value: number,
+): number | undefined {
+  return value > 0
+    ? value
+    : undefined
+}
+
+function optionalProperty<
+  Key extends string,
+  Value,
+>(
+  key: Key,
+  value: Value | undefined,
+): Partial<Record<Key, Value>> {
+  if (value === undefined) {
+    return {}
+  }
+
+  return {
+    [key]: value,
+  } as Record<Key, Value>
+}
+
 function emergencyLogIncident(
   incident: {
     readonly id: string
@@ -584,320 +613,181 @@ function emergencyLogIncident(
   )
 }
 
-async function createControllerTests() {
+async function replaceBoundary() {
   await writeText(
-    PATHS.controllerTest,
+    PATHS.boundary,
     String.raw`
 import {
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest'
-import {
-  FatalIncidentController,
-  type FatalIncidentFactory,
-} from './fatal-controller'
-import type {
-  CreateFatalIncidentInput,
-  FatalIncident,
-} from './fatal-incident'
+  Component,
+  type ErrorInfo,
+  type ReactNode,
+} from 'react'
+import { fatalIncidentController } from './fatal-runtime'
 
-describe('FatalIncidentController', () => {
-  it('starts healthy', () => {
-    const controller =
-      createController()
-
-    expect(
-      controller.getSnapshot(),
-    ).toEqual({
-      status: 'healthy',
-    })
-  })
-
-  it('stores the first fatal incident', () => {
-    const controller =
-      createController()
-
-    const incident = controller.report(
-      createInput('FIRST'),
-    )
-
-    expect(
-      controller.getSnapshot(),
-    ).toEqual({
-      status: 'fatal',
-      incident,
-      additionalIncidentCount: 0,
-    })
-  })
-
-  it('keeps the first fatal incident as the primary failure', () => {
-    const controller =
-      createController()
-
-    const first = controller.report(
-      createInput('FIRST'),
-    )
-
-    controller.report(
-      createInput('SECOND'),
-    )
-
-    expect(
-      controller.getSnapshot(),
-    ).toEqual({
-      status: 'fatal',
-      incident: first,
-      additionalIncidentCount: 1,
-    })
-  })
-
-  it('deduplicates incidents with the same fingerprint', () => {
-    const controller =
-      createController()
-
-    const first = controller.report(
-      createInput('DUPLICATE'),
-    )
-
-    const second = controller.report(
-      createInput('DUPLICATE'),
-    )
-
-    expect(second).toBe(first)
-
-    expect(
-      controller.getSnapshot(),
-    ).toEqual({
-      status: 'fatal',
-      incident: first,
-      additionalIncidentCount: 0,
-    })
-  })
-
-  it('notifies subscribers after state transitions', () => {
-    const controller =
-      createController()
-
-    const listener = vi.fn()
-
-    const unsubscribe =
-      controller.subscribe(listener)
-
-    controller.report(
-      createInput('FIRST'),
-    )
-
-    expect(listener).toHaveBeenCalledTimes(1)
-
-    controller.report(
-      createInput('SECOND'),
-    )
-
-    expect(listener).toHaveBeenCalledTimes(2)
-
-    unsubscribe()
-
-    controller.report(
-      createInput('THIRD'),
-    )
-
-    expect(listener).toHaveBeenCalledTimes(2)
-  })
-
-  it('isolates a failing subscriber', () => {
-    const controller =
-      createController()
-
-    const healthyListener = vi.fn()
-
-    controller.subscribe(() => {
-      throw new Error(
-        'listener failed',
-      )
-    })
-
-    controller.subscribe(
-      healthyListener,
-    )
-
-    expect(() => {
-      controller.report(
-        createInput('FIRST'),
-      )
-    }).not.toThrow()
-
-    expect(
-      healthyListener,
-    ).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps getSnapshot stable until a transition occurs', () => {
-    const controller =
-      createController()
-
-    const healthyOne =
-      controller.getSnapshot()
-
-    const healthyTwo =
-      controller.getSnapshot()
-
-    expect(healthyOne).toBe(healthyTwo)
-
-    controller.report(
-      createInput('FIRST'),
-    )
-
-    const fatalOne =
-      controller.getSnapshot()
-
-    const fatalTwo =
-      controller.getSnapshot()
-
-    expect(fatalOne).toBe(fatalTwo)
-    expect(fatalOne).not.toBe(
-      healthyOne,
-    )
-  })
-})
-
-function createController(): FatalIncidentController {
-  let sequence = 0
-
-  const factory: FatalIncidentFactory = (
-    input,
-  ) => {
-    sequence += 1
-
-    return createIncident(
-      input,
-      sequence,
-    )
-  }
-
-  return new FatalIncidentController(
-    factory,
-  )
+export interface FatalErrorBoundaryProps {
+  readonly children: ReactNode
 }
 
-function createInput(
-  code: string,
-): CreateFatalIncidentInput {
-  return {
-    error: new Error(code),
-    kind: 'invariant',
-    phase: 'running',
-    code,
-  }
+interface FatalErrorBoundaryState {
+  readonly crashed: boolean
 }
 
-function createIncident(
-  input: CreateFatalIncidentInput,
-  sequence: number,
-): FatalIncident {
-  const code =
-    input.code ?? 'UNKNOWN'
+export class FatalErrorBoundary extends Component<
+  FatalErrorBoundaryProps,
+  FatalErrorBoundaryState
+> {
+  override state: FatalErrorBoundaryState = {
+    crashed: false,
+  }
 
-  return {
-    id: 'incident-' + String(sequence),
-    fingerprint: code,
-    severity: 'fatal',
-    kind: input.kind,
-    phase: input.phase,
-    code,
-    title: 'Fatal',
-    message: 'Fatal',
-    technicalMessage: code,
-    errorName: 'Error',
-    occurredAt:
-      '2026-07-24T00:00:00.000Z',
-    pageUrl: 'http://localhost',
-    userAgent: 'test',
-    recovery: 'reload',
-    context: {},
-    recentLogs: [],
+  static getDerivedStateFromError(): FatalErrorBoundaryState {
+    return {
+      crashed: true,
+    }
+  }
+
+  override componentDidCatch(
+    error: Error,
+    info: ErrorInfo,
+  ): void {
+    const componentStack =
+      info.componentStack ?? undefined
+
+    fatalIncidentController.report({
+      error,
+      kind: 'render',
+      phase: 'running',
+      code: 'FATAL_REACT_RENDER_ERROR',
+      ...(componentStack === undefined
+        ? {}
+        : {
+            componentStack,
+          }),
+      context: {
+        collector: 'react-error-boundary',
+      },
+    })
+  }
+
+  override render(): ReactNode {
+    if (this.state.crashed) {
+      // FatalErrorHost owns the only global fatal UI.
+      return null
+    }
+
+    return this.props.children
   }
 }
 `,
   )
 }
 
-async function updatePreReactEntry() {
+async function repairFatalIncident() {
   await transformFile(
-    PATHS.preReact,
+    PATHS.incident,
     (source) => {
       let next = source
 
       next = next.replace(
-        "import { fatalIncidentController } from './fatal-controller'",
         [
-          "import { installFatalCollectors } from './fatal-collectors'",
-          'import {',
-          '  fatalIncidentController,',
-          '  isReactFatalHostMounted,',
-          "} from './fatal-runtime'",
+          '    errorName: normalized.name,',
+          '    stack: normalized.stack,',
+          '    componentStack:',
+          '      normalizeOptionalText(',
+          '        input.componentStack ?? undefined,',
+          '        MAX_STACK_LENGTH,',
+          '      ),',
+          '    source: normalizeOptionalText(input.source, MAX_MESSAGE_LENGTH),',
+          '    line: input.line,',
+          '    column: input.column,',
+          '    occurredAt,',
+        ].join('\n'),
+        [
+          '    errorName: normalized.name,',
+          '    ...optionalProperty(',
+          "      'stack',",
+          '      normalized.stack,',
+          '    ),',
+          '    ...optionalProperty(',
+          "      'componentStack',",
+          '      normalizeOptionalText(',
+          '        input.componentStack ?? undefined,',
+          '        MAX_STACK_LENGTH,',
+          '      ),',
+          '    ),',
+          '    ...optionalProperty(',
+          "      'source',",
+          '      normalizeOptionalText(',
+          '        input.source,',
+          '        MAX_MESSAGE_LENGTH,',
+          '      ),',
+          '    ),',
+          '    ...optionalProperty(',
+          "      'line',",
+          '      input.line,',
+          '    ),',
+          '    ...optionalProperty(',
+          "      'column',",
+          '      input.column,',
+          '    ),',
+          '    occurredAt,',
         ].join('\n'),
       )
 
       next = next.replace(
-        'fatalIncidentController.installCollectors()',
-        'installFatalCollectors()',
-      )
-
-      next = next.replaceAll(
-        'fatalIncidentController.isReactMounted()',
-        'isReactFatalHostMounted()',
-      )
-
-      return next
-    },
-  )
-}
-
-async function updateRuntimeImports() {
-  await transformFile(
-    PATHS.boundary,
-    replaceControllerImport,
-  )
-
-  await transformFile(
-    PATHS.host,
-    replaceControllerImport,
-  )
-
-  await transformFile(
-    PATHS.main,
-    replaceControllerImport,
-  )
-
-  await transformFile(
-    PATHS.reactRoot,
-    (source) => {
-      let next =
-        replaceControllerImport(source)
-
-      next = next.replace(
-        'fatalIncidentController.markReactMounted()',
-        'markReactFatalHostMounted()',
+        [
+          '      stack: normalizeOptionalText(',
+          '        value.stack,',
+          '        MAX_STACK_LENGTH,',
+          '      ),',
+        ].join('\n'),
+        [
+          '      ...optionalProperty(',
+          "        'stack',",
+          '        normalizeOptionalText(',
+          '          value.stack,',
+          '          MAX_STACK_LENGTH,',
+          '        ),',
+          '      ),',
+        ].join('\n'),
       )
 
       if (
-        next.includes(
-          'markReactFatalHostMounted()',
-        ) &&
         !next.includes(
-          '  markReactFatalHostMounted,',
+          'function optionalProperty<',
         )
       ) {
+        const marker =
+          'function normalizeOptionalText('
+
+        if (!next.includes(marker)) {
+          throw new Error(
+            'Could not find the fatal incident helper insertion point.',
+          )
+        }
+
+        const helper = [
+          'function optionalProperty<',
+          '  Key extends string,',
+          '  Value,',
+          '>(',
+          '  key: Key,',
+          '  value: Value | undefined,',
+          '): Partial<Record<Key, Value>> {',
+          '  if (value === undefined) {',
+          '    return {}',
+          '  }',
+          '',
+          '  return {',
+          '    [key]: value,',
+          '  } as Record<Key, Value>',
+          '}',
+          '',
+        ].join('\n')
+
         next = next.replace(
-          /import\s+\{\s*fatalIncidentController,?\s*\}\s+from\s+['"]\.\.\/fatal\/fatal-runtime['"]/,
-          [
-            'import {',
-            '  fatalIncidentController,',
-            '  markReactFatalHostMounted,',
-            "} from '../fatal/fatal-runtime'",
-          ].join('\n'),
+          marker,
+          helper + marker,
         )
       }
 
@@ -906,235 +796,56 @@ async function updateRuntimeImports() {
   )
 }
 
-function replaceControllerImport(source) {
-  return source
-    .replaceAll(
-      "from './fatal-controller'",
-      "from './fatal-runtime'",
-    )
-    .replaceAll(
-      "from '../fatal/fatal-controller'",
-      "from '../fatal/fatal-runtime'",
-    )
-}
+async function repairNativeCrashBootstrap() {
+  const absolutePath =
+    resolvePath(PATHS.main)
 
-async function createArchitectureCheck() {
-  await writeText(
-    PATHS.architectureCheck,
-    String.raw`
-#!/usr/bin/env node
+  let source = await readFile(
+    absolutePath,
+    'utf8',
+  )
 
-import {
-  existsSync,
-  readFileSync,
-} from 'node:fs'
-import path from 'node:path'
-import process from 'node:process'
-
-const ROOT = process.cwd()
-const failures = []
-
-const paths = {
-  controller:
-    'apps/desktop/src/fatal/fatal-controller.ts',
-  runtime:
-    'apps/desktop/src/fatal/fatal-runtime.ts',
-  collectors:
-    'apps/desktop/src/fatal/fatal-collectors.ts',
-  preReact:
-    'apps/desktop/src/fatal/pre-react-entry.ts',
-  host:
-    'apps/desktop/src/fatal/FatalErrorHost.tsx',
-}
-
-for (const relativePath of Object.values(paths)) {
   if (
-    !existsSync(
-      path.join(ROOT, relativePath),
+    !source.includes(
+      'FATAL_PREVIOUS_NATIVE_PROCESS_CRASH',
     )
   ) {
-    failures.push(
-      'Missing fatal state-machine file: ' +
-        relativePath,
+    console.log(
+      PATHS.main +
+        ': no Native crash bootstrap repair required.',
     )
+    return
   }
-}
 
-if (failures.length === 0) {
-  const controller = read(
-    paths.controller,
-  )
-
-  const runtime = read(
-    paths.runtime,
-  )
-
-  const collectors = read(
-    paths.collectors,
-  )
-
-  const preReact = read(
-    paths.preReact,
-  )
-
-  const host = read(paths.host)
-
-  forbidText(
-    controller,
-    'window.',
-    'Pure fatal controller depends on window.',
-  )
-
-  forbidText(
-    controller,
-    'import.meta',
-    'Pure fatal controller depends on Vite.',
-  )
-
-  forbidText(
-    controller,
-    'reactMounted',
-    'Pure fatal controller owns presentation state.',
-  )
-
-  forbidText(
-    controller,
-    'addEventListener',
-    'Pure fatal controller installs browser listeners.',
-  )
-
-  requireText(
-    controller,
-    'export class FatalIncidentController',
-    'FatalIncidentController is not independently constructible.',
-  )
-
-  requireText(
-    runtime,
-    'new FatalIncidentController()',
-    'Application fatal singleton is not owned by fatal-runtime.',
-  )
-
-  requireText(
-    collectors,
-    "window.addEventListener(",
-    'Browser fatal collectors are not isolated.',
-  )
-
-  requireText(
-    collectors,
-    "if (!(event instanceof ErrorEvent))",
-    'Resource errors are not excluded from global fatal handling.',
-  )
-
-  requireText(
-    preReact,
-    'installFatalCollectors()',
-    'Pre-React bootstrap does not install fatal collectors.',
-  )
-
-  requireText(
-    host,
-    "from './fatal-runtime'",
-    'FatalErrorHost does not use the application fatal runtime.',
-  )
-}
-
-if (failures.length > 0) {
-  console.error(
+  source = source.replace(
+    '    source: report.location ?? undefined,\n',
     [
-      'Fatal state-machine architecture checks failed:',
-      ...failures.map(
-        (failure) => '- ' + failure,
-      ),
+      '    ...(report.location === null',
+      '      ? {}',
+      '      : {',
+      '          source: report.location,',
+      '        }),',
+      '',
     ].join('\n'),
   )
 
-  process.exitCode = 1
-} else {
-  console.log(
-    'Fatal state-machine architecture checks passed.',
-  )
-}
-
-function read(relativePath) {
-  return readFileSync(
-    path.join(ROOT, relativePath),
+  await writeFile(
+    absolutePath,
+    normalizeContent(source),
     'utf8',
   )
-}
 
-function requireText(
-  source,
-  expected,
-  failure,
-) {
-  if (!source.includes(expected)) {
-    failures.push(failure)
-  }
-}
-
-function forbidText(
-  source,
-  forbidden,
-  failure,
-) {
-  if (source.includes(forbidden)) {
-    failures.push(failure)
-  }
-}
-`,
+  console.log(
+    PATHS.main + ': updated.',
   )
 }
 
-async function registerArchitectureCheck() {
-  await transformFile(
-    PATHS.package,
-    (source) => {
-      const packageJson =
-        JSON.parse(source)
-
-      const command =
-        'node tests/architecture/check-fatal-state-machine.mjs'
-
-      const current =
-        packageJson.scripts?.[
-          'test:architecture'
-        ]
-
-      if (typeof current !== 'string') {
-        throw new Error(
-          'package.json is missing test:architecture.',
-        )
-      }
-
-      if (!current.includes(command)) {
-        packageJson.scripts[
-          'test:architecture'
-        ] =
-          current +
-          ' && ' +
-          command
-      }
-
-      return (
-        JSON.stringify(
-          packageJson,
-          null,
-          2,
-        ) + '\n'
-      )
-    },
-  )
-}
-
-async function verifyNoLegacyImports() {
+async function verifyStrictTypePatterns() {
   const files = [
-    PATHS.preReact,
+    PATHS.controller,
+    PATHS.collectors,
     PATHS.boundary,
-    PATHS.host,
-    PATHS.reactRoot,
-    PATHS.main,
+    PATHS.incident,
   ]
 
   const failures = []
@@ -1146,23 +857,66 @@ async function verifyNoLegacyImports() {
     )
 
     if (
-      source.includes(
-        "from './fatal-controller'",
-      ) ||
-      source.includes(
-        "from '../fatal/fatal-controller'",
+      /constructor\s*\(\s*(?:public|private|protected|readonly)/m.test(
+        source,
       )
     ) {
-      failures.push(relativePath)
+      failures.push(
+        relativePath +
+          ': constructor parameter property remains',
+      )
     }
+  }
+
+  const collectors = await readFile(
+    resolvePath(PATHS.collectors),
+    'utf8',
+  )
+
+  const forbiddenCollectorPatterns = [
+    'source: viteError.source,',
+    'line: viteError.line,',
+    'column: viteError.column,',
+    'event.error',
+    'rawError.location',
+    'payload.error',
+  ]
+
+  for (
+    const pattern of
+    forbiddenCollectorPatterns
+  ) {
+    if (collectors.includes(pattern)) {
+      failures.push(
+        PATHS.collectors +
+          ': forbidden strict-type pattern remains: ' +
+          pattern,
+      )
+    }
+  }
+
+  const boundary = await readFile(
+    resolvePath(PATHS.boundary),
+    'utf8',
+  )
+
+  if (
+    boundary.includes(
+      'componentStack: info.componentStack ?? undefined',
+    )
+  ) {
+    failures.push(
+      PATHS.boundary +
+        ': componentStack still explicitly receives undefined',
+    )
   }
 
   if (failures.length > 0) {
     throw new Error(
       [
-        'Application code still imports the pure controller module as the singleton:',
+        'Strict TypeScript verification failed:',
         ...failures.map(
-          (file) => '  - ' + file,
+          (failure) => '  - ' + failure,
         ),
       ].join('\n'),
     )
@@ -1207,18 +961,8 @@ async function writeText(
   relativePath,
   content,
 ) {
-  const absolutePath =
-    resolvePath(relativePath)
-
-  await mkdir(
-    path.dirname(absolutePath),
-    {
-      recursive: true,
-    },
-  )
-
   await writeFile(
-    absolutePath,
+    resolvePath(relativePath),
     normalizeContent(content),
     'utf8',
   )
@@ -1247,12 +991,11 @@ function resolvePath(relativePath) {
 main().catch((error) => {
   console.error('')
   console.error(
-    'Fatal state machine refactor failed.',
+    'Fatal strict TypeScript repair failed.',
   )
   console.error(
     error instanceof Error
-      ? error.stack ??
-        error.message
+      ? error.stack ?? error.message
       : error,
   )
 
