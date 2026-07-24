@@ -8,6 +8,10 @@ import { FrameToolInspector } from './FrameToolInspector'
 import { HandToolInspector } from './HandToolInspector'
 import { LineToolInspector } from './LineToolInspector'
 import { NoteToolInspector } from './NoteToolInspector'
+import {
+  AssetToolInspector,
+  LaserToolInspector,
+} from './PassiveToolInspector'
 import { SelectToolInspector } from './SelectToolInspector'
 import { ShapeToolInspector } from './ShapeToolInspector'
 import { TextToolInspector } from './TextToolInspector'
@@ -74,6 +78,23 @@ export const CORE_TOOL_INSPECTOR_CONTRIBUTIONS: readonly ToolInspectorContributi
     toolId: 'frame',
     owner: 'core',
     component: FrameToolInspector,
+  },
+  {
+    /*
+     * asset 是官方媒体插入工具。
+     * 其主要行为是打开资源选择器，没有持久的画笔样式参数。
+     */
+    toolId: 'asset',
+    owner: 'core',
+    component: AssetToolInspector,
+  },
+  {
+    /*
+     * laser 是官方临时演示工具，不创建持久 shape。
+     */
+    toolId: 'laser',
+    owner: 'core',
+    component: LaserToolInspector,
   },
 ]
 

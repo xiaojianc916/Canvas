@@ -14,6 +14,10 @@ import { TldrawOfficialUi } from './TldrawOfficialUi'
 
 export const HYBRID_CANVAS_SAVE_ACTION_ID = 'hybrid-canvas.save'
 
+const CANVAS_COMPONENTS: TLComponents = {
+  InFrontOfTheCanvas: TldrawOfficialUi,
+}
+
 export interface EditorCanvasProps {
   readonly session: EditorSession
   readonly isActive?: boolean
@@ -27,15 +31,6 @@ export function EditorCanvas({
 }: EditorCanvasProps) {
   const licenseKey = useTldrawLicenseKey()
   const [editor, setEditor] = useState<Editor | null>(null)
-
-  /**
-   * 官方 StylePanel 被 portal 到这个节点。
-   *
-   * 这样 StylePanel 在 DOM 布局上属于右侧栏，但在 React 树中仍然位于
-   * Tldraw 内部，不会丢失 Editor、actions、styles、translation 等 context。
-   */
-  const [stylePanelHost, setStylePanelHost] =
-    useState<HTMLDivElement | null>(null)
 
   const { registration, store } = session
 
@@ -51,32 +46,18 @@ export function EditorCanvas({
     [onSave],
   )
 
-  const components = useMemo<TLComponents>(
-    () => ({
-      InFrontOfTheCanvas: function HybridCanvasOfficialUi() {
-        return (
-          <TldrawOfficialUi
-            stylePanelHost={stylePanelHost}
-          />
-        )
-      },
-    }),
-    [stylePanelHost],
-  )
-
   const tldrawProps = useMemo((): TldrawProps => {
     const base: TldrawProps = {
-      /**
-       * 禁止 tldraw 自动按照默认坐标重复放置整套 UI。
-       *
-       * UI context 仍然存在；官方组件由 TldrawOfficialUi 重新组合。
+      /*
+       * 不让 tldraw 自动生成第二套默认布局。
+       * 官方 Toolbar / Navigation 由 TldrawOfficialUi 放置。
        */
       hideUi: true,
       licenseKey,
       store,
       onMount: setEditor,
       overrides,
-      components,
+      components: CANVAS_COMPONENTS,
       options: {
         maxPages: 100,
       },
@@ -90,7 +71,6 @@ export function EditorCanvas({
 
     return base
   }, [
-    components,
     hasTools,
     licenseKey,
     overrides,
@@ -127,24 +107,11 @@ export function EditorCanvas({
 
   return (
     <div
-      className="hc-editor-layout size-full overflow-hidden bg-canvas"
+      className="relative size-full overflow-hidden bg-canvas"
       data-document-id={session.documentId}
       data-session-id={session.sessionId}
     >
-      <div className="hc-editor-canvas relative min-h-0 min-w-0 overflow-hidden">
-        <Tldraw {...tldrawProps} />
-      </div>
-
-      <aside
-        aria-label="对象属性"
-        className="hc-tldraw-style-sidebar"
-      >
-
-        <div
-          className="hc-tldraw-style-host tl-theme__light"
-          ref={setStylePanelHost}
-        />
-      </aside>
+      <Tldraw {...tldrawProps} />
     </div>
   )
 }

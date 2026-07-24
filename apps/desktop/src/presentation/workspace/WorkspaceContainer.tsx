@@ -4,7 +4,7 @@ import type {
   CanvasSessionSnapshot,
 } from '@hybrid-canvas/document'
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
-import { EditorSessionHost } from '@hybrid-canvas/canvas/react'
+import { EditorSessionHost, useEditor } from '@hybrid-canvas/canvas/react'
 import { ConfirmationDialog } from '@hybrid-canvas/design-system'
 import type {
   CanvasSessionId,
@@ -19,8 +19,11 @@ import {
   WorkspaceSurface,
 } from '@hybrid-canvas/workspace/react'
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
+import { useValue } from 'tldraw'
 
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
+import { CanvasInspectorContent } from './inspector/CanvasInspectorContent'
+import { createToolInspectorRegistry } from './inspector/tools/ToolInspectorRegistry'
 import { DesktopTitleBar } from '../chrome/DesktopTitleBar'
 import { reportUiError as reportError } from '../ui/ui-feedback'
 import { SelectionTransformStatus } from './status/SelectionTransformStatus'
@@ -73,6 +76,39 @@ export function WorkspaceContainer({
   onWindowClose,
   onWindowStartDragging,
 }: WorkspaceContainerProps) {
+  const editor = useEditor()
+
+  const inspectorSelectionKey = useValue(
+    'workspace inspector selection key',
+    () => {
+      if (!editor) {
+        return ''
+      }
+
+      const selectedIds = editor
+        .getSelectedShapeIds()
+        .map(String)
+        .sort()
+
+      if (selectedIds.length > 0) {
+        return 'selection:' + selectedIds.join('|')
+      }
+
+      const toolId = editor.getCurrentToolId()
+
+      /*
+       * select / hand 没有需要自动展开的创建参数。
+       * 其他官方工具以及 Feature 工具都可以触发相应 Inspector。
+       */
+      if (toolId === 'select' || toolId === 'hand') {
+        return ''
+      }
+
+      return 'tool:' + toolId
+    },
+    [editor],
+  )
+
   const workbench = useSyncExternalStore(
     port.workspace.subscribe,
     port.workspace.getSnapshot,
@@ -101,6 +137,21 @@ export function WorkspaceContainer({
   const activeEditorSession = activeSessionId
     ? port.canvases.getEditorSession(activeSessionId)
     : null
+
+  /*
+   * Core Inspector 与 Feature Inspector 合并。
+   *
+   * draw / highlight 由 freehand 提供；
+   * arrow 由 flowchart 提供；
+   * scientific-chart 由 scientific-plot 提供。
+   */
+  const toolInspectorRegistry = useMemo(
+    () =>
+      createToolInspectorRegistry(
+        activeEditorSession?.registration.toolInspectors ?? [],
+      ),
+    [activeEditorSession],
+  )
 
   const pages = useSyncExternalStore(
     activeEditorSession?.subscribe ?? EMPTY_SUBSCRIBE,
@@ -271,7 +322,13 @@ export function WorkspaceContainer({
   return (
     <WorkspaceShell
       actions={actions}
-      inspector={null}
+      inspector={
+        <CanvasInspectorContent
+          hasActiveCanvas={workbench.activeCanvas !== null}
+          toolInspectorRegistry={toolInspectorRegistry}
+        />
+      }
+      inspectorSelectionKey={inspectorSelectionKey}
       mainContent={mainContent}
       model={model}
       overlays={
