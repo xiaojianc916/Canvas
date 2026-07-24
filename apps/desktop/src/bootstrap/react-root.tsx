@@ -2,7 +2,8 @@ import type { Root } from 'react-dom/client'
 import { createRoot } from 'react-dom/client'
 import {
   fatalIncidentController,
-} from '../fatal/fatal-controller'
+  markReactFatalHostMounted,
+} from '../fatal/fatal-runtime'
 import { FatalErrorHost } from '../fatal/FatalErrorHost'
 import { AppShell } from '../presentation/AppShell'
 import { createApplicationRuntime } from './application'
@@ -41,7 +42,7 @@ export function mountReactApplication(
 
   const root: Root = createRoot(container)
 
-  fatalIncidentController.markReactMounted()
+  markReactFatalHostMounted()
 
   root.render(
     <FatalErrorHost>

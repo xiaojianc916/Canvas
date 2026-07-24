@@ -1,13 +1,17 @@
-import { fatalIncidentController } from './fatal-controller'
+import { installFatalCollectors } from './fatal-collectors'
+import {
+  fatalIncidentController,
+  isReactFatalHostMounted,
+} from './fatal-runtime'
 import {
   formatFatalDiagnostic,
   type FatalIncident,
 } from './fatal-incident'
 
-fatalIncidentController.installCollectors()
+installFatalCollectors()
 
 fatalIncidentController.subscribe(() => {
-  if (fatalIncidentController.isReactMounted()) {
+  if (isReactFatalHostMounted()) {
     return
   }
 

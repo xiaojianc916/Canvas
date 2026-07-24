@@ -3,7 +3,7 @@ import {
   type ErrorInfo,
   type ReactNode,
 } from 'react'
-import { fatalIncidentController } from './fatal-controller'
+import { fatalIncidentController } from './fatal-runtime'
 
 export interface FatalErrorBoundaryProps {
   readonly children: ReactNode

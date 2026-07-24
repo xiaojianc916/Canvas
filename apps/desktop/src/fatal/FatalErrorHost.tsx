@@ -2,7 +2,7 @@ import {
   type ReactNode,
   useSyncExternalStore,
 } from 'react'
-import { fatalIncidentController } from './fatal-controller'
+import { fatalIncidentController } from './fatal-runtime'
 import { FatalErrorBoundary } from './FatalErrorBoundary'
 import { FatalErrorScreen } from './FatalErrorScreen'
 

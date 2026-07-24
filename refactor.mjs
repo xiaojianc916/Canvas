@@ -1,445 +1,1260 @@
 #!/usr/bin/env node
 
-/**
- * Hybrid Canvas 构建语义与 Windows CI 调整脚本
- *
- * 放在仓库根目录运行：
- *   node apply-ci-build-fixes.mjs
- *
- * 只检查、不修改：
- *   node apply-ci-build-fixes.mjs --check
- *
- * 注意：
- * - 保留 TypeScript 7 和 @typescript/typescript6，不修改锁文件。
- * - 只有 apps/desktop 保留真正的 build。
- * - 内部源码包只执行 typecheck。
- * - 脚本可重复执行。
- */
-
-import { readFile, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import {
+  mkdir,
+  readFile,
+  writeFile,
+} from 'node:fs/promises'
+import path from 'node:path'
 import process from 'node:process'
 
-const root = process.cwd()
-const checkOnly = process.argv.includes('--check')
-const files = new Map()
+const ROOT = process.cwd()
 
-for (const argument of process.argv.slice(2)) {
-  if (argument !== '--check') {
-    fail(`未知参数：${argument}`)
+const PATHS = Object.freeze({
+  package: 'package.json',
+
+  controller:
+    'apps/desktop/src/fatal/fatal-controller.ts',
+
+  runtime:
+    'apps/desktop/src/fatal/fatal-runtime.ts',
+
+  collectors:
+    'apps/desktop/src/fatal/fatal-collectors.ts',
+
+  controllerTest:
+    'apps/desktop/src/fatal/fatal-controller.test.ts',
+
+  preReact:
+    'apps/desktop/src/fatal/pre-react-entry.ts',
+
+  boundary:
+    'apps/desktop/src/fatal/FatalErrorBoundary.tsx',
+
+  host:
+    'apps/desktop/src/fatal/FatalErrorHost.tsx',
+
+  reactRoot:
+    'apps/desktop/src/bootstrap/react-root.tsx',
+
+  main:
+    'apps/desktop/src/main.tsx',
+
+  architectureCheck:
+    'tests/architecture/check-fatal-state-machine.mjs',
+})
+
+async function main() {
+  await assertRepository()
+
+  await replacePureController()
+  await createFatalRuntime()
+  await createFatalCollectors()
+  await createControllerTests()
+  await updatePreReactEntry()
+  await updateRuntimeImports()
+  await createArchitectureCheck()
+  await registerArchitectureCheck()
+  await verifyNoLegacyImports()
+
+  console.log('')
+  console.log(
+    'Fatal state machine refactor applied.',
+  )
+  console.log('')
+  console.log('Run:')
+  console.log('  pnpm format')
+  console.log('  pnpm typecheck')
+  console.log('  pnpm test')
+  console.log('  pnpm test:architecture')
+}
+
+async function assertRepository() {
+  const source = await readFile(
+    resolvePath(PATHS.package),
+    'utf8',
+  )
+
+  const packageJson = JSON.parse(source)
+
+  if (packageJson.name !== 'hybrid-canvas') {
+    throw new Error(
+      'Run this script from the Hybrid Canvas repository root.',
+    )
   }
 }
 
-const sourcePackagePaths = [
-  'editor/assets/package.json',
-  'editor/core/package.json',
-  'editor/document/package.json',
-  'editor/extensions/package.json',
-  'editor/persistence/package.json',
-  'features/settings/package.json',
-  'features/workspace/package.json',
-  'foundations/design-system/package.json',
-  'foundations/geometry/package.json',
-  'foundations/kernel/package.json',
-  'foundations/observability/package.json',
-  'foundations/serialization/package.json',
-  'foundations/test-kit/package.json',
-]
+async function replacePureController() {
+  await writeText(
+    PATHS.controller,
+    String.raw`
+import {
+  createFatalIncident,
+  type CreateFatalIncidentInput,
+  type FatalIncident,
+} from './fatal-incident'
 
-await updateRootPackage()
-await updateTurboConfig()
-await updateWindowsCi()
-await updateSourcePackages()
+export type FatalSnapshot =
+  | {
+      readonly status: 'healthy'
+    }
+  | {
+      readonly status: 'fatal'
+      readonly incident: FatalIncident
+      readonly additionalIncidentCount: number
+    }
 
-const changedFiles = [...files.values()].filter(
-  ({ original, updated }) => original !== updated,
-)
+export type FatalListener = () => void
 
-if (checkOnly) {
-  if (changedFiles.length === 0) {
-    console.log('无需修改，构建语义与 Windows CI 已经符合要求。')
-    process.exit(0)
-  }
+export type FatalIncidentFactory = (
+  input: CreateFatalIncidentInput,
+) => FatalIncident
 
-  console.error('以下文件需要修改：')
+const HEALTHY_SNAPSHOT: FatalSnapshot =
+  Object.freeze({
+    status: 'healthy',
+  })
 
-  for (const file of changedFiles) {
-    console.error(`- ${file.relativePath}`)
-  }
-
-  process.exit(1)
-}
-
-/*
- * 所有修改均已在内存中完成并通过验证，
- * 确认没有错误后再统一写入，避免只修改一半。
+/**
+ * Owns the terminal fatal-incident state.
+ *
+ * This class deliberately has no browser, React, Vite, logging or native
+ * dependencies. Error collectors adapt external failures into
+ * CreateFatalIncidentInput before reporting them here.
  */
-for (const file of changedFiles) {
-  await writeFile(file.absolutePath, file.updated, 'utf8')
-}
+export class FatalIncidentController {
+  private snapshot: FatalSnapshot =
+    HEALTHY_SNAPSHOT
 
-if (changedFiles.length === 0) {
-  console.log('无需修改，脚本已经应用过。')
-} else {
-  console.log(`已修改 ${changedFiles.length} 个文件：`)
+  private readonly listeners =
+    new Set<FatalListener>()
 
-  for (const file of changedFiles) {
-    console.log(`- ${file.relativePath}`)
-  }
-}
+  private readonly fingerprints =
+    new Set<string>()
 
-console.log('')
-console.log('TypeScript 依赖保持不变。')
-console.log('')
-console.log('请继续执行：')
-console.log('  pnpm format:check')
-console.log('  pnpm lint')
-console.log('  pnpm test:architecture')
-console.log('  pnpm typecheck')
-console.log('  pnpm test')
-console.log('  pnpm build')
+  constructor(
+    private readonly createIncident:
+      FatalIncidentFactory =
+      createFatalIncident,
+  ) {}
 
-async function updateRootPackage() {
-  const relativePath = 'package.json'
-  let text = await load(relativePath)
+  readonly getSnapshot =
+    (): FatalSnapshot => {
+      return this.snapshot
+    }
 
-  text = migrateExact({
-    text,
-    relativePath,
-    description: '根构建脚本',
-    oldValue:
-      '    "build": "turbo run build",\n' +
-      '    "build:desktop": "pnpm --filter @hybrid-canvas/desktop build",',
-    newValue:
-      '    "build": "pnpm build:desktop",\n' +
-      '    "build:desktop": "turbo run build --filter=@hybrid-canvas/desktop",',
-  })
+  readonly subscribe = (
+    listener: FatalListener,
+  ): (() => void) => {
+    this.listeners.add(listener)
 
-  validateJson(relativePath, text)
-
-  const manifest = JSON.parse(stripBom(text))
-
-  if (manifest.scripts?.build !== 'pnpm build:desktop') {
-    fail(`${relativePath}：根 build 脚本配置错误`)
+    return () => {
+      this.listeners.delete(listener)
+    }
   }
 
-  if (
-    manifest.scripts?.['build:desktop'] !==
-    'turbo run build --filter=@hybrid-canvas/desktop'
-  ) {
-    fail(`${relativePath}：build:desktop 脚本配置错误`)
-  }
+  report(
+    input: CreateFatalIncidentInput,
+  ): FatalIncident {
+    const incident =
+      this.createIncident(input)
 
-  update(relativePath, text)
-}
-
-async function updateTurboConfig() {
-  const relativePath = 'turbo.json'
-  let text = await load(relativePath)
-
-  text = migrateExact({
-    text,
-    relativePath,
-    description: '桌面构建前置任务',
-    oldValue:
-      '    "build": {\n' +
-      '      "dependsOn": ["^build"],',
-    newValue:
-      '    "build": {\n' +
-      '      "dependsOn": ["^typecheck"],',
-  })
-
-  text = migrateExact({
-    text,
-    relativePath,
-    description: '构建输出目录',
-    oldValue:
-      '      "outputs": ["dist/**", "build/**", ".vite/**", "coverage/**"]',
-    newValue:
-      '      "outputs": ["dist/**", "build/**", ".vite/**"]',
-  })
-
-  for (const task of [
-    'test:unit',
-    'test:integration',
-    'test:architecture',
-  ]) {
-    text = migrateExact({
-      text,
-      relativePath,
-      description: `${task} 前置任务`,
-      oldValue:
-        `    "${task}": {\n` +
-        '      "dependsOn": ["^build"],',
-      newValue:
-        `    "${task}": {\n` +
-        '      "dependsOn": ["^typecheck"],',
-    })
-  }
-
-  validateJson(relativePath, text)
-
-  const turbo = JSON.parse(text)
-
-  if (
-    JSON.stringify(turbo.tasks?.build?.dependsOn) !==
-    JSON.stringify(['^typecheck'])
-  ) {
-    fail(`${relativePath}：build 必须依赖 ^typecheck`)
-  }
-
-  for (const task of [
-    'test:unit',
-    'test:integration',
-    'test:architecture',
-  ]) {
     if (
-      JSON.stringify(turbo.tasks?.[task]?.dependsOn) !==
-      JSON.stringify(['^typecheck'])
+      this.fingerprints.has(
+        incident.fingerprint,
+      )
     ) {
-      fail(`${relativePath}：${task} 必须依赖 ^typecheck`)
+      if (this.snapshot.status === 'fatal') {
+        return this.snapshot.incident
+      }
+
+      return incident
     }
-  }
 
-  update(relativePath, text)
-}
-
-async function updateWindowsCi() {
-  const relativePath = '.github/workflows/quality.yml'
-  let text = await load(relativePath)
-
-  const windowsJobMarker = '  windows-desktop:\n'
-
-  if (!text.includes(windowsJobMarker)) {
-    const rustJobAnchor =
-      '  rust:\n' +
-      '    name: Rust\n'
-
-    assertOccurrence({
-      text,
-      value: rustJobAnchor,
-      relativePath,
-      description: 'Rust CI 任务定位点',
-      expected: 1,
-    })
-
-    text = text.replace(
-      rustJobAnchor,
-      `${createWindowsJob()}${rustJobAnchor}`,
+    this.fingerprints.add(
+      incident.fingerprint,
     )
-  } else {
-    assertOccurrence({
-      text,
-      value: windowsJobMarker,
-      relativePath,
-      description: 'Windows Desktop CI 任务',
-      expected: 1,
+
+    if (this.snapshot.status === 'fatal') {
+      this.snapshot = Object.freeze({
+        status: 'fatal',
+        incident: this.snapshot.incident,
+        additionalIncidentCount:
+          this.snapshot
+            .additionalIncidentCount + 1,
+      })
+
+      this.emit()
+
+      return this.snapshot.incident
+    }
+
+    this.snapshot = Object.freeze({
+      status: 'fatal',
+      incident,
+      additionalIncidentCount: 0,
     })
+
+    this.emit()
+
+    return incident
   }
 
-  update(relativePath, text)
-}
+  private emit(): void {
+    const listeners = [
+      ...this.listeners,
+    ]
 
-async function updateSourcePackages() {
-  const buildLinePattern =
-    /^    "build": "tsc (?:--project|-p) tsconfig\.json --noEmit",\r?\n/m
-
-  for (const relativePath of sourcePackagePaths) {
-    let text = await load(relativePath)
-
-    const matches =
-      text.match(
-        new RegExp(buildLinePattern.source, 'gm'),
-      ) ?? []
-
-    if (matches.length > 1) {
-      fail(
-        `${relativePath}：发现多个 tsc --noEmit build 脚本`,
-      )
+    for (const listener of listeners) {
+      try {
+        listener()
+      } catch (error: unknown) {
+        emergencyReportListenerFailure(error)
+      }
     }
-
-    if (matches.length === 1) {
-      text = text.replace(buildLinePattern, '')
-    }
-
-    validateJson(relativePath, text)
-
-    const manifest = JSON.parse(stripBom(text))
-
-    if (manifest.scripts?.build !== undefined) {
-      fail(
-        `${relativePath}：源码包不应保留 build 脚本`,
-      )
-    }
-
-    if (typeof manifest.scripts?.typecheck !== 'string') {
-      fail(
-        `${relativePath}：源码包必须提供 typecheck 脚本`,
-      )
-    }
-
-    update(relativePath, text)
   }
 }
 
-function createWindowsJob() {
-  return `  windows-desktop:
-    name: Windows Desktop
-    runs-on: windows-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.15.0
-          run_install: false
-
-      - name: Install Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.88.0
-        with:
-          components: rustfmt, clippy
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck workspace
-        run: pnpm typecheck
-
-      - name: Build desktop frontend
-        run: pnpm build
-
-      - name: Check Windows native target
-        run: cargo check -p hybrid-canvas-desktop --all-targets --all-features
-
-      - name: Build Windows desktop binary
-        run: pnpm --filter @hybrid-canvas/desktop exec tauri build --debug --no-bundle
-
-`
+function emergencyReportListenerFailure(
+  error: unknown,
+): void {
+  try {
+    console.error(
+      '[Hybrid Canvas] Fatal state listener failed',
+      error,
+    )
+  } catch {
+    // No further fallback is safe.
+  }
+}
+`,
+  )
 }
 
-async function load(relativePath) {
-  if (files.has(relativePath)) {
-    return files.get(relativePath).updated
+async function createFatalRuntime() {
+  await writeText(
+    PATHS.runtime,
+    String.raw`
+import { FatalIncidentController } from './fatal-controller'
+
+export const fatalIncidentController =
+  new FatalIncidentController()
+
+let reactFatalHostMounted = false
+
+export function markReactFatalHostMounted(): void {
+  reactFatalHostMounted = true
+}
+
+export function isReactFatalHostMounted(): boolean {
+  return reactFatalHostMounted
+}
+`,
+  )
+}
+
+async function createFatalCollectors() {
+  await writeText(
+    PATHS.collectors,
+    String.raw`
+import type {
+  FatalIncidentPhase,
+} from './fatal-incident'
+import {
+  fatalIncidentController,
+  isReactFatalHostMounted,
+} from './fatal-runtime'
+
+interface ViteHotContext {
+  readonly on: (
+    event: string,
+    listener: (payload: unknown) => void,
+  ) => void
+}
+
+interface ParsedViteError {
+  readonly error: Error
+  readonly source?: string
+  readonly line?: number
+  readonly column?: number
+  readonly context:
+    Readonly<Record<string, unknown>>
+}
+
+let installed = false
+
+/**
+ * Installs process-lifetime browser collectors.
+ *
+ * Resource element failures are intentionally ignored here because an image,
+ * font or media load failure is not automatically an application-fatal error.
+ */
+export function installFatalCollectors(): void {
+  if (installed) {
+    return
   }
 
-  const absolutePath = resolve(root, relativePath)
+  installed = true
 
-  let original
+  window.addEventListener(
+    'error',
+    handleWindowError,
+    true,
+  )
+
+  window.addEventListener(
+    'unhandledrejection',
+    handleUnhandledRejection,
+  )
+
+  const hot = (
+    import.meta as ImportMeta & {
+      readonly hot?: ViteHotContext
+    }
+  ).hot
+
+  hot?.on(
+    'hybrid-canvas:diagnostic',
+    handleViteDiagnostic,
+  )
+}
+
+function handleWindowError(
+  event: Event,
+): void {
+  if (!(event instanceof ErrorEvent)) {
+    return
+  }
+
+  const reactMounted =
+    isReactFatalHostMounted()
+
+  const error =
+    event.error ??
+    event.message ??
+    'Unhandled window error'
+
+  const incident =
+    fatalIncidentController.report({
+      error,
+      kind: reactMounted
+        ? 'async'
+        : 'bootstrap',
+      phase: currentPhase(),
+      code: reactMounted
+        ? 'FATAL_UNHANDLED_WINDOW_ERROR'
+        : 'FATAL_BOOTSTRAP_WINDOW_ERROR',
+      source:
+        event.filename || undefined,
+      line:
+        event.lineno || undefined,
+      column:
+        event.colno || undefined,
+      context: {
+        collector:
+          'window-error',
+        eventType:
+          event.type,
+      },
+    })
+
+  emergencyLogIncident(incident)
+}
+
+function handleUnhandledRejection(
+  event: PromiseRejectionEvent,
+): void {
+  const reactMounted =
+    isReactFatalHostMounted()
+
+  const incident =
+    fatalIncidentController.report({
+      error: event.reason,
+      kind: reactMounted
+        ? 'async'
+        : 'bootstrap',
+      phase: currentPhase(),
+      code: reactMounted
+        ? 'FATAL_UNHANDLED_PROMISE_REJECTION'
+        : 'FATAL_BOOTSTRAP_PROMISE_REJECTION',
+      context: {
+        collector:
+          'unhandled-rejection',
+        eventType:
+          event.type,
+      },
+    })
+
+  emergencyLogIncident(incident)
+}
+
+function handleViteDiagnostic(
+  payload: unknown,
+): void {
+  const viteError =
+    parseViteError(payload)
+
+  const incident =
+    fatalIncidentController.report({
+      error: viteError.error,
+      kind: 'vite',
+      phase: currentPhase(),
+      code:
+        'FATAL_VITE_DEVELOPMENT_ERROR',
+      source: viteError.source,
+      line: viteError.line,
+      column: viteError.column,
+      context: viteError.context,
+    })
+
+  emergencyLogIncident(incident)
+}
+
+function currentPhase(): FatalIncidentPhase {
+  return isReactFatalHostMounted()
+    ? 'running'
+    : 'react-mount'
+}
+
+function parseViteError(
+  payload: unknown,
+): ParsedViteError {
+  if (!isRecord(payload)) {
+    return {
+      error: createError(
+        'ViteError',
+        stringifyUnknown(payload),
+      ),
+      context: {
+        diagnosticSource: 'vite',
+      },
+    }
+  }
+
+  const rawError = isRecord(payload.error)
+    ? payload.error
+    : payload
+
+  const rawLocation = isRecord(
+    rawError.location,
+  )
+    ? rawError.location
+    : undefined
+
+  const error = createError(
+    readString(rawError, 'name') ??
+      'ViteError',
+    readString(rawError, 'message') ??
+      readString(rawError, 'msg') ??
+      'Unknown Vite development error',
+    readString(rawError, 'stack'),
+  )
+
+  return {
+    error,
+    source:
+      readString(
+        rawLocation,
+        'file',
+      ) ??
+      readString(rawError, 'id'),
+    line:
+      readNumber(
+        rawLocation,
+        'line',
+      ),
+    column:
+      readNumber(
+        rawLocation,
+        'column',
+      ),
+    context: {
+      collector:
+        'vite-diagnostic',
+      diagnosticSource:
+        readString(
+          payload,
+          'source',
+        ) ?? 'vite',
+      plugin:
+        readString(
+          rawError,
+          'plugin',
+        ) ?? '',
+      moduleId:
+        readString(
+          rawError,
+          'id',
+        ) ?? '',
+      frame:
+        readString(
+          rawError,
+          'frame',
+        ) ?? '',
+      pluginCode:
+        readString(
+          rawError,
+          'pluginCode',
+        ) ?? '',
+    },
+  }
+}
+
+function createError(
+  name: string,
+  message: string,
+  stack?: string,
+): Error {
+  const error = new Error(message)
+  error.name = name
+
+  if (stack) {
+    error.stack = stack
+  }
+
+  return error
+}
+
+function stringifyUnknown(
+  value: unknown,
+): string {
+  if (typeof value === 'string') {
+    return value
+  }
 
   try {
-    original = await readFile(absolutePath, 'utf8')
-  } catch (error) {
-    fail(
-      `${relativePath}：无法读取文件：${formatError(error)}`,
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function isRecord(
+  value: unknown,
+): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null
+  )
+}
+
+function readString(
+  record:
+    | Record<string, unknown>
+    | undefined,
+  property: string,
+): string | undefined {
+  const value = record?.[property]
+
+  return typeof value === 'string'
+    ? value
+    : undefined
+}
+
+function readNumber(
+  record:
+    | Record<string, unknown>
+    | undefined,
+  property: string,
+): number | undefined {
+  const value = record?.[property]
+
+  return typeof value === 'number'
+    ? value
+    : undefined
+}
+
+function emergencyLogIncident(
+  incident: {
+    readonly id: string
+    readonly code: string
+    readonly technicalMessage: string
+  },
+): void {
+  try {
+    console.error(
+      '[Hybrid Canvas Fatal Incident]',
+      incident,
+    )
+  } catch {
+    // The fatal UI remains the primary output.
+  }
+}
+`,
+  )
+}
+
+async function createControllerTests() {
+  await writeText(
+    PATHS.controllerTest,
+    String.raw`
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
+import {
+  FatalIncidentController,
+  type FatalIncidentFactory,
+} from './fatal-controller'
+import type {
+  CreateFatalIncidentInput,
+  FatalIncident,
+} from './fatal-incident'
+
+describe('FatalIncidentController', () => {
+  it('starts healthy', () => {
+    const controller =
+      createController()
+
+    expect(
+      controller.getSnapshot(),
+    ).toEqual({
+      status: 'healthy',
+    })
+  })
+
+  it('stores the first fatal incident', () => {
+    const controller =
+      createController()
+
+    const incident = controller.report(
+      createInput('FIRST'),
+    )
+
+    expect(
+      controller.getSnapshot(),
+    ).toEqual({
+      status: 'fatal',
+      incident,
+      additionalIncidentCount: 0,
+    })
+  })
+
+  it('keeps the first fatal incident as the primary failure', () => {
+    const controller =
+      createController()
+
+    const first = controller.report(
+      createInput('FIRST'),
+    )
+
+    controller.report(
+      createInput('SECOND'),
+    )
+
+    expect(
+      controller.getSnapshot(),
+    ).toEqual({
+      status: 'fatal',
+      incident: first,
+      additionalIncidentCount: 1,
+    })
+  })
+
+  it('deduplicates incidents with the same fingerprint', () => {
+    const controller =
+      createController()
+
+    const first = controller.report(
+      createInput('DUPLICATE'),
+    )
+
+    const second = controller.report(
+      createInput('DUPLICATE'),
+    )
+
+    expect(second).toBe(first)
+
+    expect(
+      controller.getSnapshot(),
+    ).toEqual({
+      status: 'fatal',
+      incident: first,
+      additionalIncidentCount: 0,
+    })
+  })
+
+  it('notifies subscribers after state transitions', () => {
+    const controller =
+      createController()
+
+    const listener = vi.fn()
+
+    const unsubscribe =
+      controller.subscribe(listener)
+
+    controller.report(
+      createInput('FIRST'),
+    )
+
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    controller.report(
+      createInput('SECOND'),
+    )
+
+    expect(listener).toHaveBeenCalledTimes(2)
+
+    unsubscribe()
+
+    controller.report(
+      createInput('THIRD'),
+    )
+
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
+  it('isolates a failing subscriber', () => {
+    const controller =
+      createController()
+
+    const healthyListener = vi.fn()
+
+    controller.subscribe(() => {
+      throw new Error(
+        'listener failed',
+      )
+    })
+
+    controller.subscribe(
+      healthyListener,
+    )
+
+    expect(() => {
+      controller.report(
+        createInput('FIRST'),
+      )
+    }).not.toThrow()
+
+    expect(
+      healthyListener,
+    ).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps getSnapshot stable until a transition occurs', () => {
+    const controller =
+      createController()
+
+    const healthyOne =
+      controller.getSnapshot()
+
+    const healthyTwo =
+      controller.getSnapshot()
+
+    expect(healthyOne).toBe(healthyTwo)
+
+    controller.report(
+      createInput('FIRST'),
+    )
+
+    const fatalOne =
+      controller.getSnapshot()
+
+    const fatalTwo =
+      controller.getSnapshot()
+
+    expect(fatalOne).toBe(fatalTwo)
+    expect(fatalOne).not.toBe(
+      healthyOne,
+    )
+  })
+})
+
+function createController(): FatalIncidentController {
+  let sequence = 0
+
+  const factory: FatalIncidentFactory = (
+    input,
+  ) => {
+    sequence += 1
+
+    return createIncident(
+      input,
+      sequence,
     )
   }
 
-  files.set(relativePath, {
-    relativePath,
-    absolutePath,
-    original,
-    updated: original,
-  })
-
-  return original
+  return new FatalIncidentController(
+    factory,
+  )
 }
 
-function update(relativePath, updated) {
-  const file = files.get(relativePath)
-
-  if (!file) {
-    fail(`${relativePath}：内部文件状态错误`)
+function createInput(
+  code: string,
+): CreateFatalIncidentInput {
+  return {
+    error: new Error(code),
+    kind: 'invariant',
+    phase: 'running',
+    code,
   }
-
-  file.updated = updated
 }
 
-function migrateExact({
-  text,
-  relativePath,
-  description,
-  oldValue,
-  newValue,
-}) {
-  if (text.includes(newValue)) {
-    assertOccurrence({
-      text,
-      value: newValue,
-      relativePath,
-      description,
-      expected: 1,
-    })
+function createIncident(
+  input: CreateFatalIncidentInput,
+  sequence: number,
+): FatalIncident {
+  const code =
+    input.code ?? 'UNKNOWN'
 
-    if (text.includes(oldValue)) {
-      fail(
-        `${relativePath}：同时存在新旧${description}`,
+  return {
+    id: 'incident-' + String(sequence),
+    fingerprint: code,
+    severity: 'fatal',
+    kind: input.kind,
+    phase: input.phase,
+    code,
+    title: 'Fatal',
+    message: 'Fatal',
+    technicalMessage: code,
+    errorName: 'Error',
+    occurredAt:
+      '2026-07-24T00:00:00.000Z',
+    pageUrl: 'http://localhost',
+    userAgent: 'test',
+    recovery: 'reload',
+    context: {},
+    recentLogs: [],
+  }
+}
+`,
+  )
+}
+
+async function updatePreReactEntry() {
+  await transformFile(
+    PATHS.preReact,
+    (source) => {
+      let next = source
+
+      next = next.replace(
+        "import { fatalIncidentController } from './fatal-controller'",
+        [
+          "import { installFatalCollectors } from './fatal-collectors'",
+          'import {',
+          '  fatalIncidentController,',
+          '  isReactFatalHostMounted,',
+          "} from './fatal-runtime'",
+        ].join('\n'),
       )
-    }
 
-    return text
-  }
+      next = next.replace(
+        'fatalIncidentController.installCollectors()',
+        'installFatalCollectors()',
+      )
 
-  assertOccurrence({
-    text,
-    value: oldValue,
-    relativePath,
-    description,
-    expected: 1,
-  })
+      next = next.replaceAll(
+        'fatalIncidentController.isReactMounted()',
+        'isReactFatalHostMounted()',
+      )
 
-  return text.replace(oldValue, newValue)
+      return next
+    },
+  )
 }
 
-function assertOccurrence({
-  text,
-  value,
-  relativePath,
-  description,
+async function updateRuntimeImports() {
+  await transformFile(
+    PATHS.boundary,
+    replaceControllerImport,
+  )
+
+  await transformFile(
+    PATHS.host,
+    replaceControllerImport,
+  )
+
+  await transformFile(
+    PATHS.main,
+    replaceControllerImport,
+  )
+
+  await transformFile(
+    PATHS.reactRoot,
+    (source) => {
+      let next =
+        replaceControllerImport(source)
+
+      next = next.replace(
+        'fatalIncidentController.markReactMounted()',
+        'markReactFatalHostMounted()',
+      )
+
+      if (
+        next.includes(
+          'markReactFatalHostMounted()',
+        ) &&
+        !next.includes(
+          '  markReactFatalHostMounted,',
+        )
+      ) {
+        next = next.replace(
+          /import\s+\{\s*fatalIncidentController,?\s*\}\s+from\s+['"]\.\.\/fatal\/fatal-runtime['"]/,
+          [
+            'import {',
+            '  fatalIncidentController,',
+            '  markReactFatalHostMounted,',
+            "} from '../fatal/fatal-runtime'",
+          ].join('\n'),
+        )
+      }
+
+      return next
+    },
+  )
+}
+
+function replaceControllerImport(source) {
+  return source
+    .replaceAll(
+      "from './fatal-controller'",
+      "from './fatal-runtime'",
+    )
+    .replaceAll(
+      "from '../fatal/fatal-controller'",
+      "from '../fatal/fatal-runtime'",
+    )
+}
+
+async function createArchitectureCheck() {
+  await writeText(
+    PATHS.architectureCheck,
+    String.raw`
+#!/usr/bin/env node
+
+import {
+  existsSync,
+  readFileSync,
+} from 'node:fs'
+import path from 'node:path'
+import process from 'node:process'
+
+const ROOT = process.cwd()
+const failures = []
+
+const paths = {
+  controller:
+    'apps/desktop/src/fatal/fatal-controller.ts',
+  runtime:
+    'apps/desktop/src/fatal/fatal-runtime.ts',
+  collectors:
+    'apps/desktop/src/fatal/fatal-collectors.ts',
+  preReact:
+    'apps/desktop/src/fatal/pre-react-entry.ts',
+  host:
+    'apps/desktop/src/fatal/FatalErrorHost.tsx',
+}
+
+for (const relativePath of Object.values(paths)) {
+  if (
+    !existsSync(
+      path.join(ROOT, relativePath),
+    )
+  ) {
+    failures.push(
+      'Missing fatal state-machine file: ' +
+        relativePath,
+    )
+  }
+}
+
+if (failures.length === 0) {
+  const controller = read(
+    paths.controller,
+  )
+
+  const runtime = read(
+    paths.runtime,
+  )
+
+  const collectors = read(
+    paths.collectors,
+  )
+
+  const preReact = read(
+    paths.preReact,
+  )
+
+  const host = read(paths.host)
+
+  forbidText(
+    controller,
+    'window.',
+    'Pure fatal controller depends on window.',
+  )
+
+  forbidText(
+    controller,
+    'import.meta',
+    'Pure fatal controller depends on Vite.',
+  )
+
+  forbidText(
+    controller,
+    'reactMounted',
+    'Pure fatal controller owns presentation state.',
+  )
+
+  forbidText(
+    controller,
+    'addEventListener',
+    'Pure fatal controller installs browser listeners.',
+  )
+
+  requireText(
+    controller,
+    'export class FatalIncidentController',
+    'FatalIncidentController is not independently constructible.',
+  )
+
+  requireText(
+    runtime,
+    'new FatalIncidentController()',
+    'Application fatal singleton is not owned by fatal-runtime.',
+  )
+
+  requireText(
+    collectors,
+    "window.addEventListener(",
+    'Browser fatal collectors are not isolated.',
+  )
+
+  requireText(
+    collectors,
+    "if (!(event instanceof ErrorEvent))",
+    'Resource errors are not excluded from global fatal handling.',
+  )
+
+  requireText(
+    preReact,
+    'installFatalCollectors()',
+    'Pre-React bootstrap does not install fatal collectors.',
+  )
+
+  requireText(
+    host,
+    "from './fatal-runtime'",
+    'FatalErrorHost does not use the application fatal runtime.',
+  )
+}
+
+if (failures.length > 0) {
+  console.error(
+    [
+      'Fatal state-machine architecture checks failed:',
+      ...failures.map(
+        (failure) => '- ' + failure,
+      ),
+    ].join('\n'),
+  )
+
+  process.exitCode = 1
+} else {
+  console.log(
+    'Fatal state-machine architecture checks passed.',
+  )
+}
+
+function read(relativePath) {
+  return readFileSync(
+    path.join(ROOT, relativePath),
+    'utf8',
+  )
+}
+
+function requireText(
+  source,
   expected,
-}) {
-  const count = text.split(value).length - 1
+  failure,
+) {
+  if (!source.includes(expected)) {
+    failures.push(failure)
+  }
+}
 
-  if (count !== expected) {
-    fail(
-      `${relativePath}：${description}应出现 ${expected} 次，实际为 ${count} 次`,
+function forbidText(
+  source,
+  forbidden,
+  failure,
+) {
+  if (source.includes(forbidden)) {
+    failures.push(failure)
+  }
+}
+`,
+  )
+}
+
+async function registerArchitectureCheck() {
+  await transformFile(
+    PATHS.package,
+    (source) => {
+      const packageJson =
+        JSON.parse(source)
+
+      const command =
+        'node tests/architecture/check-fatal-state-machine.mjs'
+
+      const current =
+        packageJson.scripts?.[
+          'test:architecture'
+        ]
+
+      if (typeof current !== 'string') {
+        throw new Error(
+          'package.json is missing test:architecture.',
+        )
+      }
+
+      if (!current.includes(command)) {
+        packageJson.scripts[
+          'test:architecture'
+        ] =
+          current +
+          ' && ' +
+          command
+      }
+
+      return (
+        JSON.stringify(
+          packageJson,
+          null,
+          2,
+        ) + '\n'
+      )
+    },
+  )
+}
+
+async function verifyNoLegacyImports() {
+  const files = [
+    PATHS.preReact,
+    PATHS.boundary,
+    PATHS.host,
+    PATHS.reactRoot,
+    PATHS.main,
+  ]
+
+  const failures = []
+
+  for (const relativePath of files) {
+    const source = await readFile(
+      resolvePath(relativePath),
+      'utf8',
+    )
+
+    if (
+      source.includes(
+        "from './fatal-controller'",
+      ) ||
+      source.includes(
+        "from '../fatal/fatal-controller'",
+      )
+    ) {
+      failures.push(relativePath)
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(
+      [
+        'Application code still imports the pure controller module as the singleton:',
+        ...failures.map(
+          (file) => '  - ' + file,
+        ),
+      ].join('\n'),
     )
   }
 }
 
-function validateJson(relativePath, text) {
-  try {
-    JSON.parse(stripBom(text))
-  } catch (error) {
-    fail(
-      `${relativePath}：修改后不是有效 JSON：${formatError(error)}`,
+async function transformFile(
+  relativePath,
+  transform,
+) {
+  const absolutePath =
+    resolvePath(relativePath)
+
+  const source = await readFile(
+    absolutePath,
+    'utf8',
+  )
+
+  const nextSource =
+    transform(source)
+
+  if (nextSource === source) {
+    console.log(
+      relativePath +
+        ': no changes required.',
     )
+    return
   }
+
+  await writeFile(
+    absolutePath,
+    normalizeContent(nextSource),
+    'utf8',
+  )
+
+  console.log(
+    relativePath + ': updated.',
+  )
 }
 
-function stripBom(text) {
-  return text.replace(/^\uFEFF/, '')
+async function writeText(
+  relativePath,
+  content,
+) {
+  const absolutePath =
+    resolvePath(relativePath)
+
+  await mkdir(
+    path.dirname(absolutePath),
+    {
+      recursive: true,
+    },
+  )
+
+  await writeFile(
+    absolutePath,
+    normalizeContent(content),
+    'utf8',
+  )
+
+  console.log(
+    relativePath + ': written.',
+  )
 }
 
-function formatError(error) {
-  return error instanceof Error
-    ? error.message
-    : String(error)
+function normalizeContent(source) {
+  return (
+    source
+      .replace(/^\n/, '')
+      .replace(/\r\n/g, '\n')
+      .trimEnd() + '\n'
+  )
 }
 
-function fail(message) {
-  console.error(message)
-  process.exit(1)
+function resolvePath(relativePath) {
+  return path.join(
+    ROOT,
+    relativePath,
+  )
 }
+
+main().catch((error) => {
+  console.error('')
+  console.error(
+    'Fatal state machine refactor failed.',
+  )
+  console.error(
+    error instanceof Error
+      ? error.stack ??
+        error.message
+      : error,
+  )
+
+  process.exitCode = 1
+})
