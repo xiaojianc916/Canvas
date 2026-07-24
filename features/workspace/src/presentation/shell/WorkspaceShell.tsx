@@ -36,8 +36,7 @@ export function WorkspaceShell({
   mainContent,
   inspector,
   inspectorAvailable,
-  statusLeft,
-  statusRight,
+  statusContent,
   assistantOverlay,
   overlays,
 }: WorkspaceShellProps) {
@@ -297,7 +296,7 @@ export function WorkspaceShell({
         gridRow: 3,
       }}
     >
-      <StatusBarHost left={statusLeft} right={statusRight} />
+      <StatusBarHost>{statusContent}</StatusBarHost>
     </div>
   ) : null
 

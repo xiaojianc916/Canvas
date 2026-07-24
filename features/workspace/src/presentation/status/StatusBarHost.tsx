@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
 
 export interface StatusBarHostProps {
-  readonly left: ReactNode
-  readonly right?: ReactNode
+  readonly children: ReactNode
 }
 
-export function StatusBarHost({ left, right }: StatusBarHostProps) {
+export function StatusBarHost({
+  children,
+}: StatusBarHostProps) {
   return (
     <footer
       aria-label="画布状态栏"
@@ -17,24 +18,14 @@ export function StatusBarHost({ left, right }: StatusBarHostProps) {
     >
       <div
         className="
-          flex min-w-0 flex-1 items-center gap-1 overflow-x-auto
-          px-2 whitespace-nowrap
-          [scrollbar-width:none] [&::-webkit-scrollbar]:hidden
+          flex min-w-0 flex-1 items-center gap-1
+          overflow-x-auto px-2 whitespace-nowrap
+          [scrollbar-width:none]
+          [&::-webkit-scrollbar]:hidden
         "
       >
-        {left}
+        {children}
       </div>
-
-      {right ? (
-        <div
-          className="
-            flex h-full shrink-0 items-center gap-2
-            border-l border-divider px-3
-          "
-        >
-          {right}
-        </div>
-      ) : null}
     </footer>
   )
 }

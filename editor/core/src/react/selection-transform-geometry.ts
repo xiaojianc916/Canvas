@@ -54,7 +54,7 @@ export interface CommitSelectionTransformOptions {
 }
 
 const EPSILON = 0.000001
-const MINIMUM_SIZE = 0.01
+export const MINIMUM_SELECTION_SIZE = 0.01
 
 export function getSelectionTransformSnapshot(
   editor: Editor,
@@ -346,7 +346,7 @@ function commitSelectionSize(
   }
 
   const targetValue =
-    Math.max(value, MINIMUM_SIZE)
+    Math.max(value, MINIMUM_SELECTION_SIZE)
 
   const forcedRatio =
     geometry.snapshot

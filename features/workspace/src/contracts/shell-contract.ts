@@ -51,8 +51,7 @@ export interface WorkspaceShellProps {
    * 不包含 selection、tool、styles 或 Shape 数据。
    */
   readonly inspectorAvailable: boolean
-  readonly statusLeft: ReactNode
-  readonly statusRight?: ReactNode
+  readonly statusContent: ReactNode
   readonly assistantOverlay?: ReactNode
   readonly overlays?: ReactNode
 }

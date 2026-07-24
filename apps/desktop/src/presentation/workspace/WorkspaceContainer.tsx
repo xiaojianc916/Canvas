@@ -350,7 +350,7 @@ export function WorkspaceContainer({
           />
         </DesktopTitleBar>
       )}
-      statusLeft={<CanvasTransformStatus canvasTitle={activeCanvasTitle} />}
+      statusContent={<CanvasTransformStatus canvasTitle={activeCanvasTitle} />}
     />
   )
 }

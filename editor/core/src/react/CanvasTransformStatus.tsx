@@ -14,23 +14,18 @@ import { useEditor } from './editor-context'
 import {
   commitSelectionTransform,
   getSelectionTransformSnapshot,
+  MINIMUM_SELECTION_SIZE,
   type SelectionTransformField,
   type SelectionTransformSnapshot,
 } from './selection-transform-geometry'
 
-type TransformFieldId =
-  SelectionTransformField
-
-const TRANSFORM_FIELDS: readonly TransformFieldId[] = [
+const TRANSFORM_FIELDS: readonly SelectionTransformField[] = [
   'x',
   'y',
   'width',
   'height',
   'rotation',
 ]
-
-const MINIMUM_SIZE = 0.01
-const EPSILON = 0.000001
 
 export interface CanvasTransformStatusProps {
   readonly canvasTitle: string | null
@@ -42,7 +37,7 @@ export function CanvasTransformStatus({
   const editor = useEditor()
 
   const [activeField, setActiveField] =
-    useState<TransformFieldId | null>(null)
+    useState<SelectionTransformField | null>(null)
 
   const [userAspectRatioLocked, setUserAspectRatioLocked] =
     useState(false)
@@ -75,7 +70,7 @@ export function CanvasTransformStatus({
     userAspectRatioLocked
 
   const commitTransform = (
-    field: TransformFieldId,
+    field: SelectionTransformField,
     value: number,
   ) => {
     if (!editor || !snapshot) {
@@ -91,7 +86,7 @@ export function CanvasTransformStatus({
   }
 
   const navigateField = (
-    currentField: TransformFieldId,
+    currentField: SelectionTransformField,
     direction: 1 | -1,
   ) => {
     if (!snapshot) {
@@ -193,7 +188,7 @@ export function CanvasTransformStatus({
               disabled={!snapshot.canResize}
               field="width"
               label="W"
-              minimum={MINIMUM_SIZE}
+              minimum={MINIMUM_SELECTION_SIZE}
               onActivate={setActiveField}
               onCommit={commitTransform}
               onNavigate={navigateField}
@@ -205,7 +200,7 @@ export function CanvasTransformStatus({
               disabled={!snapshot.canResize}
               field="height"
               label="H"
-              minimum={MINIMUM_SIZE}
+              minimum={MINIMUM_SELECTION_SIZE}
               onActivate={setActiveField}
               onCommit={commitTransform}
               onNavigate={navigateField}
@@ -330,7 +325,7 @@ function TransformGroup({
 }
 
 interface InlineTransformFieldProps {
-  readonly field: TransformFieldId
+  readonly field: SelectionTransformField
   readonly label: string
   readonly value: number | null
   readonly suffix?: string
@@ -338,14 +333,14 @@ interface InlineTransformFieldProps {
   readonly active: boolean
   readonly disabled: boolean
   readonly onActivate: (
-    field: TransformFieldId | null,
+    field: SelectionTransformField | null,
   ) => void
   readonly onCommit: (
-    field: TransformFieldId,
+    field: SelectionTransformField,
     value: number,
   ) => void
   readonly onNavigate: (
-    field: TransformFieldId,
+    field: SelectionTransformField,
     direction: 1 | -1,
   ) => void
 }
@@ -754,7 +749,7 @@ function StatusDivider() {
 }
 
 function isFieldEditable(
-  field: TransformFieldId,
+  field: SelectionTransformField,
   snapshot: SelectionTransformSnapshot,
 ): boolean {
   switch (field) {
@@ -789,75 +784,4 @@ function formatStatusNumber(
       ? 0
       : rounded,
   )
-}
-
-function approximatelyEqual(
-  first: number,
-  second: number,
-): boolean {
-  return Math.abs(first - second) < EPSILON
-}
-
-function radiansToDegrees(
-  radians: number,
-): number {
-  return radians * 180 / Math.PI
-}
-
-function degreesToRadians(
-  degrees: number,
-): number {
-  return degrees * Math.PI / 180
-}
-
-function normalizeDegrees(
-  degrees: number,
-): number {
-  const fullTurn = 360
-
-  let normalized =
-    (
-      (
-        (degrees % fullTurn) +
-        fullTurn
-      ) %
-      fullTurn
-    )
-
-  if (
-    approximatelyEqual(
-      normalized,
-      fullTurn,
-    ) ||
-    Object.is(normalized, -0)
-  ) {
-    normalized = 0
-  }
-
-  return normalized
-}
-
-function normalizeRadians(
-  radians: number,
-): number {
-  const fullTurn = Math.PI * 2
-
-  let normalized =
-    (
-      (
-        (
-          radians + Math.PI
-        ) %
-        fullTurn
-      ) +
-      fullTurn
-    ) %
-    fullTurn -
-    Math.PI
-
-  if (Object.is(normalized, -0)) {
-    normalized = 0
-  }
-
-  return normalized
 }

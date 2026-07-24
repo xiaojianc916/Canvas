@@ -675,7 +675,6 @@ export function PropertiesInspectorContent({
           isCroppingImage={isCroppingImage}
           onlySelectedShapeType={onlySelectedShapeType}
           selectionLockState={selectionLockState}
-          selectedShapeCount={selectedShapeCount}
         />
       ) : null}
     </div>
@@ -1049,7 +1048,6 @@ function SidebarField({ title, mixed, children }: SidebarFieldProps) {
 interface SelectionActionsProps {
   readonly capabilities: SelectionCapabilities
   readonly isCroppingImage: boolean
-  readonly selectedShapeCount: number
   readonly onlySelectedShapeType: string | null
   readonly selectionLockState: 'locked' | 'unlocked' | 'mixed'
 }
@@ -1057,8 +1055,7 @@ interface SelectionActionsProps {
 function SelectionActions({
   capabilities,
   isCroppingImage,
-  selectedShapeCount,
-  onlySelectedShapeType,
+onlySelectedShapeType,
   selectionLockState,
 }: SelectionActionsProps) {
   const actions = useActions()
