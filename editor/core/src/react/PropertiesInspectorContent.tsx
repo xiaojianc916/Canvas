@@ -12,7 +12,6 @@ import {
   DefaultVerticalAlignStyle,
   GeoShapeGeoStyle,
   isDefined,
-  isValidElement,
   LineShapeSplineStyle,
   type ReadonlySharedStyleMap,
   StylePanelArrowheadPicker,
@@ -31,8 +30,9 @@ import {
   type TLUiActionItem,
   useActions,
 } from 'tldraw'
-import type {
-  ReactNode,
+import {
+  isValidElement,
+  type ReactNode,
 } from 'react'
 
 export interface PropertiesInspectorContentProps {
