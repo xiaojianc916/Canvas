@@ -639,3 +639,63 @@ body {
   outline: 2px solid var(--color-ring);
   outline-offset: -2px;
 }
+
+
+/* hybrid-canvas:properties-sidebar-v4 */
+
+/*
+ * Mixed 值不伪装成普通未选中状态。
+ */
+.hc-properties-sidebar__segmented[data-mixed],
+.hc-properties-sidebar__opacity[data-mixed] {
+  border-style: dashed;
+  border-color:
+    color-mix(
+      in oklab,
+      var(--color-primary) 40%,
+      transparent
+    );
+}
+
+.hc-properties-sidebar__color-grid[data-mixed] {
+  position: relative;
+  padding: 5px;
+  border: 1px dashed
+    color-mix(
+      in oklab,
+      var(--color-primary) 40%,
+      transparent
+    );
+  border-radius: 8px;
+}
+
+.hc-properties-sidebar__color-grid[data-mixed]::after {
+  position: absolute;
+  top: -7px;
+  right: 6px;
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--color-sidebar);
+  color:
+    color-mix(
+      in oklab,
+      var(--color-foreground) 58%,
+      transparent
+    );
+  content: "—";
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/*
+ * Tooltip 接管可见标签后，不依赖浏览器 title。
+ */
+.hc-properties-sidebar__action,
+.hc-properties-sidebar__segment,
+.hc-properties-sidebar__color-button,
+.hc-properties-sidebar__opacity-option {
+  -webkit-tap-highlight-color: transparent;
+}

@@ -7,48 +7,56 @@ import {
 import path from 'node:path'
 import process from 'node:process'
 
-const filePath = path.join(
-  process.cwd(),
+const root = process.cwd()
+
+const contentPath = path.join(
+  root,
   'editor/core/src/react/PropertiesInspectorContent.tsx',
 )
 
-let source = (
+const cssPath = path.join(
+  root,
+  'apps/desktop/src/app.css',
+)
+
+const CSS_MARKER =
+  '/* hybrid-canvas:properties-sidebar-v4 */'
+
+let source = normalize(
   await readFile(
-    filePath,
+    contentPath,
     'utf8',
-  )
-).replaceAll(
-  '\r\n',
-  '\n',
+  ),
 )
 
-source = updateImports(source)
-source = addGeoOptions(source)
-source = addGeoStyleState(source)
-source = addGeoSection(source)
-source = addSelectionState(source)
-source = extendSelectionActions(source)
+source = addTooltipImport(source)
+source = addCapabilityType(source)
+source = addCapabilityState(source)
+source = passCapabilities(source)
+source = updateSelectionActions(source)
 source = replaceActionButton(source)
+source = wrapStyleButtons(source)
+source = wrapColorButtons(source)
+source = wrapOpacityButtons(source)
 
-await writeFile(
-  filePath,
-  source.trimEnd() + '\n',
-  'utf8',
+await write(
+  contentPath,
+  source,
 )
+
+await updateCss()
 
 console.log('')
 console.log(
-  '右侧属性侧边栏第三阶段已完成。',
+  '右侧属性侧边栏第四阶段已完成。',
 )
 console.log('')
 console.log('新增：')
-console.log('  - 官方几何形状图例')
-console.log('  - 锁定与解锁')
-console.log('  - 创建画框')
-console.log('  - 适应画框内容')
-console.log('  - 移除画框')
-console.log('  - 替换图片/视频')
-console.log('  - 下载媒体原文件')
+console.log('  - 官方 Tooltip')
+console.log('  - ShapeUtil 能力判断')
+console.log('  - 锁定对象操作限制')
+console.log('  - 只读模式操作限制')
+console.log('  - Mixed 统一视觉')
 console.log('')
 console.log('验证：')
 console.log('  pnpm format')
@@ -58,110 +66,66 @@ console.log('  pnpm test:architecture')
 console.log('  pnpm build:desktop')
 console.log('')
 
-function updateImports(input) {
-  if (
-    !input.includes(
-      'defaultGeoTypeDefinitions',
-    )
-  ) {
-    input = input.replace(
-      `  DefaultVerticalAlignStyle,
-  getColorStyleItems,`,
-      `  DefaultVerticalAlignStyle,
-  defaultGeoTypeDefinitions,
-  GeoShapeGeoStyle,
-  getColorStyleItems,`,
-    )
-  }
-
-  if (
-    !input.includes(
-      'type TLGeoShape,',
-    )
-  ) {
-    input = input.replace(
-      `  type TLDefaultColorStyle,
-  type TLUiActionItem,`,
-      `  type TLDefaultColorStyle,
-  type TLGeoShape,
-  type TLUiActionItem,`,
-    )
-  }
-
-  return input
-}
-
-function addGeoOptions(input) {
+function addTooltipImport(input) {
   if (
     input.includes(
-      'const geoOptions',
+      'TldrawUiTooltip,',
+    )
+  ) {
+    return input
+  }
+
+  const anchor = `  TldrawUiIcon,
+  type TLDefaultColorStyle,`
+
+  if (
+    !input.includes(anchor)
+  ) {
+    throw new Error(
+      '没有找到 TldrawUiIcon 导入。',
+    )
+  }
+
+  return input.replace(
+    anchor,
+    `  TldrawUiIcon,
+  TldrawUiTooltip,
+  type TLDefaultColorStyle,`,
+  )
+}
+
+function addCapabilityType(input) {
+  if (
+    input.includes(
+      'interface SelectionCapabilities',
     )
   ) {
     return input
   }
 
   const marker =
-    'export function PropertiesInspectorContent'
+    'export interface PropertiesInspectorContentProps'
 
   const index =
     input.indexOf(marker)
 
   if (index < 0) {
     throw new Error(
-      '没有找到 PropertiesInspectorContent。',
+      '没有找到 PropertiesInspectorContentProps。',
     )
   }
 
-  const content = `const geoLabels:
-  Partial<
-    Record<
-      TLGeoShape['props']['geo'],
-      string
-    >
-  > = {
-    rectangle: '矩形',
-    ellipse: '椭圆',
-    triangle: '三角形',
-    diamond: '菱形',
-    star: '星形',
-    pentagon: '五边形',
-    hexagon: '六边形',
-    octagon: '八边形',
-    rhombus: '平行四边形',
-    'rhombus-2': '反向平行四边形',
-    oval: '椭圆框',
-    trapezoid: '梯形',
-    'arrow-left': '左箭头',
-    'arrow-up': '上箭头',
-    'arrow-down': '下箭头',
-    'arrow-right': '右箭头',
-    cloud: '云形',
-    'x-box': '叉号框',
-    'check-box': '勾选框',
-    heart: '心形',
-  }
-
-const geoOptions:
-  readonly StyleOption<
-    TLGeoShape['props']['geo']
-  >[] =
-  Object.entries(
-    defaultGeoTypeDefinitions,
-  ).map(
-    ([
-      value,
-      definition,
-    ]) => ({
-      value:
-        value as TLGeoShape['props']['geo'],
-      icon:
-        definition.icon as TLUiIconType,
-      label:
-        geoLabels[
-          value as TLGeoShape['props']['geo']
-        ] ?? value,
-    }),
-  )
+  const type = `interface SelectionCapabilities {
+  readonly canAlign: boolean
+  readonly canDistribute: boolean
+  readonly canReorder: boolean
+  readonly canGroup: boolean
+  readonly canUngroup: boolean
+  readonly canRotate: boolean
+  readonly canFrame: boolean
+  readonly canDuplicate: boolean
+  readonly canDelete: boolean
+}
 
 `
 
@@ -170,100 +134,17 @@ const geoOptions:
       0,
       index,
     ) +
-    content +
+    type +
     input.slice(
       index,
     )
   )
 }
 
-function addGeoStyleState(input) {
+function addCapabilityState(input) {
   if (
     input.includes(
-      `styles.get(
-      GeoShapeGeoStyle`,
-    )
-  ) {
-    return input
-  }
-
-  const anchor = `  const arrowKind =
-    styles.get(
-      ArrowShapeKindStyle,
-    )`
-
-  if (
-    !input.includes(anchor)
-  ) {
-    throw new Error(
-      '没有找到 ArrowShapeKindStyle 状态。',
-    )
-  }
-
-  return input.replace(
-    anchor,
-    `  const geo =
-    styles.get(
-      GeoShapeGeoStyle,
-    )
-
-${anchor}`,
-  )
-}
-
-function addGeoSection(input) {
-  if (
-    input.includes(
-      'title="形状类型"',
-    )
-  ) {
-    return input
-  }
-
-  const anchor = `      {hasArrow ? (
-        <SidebarSection
-          title="线条与箭头"
-        >`
-
-  if (
-    !input.includes(anchor)
-  ) {
-    throw new Error(
-      '没有找到线条与箭头区。',
-    )
-  }
-
-  const section = `      {geo ? (
-        <SidebarSection
-          title="形状类型"
-        >
-          <SidebarField
-            mixed={
-              geo.type === 'mixed'
-            }
-            title="图形"
-          >
-            <StyleControl
-              options={geoOptions}
-              style={GeoShapeGeoStyle}
-              value={geo}
-            />
-          </SidebarField>
-        </SidebarSection>
-      ) : null}
-
-`
-
-  return input.replace(
-    anchor,
-    section + anchor,
-  )
-}
-
-function addSelectionState(input) {
-  if (
-    input.includes(
-      'selectionLockState',
+      'right properties sidebar selection capabilities',
     )
   ) {
     return input
@@ -276,81 +157,157 @@ function addSelectionState(input) {
     !input.includes(returnAnchor)
   ) {
     throw new Error(
-      '没有找到 Properties Inspector 返回内容。',
+      '没有找到侧边栏返回内容。',
     )
   }
 
-  input = input.replace(
-    returnAnchor,
-    `  const selectionLockState =
-    useValue(
-      'right properties sidebar selection lock state',
+  const capabilityState = `  const selectionCapabilities =
+    useValue<SelectionCapabilities>(
+      'right properties sidebar selection capabilities',
       () => {
         const selected =
           editor.getSelectedShapes()
 
-        if (
-          selected.length === 0
-        ) {
-          return 'unlocked'
-        }
+        const readonly =
+          editor.getIsReadonly()
 
-        const lockedCount =
+        const unlocked =
           selected.filter(
             (shape) =>
-              shape.isLocked,
-          ).length
+              !shape.isLocked,
+          )
 
-        if (
-          lockedCount === 0
-        ) {
-          return 'unlocked'
+        const alignable =
+          unlocked.filter(
+            (shape) =>
+              editor
+                .getShapeUtil(shape)
+                .canBeLaidOut(
+                  shape,
+                  {
+                    type: 'align',
+                    shapes: unlocked,
+                  },
+                ),
+          )
+
+        const distributable =
+          unlocked.filter(
+            (shape) =>
+              editor
+                .getShapeUtil(shape)
+                .canBeLaidOut(
+                  shape,
+                  {
+                    type: 'distribute',
+                    shapes: unlocked,
+                  },
+                ),
+          )
+
+        const rotatable =
+          unlocked.filter(
+            (shape) =>
+              !editor
+                .getShapeUtil(shape)
+                .hideRotateHandle(
+                  shape,
+                ),
+          )
+
+        const onlySelected =
+          editor.getOnlySelectedShape()
+
+        return {
+          canAlign:
+            !readonly &&
+            alignable.length >= 2,
+
+          canDistribute:
+            !readonly &&
+            distributable.length >= 3,
+
+          canReorder:
+            !readonly &&
+            unlocked.length > 0,
+
+          canGroup:
+            !readonly &&
+            unlocked.length >= 2,
+
+          canUngroup:
+            !readonly &&
+            onlySelected?.type ===
+              'group' &&
+            !onlySelected.isLocked,
+
+          canRotate:
+            !readonly &&
+            unlocked.length > 0 &&
+            rotatable.length ===
+              unlocked.length,
+
+          canFrame:
+            !readonly &&
+            unlocked.length >= 2,
+
+          canDuplicate:
+            !readonly &&
+            selected.length > 0,
+
+          canDelete:
+            !readonly &&
+            unlocked.length > 0,
         }
-
-        if (
-          lockedCount ===
-          selected.length
-        ) {
-          return 'locked'
-        }
-
-        return 'mixed'
       },
       [editor],
     )
 
-${returnAnchor}`,
-  )
+`
 
-  const propsAnchor = `          onlySelectedShapeType={
-            onlySelectedShapeType
-          }
-          selectedShapeCount={`
+  return input.replace(
+    returnAnchor,
+    capabilityState +
+      returnAnchor,
+  )
+}
+
+function passCapabilities(input) {
+  if (
+    input.includes(
+      `capabilities={
+            selectionCapabilities
+          }`,
+    )
+  ) {
+    return input
+  }
+
+  const anchor = `        <SelectionActions
+          onlySelectedShapeType={`
 
   if (
-    !input.includes(propsAnchor)
+    !input.includes(anchor)
   ) {
     throw new Error(
-      '没有找到 SelectionActions 属性。',
+      '没有找到 SelectionActions。',
     )
   }
 
   return input.replace(
-    propsAnchor,
-    `          onlySelectedShapeType={
-            onlySelectedShapeType
+    anchor,
+    `        <SelectionActions
+          capabilities={
+            selectionCapabilities
           }
-          selectionLockState={
-            selectionLockState
-          }
-          selectedShapeCount={`,
+          onlySelectedShapeType={`,
   )
 }
 
-function extendSelectionActions(input) {
+function updateSelectionActions(input) {
   if (
     input.includes(
-      'readonly selectionLockState',
+      'readonly capabilities:',
     )
   ) {
     return input
@@ -358,161 +315,176 @@ function extendSelectionActions(input) {
 
   input = input.replace(
     `interface SelectionActionsProps {
-  readonly selectedShapeCount: number
-  readonly onlySelectedShapeType:
-    | string
-    | null
-}`,
+  readonly selectedShapeCount: number`,
     `interface SelectionActionsProps {
-  readonly selectedShapeCount: number
-  readonly onlySelectedShapeType:
-    | string
-    | null
-  readonly selectionLockState:
-    | 'locked'
-    | 'unlocked'
-    | 'mixed'
-}`,
+  readonly capabilities:
+    SelectionCapabilities
+  readonly selectedShapeCount: number`,
   )
 
   input = input.replace(
     `function SelectionActions({
-  selectedShapeCount,
-  onlySelectedShapeType,
-}: SelectionActionsProps)`,
+  selectedShapeCount,`,
     `function SelectionActions({
-  selectedShapeCount,
-  onlySelectedShapeType,
-  selectionLockState,
-}: SelectionActionsProps)`,
+  capabilities,
+  selectedShapeCount,`,
   )
 
-  const objectGridAnchor = `        <div className="hc-properties-sidebar__action-grid">
-          {onlySelectedShapeType ===`
+  input = input.replace(
+    `{selectedShapeCount >= 2 ? (
+        <SidebarSection
+          title="排列"`,
+    `{capabilities.canAlign ? (
+        <SidebarSection
+          title="排列"`,
+  )
+
+  input = input.replace(
+    `{selectedShapeCount >= 3 ? (`,
+    `{capabilities.canDistribute ? (`,
+  )
+
+  input = input.replace(
+    `      <SidebarSection
+        title="层级"
+      >
+        <div className="hc-properties-sidebar__action-grid">`,
+    `      {capabilities.canReorder ? (
+        <SidebarSection
+          title="层级"
+        >
+          <div className="hc-properties-sidebar__action-grid">`,
+  )
+
+  const layerEnd = `          <ActionButton
+            actions={actions}
+            id="send-to-back"
+            label="置于底层"
+          />
+        </div>
+      </SidebarSection>`
 
   if (
-    !input.includes(
-      objectGridAnchor,
-    )
+    !input.includes(layerEnd)
   ) {
     throw new Error(
-      '没有找到对象操作网格。',
+      '没有找到层级操作区结尾。',
     )
   }
 
   input = input.replace(
-    objectGridAnchor,
-    `        <div className="hc-properties-sidebar__action-grid">
-          <ActionButton
+    layerEnd,
+    `          <ActionButton
             actions={actions}
-            icon={
-              selectionLockState ===
-              'locked'
-                ? 'unlock'
-                : 'lock'
-            }
-            id="toggle-lock"
-            label={
-              selectionLockState ===
-              'locked'
-                ? '解锁'
-                : selectionLockState ===
-                    'mixed'
-                  ? '统一锁定'
-                  : '锁定'
-            }
+            id="send-to-back"
+            label="置于底层"
           />
-
-          {onlySelectedShapeType ===`,
+          </div>
+        </SidebarSection>
+      ) : null}`,
   )
 
-  const rotateAnchor = `          <ActionButton
+  input = input.replace(
+    `{onlySelectedShapeType ===
+          'group' ? (`,
+    `{capabilities.canUngroup ? (`,
+  )
+
+  input = input.replace(
+    `) : selectedShapeCount >=
+            2 ? (`,
+    `) : capabilities.canGroup ? (`,
+  )
+
+  input = input.replace(
+    `{selectedShapeCount >= 2 ? (
+            <ActionButton
+              actions={actions}
+              icon="tool-frame"`,
+    `{capabilities.canFrame ? (
+            <ActionButton
+              actions={actions}
+              icon="tool-frame"`,
+  )
+
+  const rotateButtons = `          <ActionButton
             actions={actions}
             id="rotate-ccw"
             label="逆时针旋转"
+          />
+
+          <ActionButton
+            actions={actions}
+            id="rotate-cw"
+            label="顺时针旋转"
           />`
 
   if (
     !input.includes(
-      rotateAnchor,
+      rotateButtons,
     )
   ) {
     throw new Error(
-      '没有找到旋转操作。',
+      '没有找到旋转按钮。',
     )
   }
 
-  const contextualActions = `          {selectedShapeCount >= 2 ? (
+  input = input.replace(
+    rotateButtons,
+    `          {capabilities.canRotate ? (
+            <>
+              <ActionButton
+                actions={actions}
+                id="rotate-ccw"
+                label="逆时针旋转"
+              />
+
+              <ActionButton
+                actions={actions}
+                id="rotate-cw"
+                label="顺时针旋转"
+              />
+            </>
+          ) : null}`,
+  )
+
+  const duplicateButton = `          <ActionButton
+            actions={actions}
+            id="duplicate"
+            label="创建副本"
+          />`
+
+  input = input.replace(
+    duplicateButton,
+    `          {capabilities.canDuplicate ? (
             <ActionButton
               actions={actions}
-              icon="tool-frame"
-              id="frame-selection"
-              label="创建画框"
+              id="duplicate"
+              label="创建副本"
             />
-          ) : null}
-
-          {onlySelectedShapeType ===
-          'frame' ? (
-            <>
-              <ActionButton
-                actions={actions}
-                icon="corners"
-                id="fit-frame-to-content"
-                label="适应内容"
-              />
-
-              <ActionButton
-                actions={actions}
-                icon="cross-2"
-                id="remove-frame"
-                label="移除画框"
-              />
-            </>
-          ) : null}
-
-          {onlySelectedShapeType ===
-          'image' ? (
-            <>
-              <ActionButton
-                actions={actions}
-                id="image-replace"
-                label="替换图片"
-              />
-
-              <ActionButton
-                actions={actions}
-                icon="download"
-                id="download-original"
-                label="下载原图"
-              />
-            </>
-          ) : null}
-
-          {onlySelectedShapeType ===
-          'video' ? (
-            <>
-              <ActionButton
-                actions={actions}
-                id="video-replace"
-                label="替换视频"
-              />
-
-              <ActionButton
-                actions={actions}
-                icon="download"
-                id="download-original"
-                label="下载原视频"
-              />
-            </>
-          ) : null}
-
-`
-
-  return input.replace(
-    rotateAnchor,
-    contextualActions +
-      rotateAnchor,
+          ) : null}`,
   )
+
+  const deleteButton = `          <ActionButton
+            actions={actions}
+            destructive
+            id="delete"
+            label="删除"
+          />`
+
+  input = input.replace(
+    deleteButton,
+    `          {capabilities.canDelete ? (
+            <ActionButton
+              actions={actions}
+              destructive
+              id="delete"
+              label="删除"
+            />
+          ) : null}`,
+  )
+
+  return input
 }
 
 function replaceActionButton(input) {
@@ -560,36 +532,455 @@ function replaceActionButton(input) {
   }
 
   return (
-    <button
-      aria-label={label}
-      className={
-        destructive
-          ? 'hc-properties-sidebar__action hc-properties-sidebar__action--destructive'
-          : 'hc-properties-sidebar__action'
-      }
-      onClick={() => {
-        void item.onSelect(
-          'toolbar',
-        )
-      }}
-      title={label}
-      type="button"
+    <TldrawUiTooltip
+      content={label}
+      side="left"
+      sideOffset={8}
     >
-      {typeof resolvedIcon ===
-      'string' ? (
-        <TldrawUiIcon
-          icon={
-            resolvedIcon as TLUiIconType
-          }
-          label={label}
-        />
-      ) : (
-        resolvedIcon
-      )}
-    </button>
+      <button
+        aria-label={label}
+        className={
+          destructive
+            ? 'hc-properties-sidebar__action hc-properties-sidebar__action--destructive'
+            : 'hc-properties-sidebar__action'
+        }
+        onClick={() => {
+          void item.onSelect(
+            'toolbar',
+          )
+        }}
+        type="button"
+      >
+        {typeof resolvedIcon ===
+        'string' ? (
+          <TldrawUiIcon
+            icon={
+              resolvedIcon as TLUiIconType
+            }
+            label={label}
+          />
+        ) : (
+          resolvedIcon
+        )}
+      </button>
+    </TldrawUiTooltip>
   )
 }
 
 function getToolTitle`,
+  )
+}
+
+function wrapStyleButtons(input) {
+  if (
+    input.includes(
+      `content={
+                option.label
+              }
+              side="left"`,
+    )
+  ) {
+    return input
+  }
+
+  const oldCode = `          return (
+            <button
+              aria-label={
+                option.label
+              }
+              aria-pressed={
+                active
+              }
+              className="hc-properties-sidebar__segment"
+              key={
+                option.value
+              }
+              onClick={() => {
+                styleContext.onHistoryMark(
+                  'change ' +
+                    style.id,
+                )
+
+                styleContext.onValueChange(
+                  style,
+                  option.value,
+                )
+              }}
+              title={
+                option.label
+              }
+              type="button"
+            >
+              <TldrawUiIcon
+                icon={
+                  option.icon
+                }
+                label={
+                  option.label
+                }
+              />
+            </button>
+          )`
+
+  const newCode = `          return (
+            <TldrawUiTooltip
+              content={
+                option.label
+              }
+              key={
+                option.value
+              }
+              side="left"
+              sideOffset={8}
+            >
+              <button
+                aria-label={
+                  option.label
+                }
+                aria-pressed={
+                  active
+                }
+                className="hc-properties-sidebar__segment"
+                onClick={() => {
+                  styleContext.onHistoryMark(
+                    'change ' +
+                      style.id,
+                  )
+
+                  styleContext.onValueChange(
+                    style,
+                    option.value,
+                  )
+                }}
+                type="button"
+              >
+                <TldrawUiIcon
+                  icon={
+                    option.icon
+                  }
+                  label={
+                    option.label
+                  }
+                />
+              </button>
+            </TldrawUiTooltip>
+          )`
+
+  if (
+    !input.includes(oldCode)
+  ) {
+    throw new Error(
+      '没有找到 StyleControl 按钮。',
+    )
+  }
+
+  return input.replace(
+    oldCode,
+    newCode,
+  )
+}
+
+function wrapColorButtons(input) {
+  if (
+    input.includes(
+      `content={label}
+            key={item.value}
+            side="left"`,
+    )
+  ) {
+    return input
+  }
+
+  const oldCode = `        return (
+          <button
+            aria-label={label}
+            aria-pressed={active}
+            className="hc-properties-sidebar__color-button"
+            key={item.value}
+            onClick={() => {
+              styleContext.onHistoryMark(
+                'change color',
+              )
+
+              styleContext.onValueChange(
+                DefaultColorStyle,
+                colorValue,
+              )
+            }}
+            style={{
+              '--hc-swatch-color':
+                getColorValue(
+                  colors,
+                  colorValue,
+                  'solid',
+                ),
+            } as React.CSSProperties}
+            title={label}
+            type="button"
+          >
+            <TldrawUiIcon
+              icon="color"
+              label={label}
+            />
+          </button>
+        )`
+
+  const newCode = `        return (
+          <TldrawUiTooltip
+            content={label}
+            key={item.value}
+            side="left"
+            sideOffset={8}
+          >
+            <button
+              aria-label={label}
+              aria-pressed={active}
+              className="hc-properties-sidebar__color-button"
+              onClick={() => {
+                styleContext.onHistoryMark(
+                  'change color',
+                )
+
+                styleContext.onValueChange(
+                  DefaultColorStyle,
+                  colorValue,
+                )
+              }}
+              style={{
+                '--hc-swatch-color':
+                  getColorValue(
+                    colors,
+                    colorValue,
+                    'solid',
+                  ),
+              } as React.CSSProperties}
+              type="button"
+            >
+              <TldrawUiIcon
+                icon="color"
+                label={label}
+              />
+            </button>
+          </TldrawUiTooltip>
+        )`
+
+  if (
+    !input.includes(oldCode)
+  ) {
+    throw new Error(
+      '没有找到颜色按钮。',
+    )
+  }
+
+  return input.replace(
+    oldCode,
+    newCode,
+  )
+}
+
+function wrapOpacityButtons(input) {
+  if (
+    input.includes(
+      `content={
+                '透明度 ' +
+                option.label
+              }`,
+    )
+  ) {
+    return input
+  }
+
+  const oldCode = `          return (
+            <button
+              aria-label={
+                '透明度 ' +
+                option.label
+              }
+              aria-pressed={
+                active
+              }
+              className="hc-properties-sidebar__opacity-option"
+              key={
+                option.value
+              }
+              onClick={() => {
+                styleContext.onHistoryMark(
+                  'change opacity',
+                )
+
+                styleContext.onOpacityChange(
+                  option.value,
+                )
+              }}
+              title={
+                '透明度 ' +
+                option.label
+              }
+              type="button"
+            >
+              {option.label}
+            </button>
+          )`
+
+  const newCode = `          return (
+            <TldrawUiTooltip
+              content={
+                '透明度 ' +
+                option.label
+              }
+              key={
+                option.value
+              }
+              side="left"
+              sideOffset={8}
+            >
+              <button
+                aria-label={
+                  '透明度 ' +
+                  option.label
+                }
+                aria-pressed={
+                  active
+                }
+                className="hc-properties-sidebar__opacity-option"
+                onClick={() => {
+                  styleContext.onHistoryMark(
+                    'change opacity',
+                  )
+
+                  styleContext.onOpacityChange(
+                    option.value,
+                  )
+                }}
+                type="button"
+              >
+                {option.label}
+              </button>
+            </TldrawUiTooltip>
+          )`
+
+  if (
+    !input.includes(oldCode)
+  ) {
+    throw new Error(
+      '没有找到透明度按钮。',
+    )
+  }
+
+  return input.replace(
+    oldCode,
+    newCode,
+  )
+}
+
+async function updateCss() {
+  let css = normalize(
+    await readFile(
+      cssPath,
+      'utf8',
+    ),
+  )
+
+  const markerIndex =
+    css.indexOf(
+      CSS_MARKER,
+    )
+
+  if (markerIndex >= 0) {
+    css = css
+      .slice(
+        0,
+        markerIndex,
+      )
+      .trimEnd()
+  }
+
+  css += `
+
+${CSS_MARKER}
+
+/*
+ * Mixed 值不伪装成普通未选中状态。
+ */
+.hc-properties-sidebar__segmented[data-mixed],
+.hc-properties-sidebar__opacity[data-mixed] {
+  border-style: dashed;
+  border-color:
+    color-mix(
+      in oklab,
+      var(--color-primary) 40%,
+      transparent
+    );
+}
+
+.hc-properties-sidebar__color-grid[data-mixed] {
+  position: relative;
+  padding: 5px;
+  border: 1px dashed
+    color-mix(
+      in oklab,
+      var(--color-primary) 40%,
+      transparent
+    );
+  border-radius: 8px;
+}
+
+.hc-properties-sidebar__color-grid[data-mixed]::after {
+  position: absolute;
+  top: -7px;
+  right: 6px;
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--color-sidebar);
+  color:
+    color-mix(
+      in oklab,
+      var(--color-foreground) 58%,
+      transparent
+    );
+  content: "—";
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/*
+ * Tooltip 接管可见标签后，不依赖浏览器 title。
+ */
+.hc-properties-sidebar__action,
+.hc-properties-sidebar__segment,
+.hc-properties-sidebar__color-button,
+.hc-properties-sidebar__opacity-option {
+  -webkit-tap-highlight-color: transparent;
+}
+`
+
+  await write(
+    cssPath,
+    css,
+  )
+}
+
+async function write(
+  filePath,
+  content,
+) {
+  await writeFile(
+    filePath,
+    normalize(
+      content,
+    ).trimEnd() + '\n',
+    'utf8',
+  )
+}
+
+function normalize(
+  content,
+) {
+  return content.replaceAll(
+    '\r\n',
+    '\n',
   )
 }

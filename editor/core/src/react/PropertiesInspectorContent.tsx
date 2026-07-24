@@ -19,6 +19,7 @@ import {
   type SharedStyle,
   type StyleProp,
   TldrawUiIcon,
+  TldrawUiTooltip,
   type TLDefaultColorStyle,
   type TLGeoShape,
   type TLUiActionItem,
@@ -31,6 +32,18 @@ import {
 import type {
   ReactNode,
 } from 'react'
+
+interface SelectionCapabilities {
+  readonly canAlign: boolean
+  readonly canDistribute: boolean
+  readonly canReorder: boolean
+  readonly canGroup: boolean
+  readonly canUngroup: boolean
+  readonly canRotate: boolean
+  readonly canFrame: boolean
+  readonly canDuplicate: boolean
+  readonly canDelete: boolean
+}
 
 export interface PropertiesInspectorContentProps {
   readonly styles:
@@ -416,6 +429,108 @@ export function PropertiesInspectorContent({
       [editor],
     )
 
+  const selectionCapabilities =
+    useValue<SelectionCapabilities>(
+      'right properties sidebar selection capabilities',
+      () => {
+        const selected =
+          editor.getSelectedShapes()
+
+        const readonly =
+          editor.getIsReadonly()
+
+        const unlocked =
+          selected.filter(
+            (shape) =>
+              !shape.isLocked,
+          )
+
+        const alignable =
+          unlocked.filter(
+            (shape) =>
+              editor
+                .getShapeUtil(shape)
+                .canBeLaidOut(
+                  shape,
+                  {
+                    type: 'align',
+                    shapes: unlocked,
+                  },
+                ),
+          )
+
+        const distributable =
+          unlocked.filter(
+            (shape) =>
+              editor
+                .getShapeUtil(shape)
+                .canBeLaidOut(
+                  shape,
+                  {
+                    type: 'distribute',
+                    shapes: unlocked,
+                  },
+                ),
+          )
+
+        const rotatable =
+          unlocked.filter(
+            (shape) =>
+              !editor
+                .getShapeUtil(shape)
+                .hideRotateHandle(
+                  shape,
+                ),
+          )
+
+        const onlySelected =
+          editor.getOnlySelectedShape()
+
+        return {
+          canAlign:
+            !readonly &&
+            alignable.length >= 2,
+
+          canDistribute:
+            !readonly &&
+            distributable.length >= 3,
+
+          canReorder:
+            !readonly &&
+            unlocked.length > 0,
+
+          canGroup:
+            !readonly &&
+            unlocked.length >= 2,
+
+          canUngroup:
+            !readonly &&
+            onlySelected?.type ===
+              'group' &&
+            !onlySelected.isLocked,
+
+          canRotate:
+            !readonly &&
+            unlocked.length > 0 &&
+            rotatable.length ===
+              unlocked.length,
+
+          canFrame:
+            !readonly &&
+            unlocked.length >= 2,
+
+          canDuplicate:
+            !readonly &&
+            selected.length > 0,
+
+          canDelete:
+            !readonly &&
+            unlocked.length > 0,
+        }
+      },
+      [editor],
+    )
+
   return (
     <div className="hc-properties-sidebar__panel">
       <header className="hc-properties-sidebar__header">
@@ -432,6 +547,9 @@ export function PropertiesInspectorContent({
 
       {selectedShapeCount > 0 ? (
         <SelectionActions
+          capabilities={
+            selectionCapabilities
+          }
           onlySelectedShapeType={
             onlySelectedShapeType
           }
@@ -856,35 +974,40 @@ function OpacityControl({
               option.value
 
           return (
-            <button
-              aria-label={
+            <TldrawUiTooltip
+              content={
                 '透明度 ' +
                 option.label
               }
-              aria-pressed={
-                active
-              }
-              className="hc-properties-sidebar__opacity-option"
               key={
                 option.value
               }
-              onClick={() => {
-                styleContext.onHistoryMark(
-                  'change opacity',
-                )
-
-                styleContext.onOpacityChange(
-                  option.value,
-                )
-              }}
-              title={
-                '透明度 ' +
-                option.label
-              }
-              type="button"
+              side="left"
+              sideOffset={8}
             >
-              {option.label}
-            </button>
+              <button
+                aria-label={
+                  '透明度 ' +
+                  option.label
+                }
+                aria-pressed={
+                  active
+                }
+                className="hc-properties-sidebar__opacity-option"
+                onClick={() => {
+                  styleContext.onHistoryMark(
+                    'change opacity',
+                  )
+
+                  styleContext.onOpacityChange(
+                    option.value,
+                  )
+                }}
+                type="button"
+              >
+                {option.label}
+              </button>
+            </TldrawUiTooltip>
           )
         },
       )}
@@ -945,37 +1068,42 @@ function ColorControl({
           )
 
         return (
-          <button
-            aria-label={label}
-            aria-pressed={active}
-            className="hc-properties-sidebar__color-button"
+          <TldrawUiTooltip
+            content={label}
             key={item.value}
-            onClick={() => {
-              styleContext.onHistoryMark(
-                'change color',
-              )
-
-              styleContext.onValueChange(
-                DefaultColorStyle,
-                colorValue,
-              )
-            }}
-            style={{
-              '--hc-swatch-color':
-                getColorValue(
-                  colors,
-                  colorValue,
-                  'solid',
-                ),
-            } as React.CSSProperties}
-            title={label}
-            type="button"
+            side="left"
+            sideOffset={8}
           >
-            <TldrawUiIcon
-              icon="color"
-              label={label}
-            />
-          </button>
+            <button
+              aria-label={label}
+              aria-pressed={active}
+              className="hc-properties-sidebar__color-button"
+              onClick={() => {
+                styleContext.onHistoryMark(
+                  'change color',
+                )
+
+                styleContext.onValueChange(
+                  DefaultColorStyle,
+                  colorValue,
+                )
+              }}
+              style={{
+                '--hc-swatch-color':
+                  getColorValue(
+                    colors,
+                    colorValue,
+                    'solid',
+                  ),
+              } as React.CSSProperties}
+              type="button"
+            >
+              <TldrawUiIcon
+                icon="color"
+                label={label}
+              />
+            </button>
+          </TldrawUiTooltip>
         )
       })}
     </div>
@@ -1026,42 +1154,47 @@ function StyleControl<
               option.value
 
           return (
-            <button
-              aria-label={
+            <TldrawUiTooltip
+              content={
                 option.label
               }
-              aria-pressed={
-                active
-              }
-              className="hc-properties-sidebar__segment"
               key={
                 option.value
               }
-              onClick={() => {
-                styleContext.onHistoryMark(
-                  'change ' +
-                    style.id,
-                )
-
-                styleContext.onValueChange(
-                  style,
-                  option.value,
-                )
-              }}
-              title={
-                option.label
-              }
-              type="button"
+              side="left"
+              sideOffset={8}
             >
-              <TldrawUiIcon
-                icon={
-                  option.icon
-                }
-                label={
+              <button
+                aria-label={
                   option.label
                 }
-              />
-            </button>
+                aria-pressed={
+                  active
+                }
+                className="hc-properties-sidebar__segment"
+                onClick={() => {
+                  styleContext.onHistoryMark(
+                    'change ' +
+                      style.id,
+                  )
+
+                  styleContext.onValueChange(
+                    style,
+                    option.value,
+                  )
+                }}
+                type="button"
+              >
+                <TldrawUiIcon
+                  icon={
+                    option.icon
+                  }
+                  label={
+                    option.label
+                  }
+                />
+              </button>
+            </TldrawUiTooltip>
           )
         },
       )}
@@ -1126,6 +1259,8 @@ function SidebarField({
 }
 
 interface SelectionActionsProps {
+  readonly capabilities:
+    SelectionCapabilities
   readonly selectedShapeCount: number
   readonly onlySelectedShapeType:
     | string
@@ -1137,6 +1272,7 @@ interface SelectionActionsProps {
 }
 
 function SelectionActions({
+  capabilities,
   selectedShapeCount,
   onlySelectedShapeType,
   selectionLockState,
@@ -1146,7 +1282,7 @@ function SelectionActions({
 
   return (
     <>
-      {selectedShapeCount >= 2 ? (
+      {capabilities.canAlign ? (
         <SidebarSection
           title="排列"
         >
@@ -1187,7 +1323,7 @@ function SelectionActions({
               label="底部对齐"
             />
 
-            {selectedShapeCount >= 3 ? (
+            {capabilities.canDistribute ? (
               <>
                 <ActionButton
                   actions={actions}
@@ -1206,10 +1342,11 @@ function SelectionActions({
         </SidebarSection>
       ) : null}
 
-      <SidebarSection
-        title="层级"
-      >
-        <div className="hc-properties-sidebar__action-grid">
+      {capabilities.canReorder ? (
+        <SidebarSection
+          title="层级"
+        >
+          <div className="hc-properties-sidebar__action-grid">
           <ActionButton
             actions={actions}
             id="bring-to-front"
@@ -1233,8 +1370,9 @@ function SelectionActions({
             id="send-to-back"
             label="置于底层"
           />
-        </div>
-      </SidebarSection>
+          </div>
+        </SidebarSection>
+      ) : null}
 
       <SidebarSection
         title="对象"
@@ -1260,15 +1398,13 @@ function SelectionActions({
             }
           />
 
-          {onlySelectedShapeType ===
-          'group' ? (
+          {capabilities.canUngroup ? (
             <ActionButton
               actions={actions}
               id="ungroup"
               label="取消编组"
             />
-          ) : selectedShapeCount >=
-            2 ? (
+          ) : capabilities.canGroup ? (
             <ActionButton
               actions={actions}
               id="group"
@@ -1276,7 +1412,7 @@ function SelectionActions({
             />
           ) : null}
 
-          {selectedShapeCount >= 2 ? (
+          {capabilities.canFrame ? (
             <ActionButton
               actions={actions}
               icon="tool-frame"
@@ -1340,30 +1476,38 @@ function SelectionActions({
             </>
           ) : null}
 
-          <ActionButton
-            actions={actions}
-            id="rotate-ccw"
-            label="逆时针旋转"
-          />
+          {capabilities.canRotate ? (
+            <>
+              <ActionButton
+                actions={actions}
+                id="rotate-ccw"
+                label="逆时针旋转"
+              />
 
-          <ActionButton
-            actions={actions}
-            id="rotate-cw"
-            label="顺时针旋转"
-          />
+              <ActionButton
+                actions={actions}
+                id="rotate-cw"
+                label="顺时针旋转"
+              />
+            </>
+          ) : null}
 
-          <ActionButton
-            actions={actions}
-            id="duplicate"
-            label="创建副本"
-          />
+          {capabilities.canDuplicate ? (
+            <ActionButton
+              actions={actions}
+              id="duplicate"
+              label="创建副本"
+            />
+          ) : null}
 
-          <ActionButton
-            actions={actions}
-            destructive
-            id="delete"
-            label="删除"
-          />
+          {capabilities.canDelete ? (
+            <ActionButton
+              actions={actions}
+              destructive
+              id="delete"
+              label="删除"
+            />
+          ) : null}
         </div>
       </SidebarSection>
     </>
@@ -1401,33 +1545,38 @@ function ActionButton({
   }
 
   return (
-    <button
-      aria-label={label}
-      className={
-        destructive
-          ? 'hc-properties-sidebar__action hc-properties-sidebar__action--destructive'
-          : 'hc-properties-sidebar__action'
-      }
-      onClick={() => {
-        void item.onSelect(
-          'toolbar',
-        )
-      }}
-      title={label}
-      type="button"
+    <TldrawUiTooltip
+      content={label}
+      side="left"
+      sideOffset={8}
     >
-      {typeof resolvedIcon ===
-      'string' ? (
-        <TldrawUiIcon
-          icon={
-            resolvedIcon as TLUiIconType
-          }
-          label={label}
-        />
-      ) : (
-        resolvedIcon
-      )}
-    </button>
+      <button
+        aria-label={label}
+        className={
+          destructive
+            ? 'hc-properties-sidebar__action hc-properties-sidebar__action--destructive'
+            : 'hc-properties-sidebar__action'
+        }
+        onClick={() => {
+          void item.onSelect(
+            'toolbar',
+          )
+        }}
+        type="button"
+      >
+        {typeof resolvedIcon ===
+        'string' ? (
+          <TldrawUiIcon
+            icon={
+              resolvedIcon as TLUiIconType
+            }
+            label={label}
+          />
+        ) : (
+          resolvedIcon
+        )}
+      </button>
+    </TldrawUiTooltip>
   )
 }
 
