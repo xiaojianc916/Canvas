@@ -748,10 +748,14 @@ function ActionButton({
       title={label}
       type="button"
     >
-      <TldrawUiIcon
-        icon={item.icon}
-        label={label}
-      />
+      {typeof item.icon === 'string' ? (
+        <TldrawUiIcon
+          icon={item.icon as TLUiIconType}
+          label={label}
+        />
+      ) : (
+        item.icon
+      )}
     </button>
   )
 }
