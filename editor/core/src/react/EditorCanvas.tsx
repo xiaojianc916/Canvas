@@ -136,15 +136,12 @@ export function EditorCanvas({
       </div>
 
       <aside
-        aria-label="样式"
+        aria-label="对象属性"
         className="hc-tldraw-style-sidebar"
       >
-        <header className="hc-tldraw-style-sidebar__header">
-          <span>样式</span>
-        </header>
 
         <div
-          className="hc-tldraw-style-sidebar__content tl-theme__light"
+          className="hc-tldraw-style-host tl-theme__light"
           ref={setStylePanelHost}
         />
       </aside>

@@ -1,6 +1,5 @@
 import {
   DefaultNavigationPanel,
-  DefaultPageMenu,
   DefaultStylePanel,
   DefaultStylePanelContent,
   DefaultToolbar,
@@ -8,29 +7,25 @@ import {
 import { createPortal } from 'react-dom'
 
 export interface TldrawOfficialUiProps {
-  /**
-   * EditorCanvas 右侧样式栏的 DOM 挂载点。
-   *
-   * React portal 会保留 tldraw React context，因此官方 StylePanel
-   * 仍然直接读取 Editor、selection、shared styles 和 TLStore。
-   */
   readonly stylePanelHost: HTMLElement | null
 }
 
 /**
- * Canvas 只负责重新布置 tldraw 官方 UI。
+ * tldraw 官方 UI 的 Canvas 布局适配层。
  *
- * 不复制工具定义、样式状态、selection 状态、快捷键或 shape 更新逻辑。
+ * Canvas 只重新安排 UI 位置，不复制：
+ * - 工具注册表
+ * - selection 状态
+ * - 样式状态
+ * - 快捷键
+ * - Undo/Redo
+ * - shape 写入逻辑
  */
 export function TldrawOfficialUi({
   stylePanelHost,
 }: TldrawOfficialUiProps) {
   return (
     <>
-      <div className="hc-tldraw-page-menu">
-        <DefaultPageMenu />
-      </div>
-
       <div className="hc-tldraw-toolbar">
         <DefaultToolbar
           maxItems={64}
@@ -48,6 +43,22 @@ export function TldrawOfficialUi({
       {stylePanelHost
         ? createPortal(
             <DefaultStylePanel>
+              {/*
+               * DefaultStylePanelContent 内部包含官方：
+               * - StylePanelColorPicker
+               * - StylePanelOpacityPicker
+               * - StylePanelFillPicker
+               * - StylePanelDashPicker
+               * - StylePanelSizePicker
+               * - StylePanelFontPicker
+               * - 文本和标签对齐
+               * - Geo / Arrow / Spline 样式
+               *
+               * StylePanelColorPicker 的选项来自：
+               * editor.getCurrentTheme().colors
+               *
+               * Canvas 不维护硬编码颜色数组。
+               */}
               <DefaultStylePanelContent />
             </DefaultStylePanel>,
             stylePanelHost,

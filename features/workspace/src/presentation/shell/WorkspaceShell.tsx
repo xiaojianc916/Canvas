@@ -55,7 +55,7 @@ export function WorkspaceShell({
 
   const hasCanvas = model.activeSurface.kind === 'canvas'
   const dockSidebar = mode !== 'narrow' && isSidebarOpen
-  const dockInspector = isInspectorOpen && hasCanvas
+  const dockInspector = inspector !== null && inspector !== undefined && isInspectorOpen && hasCanvas
 
   useEffect(() => {
     const previousMode = previousModeRef.current
@@ -249,7 +249,7 @@ export function WorkspaceShell({
 
   const inspectorContent = <InspectorHost>{inspector}</InspectorHost>
 
-  const inspectorRegion = hasCanvas ? (
+  const inspectorRegion = hasCanvas && inspector !== null && inspector !== undefined ? (
     <>
       <aside
         aria-hidden={!dockInspector}
