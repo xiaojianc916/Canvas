@@ -33,7 +33,7 @@ const scaffoldPackagePatterns = {
   'apps/': 'desktop',
   'editor/': '(?:asset|canvas|document|file|plugin)',
   'features/':
-    '(?:canvas-session|flowchart|freehand|import-export|scientific-plot|settings|workspace)',
+    '(?:canvas-session|settings|workspace)',
   'foundations/': '(?:design-system|foundations-[a-z-]+)',
   'platforms/': '(?:desktop-ipc|platforms-desktop-runtime)',
 }
@@ -42,7 +42,7 @@ const layerRules = [
   {
     source: 'foundations/',
     pattern:
-      /@hybrid-canvas\/(?:asset|canvas|document|desktop(?:-ipc)?|file|flowchart|freehand|import-export|platforms-desktop-runtime|plugin|scientific-plot|settings|workspace)(?=['"/])/,
+      /@hybrid-canvas\/(?:asset|canvas|document|desktop(?:-ipc)?|file|platforms-desktop-runtime|plugin|settings|workspace)(?=['"/])/,
     message: 'foundations 反向依赖上层包',
   },
   {

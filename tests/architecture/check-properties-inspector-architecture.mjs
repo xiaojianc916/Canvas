@@ -147,13 +147,6 @@ forbidPattern(
   'Extension API 不得恢复 tool-first Inspector',
 )
 
-requirePattern(
-  'ExtensionContract',
-  sources.extensionContract,
-  /inspectorSections/,
-  'Extension API 必须使用 Section contribution',
-)
-
 
 if (violations.length > 0) {
   console.error('')

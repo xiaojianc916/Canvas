@@ -61,8 +61,6 @@ export interface PropertiesInspectorContentProps {
     | ReadonlySharedStyleMap
     | null
   readonly selectedShapeCount: number
-  readonly extensionSections:
-    readonly ReactNode[]
 }
 
 interface StyleOption<
@@ -365,7 +363,6 @@ const geoOptions:
 export function PropertiesInspectorContent({
   styles,
   selectedShapeCount,
-  extensionSections,
 }: PropertiesInspectorContentProps) {
   const editor = useEditor()
 
@@ -713,8 +710,6 @@ export function PropertiesInspectorContent({
           styles={styles}
         />
       ) : null}
-
-      {extensionSections}
 
       {selectedShapeCount > 0 ? (
         <SelectionActions

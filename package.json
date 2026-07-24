@@ -2,7 +2,7 @@
   "name": "hybrid-canvas",
   "version": "0.1.0",
   "private": true,
-  "description": "A local-first hybrid canvas for diagrams, scientific plots, freehand drawing and collaboration.",
+  "description": "A local-first canvas application built on tldraw.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

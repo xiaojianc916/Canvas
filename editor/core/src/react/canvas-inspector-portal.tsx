@@ -9,10 +9,6 @@ import {
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
-import type {
-  HybridCanvasInspectorSectionContribution,
-  HybridCanvasInspectorSectionMode,
-} from '../contracts/extension-contract'
 import { PropertiesInspectorContent } from './PropertiesInspectorContent'
 import {
   StylePanelContextProvider,
@@ -168,13 +164,10 @@ export function useCanvasInspectorAvailability(): boolean {
 
 export interface CanvasInspectorStylePanelProps {
   readonly active: boolean
-  readonly inspectorSections:
-    readonly HybridCanvasInspectorSectionContribution[]
 }
 
 export function CanvasInspectorStylePanel({
   active,
-  inspectorSections,
 }: CanvasInspectorStylePanelProps) {
   const context =
     useRequiredCanvasInspectorPortal()
@@ -200,98 +193,6 @@ export function CanvasInspectorStylePanel({
       ),
     )
 
-  const inspectorTarget =
-    useValue(
-      'properties inspector extension target',
-      () => {
-        const selected =
-          editor.getSelectedShapes()
-
-        if (selected.length > 0) {
-          return {
-            mode:
-              'selection' as const,
-            toolId: null,
-            shapeTypes:
-              selected.map(
-                (shape) =>
-                  shape.type,
-              ),
-          }
-        }
-
-        return {
-          mode:
-            'creation' as const,
-          toolId:
-            editor.getCurrentToolId(),
-          shapeTypes:
-            [] as string[],
-        }
-      },
-      [editor],
-    )
-
-  const matchingInspectorSections =
-    useMemo(
-      () =>
-        inspectorSections.filter(
-          (section) => {
-            if (
-              inspectorTarget.mode ===
-              'creation'
-            ) {
-              return (
-                inspectorTarget.toolId !==
-                  null &&
-                section.toolIds?.includes(
-                  inspectorTarget.toolId,
-                ) === true
-              )
-            }
-
-            return (
-              inspectorTarget.shapeTypes
-                .length > 0 &&
-              inspectorTarget.shapeTypes.every(
-                (shapeType) =>
-                  section.shapeTypes?.includes(
-                    shapeType,
-                  ) === true,
-              )
-            )
-          },
-        ),
-      [
-        inspectorSections,
-        inspectorTarget,
-      ],
-    )
-
-  const inspectorMode:
-    HybridCanvasInspectorSectionMode =
-    inspectorTarget.mode
-
-  const extensionSections =
-    matchingInspectorSections.map(
-      (section) => {
-        const Section =
-          section.component
-
-        return (
-          <Section
-            editor={editor}
-            key={
-              section.owner +
-              ':' +
-              section.id
-            }
-            mode={inspectorMode}
-          />
-        )
-      },
-    )
-
   /*
    * useRelevantStyles() 决定官方样式内容。
    *
@@ -302,8 +203,7 @@ export function CanvasInspectorStylePanel({
     active &&
     (
       styles !== null ||
-      selectedShapeCount > 0 ||
-      matchingInspectorSections.length > 0
+      selectedShapeCount > 0
     )
 
   useEffect(() => {
@@ -342,9 +242,6 @@ export function CanvasInspectorStylePanel({
         <PropertiesInspectorContent
           selectedShapeCount={
             selectedShapeCount
-          }
-          extensionSections={
-            extensionSections
           }
           styles={styles}
         />

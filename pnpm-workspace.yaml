@@ -16,17 +16,12 @@ allowBuilds:
 
 catalog:
   motion: "12.42.2"
-  "@dagrejs/dagre": "3.0.0"
   "@tailwindcss/vite": "4.3.3"
   "@types/node": "24.0.15"
   "@types/react": "19.2.17"
   "@types/react-dom": "19.2.3"
   "@vitejs/plugin-react": "6.0.3"
 
-  apache-arrow: "21.1.0"
-  d3-array: "3.2.4"
-  d3-scale: "4.0.2"
-  elkjs: "0.12.0"
   esbuild: "0.25.5"
   "@mynaui/icons-react": "0.4.11"
   react: "19.2.7"
@@ -38,7 +33,6 @@ catalog:
   tldraw: "5.2.5"
 
   typescript: "7.0.2"
-  uplot: "1.6.32"
   uuid: "14.0.1"
 
   valibot: "1.4.2"

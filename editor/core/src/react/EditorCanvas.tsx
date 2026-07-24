@@ -106,17 +106,11 @@ export function EditorCanvas({
             return (
               <CanvasInspectorStylePanel
                 active={isActive}
-                inspectorSections={
-                  registration.inspectorSections
-                }
               />
             )
           },
       }),
-      [
-        isActive,
-        registration.inspectorSections,
-      ],
+      [isActive],
     )
 
   const tldrawProps =

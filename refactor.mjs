@@ -1,90 +1,300 @@
 #!/usr/bin/env node
 
 import {
-  mkdir,
   readFile,
+  readdir,
+  rm,
   writeFile,
 } from 'node:fs/promises'
+import {
+  spawnSync,
+} from 'node:child_process'
 import path from 'node:path'
 import process from 'node:process'
 
 const root = process.cwd()
 
-await rewriteExtensionContract()
-await updatePublicExports()
-await createFlowNodeSection()
-await createScientificChartSection()
-await registerFlowNodeSection()
-await registerScientificChartSection()
-await updateEditorCanvas()
-await updateInspectorPortal()
-await updatePropertiesContent()
-await updateArchitectureTest()
+const removedFeatures = [
+  'flowchart',
+  'freehand',
+  'scientific-plot',
+  'import-export',
+]
 
-console.log('')
-console.log('Feature 属性 Section 已接入。')
-console.log('')
-console.log('新增：')
-console.log('  - Inspector Section contribution API')
-console.log('  - 流程图节点类型')
-console.log('  - 流程图节点颜色')
-console.log('  - 科学图表类型')
-console.log('  - 科学图表坐标轴开关')
-console.log('  - 科学图表网格线开关')
-console.log('  - 科学图表图例开关')
-console.log('  - 科学图表创建预设')
-console.log('')
-console.log('执行：')
-console.log('  pnpm format')
-console.log('  pnpm lint')
-console.log('  pnpm typecheck')
-console.log('  pnpm test:architecture')
-console.log('  pnpm test')
-console.log('  pnpm build:desktop')
-console.log('')
+const removedPackages = [
+  '@hybrid-canvas/flowchart',
+  '@hybrid-canvas/freehand',
+  '@hybrid-canvas/scientific-plot',
+  '@hybrid-canvas/import-export',
+]
+
+await cleanApplicationRuntime()
+await cleanDesktopManifest()
+await cleanRootManifest()
+await cleanArchitectureScaffolds()
+await cleanArchitectureRules()
+await cleanWorkspaceCatalog()
+await removeInspectorSectionApi()
+await removeFeatureDirectories()
+await regenerateLockfile()
+
+const staleReferences =
+  await findStaleReferences()
+
+if (
+  staleReferences.length > 0
+) {
+  console.error('')
+  console.error(
+    '仍发现已删除 Feature 的引用：',
+  )
+
+  for (
+    const reference of
+    staleReferences
+  ) {
+    console.error(
+      '  - ' + reference,
+    )
+  }
+
+  console.error('')
+  process.exitCode = 1
+} else {
+  console.log('')
+  console.log(
+    '无用自定义 Feature 已删除干净。',
+  )
+  console.log('')
+  console.log('已删除：')
+  console.log(
+    '  - features/flowchart',
+  )
+  console.log(
+    '  - features/freehand',
+  )
+  console.log(
+    '  - features/scientific-plot',
+  )
+  console.log(
+    '  - features/import-export',
+  )
+  console.log(
+    '  - 对应桌面依赖',
+  )
+  console.log(
+    '  - 对应 Extension 注册',
+  )
+  console.log(
+    '  - 对应架构脚手架声明',
+  )
+  console.log(
+    '  - 对应 pnpm lockfile 内容',
+  )
+  console.log(
+    '  - 无调用方的 Inspector Section API',
+  )
+  console.log('')
+  console.log('保留：')
+  console.log(
+    '  - features/workspace',
+  )
+  console.log(
+    '  - features/settings',
+  )
+  console.log(
+    '  - 官方 tldraw 工具和 Shape',
+  )
+  console.log(
+    '  - 当前右侧属性侧边栏',
+  )
+  console.log('')
+  console.log('验证：')
+  console.log('  pnpm format')
+  console.log('  pnpm lint')
+  console.log('  pnpm typecheck')
+  console.log(
+    '  pnpm test:architecture',
+  )
+  console.log('  pnpm test')
+  console.log(
+    '  pnpm build:desktop',
+  )
+  console.log('')
+}
+
+async function cleanApplicationRuntime() {
+  await update(
+    'apps/desktop/src/bootstrap/application.ts',
+    (source) => {
+      source = source.replace(
+        `import { flowchartExtension } from '@hybrid-canvas/flowchart'
+`,
+        '',
+      )
+
+      source = source.replace(
+        `import { freehandExtension } from '@hybrid-canvas/freehand'
+`,
+        '',
+      )
+
+      source = source.replace(
+        `import { scientificPlotExtension } from '@hybrid-canvas/scientific-plot'
+`,
+        '',
+      )
+
+      source = source.replace(
+        `    extensions: [flowchartExtension, freehandExtension, scientificPlotExtension],`,
+        `    extensions: [],`,
+      )
+
+      return source
+    },
+  )
+}
+
+async function cleanDesktopManifest() {
+  await updateJson(
+    'apps/desktop/package.json',
+    (manifest) => {
+      for (
+        const packageName of
+        removedPackages
+      ) {
+        delete manifest.dependencies?.[
+          packageName
+        ]
+
+        delete manifest.devDependencies?.[
+          packageName
+        ]
+      }
+
+      return manifest
+    },
+  )
+}
+
+async function cleanRootManifest() {
+  await updateJson(
+    'package.json',
+    (manifest) => {
+      manifest.description =
+        'A local-first canvas application built on tldraw.'
+
+      return manifest
+    },
+  )
+}
+
+async function cleanArchitectureScaffolds() {
+  await updateJson(
+    'architecture.scaffolds.json',
+    (manifest) => {
+      manifest.scaffolds =
+        manifest.scaffolds.filter(
+          (scaffold) =>
+            !removedFeatures.some(
+              (feature) =>
+                scaffold.path ===
+                'features/' +
+                  feature,
+            ),
+        )
+
+      return manifest
+    },
+  )
+}
+
+async function cleanArchitectureRules() {
+  await update(
+    'tests/architecture/check.mjs',
+    (source) => {
+      source = source.replace(
+        `    '(?:canvas-session|flowchart|freehand|import-export|scientific-plot|settings|workspace)',`,
+        `    '(?:canvas-session|settings|workspace)',`,
+      )
+
+      source = source.replace(
+        `      /@hybrid-canvas\\/(?:asset|canvas|document|desktop(?:-ipc)?|file|flowchart|freehand|import-export|platforms-desktop-runtime|plugin|scientific-plot|settings|workspace)(?=['"/])/`,
+        `      /@hybrid-canvas\\/(?:asset|canvas|document|desktop(?:-ipc)?|file|platforms-desktop-runtime|plugin|settings|workspace)(?=['"/])/`,
+      )
+
+      return source
+    },
+  )
+}
+
+async function cleanWorkspaceCatalog() {
+  await update(
+    'pnpm-workspace.yaml',
+    (source) => {
+      const catalogPackages = [
+        '@dagrejs/dagre',
+        'apache-arrow',
+        'd3-array',
+        'd3-scale',
+        'elkjs',
+        'uplot',
+      ]
+
+      const lines =
+        source.split('\n')
+
+      const result = []
+
+      for (
+        let index = 0;
+        index < lines.length;
+        index += 1
+      ) {
+        const line =
+          lines[index]
+
+        const matchingPackage =
+          catalogPackages.find(
+            (packageName) =>
+              line.trimStart().startsWith(
+                packageName.includes('@')
+                  ? `"${packageName}":`
+                  : packageName + ':',
+              ),
+          )
+
+        if (
+          matchingPackage
+        ) {
+          continue
+        }
+
+        result.push(line)
+      }
+
+      return result.join('\n')
+    },
+  )
+}
+
+async function removeInspectorSectionApi() {
+  await rewriteExtensionContract()
+  await cleanExtensionPublicExports()
+  await cleanEditorCanvas()
+  await cleanInspectorPortal()
+  await cleanPropertiesContent()
+  await cleanPropertiesArchitectureTest()
+}
 
 async function rewriteExtensionContract() {
-  const content = `import type { ComponentType } from 'react'
-import type {
-  Editor,
+  const content = `import type {
   TLAnyBindingUtilConstructor,
   TLAnyShapeUtilConstructor,
   TLStateNodeConstructor,
 } from 'tldraw'
 
 export const HYBRID_CANVAS_EXTENSION_API_VERSION = '3'
-
-export type HybridCanvasInspectorSectionMode =
-  | 'creation'
-  | 'selection'
-
-export interface HybridCanvasInspectorSectionProps {
-  readonly editor: Editor
-  readonly mode: HybridCanvasInspectorSectionMode
-}
-
-export interface HybridCanvasInspectorSectionContribution {
-  readonly id: string
-  readonly owner: string
-  readonly priority?: number
-
-  /**
-   * 在没有选中对象，且当前工具匹配时显示。
-   */
-  readonly toolIds?: readonly string[]
-
-  /**
-   * 在选中对象全部属于这些类型时显示。
-   */
-  readonly shapeTypes?: readonly string[]
-
-  /**
-   * Component 只能贡献一个或多个属性 Section，
-   * 不能覆盖整个右侧属性侧边栏。
-   */
-  readonly component:
-    ComponentType<HybridCanvasInspectorSectionProps>
-}
 
 export interface HybridCanvasExtension {
   readonly id: string
@@ -94,8 +304,6 @@ export interface HybridCanvasExtension {
   readonly bindingUtils?: readonly TLAnyBindingUtilConstructor[]
   readonly tools?: readonly TLStateNodeConstructor[]
   readonly shapeLabels?: Readonly<Record<string, string>>
-  readonly inspectorSections?:
-    readonly HybridCanvasInspectorSectionContribution[]
 }
 
 export interface ExtensionRegistration {
@@ -104,28 +312,25 @@ export interface ExtensionRegistration {
   readonly bindingUtils: readonly TLAnyBindingUtilConstructor[]
   readonly tools: readonly TLStateNodeConstructor[]
   readonly shapeLabels: Readonly<Record<string, string>>
-  readonly inspectorSections:
-    readonly HybridCanvasInspectorSectionContribution[]
 }
 
 export function buildExtensionRegistration(
   input: readonly HybridCanvasExtension[] = [],
 ): ExtensionRegistration {
   const ids = new Set<string>()
-  const sectionIds = new Set<string>()
   const shapeUtils: TLAnyShapeUtilConstructor[] = []
   const bindingUtils: TLAnyBindingUtilConstructor[] = []
   const tools: TLStateNodeConstructor[] = []
   const shapeLabels: Record<string, string> = {}
-  const inspectorSections:
-    HybridCanvasInspectorSectionContribution[] = []
 
   for (const extension of input) {
     if (
       !extension.id ||
       ids.has(extension.id)
     ) {
-      throw new Error('EXTENSION_DUPLICATE_ID')
+      throw new Error(
+        'EXTENSION_DUPLICATE_ID',
+      )
     }
 
     if (
@@ -155,27 +360,7 @@ export function buildExtensionRegistration(
       shapeLabels,
       extension.shapeLabels,
     )
-
-    for (
-      const section of
-      extension.inspectorSections ?? []
-    ) {
-      validateInspectorSection(
-        extension.id,
-        section,
-        sectionIds,
-      )
-
-      inspectorSections.push(section)
-    }
   }
-
-  inspectorSections.sort(
-    (left, right) =>
-      (right.priority ?? 0) -
-        (left.priority ?? 0) ||
-      left.id.localeCompare(right.id),
-  )
 
   return Object.freeze({
     extensions:
@@ -192,80 +377,7 @@ export function buildExtensionRegistration(
 
     shapeLabels:
       Object.freeze(shapeLabels),
-
-    inspectorSections:
-      Object.freeze(inspectorSections),
   })
-}
-
-function validateInspectorSection(
-  extensionId: string,
-  section: HybridCanvasInspectorSectionContribution,
-  sectionIds: Set<string>,
-): void {
-  if (
-    !section.id.trim() ||
-    sectionIds.has(section.id)
-  ) {
-    throw new Error(
-      'EXTENSION_INSPECTOR_SECTION_ID_INVALID:' +
-        extensionId,
-    )
-  }
-
-  if (!section.owner.trim()) {
-    throw new Error(
-      'EXTENSION_INSPECTOR_SECTION_OWNER_REQUIRED:' +
-        extensionId,
-    )
-  }
-
-  if (
-    section.owner !== extensionId
-  ) {
-    throw new Error(
-      'EXTENSION_INSPECTOR_SECTION_OWNER_MISMATCH:' +
-        extensionId,
-    )
-  }
-
-  if (
-    typeof section.component !==
-    'function'
-  ) {
-    throw new Error(
-      'EXTENSION_INSPECTOR_SECTION_COMPONENT_REQUIRED:' +
-        extensionId,
-    )
-  }
-
-  const hasToolTargets =
-    (section.toolIds?.length ?? 0) > 0
-
-  const hasShapeTargets =
-    (section.shapeTypes?.length ?? 0) > 0
-
-  if (
-    !hasToolTargets &&
-    !hasShapeTargets
-  ) {
-    throw new Error(
-      'EXTENSION_INSPECTOR_SECTION_TARGET_REQUIRED:' +
-        extensionId,
-    )
-  }
-
-  if (
-    section.priority !== undefined &&
-    !Number.isFinite(section.priority)
-  ) {
-    throw new Error(
-      'EXTENSION_INSPECTOR_SECTION_PRIORITY_INVALID:' +
-        extensionId,
-    )
-  }
-
-  sectionIds.add(section.id)
 }
 `
 
@@ -275,7 +387,7 @@ function validateInspectorSection(
   )
 }
 
-async function updatePublicExports() {
+async function cleanExtensionPublicExports() {
   for (
     const relativePath of [
       'editor/core/src/contracts/public-api.ts',
@@ -284,1021 +396,38 @@ async function updatePublicExports() {
   ) {
     await update(
       relativePath,
-      (source) => {
-        const anchor =
-          '  type HybridCanvasExtension,'
-
-        if (
-          source.includes(
-            'HybridCanvasInspectorSectionContribution',
-          )
-        ) {
-          return source
-        }
-
-        return replaceRequired(
-          source,
-          anchor,
-          `${anchor}
-  type HybridCanvasInspectorSectionContribution,
-  type HybridCanvasInspectorSectionMode,
-  type HybridCanvasInspectorSectionProps,`,
-          relativePath,
-        )
-      },
-    )
-  }
-}
-
-async function createFlowNodeSection() {
-  const content = `import type {
-  HybridCanvasInspectorSectionProps,
-} from '@hybrid-canvas/canvas/extensions'
-import {
-  getColorStyleItems,
-  getColorValue,
-  TldrawUiIcon,
-  TldrawUiTooltip,
-  useValue,
-} from 'tldraw'
-
-import type {
-  FlowNodeShape,
-  FlowNodeType,
-} from '../shapes/FlowNodeShapeUtil'
-
-const nodeTypes:
-  readonly {
-    readonly value: FlowNodeType
-    readonly label: string
-  }[] = [
-    {
-      value: 'process',
-      label: '处理',
-    },
-    {
-      value: 'decision',
-      label: '判断',
-    },
-    {
-      value: 'start-end',
-      label: '起止',
-    },
-    {
-      value: 'input-output',
-      label: '输入输出',
-    },
-  ]
-
-export function FlowNodeInspectorSection({
-  editor,
-}: HybridCanvasInspectorSectionProps) {
-  const state = useValue(
-    'flow node inspector values',
-    () => {
-      const shapes =
-        editor
-          .getSelectedShapes()
+      (source) =>
+        source
+          .split('\n')
           .filter(
-            (
-              shape,
-            ): shape is FlowNodeShape =>
-              shape.type === 'flow-node',
-          )
-
-      const first = shapes[0]
-
-      const nodeType =
-        first &&
-        shapes.every(
-          (shape) =>
-            shape.props.nodeType ===
-            first.props.nodeType,
-        )
-          ? first.props.nodeType
-          : null
-
-      const color =
-        first &&
-        shapes.every(
-          (shape) =>
-            shape.props.color ===
-            first.props.color,
-        )
-          ? first.props.color
-          : null
-
-      return {
-        shapes,
-        nodeType,
-        color,
-        readonly:
-          editor.getIsReadonly(),
-      }
-    },
-    [editor],
-  )
-
-  if (
-    state.shapes.length === 0
-  ) {
-    return null
-  }
-
-  const colors =
-    editor
-      .getCurrentTheme()
-      .colors[
-        editor.getColorMode()
-      ]
-
-  const colorItems =
-    getColorStyleItems(colors)
-
-  const updateNodeType = (
-    nodeType: FlowNodeType,
-  ) => {
-    if (state.readonly) {
-      return
-    }
-
-    editor.markHistoryStoppingPoint(
-      'change flow node type',
-    )
-
-    editor.updateShapes(
-      state.shapes.map(
-        (shape) => ({
-          id: shape.id,
-          type: shape.type,
-          props: {
-            nodeType,
-          },
-        }),
-      ),
-    )
-  }
-
-  const updateColor = (
-    color: string,
-  ) => {
-    if (state.readonly) {
-      return
-    }
-
-    editor.markHistoryStoppingPoint(
-      'change flow node color',
-    )
-
-    editor.updateShapes(
-      state.shapes.map(
-        (shape) => ({
-          id: shape.id,
-          type: shape.type,
-          props: {
-            color,
-          },
-        }),
-      ),
-    )
-  }
-
-  return (
-    <section className="hc-properties-sidebar__section">
-      <h2 className="hc-properties-sidebar__section-title">
-        流程图
-      </h2>
-
-      <div className="hc-properties-sidebar__section-content">
-        <div className="hc-properties-sidebar__field">
-          <div className="hc-properties-sidebar__field-header">
-            <span>节点类型</span>
-
-            {state.nodeType === null ? (
-              <span
-                aria-label="多个值"
-                className="hc-properties-sidebar__mixed"
-              >
-                —
-              </span>
-            ) : null}
-          </div>
-
-          <div
-            className="hc-properties-sidebar__segmented"
-            data-mixed={
-              state.nodeType === null
-                ? ''
-                : undefined
-            }
-            role="group"
-          >
-            {nodeTypes.map(
-              (option) => (
-                <TldrawUiTooltip
-                  content={option.label}
-                  key={option.value}
-                  side="left"
-                  sideOffset={8}
-                >
-                  <button
-                    aria-label={option.label}
-                    aria-pressed={
-                      state.nodeType ===
-                      option.value
-                    }
-                    className="hc-properties-sidebar__segment"
-                    disabled={state.readonly}
-                    onClick={() => {
-                      updateNodeType(
-                        option.value,
-                      )
-                    }}
-                    type="button"
-                  >
-                    {option.label}
-                  </button>
-                </TldrawUiTooltip>
+            (line) =>
+              !line.includes(
+                'HybridCanvasInspectorSection',
               ),
-            )}
-          </div>
-        </div>
-
-        <div className="hc-properties-sidebar__field">
-          <div className="hc-properties-sidebar__field-header">
-            <span>节点颜色</span>
-
-            {state.color === null ? (
-              <span
-                aria-label="多个值"
-                className="hc-properties-sidebar__mixed"
-              >
-                —
-              </span>
-            ) : null}
-          </div>
-
-          <div
-            className="hc-properties-sidebar__color-grid"
-            data-mixed={
-              state.color === null
-                ? ''
-                : undefined
-            }
-            role="group"
-          >
-            {colorItems.map(
-              (item) => {
-                const color =
-                  getColorValue(
-                    colors,
-                    item.value,
-                    'solid',
-                  )
-
-                const active =
-                  state.color === color
-
-                return (
-                  <TldrawUiTooltip
-                    content={item.value}
-                    key={item.value}
-                    side="left"
-                    sideOffset={8}
-                  >
-                    <button
-                      aria-label={
-                        '节点颜色 ' +
-                        item.value
-                      }
-                      aria-pressed={active}
-                      className="hc-properties-sidebar__color-button"
-                      disabled={state.readonly}
-                      onClick={() => {
-                        updateColor(color)
-                      }}
-                      style={{
-                        '--hc-swatch-color':
-                          color,
-                      } as React.CSSProperties}
-                      type="button"
-                    >
-                      <TldrawUiIcon
-                        icon="color"
-                        label={
-                          '节点颜色 ' +
-                          item.value
-                        }
-                      />
-                    </button>
-                  </TldrawUiTooltip>
-                )
-              },
-            )}
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-`
-
-  await write(
-    'features/flowchart/src/presentation/FlowNodeInspectorSection.tsx',
-    content,
-  )
-}
-
-async function createScientificChartSection() {
-  const content = `import type {
-  HybridCanvasInspectorSectionProps,
-} from '@hybrid-canvas/canvas/extensions'
-import {
-  TldrawUiIcon,
-  TldrawUiTooltip,
-  useValue,
-} from 'tldraw'
-
-import type {
-  ScientificChartShape,
-} from '../shapes/ScientificChartShapeUtil'
-import {
-  type ScientificChartType,
-  ScientificChartTypeStyle,
-} from '../styles/chart-styles'
-
-const chartTypes:
-  readonly {
-    readonly value: ScientificChartType
-    readonly label: string
-  }[] = [
-    {
-      value: 'line',
-      label: '折线',
-    },
-    {
-      value: 'bar',
-      label: '柱状',
-    },
-    {
-      value: 'area',
-      label: '面积',
-    },
-    {
-      value: 'scatter',
-      label: '散点',
-    },
-  ]
-
-export function ScientificChartInspectorSection({
-  editor,
-  mode,
-}: HybridCanvasInspectorSectionProps) {
-  const state = useValue(
-    'scientific chart inspector values',
-    () => {
-      if (mode === 'creation') {
-        return {
-          shapes:
-            [] as ScientificChartShape[],
-          chartType:
-            editor.getStyleForNextShape(
-              ScientificChartTypeStyle,
-            ),
-          showAxes: null,
-          showGrid: null,
-          showLegend: null,
-          readonly:
-            editor.getIsReadonly(),
-        }
-      }
-
-      const shapes =
-        editor
-          .getSelectedShapes()
-          .filter(
-            (
-              shape,
-            ): shape is ScientificChartShape =>
-              shape.type ===
-              'scientific-chart',
           )
-
-      const first = shapes[0]
-
-      return {
-        shapes,
-
-        chartType:
-          sharedValue(
-            shapes,
-            (shape) =>
-              shape.props.chartType,
-          ),
-
-        showAxes:
-          sharedValue(
-            shapes,
-            (shape) =>
-              shape.props.showAxes,
-          ),
-
-        showGrid:
-          sharedValue(
-            shapes,
-            (shape) =>
-              shape.props.showGrid,
-          ),
-
-        showLegend:
-          sharedValue(
-            shapes,
-            (shape) =>
-              shape.props.showLegend,
-          ),
-
-        readonly:
-          editor.getIsReadonly(),
-      }
-    },
-    [
-      editor,
-      mode,
-    ],
-  )
-
-  if (
-    mode === 'selection' &&
-    state.shapes.length === 0
-  ) {
-    return null
-  }
-
-  const updateChartType = (
-    chartType: ScientificChartType,
-  ) => {
-    if (state.readonly) {
-      return
-    }
-
-    if (
-      mode === 'creation'
-    ) {
-      editor.setStyleForNextShapes(
-        ScientificChartTypeStyle,
-        chartType,
-      )
-
-      return
-    }
-
-    editor.markHistoryStoppingPoint(
-      'change scientific chart type',
-    )
-
-    editor.updateShapes(
-      state.shapes.map(
-        (shape) => ({
-          id: shape.id,
-          type: shape.type,
-          props: {
-            chartType,
-          },
-        }),
-      ),
+          .join('\n'),
     )
   }
-
-  const updateBoolean = (
-    property:
-      | 'showAxes'
-      | 'showGrid'
-      | 'showLegend',
-    current:
-      | boolean
-      | null,
-  ) => {
-    if (
-      state.readonly ||
-      mode !== 'selection'
-    ) {
-      return
-    }
-
-    const next =
-      current !== true
-
-    editor.markHistoryStoppingPoint(
-      'change scientific chart option',
-    )
-
-    editor.updateShapes(
-      state.shapes.map(
-        (shape) => ({
-          id: shape.id,
-          type: shape.type,
-          props: {
-            [property]: next,
-          },
-        }),
-      ),
-    )
-  }
-
-  return (
-    <section className="hc-properties-sidebar__section">
-      <h2 className="hc-properties-sidebar__section-title">
-        图表
-      </h2>
-
-      <div className="hc-properties-sidebar__section-content">
-        <div className="hc-properties-sidebar__field">
-          <div className="hc-properties-sidebar__field-header">
-            <span>图表类型</span>
-
-            {state.chartType === null ? (
-              <span
-                aria-label="多个值"
-                className="hc-properties-sidebar__mixed"
-              >
-                —
-              </span>
-            ) : null}
-          </div>
-
-          <div
-            className="hc-properties-sidebar__segmented"
-            data-mixed={
-              state.chartType === null
-                ? ''
-                : undefined
-            }
-            role="group"
-          >
-            {chartTypes.map(
-              (option) => (
-                <TldrawUiTooltip
-                  content={option.label}
-                  key={option.value}
-                  side="left"
-                  sideOffset={8}
-                >
-                  <button
-                    aria-label={option.label}
-                    aria-pressed={
-                      state.chartType ===
-                      option.value
-                    }
-                    className="hc-properties-sidebar__segment"
-                    disabled={state.readonly}
-                    onClick={() => {
-                      updateChartType(
-                        option.value,
-                      )
-                    }}
-                    type="button"
-                  >
-                    {option.label}
-                  </button>
-                </TldrawUiTooltip>
-              ),
-            )}
-          </div>
-        </div>
-
-        {mode === 'selection' ? (
-          <div className="hc-properties-sidebar__field">
-            <div className="hc-properties-sidebar__field-header">
-              <span>显示</span>
-            </div>
-
-            <div
-              className="hc-properties-sidebar__segmented"
-              role="group"
-            >
-              <ToggleButton
-                active={state.showAxes}
-                disabled={state.readonly}
-                label="坐标轴"
-                onClick={() => {
-                  updateBoolean(
-                    'showAxes',
-                    state.showAxes,
-                  )
-                }}
-              />
-
-              <ToggleButton
-                active={state.showGrid}
-                disabled={state.readonly}
-                label="网格线"
-                onClick={() => {
-                  updateBoolean(
-                    'showGrid',
-                    state.showGrid,
-                  )
-                }}
-              />
-
-              <ToggleButton
-                active={state.showLegend}
-                disabled={state.readonly}
-                label="图例"
-                onClick={() => {
-                  updateBoolean(
-                    'showLegend',
-                    state.showLegend,
-                  )
-                }}
-              />
-            </div>
-          </div>
-        ) : null}
-      </div>
-    </section>
-  )
 }
 
-function ToggleButton({
-  label,
-  active,
-  disabled,
-  onClick,
-}: {
-  readonly label: string
-  readonly active:
-    | boolean
-    | null
-  readonly disabled: boolean
-  readonly onClick: () => void
-}) {
-  return (
-    <TldrawUiTooltip
-      content={label}
-      side="left"
-      sideOffset={8}
-    >
-      <button
-        aria-label={label}
-        aria-pressed={
-          active === true
-        }
-        className="hc-properties-sidebar__segment"
-        data-mixed={
-          active === null
-            ? ''
-            : undefined
-        }
-        disabled={disabled}
-        onClick={onClick}
-        type="button"
-      >
-        <TldrawUiIcon
-          icon={
-            active === true
-              ? 'check'
-              : 'cross-2'
-          }
-          label={label}
-        />
-      </button>
-    </TldrawUiTooltip>
-  )
-}
-
-function sharedValue<
-  TValue,
->(
-  shapes:
-    readonly ScientificChartShape[],
-  select: (
-    shape: ScientificChartShape,
-  ) => TValue,
-): TValue | null {
-  const first = shapes[0]
-
-  if (!first) {
-    return null
-  }
-
-  const value =
-    select(first)
-
-  return shapes.every(
-    (shape) =>
-      select(shape) === value,
-  )
-    ? value
-    : null
-}
-`
-
-  await write(
-    'features/scientific-plot/src/presentation/ScientificChartInspectorSection.tsx',
-    content,
-  )
-}
-
-async function registerFlowNodeSection() {
-  await update(
-    'features/flowchart/src/extension.ts',
-    (source) => {
-      if (
-        source.includes(
-          'FlowNodeInspectorSection',
-        )
-      ) {
-        return source
-      }
-
-      source = source.replace(
-        `import { FlowNodeShapeUtil } from './shapes/FlowNodeShapeUtil'`,
-        `import { FlowNodeInspectorSection } from './presentation/FlowNodeInspectorSection'
-import { FlowNodeShapeUtil } from './shapes/FlowNodeShapeUtil'`,
-      )
-
-      return source.replace(
-        `  shapeLabels: {
-    'flow-node': '流程图节点',
-  },`,
-        `  shapeLabels: {
-    'flow-node': '流程图节点',
-  },
-  inspectorSections: [
-    {
-      id: 'flow-node-properties',
-      owner: '@hybrid-canvas/flowchart',
-      priority: 100,
-      shapeTypes: ['flow-node'],
-      component: FlowNodeInspectorSection,
-    },
-  ],`,
-      )
-    },
-  )
-}
-
-async function registerScientificChartSection() {
-  await update(
-    'features/scientific-plot/src/extension.ts',
-    (source) => {
-      if (
-        source.includes(
-          'ScientificChartInspectorSection',
-        )
-      ) {
-        return source
-      }
-
-      source = source.replace(
-        `import { ScientificChartShapeUtil } from './shapes/ScientificChartShapeUtil'`,
-        `import { ScientificChartInspectorSection } from './presentation/ScientificChartInspectorSection'
-import { ScientificChartShapeUtil } from './shapes/ScientificChartShapeUtil'`,
-      )
-
-      return source.replace(
-        `  shapeLabels: {
-    'scientific-chart': '图表',
-  },`,
-        `  shapeLabels: {
-    'scientific-chart': '图表',
-  },
-  inspectorSections: [
-    {
-      id: 'scientific-chart-properties',
-      owner: '@hybrid-canvas/scientific-plot',
-      priority: 100,
-      toolIds: ['scientific-chart'],
-      shapeTypes: ['scientific-chart'],
-      component: ScientificChartInspectorSection,
-    },
-  ],`,
-      )
-    },
-  )
-}
-
-async function updateEditorCanvas() {
+async function cleanEditorCanvas() {
   await update(
     'editor/core/src/react/EditorCanvas.tsx',
     (source) => {
-      if (
-        source.includes(
-          'inspectorSections={',
-        )
-      ) {
-        return source
-      }
-
-      source = replaceRequired(
-        source,
-        `<CanvasInspectorStylePanel
-                active={isActive}
-              />`,
-        `<CanvasInspectorStylePanel
-                active={isActive}
-                inspectorSections={
+      source = source.replace(
+        `                inspectorSections={
                   registration.inspectorSections
                 }
-              />`,
-        'EditorCanvas StylePanel',
+`,
+        '',
       )
 
-      return replaceRequired(
-        source,
-        `      [isActive],`,
+      source = source.replace(
         `      [
         isActive,
         registration.inspectorSections,
       ],`,
-        'EditorCanvas components dependencies',
-      )
-    },
-  )
-}
-
-async function updateInspectorPortal() {
-  await update(
-    'editor/core/src/react/canvas-inspector-portal.tsx',
-    (source) => {
-      if (
-        source.includes(
-          'matchingInspectorSections',
-        )
-      ) {
-        return source
-      }
-
-      source = source.replace(
-        `import { PropertiesInspectorContent } from './PropertiesInspectorContent'`,
-        `import type {
-  HybridCanvasInspectorSectionContribution,
-  HybridCanvasInspectorSectionMode,
-} from '../contracts/extension-contract'
-import { PropertiesInspectorContent } from './PropertiesInspectorContent'`,
-      )
-
-      source = replaceRequired(
-        source,
-        `export interface CanvasInspectorStylePanelProps {
-  readonly active: boolean
-}`,
-        `export interface CanvasInspectorStylePanelProps {
-  readonly active: boolean
-  readonly inspectorSections:
-    readonly HybridCanvasInspectorSectionContribution[]
-}`,
-        'CanvasInspectorStylePanelProps',
-      )
-
-      source = replaceRequired(
-        source,
-        `export function CanvasInspectorStylePanel({
-  active,
-}: CanvasInspectorStylePanelProps) {`,
-        `export function CanvasInspectorStylePanel({
-  active,
-  inspectorSections,
-}: CanvasInspectorStylePanelProps) {`,
-        'CanvasInspectorStylePanel arguments',
-      )
-
-      const ownerAnchor = `  const owner =
-    useRef(
-      Symbol(
-        'canvas-inspector-style-panel',
-      ),
-    )`
-
-      const sectionState = `${ownerAnchor}
-
-  const inspectorTarget =
-    useValue(
-      'properties inspector extension target',
-      () => {
-        const selected =
-          editor.getSelectedShapes()
-
-        if (selected.length > 0) {
-          return {
-            mode:
-              'selection' as const,
-            toolId: null,
-            shapeTypes:
-              selected.map(
-                (shape) =>
-                  shape.type,
-              ),
-          }
-        }
-
-        return {
-          mode:
-            'creation' as const,
-          toolId:
-            editor.getCurrentToolId(),
-          shapeTypes:
-            [] as string[],
-        }
-      },
-      [editor],
-    )
-
-  const matchingInspectorSections =
-    useMemo(
-      () =>
-        inspectorSections.filter(
-          (section) => {
-            if (
-              inspectorTarget.mode ===
-              'creation'
-            ) {
-              return (
-                inspectorTarget.toolId !==
-                  null &&
-                section.toolIds?.includes(
-                  inspectorTarget.toolId,
-                ) === true
-              )
-            }
-
-            return (
-              inspectorTarget.shapeTypes
-                .length > 0 &&
-              inspectorTarget.shapeTypes.every(
-                (shapeType) =>
-                  section.shapeTypes?.includes(
-                    shapeType,
-                  ) === true,
-              )
-            )
-          },
-        ),
-      [
-        inspectorSections,
-        inspectorTarget,
-      ],
-    )
-
-  const inspectorMode:
-    HybridCanvasInspectorSectionMode =
-    inspectorTarget.mode
-
-  const extensionSections =
-    matchingInspectorSections.map(
-      (section) => {
-        const Section =
-          section.component
-
-        return (
-          <Section
-            editor={editor}
-            key={
-              section.owner +
-              ':' +
-              section.id
-            }
-            mode={inspectorMode}
-          />
-        )
-      },
-    )`
-
-      source = replaceRequired(
-        source,
-        ownerAnchor,
-        sectionState,
-        'Inspector portal owner',
-      )
-
-      source = replaceRequired(
-        source,
-        `      styles !== null ||
-      selectedShapeCount > 0`,
-        `      styles !== null ||
-      selectedShapeCount > 0 ||
-      matchingInspectorSections.length > 0`,
-        'Inspector availability',
-      )
-
-      source = source.replaceAll(
-        `          styles={styles}
-        />`,
-        `          extensionSections={
-            extensionSections
-          }
-          styles={styles}
-        />`,
-      )
-
-      source = source.replaceAll(
-        `          styles={null}
-        />`,
-        `          extensionSections={
-            extensionSections
-          }
-          styles={null}
-        />`,
+        `      [isActive],`,
       )
 
       return source
@@ -1306,81 +435,111 @@ import { PropertiesInspectorContent } from './PropertiesInspectorContent'`,
   )
 }
 
-async function updatePropertiesContent() {
+async function cleanInspectorPortal() {
   await update(
-    'editor/core/src/react/PropertiesInspectorContent.tsx',
+    'editor/core/src/react/canvas-inspector-portal.tsx',
     (source) => {
-      if (
-        source.includes(
-          'readonly extensionSections:',
-        )
-      ) {
-        return source
-      }
-
-      source = replaceRequired(
-        source,
-        `  readonly selectedShapeCount: number
-}`,
-        `  readonly selectedShapeCount: number
-  readonly extensionSections:
-    readonly ReactNode[]
-}`,
-        'PropertiesInspectorContentProps',
+      source = source.replace(
+        `import type {
+  HybridCanvasInspectorSectionContribution,
+  HybridCanvasInspectorSectionMode,
+} from '../contracts/extension-contract'
+`,
+        '',
       )
 
-      source = replaceRequired(
-        source,
-        `export function PropertiesInspectorContent({
-  styles,
-  selectedShapeCount,
-}: PropertiesInspectorContentProps) {`,
-        `export function PropertiesInspectorContent({
-  styles,
-  selectedShapeCount,
-  extensionSections,
-}: PropertiesInspectorContentProps) {`,
-        'PropertiesInspectorContent arguments',
+      source = source.replace(
+        `  readonly inspectorSections:
+    readonly HybridCanvasInspectorSectionContribution[]
+`,
+        '',
       )
 
-      return replaceRequired(
-        source,
-        `      {selectedShapeCount > 0 ? (
-        <SelectionActions`,
-        `      {extensionSections}
-
-      {selectedShapeCount > 0 ? (
-        <SelectionActions`,
-        'PropertiesInspectorContent sections',
+      source = source.replace(
+        `  active,
+  inspectorSections,
+`,
+        `  active,
+`,
       )
+
+      source = source.replace(
+        /\n  const inspectorTarget =[\s\S]*?\n  \/\*\n   \* useRelevantStyles\(\) 决定官方样式内容。/,
+        `
+  /*
+   * useRelevantStyles() 决定官方样式内容。`,
+      )
+
+      source = source.replace(
+        `      styles !== null ||
+      selectedShapeCount > 0 ||
+      matchingInspectorSections.length > 0`,
+        `      styles !== null ||
+      selectedShapeCount > 0`,
+      )
+
+      source = source.replaceAll(
+        `          extensionSections={
+            extensionSections
+          }
+`,
+        '',
+      )
+
+      return source
     },
   )
 }
 
-async function updateArchitectureTest() {
+async function cleanPropertiesContent() {
+  await update(
+    'editor/core/src/react/PropertiesInspectorContent.tsx',
+    (source) => {
+      source = source.replace(
+        `  readonly extensionSections:
+    readonly ReactNode[]
+`,
+        '',
+      )
+
+      source = source.replace(
+        `  selectedShapeCount,
+  extensionSections,
+`,
+        `  selectedShapeCount,
+`,
+      )
+
+      source = source.replace(
+        `
+      {extensionSections}
+`,
+        '',
+      )
+
+      source = source.replace(
+        `      'scientific-chart': '图表',
+`,
+        '',
+      )
+
+      source = source.replace(
+        `      'flow-node': '流程图节点',
+`,
+        '',
+      )
+
+      return source
+    },
+  )
+}
+
+async function cleanPropertiesArchitectureTest() {
   await update(
     'tests/architecture/check-properties-inspector-architecture.mjs',
     (source) => {
-      if (
-        source.includes(
-          'Extension API 必须使用 Section contribution',
-        )
-      ) {
-        return source
-      }
-
-      const anchor = `forbidPattern(
-  'ExtensionContract',
-  sources.extensionContract,
-  /toolInspectors/,
-  'Extension API 不得恢复 tool-first Inspector',
-)
-`
-
-      return replaceRequired(
-        source,
-        anchor,
-        `${anchor}
+      source = source.replace(
+        `
 requirePattern(
   'ExtensionContract',
   sources.extensionContract,
@@ -1388,9 +547,241 @@ requirePattern(
   'Extension API 必须使用 Section contribution',
 )
 `,
-        'Architecture extension test',
+        '',
       )
+
+      return source
     },
+  )
+}
+
+async function removeFeatureDirectories() {
+  for (
+    const feature of
+    removedFeatures
+  ) {
+    await rm(
+      path.join(
+        root,
+        'features',
+        feature,
+      ),
+      {
+        recursive: true,
+        force: true,
+      },
+    )
+  }
+}
+
+async function regenerateLockfile() {
+  console.log('')
+  console.log(
+    '正在重新生成 pnpm-lock.yaml...',
+  )
+
+  const result =
+    spawnSync(
+      'pnpm',
+      [
+        'install',
+        '--lockfile-only',
+      ],
+      {
+        cwd: root,
+        stdio: 'inherit',
+        shell:
+          process.platform ===
+          'win32',
+      },
+    )
+
+  if (
+    result.error
+  ) {
+    throw result.error
+  }
+
+  if (
+    result.status !== 0
+  ) {
+    throw new Error(
+      'PNPM_LOCKFILE_REGENERATION_FAILED',
+    )
+  }
+}
+
+async function findStaleReferences() {
+  const needles = [
+    '@hybrid-canvas/flowchart',
+    '@hybrid-canvas/freehand',
+    '@hybrid-canvas/scientific-plot',
+    '@hybrid-canvas/import-export',
+    'flowchartExtension',
+    'freehandExtension',
+    'scientificPlotExtension',
+    'ScientificChart',
+    'scientific-chart',
+    'FlowNodeShape',
+    'flow-node',
+    'features/flowchart',
+    'features/freehand',
+    'features/scientific-plot',
+    'features/import-export',
+    'HybridCanvasInspectorSection',
+    'inspectorSections',
+  ]
+
+  const ignoredDirectories =
+    new Set([
+      '.git',
+      '.turbo',
+      'node_modules',
+      'dist',
+      'build',
+      'coverage',
+      'target',
+      'test-results',
+    ])
+
+  const matches = []
+
+  await scanDirectory(
+    root,
+    needles,
+    ignoredDirectories,
+    matches,
+  )
+
+  return matches
+}
+
+async function scanDirectory(
+  directory,
+  needles,
+  ignoredDirectories,
+  matches,
+) {
+  const entries =
+    await readdir(
+      directory,
+      {
+        withFileTypes: true,
+      },
+    )
+
+  for (
+    const entry of entries
+  ) {
+    if (
+      entry.isDirectory() &&
+      ignoredDirectories.has(
+        entry.name,
+      )
+    ) {
+      continue
+    }
+
+    const entryPath =
+      path.join(
+        directory,
+        entry.name,
+      )
+
+    if (
+      entry.isDirectory()
+    ) {
+      await scanDirectory(
+        entryPath,
+        needles,
+        ignoredDirectories,
+        matches,
+      )
+
+      continue
+    }
+
+    if (
+      entryPath ===
+      process.argv[1]
+    ) {
+      continue
+    }
+
+    if (
+      !/\.(?:json|yaml|yml|ts|tsx|js|jsx|mjs|cjs|md|css|toml)$/.test(
+        entry.name,
+      )
+    ) {
+      continue
+    }
+
+    const content =
+      normalize(
+        await readFile(
+          entryPath,
+          'utf8',
+        ),
+      )
+
+    const found =
+      needles.filter(
+        (needle) =>
+          content.includes(
+            needle,
+          ),
+      )
+
+    if (
+      found.length > 0
+    ) {
+      matches.push(
+        path.relative(
+          root,
+          entryPath,
+        ) +
+          ': ' +
+          found.join(', '),
+      )
+    }
+  }
+}
+
+async function updateJson(
+  relativePath,
+  transform,
+) {
+  const filePath =
+    path.join(
+      root,
+      relativePath,
+    )
+
+  const raw =
+    await readFile(
+      filePath,
+      'utf8',
+    )
+
+  const manifest =
+    JSON.parse(
+      raw.replace(
+        /^\uFEFF/,
+        '',
+      ),
+    )
+
+  const next =
+    transform(manifest)
+
+  await writeFile(
+    filePath,
+    JSON.stringify(
+      next,
+      null,
+      2,
+    ) + '\n',
+    'utf8',
   )
 }
 
@@ -1426,45 +817,14 @@ async function write(
   relativePath,
   content,
 ) {
-  const filePath =
+  await writeFile(
     path.join(
       root,
       relativePath,
-    )
-
-  await mkdir(
-    path.dirname(filePath),
-    {
-      recursive: true,
-    },
-  )
-
-  await writeFile(
-    filePath,
+    ),
     normalize(content).trimEnd() +
       '\n',
     'utf8',
-  )
-}
-
-function replaceRequired(
-  source,
-  oldValue,
-  newValue,
-  owner,
-) {
-  if (
-    !source.includes(oldValue)
-  ) {
-    throw new Error(
-      '没有找到修改位置：' +
-        owner,
-    )
-  }
-
-  return source.replace(
-    oldValue,
-    newValue,
   )
 }
 
