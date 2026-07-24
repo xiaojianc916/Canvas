@@ -1,7 +1,18 @@
+import {
+  recordDiagnosticLog,
+} from './diagnostic-buffer'
 import type { MetricRecorder } from './metric'
-import { getMetricsRecorder } from './metric'
+import {
+  getMetricsRecorder,
+  setMetricsRecorder,
+} from './metric'
 
-export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error'
+export type LogLevel =
+  | 'trace'
+  | 'debug'
+  | 'info'
+  | 'warn'
+  | 'error'
 
 export interface LogContext {
   readonly scope?: string
@@ -23,41 +34,140 @@ function defaultConsoleSink(
   message: string,
   context: LogContext,
   timestamp: string,
-) {
-  const prefix = context.scope ? `[${context.scope}]` : ''
-  console.log(`${timestamp} ${level.toUpperCase()} ${prefix} ${message}`, context)
+): void {
+  const prefix = context.scope
+    ? '[' + context.scope + ']'
+    : ''
+
+  const formatted = [
+    timestamp,
+    level.toUpperCase(),
+    prefix,
+    message,
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  switch (level) {
+    case 'trace':
+    case 'debug':
+      console.debug(formatted, context)
+      return
+
+    case 'info':
+      console.info(formatted, context)
+      return
+
+    case 'warn':
+      console.warn(formatted, context)
+      return
+
+    case 'error':
+      console.error(formatted, context)
+      return
+  }
 }
 
-export function setLogSink(next: LogSink): void {
+export function setLogSink(
+  next: LogSink,
+): void {
   sink = next
 }
 
-export function log(level: LogLevel, message: string, context: LogContext = {}): void {
-  sink(level, message, context, new Date().toISOString())
+export function log(
+  level: LogLevel,
+  message: string,
+  context: LogContext = {},
+): void {
+  const timestamp = new Date().toISOString()
+
+  recordDiagnosticLog(
+    level,
+    message,
+    context,
+    timestamp,
+  )
+
+  try {
+    sink(
+      level,
+      message,
+      context,
+      timestamp,
+    )
+  } catch (error: unknown) {
+    // Logging must not recursively become a fatal application error.
+    try {
+      console.error(
+        '[Hybrid Canvas Observability] Log sink failed',
+        {
+          level,
+          message,
+          error,
+        },
+      )
+    } catch {
+      // No further fallback is safe.
+    }
+  }
 }
 
-export function trace(message: string, context?: LogContext) {
+export function trace(
+  message: string,
+  context?: LogContext,
+): void {
   log('trace', message, context)
 }
-export function debug(message: string, context?: LogContext) {
+
+export function debug(
+  message: string,
+  context?: LogContext,
+): void {
   log('debug', message, context)
 }
-export function info(message: string, context?: LogContext) {
+
+export function info(
+  message: string,
+  context?: LogContext,
+): void {
   log('info', message, context)
 }
-export function warn(message: string, context?: LogContext) {
+
+export function warn(
+  message: string,
+  context?: LogContext,
+): void {
   log('warn', message, context)
 }
-export function error(message: string, context?: LogContext) {
+
+export function error(
+  message: string,
+  context?: LogContext,
+): void {
   log('error', message, context)
 }
 
-export function initObservability(options?: {
-  appName?: string
-  sink?: LogSink
-  metrics?: MetricRecorder
-}): void {
-  if (options?.sink) setLogSink(options.sink)
-  if (options?.metrics) getMetricsRecorder()
-  info('observability initialized', { appName: options?.appName })
+export function initObservability(
+  options?: {
+    readonly appName?: string
+    readonly sink?: LogSink
+    readonly metrics?: MetricRecorder
+  },
+): void {
+  if (options?.sink) {
+    setLogSink(options.sink)
+  }
+
+  if (options?.metrics) {
+    setMetricsRecorder(options.metrics)
+  } else {
+    getMetricsRecorder()
+  }
+
+  info('observability initialized', {
+    scope: 'observability',
+    appName:
+      options?.appName ??
+      'hybrid-canvas',
+  })
 }

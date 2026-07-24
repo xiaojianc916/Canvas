@@ -13,76 +13,46 @@ const ROOT = process.cwd()
 const PATHS = Object.freeze({
   package: 'package.json',
 
-  diagnostics:
-    'apps/desktop/src-tauri/src/diagnostics/mod.rs',
+  diagnosticBuffer:
+    'foundations/observability/src/diagnostic-buffer.ts',
 
-  diagnosticsCommand:
-    'apps/desktop/src-tauri/src/commands/diagnostics.rs',
+  diagnosticBufferTest:
+    'foundations/observability/src/diagnostic-buffer.test.ts',
 
-  commandModules:
-    'apps/desktop/src-tauri/src/commands/mod.rs',
+  observabilityLog:
+    'foundations/observability/src/log.ts',
 
-  rustLib:
-    'apps/desktop/src-tauri/src/lib.rs',
-
-  rustApp:
-    'apps/desktop/src-tauri/src/bootstrap/app.rs',
-
-  bindingExporter:
-    'apps/desktop/src-tauri/src/ipc/export_bindings.rs',
-
-  desktopIpcPublicApi:
-    'platforms/desktop-ipc/src/public-api.ts',
-
-  nativeCrashAdapter:
-    'platforms/desktop-runtime/src/adapters/native-crash-report.ts',
-
-  desktopRuntimePublicApi:
-    'platforms/desktop-runtime/src/public-api.ts',
-
-  main:
-    'apps/desktop/src/main.tsx',
+  observabilityPublicApi:
+    'foundations/observability/src/public-api.ts',
 
   fatalIncident:
     'apps/desktop/src/fatal/fatal-incident.ts',
 
   architectureCheck:
-    'tests/architecture/check-native-crash-recovery.mjs',
+    'tests/architecture/check-diagnostic-observability.mjs',
 })
 
 async function main() {
   await assertRepository()
 
-  await createRustDiagnostics()
-  await createDiagnosticsCommand()
-  await registerRustModules()
-  await registerNativeStartupHook()
-  await registerGeneratedIpc()
-  await exposeGeneratedIpc()
-  await createNativeCrashAdapter()
-  await exportNativeCrashAdapter()
-  await extendFatalIncidentKind()
-  await replaceRendererBootstrap()
+  await createDiagnosticBuffer()
+  await createDiagnosticBufferTests()
+  await replaceObservabilityLog()
+  await exportDiagnosticBuffer()
+  await integrateFatalSnapshot()
   await createArchitectureCheck()
   await registerArchitectureCheck()
 
   console.log('')
   console.log(
-    'Native crash recovery refactor applied.',
+    'Diagnostic observability refactor applied.',
   )
   console.log('')
-  console.log('Run in this exact order:')
-  console.log('  pnpm generate:ipc')
+  console.log('Run:')
   console.log('  pnpm format')
-  console.log('  cargo fmt')
   console.log('  pnpm typecheck')
+  console.log('  pnpm test')
   console.log('  pnpm test:architecture')
-  console.log('  cargo check --workspace --all-targets --all-features')
-  console.log('  cargo test --workspace --all-features')
-  console.log('')
-  console.log(
-    'The generated IPC file must be committed with the Rust DTO changes.',
-  )
 }
 
 async function assertRepository() {
@@ -100,485 +70,787 @@ async function assertRepository() {
   }
 }
 
-async function createRustDiagnostics() {
+async function createDiagnosticBuffer() {
   await writeText(
-    PATHS.diagnostics,
+    PATHS.diagnosticBuffer,
     String.raw`
-use std::{
-    backtrace::Backtrace,
-    fs::{self, File},
-    io::Write,
-    panic::PanicHookInfo,
-    path::{Path, PathBuf},
-};
+import type {
+  LogContext,
+  LogLevel,
+} from './log'
 
-use serde::{Deserialize, Serialize};
-use specta::Type;
-use tauri::{AppHandle, Manager};
-use time::{format_description::well_known::Rfc3339, OffsetDateTime};
-use uuid::Uuid;
-
-use crate::Result;
-
-const CRASH_REPORT_FILE_NAME: &str = "last-native-crash.json";
-const CRASH_REPORT_TEMP_FILE_NAME: &str = "last-native-crash.tmp";
-const MAX_MESSAGE_LENGTH: usize = 8_192;
-const MAX_BACKTRACE_LENGTH: usize = 64_000;
-const MAX_LOCATION_LENGTH: usize = 4_096;
-
-#[derive(Clone, Debug, Deserialize, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeCrashReport {
-    pub incident_id: String,
-    pub occurred_at: String,
-    pub process: String,
-    pub thread: String,
-    pub message: String,
-    pub location: Option<String>,
-    pub backtrace: String,
-    pub app_version: String,
-    pub target_os: String,
-    pub target_arch: String,
+export interface DiagnosticLogEntry {
+  readonly sequence: number
+  readonly timestamp: string
+  readonly level: LogLevel
+  readonly message: string
+  readonly scope?: string
+  readonly correlationId?: string
+  readonly context: Readonly<Record<string, string>>
 }
 
-/// Installs the process-level panic recorder.
-///
-/// A Rust panic can terminate the native process before the WebView is able to
-/// render anything. The panic hook therefore writes a local crash report that
-/// is consumed on the next launch.
-pub fn install(app: &AppHandle) -> Result<()> {
-    let report_directory = app.path().app_log_dir()?;
-    fs::create_dir_all(&report_directory)?;
+const DEFAULT_CAPACITY = 200
+const MAX_MESSAGE_LENGTH = 2_000
+const MAX_CONTEXT_ENTRIES = 32
+const MAX_CONTEXT_VALUE_LENGTH = 4_000
+const REDACTED = '[REDACTED]'
 
-    let app_version = app.package_info().version.to_string();
-    let previous_hook = std::panic::take_hook();
+const SENSITIVE_KEY_PATTERN =
+  /token|secret|password|authorization|cookie|license|api[-_]?key|credential/i
 
-    std::panic::set_hook(Box::new(move |panic_info| {
-        let report = create_report(panic_info, &app_version);
+const BEARER_PATTERN =
+  /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi
 
-        if let Err(error) = write_report_atomically(&report_directory, &report) {
-            eprintln!(
-                "[Hybrid Canvas] failed to persist native crash report: {error}"
-            );
-        }
+const WINDOWS_USER_PATH_PATTERN =
+  /[A-Za-z]:[\\/](?:Users|Documents and Settings)[\\/][^\\/\s]+/gi
 
-        previous_hook(panic_info);
-    }));
+const UNIX_USER_PATH_PATTERN =
+  /\/(?:Users|home)\/[^/\s]+/gi
 
-    Ok(())
-}
+const URL_CREDENTIAL_PATTERN =
+  /([a-z][a-z0-9+.-]*:\/\/)([^:@/\s]+):([^@/\s]+)@/gi
 
-/// Reads and consumes the previous crash report.
-///
-/// Reports are removed after a successful read so reloading the renderer does
-/// not display the same historical crash indefinitely.
-pub fn take_previous_crash_report(
-    app: &AppHandle,
-) -> Result<Option<NativeCrashReport>> {
-    let report_path = crash_report_path(app)?;
+let capacity = DEFAULT_CAPACITY
+let nextSequence = 1
+let entries: DiagnosticLogEntry[] = []
 
-    if !report_path.exists() {
-        return Ok(None);
+export function recordDiagnosticLog(
+  level: LogLevel,
+  message: string,
+  context: LogContext,
+  timestamp: string,
+): void {
+  try {
+    const entry: DiagnosticLogEntry = {
+      sequence: nextSequence,
+      timestamp: normalizeTimestamp(timestamp),
+      level,
+      message: normalizeText(
+        message,
+        MAX_MESSAGE_LENGTH,
+      ),
+      scope: normalizeOptionalText(
+        context.scope,
+        256,
+      ),
+      correlationId: normalizeOptionalText(
+        context.correlationId,
+        256,
+      ),
+      context: sanitizeContext(context),
     }
 
-    let source = match fs::read_to_string(&report_path) {
-        Ok(source) => source,
-        Err(error) => {
-            log::error!(
-                "failed to read native crash report: {}",
-                error
-            );
+    nextSequence += 1
+    entries.push(entry)
 
-            let _ = fs::remove_file(&report_path);
-            return Ok(None);
-        }
-    };
-
-    let report = match serde_json::from_str::<NativeCrashReport>(&source) {
-        Ok(report) => report,
-        Err(error) => {
-            log::error!(
-                "invalid native crash report was discarded: {}",
-                error
-            );
-
-            let _ = fs::remove_file(&report_path);
-            return Ok(None);
-        }
-    };
-
-    fs::remove_file(&report_path)?;
-
-    Ok(Some(report))
+    if (entries.length > capacity) {
+      entries = entries.slice(
+        entries.length - capacity,
+      )
+    }
+  } catch (error: unknown) {
+    // Observability must never become an application failure source.
+    emergencyConsoleError(
+      'Failed to record diagnostic log entry',
+      error,
+    )
+  }
 }
 
-fn create_report(
-    panic_info: &PanicHookInfo<'_>,
-    app_version: &str,
-) -> NativeCrashReport {
-    let current_thread = std::thread::current();
+export function getRecentLogEntries(
+  limit = capacity,
+): readonly DiagnosticLogEntry[] {
+  const normalizedLimit = Math.max(
+    0,
+    Math.min(
+      Math.floor(limit),
+      capacity,
+    ),
+  )
 
-    let thread_name = current_thread
-        .name()
-        .unwrap_or("unnamed")
-        .to_owned();
+  return entries
+    .slice(
+      Math.max(
+        0,
+        entries.length - normalizedLimit,
+      ),
+    )
+    .map(cloneEntry)
+}
 
-    let message = panic_payload_message(panic_info);
+export function clearDiagnosticLogs(): void {
+  entries = []
+}
 
-    let location = panic_info.location().map(|location| {
-        truncate(
-            format!(
-                "{}:{}:{}",
-                location.file(),
-                location.line(),
-                location.column()
-            ),
-            MAX_LOCATION_LENGTH,
+export function configureDiagnosticBuffer(
+  options: {
+    readonly capacity?: number
+  },
+): void {
+  if (options.capacity === undefined) {
+    return
+  }
+
+  if (
+    !Number.isInteger(options.capacity) ||
+    options.capacity < 1 ||
+    options.capacity > 2_000
+  ) {
+    throw new RangeError(
+      'Diagnostic buffer capacity must be an integer between 1 and 2000.',
+    )
+  }
+
+  capacity = options.capacity
+
+  if (entries.length > capacity) {
+    entries = entries.slice(
+      entries.length - capacity,
+    )
+  }
+}
+
+export function formatDiagnosticLogs(
+  logEntries: readonly DiagnosticLogEntry[],
+): string {
+  return logEntries
+    .map((entry) => {
+      const prefix = [
+        entry.timestamp,
+        entry.level.toUpperCase(),
+        entry.scope
+          ? '[' + entry.scope + ']'
+          : undefined,
+        '#' + String(entry.sequence),
+      ]
+        .filter(
+          (value): value is string =>
+            typeof value === 'string',
         )
-    });
+        .join(' ')
 
-    let backtrace = truncate(
-        Backtrace::force_capture().to_string(),
-        MAX_BACKTRACE_LENGTH,
-    );
+      const contextEntries = Object.entries(
+        entry.context,
+      )
 
-    NativeCrashReport {
-        incident_id: format!("native-{}", Uuid::new_v4()),
-        occurred_at: current_timestamp(),
-        process: "hybrid-canvas-desktop".to_owned(),
-        thread: truncate(thread_name, 256),
-        message: truncate(message, MAX_MESSAGE_LENGTH),
-        location,
-        backtrace,
-        app_version: app_version.to_owned(),
-        target_os: std::env::consts::OS.to_owned(),
-        target_arch: std::env::consts::ARCH.to_owned(),
-    }
+      if (contextEntries.length === 0) {
+        return prefix + ' ' + entry.message
+      }
+
+      return [
+        prefix + ' ' + entry.message,
+        ...contextEntries.map(
+          ([key, value]) =>
+            '  ' + key + ': ' + value,
+        ),
+      ].join('\n')
+    })
+    .join('\n')
 }
 
-fn panic_payload_message(
-    panic_info: &PanicHookInfo<'_>,
-) -> String {
-    if let Some(message) = panic_info.payload().downcast_ref::<&str>() {
-        return (*message).to_owned();
-    }
+function sanitizeContext(
+  context: LogContext,
+): Readonly<Record<string, string>> {
+  const sanitizedEntries = Object.entries(context)
+    .filter(
+      ([key]) =>
+        key !== 'scope' &&
+        key !== 'correlationId',
+    )
+    .slice(0, MAX_CONTEXT_ENTRIES)
+    .map(([key, value]) => {
+      if (SENSITIVE_KEY_PATTERN.test(key)) {
+        return [key, REDACTED] as const
+      }
 
-    if let Some(message) = panic_info.payload().downcast_ref::<String>() {
-        return message.clone();
-    }
+      return [
+        key,
+        normalizeText(
+          serializeUnknown(value),
+          MAX_CONTEXT_VALUE_LENGTH,
+        ),
+      ] as const
+    })
 
-    "Rust panic with a non-string payload".to_owned()
+  return Object.fromEntries(sanitizedEntries)
 }
 
-fn write_report_atomically(
-    directory: &Path,
-    report: &NativeCrashReport,
-) -> std::io::Result<()> {
-    fs::create_dir_all(directory)?;
+function serializeUnknown(
+  value: unknown,
+): string {
+  if (value === undefined) {
+    return 'undefined'
+  }
 
-    let target_path = directory.join(CRASH_REPORT_FILE_NAME);
-    let temporary_path = directory.join(CRASH_REPORT_TEMP_FILE_NAME);
+  if (value === null) {
+    return 'null'
+  }
 
-    let serialized = serde_json::to_vec_pretty(report)
-        .map_err(std::io::Error::other)?;
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  ) {
+    return String(value)
+  }
 
-    let mut file = File::create(&temporary_path)?;
-    file.write_all(&serialized)?;
-    file.sync_all()?;
-    drop(file);
+  if (typeof value === 'symbol') {
+    return value.description
+      ? 'Symbol(' + value.description + ')'
+      : 'Symbol()'
+  }
 
-    if target_path.exists() {
-        fs::remove_file(&target_path)?;
-    }
+  if (typeof value === 'function') {
+    return (
+      '[Function ' +
+      (value.name || 'anonymous') +
+      ']'
+    )
+  }
 
-    fs::rename(&temporary_path, &target_path)?;
+  const seen = new WeakSet<object>()
 
-    sync_directory(directory);
-
-    Ok(())
-}
-
-fn sync_directory(directory: &Path) {
-    #[cfg(unix)]
-    {
-        if let Ok(file) = File::open(directory) {
-            let _ = file.sync_all();
+  try {
+    return JSON.stringify(
+      value,
+      (_key, candidate: unknown) => {
+        if (candidate instanceof Error) {
+          return serializeError(candidate)
         }
-    }
 
-    #[cfg(not(unix))]
-    {
-        let _ = directory;
+        if (
+          typeof candidate === 'object' &&
+          candidate !== null
+        ) {
+          if (seen.has(candidate)) {
+            return '[Circular]'
+          }
+
+          seen.add(candidate)
+        }
+
+        if (typeof candidate === 'bigint') {
+          return String(candidate)
+        }
+
+        if (typeof candidate === 'symbol') {
+          return String(candidate)
+        }
+
+        if (typeof candidate === 'function') {
+          return (
+            '[Function ' +
+            (candidate.name || 'anonymous') +
+            ']'
+          )
+        }
+
+        return candidate
+      },
+      2,
+    )
+  } catch {
+    try {
+      return String(value)
+    } catch {
+      return '[Unserializable value]'
     }
+  }
 }
 
-fn crash_report_path(
-    app: &AppHandle,
-) -> Result<PathBuf> {
-    Ok(
-        app.path()
-            .app_log_dir()?
-            .join(CRASH_REPORT_FILE_NAME),
+function serializeError(
+  error: Error,
+): Readonly<Record<string, unknown>> {
+  const cause =
+    'cause' in error
+      ? error.cause
+      : undefined
+
+  return {
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+    cause:
+      cause instanceof Error
+        ? {
+            name: cause.name,
+            message: cause.message,
+            stack: cause.stack,
+          }
+        : cause,
+  }
+}
+
+function cloneEntry(
+  entry: DiagnosticLogEntry,
+): DiagnosticLogEntry {
+  return {
+    ...entry,
+    context: {
+      ...entry.context,
+    },
+  }
+}
+
+function normalizeTimestamp(
+  timestamp: string,
+): string {
+  const parsed = Date.parse(timestamp)
+
+  if (Number.isNaN(parsed)) {
+    return new Date().toISOString()
+  }
+
+  return new Date(parsed).toISOString()
+}
+
+function normalizeOptionalText(
+  value: string | undefined,
+  maximumLength: number,
+): string | undefined {
+  if (!value) {
+    return undefined
+  }
+
+  return normalizeText(
+    value,
+    maximumLength,
+  )
+}
+
+function normalizeText(
+  value: string,
+  maximumLength: number,
+): string {
+  const redacted = redactText(value)
+
+  if (redacted.length <= maximumLength) {
+    return redacted
+  }
+
+  return (
+    redacted.slice(0, maximumLength) +
+    '\n[Diagnostic value truncated]'
+  )
+}
+
+function redactText(value: string): string {
+  return value
+    .replace(
+      BEARER_PATTERN,
+      'Bearer ' + REDACTED,
+    )
+    .replace(
+      WINDOWS_USER_PATH_PATTERN,
+      'C:\\Users\\' + REDACTED,
+    )
+    .replace(
+      UNIX_USER_PATH_PATTERN,
+      '/Users/' + REDACTED,
+    )
+    .replace(
+      URL_CREDENTIAL_PATTERN,
+      '$1' + REDACTED + ':' + REDACTED + '@',
     )
 }
 
-fn current_timestamp() -> String {
-    OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .unwrap_or_else(|_| {
-            OffsetDateTime::now_utc()
-                .unix_timestamp()
-                .to_string()
-        })
-}
-
-fn truncate(mut value: String, maximum_length: usize) -> String {
-    if value.len() <= maximum_length {
-        return value;
-    }
-
-    while !value.is_char_boundary(maximum_length.min(value.len())) {
-        value.pop();
-    }
-
-    value.truncate(maximum_length);
-    value.push_str("\n[Native diagnostic value truncated]");
-
-    value
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{truncate, MAX_MESSAGE_LENGTH};
-
-    #[test]
-    fn short_values_are_not_changed() {
-        assert_eq!(truncate("panic".to_owned(), 32), "panic");
-    }
-
-    #[test]
-    fn long_values_are_bounded() {
-        let source = "a".repeat(MAX_MESSAGE_LENGTH + 100);
-        let result = truncate(source, MAX_MESSAGE_LENGTH);
-
-        assert!(result.len() < MAX_MESSAGE_LENGTH + 100);
-        assert!(result.contains("truncated"));
-    }
-
-    #[test]
-    fn unicode_truncation_preserves_utf8_boundaries() {
-        let result = truncate("画布崩溃测试".to_owned(), 5);
-
-        assert!(result.is_char_boundary(result.len()));
-        assert!(result.contains("truncated"));
-    }
+function emergencyConsoleError(
+  message: string,
+  error: unknown,
+): void {
+  try {
+    console.error(
+      '[Hybrid Canvas Observability] ' +
+        message,
+      error,
+    )
+  } catch {
+    // There is deliberately no further fallback.
+  }
 }
 `,
   )
 }
 
-async function createDiagnosticsCommand() {
+async function createDiagnosticBufferTests() {
   await writeText(
-    PATHS.diagnosticsCommand,
-    String.raw`
-use tauri::AppHandle;
-
-use crate::{
-    diagnostics::{self, NativeCrashReport},
-    Result,
-};
-
-/// Returns and consumes the previous native process crash report.
-///
-/// The renderer receives a bounded DTO, not an arbitrary filesystem path or
-/// unrestricted native error object.
-#[tauri::command]
-#[specta::specta]
-pub async fn diagnostics_take_previous_crash(
-    app: AppHandle,
-) -> Result<Option<NativeCrashReport>> {
-    diagnostics::take_previous_crash_report(&app)
-}
-`,
-  )
-}
-
-async function registerRustModules() {
-  await transformFile(
-    PATHS.commandModules,
-    (source) => insertLineOnce(
-      source,
-      'pub mod diagnostics;',
-      'pub mod document;',
-    ),
-  )
-
-  await transformFile(
-    PATHS.rustLib,
-    (source) => insertLineOnce(
-      source,
-      'pub mod diagnostics;',
-      'pub mod commands;',
-    ),
-  )
-}
-
-async function registerNativeStartupHook() {
-  const replacement = String.raw`
-use tauri::Wry;
-use tauri_plugin_store::StoreExt;
-
-use super::logging;
-use crate::asset_protocol::{ASSET_PROTOCOL_SCHEME, AssetProtocolRegistry};
-use crate::commands;
-use crate::commands::document::DocumentRegistry;
-
-pub fn build() -> tauri::Builder<Wry> {
-    let asset_protocol = AssetProtocolRegistry::default();
-    let protocol_registry = asset_protocol.clone();
-
-    tauri::Builder::<Wry>::default()
-        .manage(DocumentRegistry::default())
-        .manage(asset_protocol)
-        .register_uri_scheme_protocol(ASSET_PROTOCOL_SCHEME, move |_webview, request| {
-            protocol_registry.response(&request)
-        })
-        .plugin(logging::plugin().build())
-        .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_notification::init())
-        .setup(|app| {
-            app.store("settings.json")?;
-            crate::diagnostics::install(app.handle())?;
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            commands::asset::asset_session_open,
-            commands::asset::asset_upload,
-            commands::asset::asset_remove,
-            commands::asset::asset_session_close,
-            commands::diagnostics::diagnostics_take_previous_crash,
-            commands::window::window_get,
-            commands::window::window_list,
-            commands::window::window_show,
-            commands::window::window_focus,
-            commands::window::window_close,
-            commands::window::window_set_title,
-            commands::window::window_save_state,
-            commands::document::document_open,
-            commands::document::document_save_as,
-            commands::document::document_save,
-            commands::document::document_close,
-            commands::settings::settings_get,
-            commands::settings::settings_set,
-            commands::settings::settings_reset,
-        ])
-}
-`
-
-  await writeText(PATHS.rustApp, replacement)
-}
-
-async function registerGeneratedIpc() {
-  await transformFile(
-    PATHS.bindingExporter,
-    (source) => {
-      let next = source
-
-      next = next.replace(
-        /use crate::commands::\{\n/,
-        [
-          'use crate::{',
-          '    commands::{',
-        ].join('\n') + '\n',
-      )
-
-      if (!next.includes('diagnostics::diagnostics_take_previous_crash')) {
-        next = next.replace(
-          /(\s+settings::\{AppSettings, CanvasSettings, EditorSettings, ExportSettings, PrivacySettings\},\n)(\};)/,
-          [
-            '$1',
-            '    },',
-            '    diagnostics::NativeCrashReport,',
-            '};',
-          ].join('\n'),
-        )
-      }
-
-      next = insertLineOnce(
-        next,
-        '            crate::commands::diagnostics::diagnostics_take_previous_crash,',
-        '            crate::commands::document::document_open,',
-      )
-
-      next = insertLineOnce(
-        next,
-        '        .typ::<NativeCrashReport>()',
-        '        .typ::<DocumentId>()',
-      )
-
-      return next
-    },
-  )
-}
-
-async function exposeGeneratedIpc() {
-  await writeText(
-    PATHS.desktopIpcPublicApi,
-    String.raw`
-export {
-  type IpcError,
-  IpcInvocationError,
-  isIpcError,
-} from './error'
-
-export { invoke } from './invoke'
-
-export {
-  commands,
-  type NativeCrashReport,
-} from './generated/ipc-bindings'
-`,
-  )
-}
-
-async function createNativeCrashAdapter() {
-  await writeText(
-    PATHS.nativeCrashAdapter,
+    PATHS.diagnosticBufferTest,
     String.raw`
 import {
-  commands,
-  type NativeCrashReport,
-} from '@hybrid-canvas/desktop-ipc'
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest'
+import {
+  clearDiagnosticLogs,
+  configureDiagnosticBuffer,
+  formatDiagnosticLogs,
+  getRecentLogEntries,
+  recordDiagnosticLog,
+} from './diagnostic-buffer'
 
-export type { NativeCrashReport }
+describe('diagnostic buffer', () => {
+  beforeEach(() => {
+    clearDiagnosticLogs()
+    configureDiagnosticBuffer({
+      capacity: 200,
+    })
+  })
 
-export async function takePreviousNativeCrashReport(): Promise<NativeCrashReport | null> {
-  if (!isTauriRuntime()) {
-    return null
-  }
+  it('records structured log entries', () => {
+    recordDiagnosticLog(
+      'error',
+      'canvas save failed',
+      {
+        scope: 'workspace',
+        operation: 'save',
+        documentId: 'document-1',
+      },
+      '2026-07-24T00:00:00.000Z',
+    )
 
-  return commands.diagnosticsTakePreviousCrash()
+    expect(getRecentLogEntries()).toEqual([
+      expect.objectContaining({
+        level: 'error',
+        message: 'canvas save failed',
+        scope: 'workspace',
+        timestamp:
+          '2026-07-24T00:00:00.000Z',
+        context: {
+          operation: 'save',
+          documentId: 'document-1',
+        },
+      }),
+    ])
+  })
+
+  it('keeps only the newest bounded entries', () => {
+    configureDiagnosticBuffer({
+      capacity: 2,
+    })
+
+    recordDiagnosticLog(
+      'info',
+      'one',
+      {},
+      new Date().toISOString(),
+    )
+
+    recordDiagnosticLog(
+      'info',
+      'two',
+      {},
+      new Date().toISOString(),
+    )
+
+    recordDiagnosticLog(
+      'info',
+      'three',
+      {},
+      new Date().toISOString(),
+    )
+
+    expect(
+      getRecentLogEntries().map(
+        (entry) => entry.message,
+      ),
+    ).toEqual(['two', 'three'])
+  })
+
+  it('redacts sensitive keys and bearer tokens', () => {
+    recordDiagnosticLog(
+      'error',
+      'request failed',
+      {
+        accessToken: 'private-token',
+        authorization:
+          'Bearer very-private-token',
+        endpoint:
+          'https://user:password@example.com',
+      },
+      new Date().toISOString(),
+    )
+
+    const [entry] = getRecentLogEntries()
+
+    expect(entry?.context.accessToken).toBe(
+      '[REDACTED]',
+    )
+
+    expect(
+      entry?.context.authorization,
+    ).toBe('[REDACTED]')
+
+    expect(entry?.context.endpoint).not.toContain(
+      'password',
+    )
+  })
+
+  it('serializes Error and circular values safely', () => {
+    const circular: {
+      self?: unknown
+    } = {}
+
+    circular.self = circular
+
+    recordDiagnosticLog(
+      'error',
+      'unexpected failure',
+      {
+        cause: new Error('broken'),
+        circular,
+      },
+      new Date().toISOString(),
+    )
+
+    const [entry] = getRecentLogEntries()
+
+    expect(entry?.context.cause).toContain(
+      'broken',
+    )
+
+    expect(entry?.context.circular).toContain(
+      '[Circular]',
+    )
+  })
+
+  it('returns cloned immutable snapshots', () => {
+    recordDiagnosticLog(
+      'info',
+      'snapshot',
+      {
+        operation: 'test',
+      },
+      new Date().toISOString(),
+    )
+
+    const first = getRecentLogEntries()
+    const second = getRecentLogEntries()
+
+    expect(first).not.toBe(second)
+    expect(first[0]?.context).not.toBe(
+      second[0]?.context,
+    )
+  })
+
+  it('formats readable diagnostic output', () => {
+    recordDiagnosticLog(
+      'warn',
+      'retrying operation',
+      {
+        scope: 'document',
+        attempt: 2,
+      },
+      '2026-07-24T00:00:00.000Z',
+    )
+
+    const formatted = formatDiagnosticLogs(
+      getRecentLogEntries(),
+    )
+
+    expect(formatted).toContain(
+      '2026-07-24T00:00:00.000Z WARN [document]',
+    )
+
+    expect(formatted).toContain(
+      'attempt: 2',
+    )
+  })
+})
+`,
+  )
 }
 
-function isTauriRuntime(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    '__TAURI_INTERNALS__' in window
+async function replaceObservabilityLog() {
+  await writeText(
+    PATHS.observabilityLog,
+    String.raw`
+import {
+  recordDiagnosticLog,
+} from './diagnostic-buffer'
+import type { MetricRecorder } from './metric'
+import {
+  getMetricsRecorder,
+  setMetricsRecorder,
+} from './metric'
+
+export type LogLevel =
+  | 'trace'
+  | 'debug'
+  | 'info'
+  | 'warn'
+  | 'error'
+
+export interface LogContext {
+  readonly scope?: string
+  readonly correlationId?: string
+  readonly [key: string]: unknown
+}
+
+export type LogSink = (
+  level: LogLevel,
+  message: string,
+  context: LogContext,
+  timestamp: string,
+) => void
+
+let sink: LogSink = defaultConsoleSink
+
+function defaultConsoleSink(
+  level: LogLevel,
+  message: string,
+  context: LogContext,
+  timestamp: string,
+): void {
+  const prefix = context.scope
+    ? '[' + context.scope + ']'
+    : ''
+
+  const formatted = [
+    timestamp,
+    level.toUpperCase(),
+    prefix,
+    message,
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  switch (level) {
+    case 'trace':
+    case 'debug':
+      console.debug(formatted, context)
+      return
+
+    case 'info':
+      console.info(formatted, context)
+      return
+
+    case 'warn':
+      console.warn(formatted, context)
+      return
+
+    case 'error':
+      console.error(formatted, context)
+      return
+  }
+}
+
+export function setLogSink(
+  next: LogSink,
+): void {
+  sink = next
+}
+
+export function log(
+  level: LogLevel,
+  message: string,
+  context: LogContext = {},
+): void {
+  const timestamp = new Date().toISOString()
+
+  recordDiagnosticLog(
+    level,
+    message,
+    context,
+    timestamp,
   )
+
+  try {
+    sink(
+      level,
+      message,
+      context,
+      timestamp,
+    )
+  } catch (error: unknown) {
+    // Logging must not recursively become a fatal application error.
+    try {
+      console.error(
+        '[Hybrid Canvas Observability] Log sink failed',
+        {
+          level,
+          message,
+          error,
+        },
+      )
+    } catch {
+      // No further fallback is safe.
+    }
+  }
+}
+
+export function trace(
+  message: string,
+  context?: LogContext,
+): void {
+  log('trace', message, context)
+}
+
+export function debug(
+  message: string,
+  context?: LogContext,
+): void {
+  log('debug', message, context)
+}
+
+export function info(
+  message: string,
+  context?: LogContext,
+): void {
+  log('info', message, context)
+}
+
+export function warn(
+  message: string,
+  context?: LogContext,
+): void {
+  log('warn', message, context)
+}
+
+export function error(
+  message: string,
+  context?: LogContext,
+): void {
+  log('error', message, context)
+}
+
+export function initObservability(
+  options?: {
+    readonly appName?: string
+    readonly sink?: LogSink
+    readonly metrics?: MetricRecorder
+  },
+): void {
+  if (options?.sink) {
+    setLogSink(options.sink)
+  }
+
+  if (options?.metrics) {
+    setMetricsRecorder(options.metrics)
+  } else {
+    getMetricsRecorder()
+  }
+
+  info('observability initialized', {
+    scope: 'observability',
+    appName:
+      options?.appName ??
+      'hybrid-canvas',
+  })
 }
 `,
   )
 }
 
-async function exportNativeCrashAdapter() {
+async function exportDiagnosticBuffer() {
   await transformFile(
-    PATHS.desktopRuntimePublicApi,
+    PATHS.observabilityPublicApi,
     (source) => {
       if (
         source.includes(
-          "from './adapters/native-crash-report'",
+          "from './diagnostic-buffer'",
         )
       ) {
         return source
@@ -586,10 +858,16 @@ async function exportNativeCrashAdapter() {
 
       const addition = [
         '',
+        'export type {',
+        '  DiagnosticLogEntry,',
+        "} from './diagnostic-buffer'",
+        '',
         'export {',
-        '  type NativeCrashReport,',
-        '  takePreviousNativeCrashReport,',
-        "} from './adapters/native-crash-report'",
+        '  clearDiagnosticLogs,',
+        '  configureDiagnosticBuffer,',
+        '  formatDiagnosticLogs,',
+        '  getRecentLogEntries,',
+        "} from './diagnostic-buffer'",
         '',
       ].join('\n')
 
@@ -598,125 +876,104 @@ async function exportNativeCrashAdapter() {
   )
 }
 
-async function extendFatalIncidentKind() {
+async function integrateFatalSnapshot() {
   await transformFile(
     PATHS.fatalIncident,
     (source) => {
-      if (source.includes("| 'native-crash'")) {
-        return source
+      let next = source
+
+      if (
+        !next.includes(
+          "from '@hybrid-canvas/foundations-observability'",
+        )
+      ) {
+        next = [
+          "import {",
+          '  formatDiagnosticLogs,',
+          '  getRecentLogEntries,',
+          "  type DiagnosticLogEntry,",
+          "} from '@hybrid-canvas/foundations-observability'",
+          '',
+          next,
+        ].join('\n')
       }
 
-      const marker = "  | 'webview'"
-
-      if (!source.includes(marker)) {
-        throw new Error(
-          'Could not locate FatalIncidentKind.',
+      if (
+        !next.includes(
+          'readonly recentLogs: readonly DiagnosticLogEntry[]',
+        )
+      ) {
+        next = next.replace(
+          '  readonly context: Readonly<Record<string, string>>\n}',
+          [
+            '  readonly context: Readonly<Record<string, string>>',
+            '  readonly recentLogs: readonly DiagnosticLogEntry[]',
+            '}',
+          ].join('\n'),
         )
       }
 
-      return source.replace(
-        marker,
-        marker + "\n  | 'native-crash'",
-      )
+      if (
+        !next.includes(
+          'const recentLogs = getRecentLogEntries',
+        )
+      ) {
+        next = next.replace(
+          '  const occurredAt = new Date().toISOString()\n',
+          [
+            '  const occurredAt = new Date().toISOString()',
+            '  const recentLogs = getRecentLogEntries(100)',
+            '',
+          ].join('\n'),
+        )
+      }
+
+      if (
+        !next.includes(
+          'recentLogs,',
+        )
+      ) {
+        next = next.replace(
+          '    context: sanitizeContext(input.context),\n',
+          [
+            '    context: sanitizeContext(input.context),',
+            '    recentLogs,',
+            '',
+          ].join('\n'),
+        )
+      }
+
+      if (
+        !next.includes(
+          'formatDiagnosticLogs(incident.recentLogs)',
+        )
+      ) {
+        const marker =
+          "    incident.componentStack\n      ? '\\nReact Component Stack:\\n' +\n        incident.componentStack\n      : undefined,\n"
+
+        if (!next.includes(marker)) {
+          throw new Error(
+            'Could not locate the fatal diagnostic component stack section.',
+          )
+        }
+
+        const replacement = [
+          marker.trimEnd(),
+          '    incident.recentLogs.length > 0',
+          "      ? '\\n最近的结构化日志:\\n' +",
+          '        formatDiagnosticLogs(incident.recentLogs)',
+          '      : undefined,',
+          '',
+        ].join('\n')
+
+        next = next.replace(
+          marker,
+          replacement,
+        )
+      }
+
+      return next
     },
-  )
-}
-
-async function replaceRendererBootstrap() {
-  await writeText(
-    PATHS.main,
-    String.raw`
-import './app.css'
-
-import {
-  takePreviousNativeCrashReport,
-  type NativeCrashReport,
-} from '@hybrid-canvas/platforms-desktop-runtime'
-import { installApplicationLifecycle } from './bootstrap/application-lifecycle'
-import { mountReactApplication } from './bootstrap/react-root'
-import { fatalIncidentController } from './fatal/fatal-controller'
-
-void bootstrapApplication()
-
-async function bootstrapApplication(): Promise<void> {
-  const previousCrash =
-    await readPreviousNativeCrashReport()
-
-  if (previousCrash) {
-    reportPreviousNativeCrash(previousCrash)
-    return
-  }
-
-  const mounted = mountReactApplication(
-    getApplicationRoot(),
-  )
-
-  installApplicationLifecycle(
-    mounted.runtime,
-    mounted,
-  )
-}
-
-async function readPreviousNativeCrashReport(): Promise<NativeCrashReport | null> {
-  try {
-    return await takePreviousNativeCrashReport()
-  } catch (error: unknown) {
-    // Failure to inspect an old crash report must not prevent a healthy
-    // application startup. The current failure remains visible in native logs.
-    console.error(
-      '[Hybrid Canvas] Failed to inspect previous native crash report',
-      error,
-    )
-
-    return null
-  }
-}
-
-function reportPreviousNativeCrash(
-  report: NativeCrashReport,
-): void {
-  const error = new Error(report.message)
-
-  error.name = 'NativeProcessCrash'
-  error.stack = [
-    report.message,
-    '',
-    'Native backtrace:',
-    report.backtrace,
-  ].join('\n')
-
-  fatalIncidentController.report({
-    error,
-    kind: 'native-crash',
-    phase: 'preflight',
-    code: 'FATAL_PREVIOUS_NATIVE_PROCESS_CRASH',
-    title: '应用上次运行时异常终止',
-    source: report.location ?? undefined,
-    recovery: 'reload',
-    context: {
-      nativeIncidentId: report.incidentId,
-      nativeOccurredAt: report.occurredAt,
-      nativeProcess: report.process,
-      nativeThread: report.thread,
-      appVersion: report.appVersion,
-      targetOs: report.targetOs,
-      targetArch: report.targetArch,
-    },
-  })
-}
-
-function getApplicationRoot(): HTMLElement {
-  const root = document.getElementById('root')
-
-  if (!root) {
-    throw new Error(
-      'Application root element "#root" was not found.',
-    )
-  }
-
-  return root
-}
-`,
   )
 }
 
@@ -736,99 +993,91 @@ import process from 'node:process'
 const ROOT = process.cwd()
 const failures = []
 
-const requiredFiles = [
-  'apps/desktop/src-tauri/src/diagnostics/mod.rs',
-  'apps/desktop/src-tauri/src/commands/diagnostics.rs',
-  'platforms/desktop-runtime/src/adapters/native-crash-report.ts',
-]
+const bufferPath =
+  'foundations/observability/src/diagnostic-buffer.ts'
 
-for (const relativePath of requiredFiles) {
+const logPath =
+  'foundations/observability/src/log.ts'
+
+const publicApiPath =
+  'foundations/observability/src/public-api.ts'
+
+const fatalIncidentPath =
+  'apps/desktop/src/fatal/fatal-incident.ts'
+
+for (const relativePath of [
+  bufferPath,
+  logPath,
+  publicApiPath,
+  fatalIncidentPath,
+]) {
   if (!existsSync(path.join(ROOT, relativePath))) {
     failures.push(
-      'Missing native crash recovery file: ' +
+      'Missing diagnostic observability file: ' +
         relativePath,
     )
   }
 }
 
-const app = read(
-  'apps/desktop/src-tauri/src/bootstrap/app.rs',
-)
+if (failures.length === 0) {
+  const buffer = read(bufferPath)
+  const log = read(logPath)
+  const publicApi = read(publicApiPath)
+  const fatalIncident = read(fatalIncidentPath)
 
-const diagnostics = read(
-  'apps/desktop/src-tauri/src/diagnostics/mod.rs',
-)
+  requireText(
+    buffer,
+    'DEFAULT_CAPACITY',
+    'Diagnostic logs are not bounded.',
+  )
 
-const exporter = read(
-  'apps/desktop/src-tauri/src/ipc/export_bindings.rs',
-)
+  requireText(
+    buffer,
+    'SENSITIVE_KEY_PATTERN',
+    'Diagnostic context has no sensitive-key redaction.',
+  )
 
-const renderer = read(
-  'apps/desktop/src/main.tsx',
-)
+  requireText(
+    buffer,
+    'WeakSet<object>',
+    'Diagnostic serialization has no circular-reference protection.',
+  )
 
-const fatalIncident = read(
-  'apps/desktop/src/fatal/fatal-incident.ts',
-)
+  requireText(
+    log,
+    'recordDiagnosticLog(',
+    'The main log path does not record diagnostic entries.',
+  )
 
-requireText(
-  app,
-  'crate::diagnostics::install(app.handle())',
-  'Native panic recorder is not installed during Tauri setup.',
-)
+  requireText(
+    log,
+    'Log sink failed',
+    'Log sink failures are not isolated.',
+  )
 
-requireText(
-  app,
-  'diagnostics_take_previous_crash',
-  'Native crash IPC command is not registered.',
-)
+  requireText(
+    publicApi,
+    'getRecentLogEntries',
+    'Diagnostic log snapshots are not exported.',
+  )
 
-requireText(
-  diagnostics,
-  'std::panic::set_hook',
-  'Native panic hook is missing.',
-)
+  requireText(
+    fatalIncident,
+    'recentLogs',
+    'Fatal incidents do not freeze recent logs.',
+  )
 
-requireText(
-  diagnostics,
-  'write_report_atomically',
-  'Native crash report is not written atomically.',
-)
-
-requireText(
-  diagnostics,
-  'file.sync_all()',
-  'Native crash report is not flushed to disk.',
-)
-
-requireText(
-  exporter,
-  'diagnostics_take_previous_crash',
-  'Native crash command is missing from generated IPC bindings.',
-)
-
-requireText(
-  renderer,
-  'takePreviousNativeCrashReport',
-  'Renderer startup does not inspect the previous native crash.',
-)
-
-requireText(
-  renderer,
-  'FATAL_PREVIOUS_NATIVE_PROCESS_CRASH',
-  'Previous native crashes are not mapped to the fatal controller.',
-)
-
-requireText(
-  fatalIncident,
-  "'native-crash'",
-  'FatalIncidentKind does not include native-crash.',
-)
+  requireText(
+    fatalIncident,
+    'formatDiagnosticLogs(incident.recentLogs)',
+    'Fatal diagnostic text does not contain recent logs.',
+  )
+}
 
 if (failures.length > 0) {
   console.error(
     [
-      'Native crash recovery architecture checks failed:',
+      'Diagnostic observability architecture checks failed:',
       ...failures.map(
         (failure) => '- ' + failure,
       ),
@@ -838,7 +1087,7 @@ if (failures.length > 0) {
   process.exitCode = 1
 } else {
   console.log(
-    'Native crash recovery architecture checks passed.',
+    'Diagnostic observability architecture checks passed.',
   )
 }
 
@@ -869,7 +1118,7 @@ async function registerArchitectureCheck() {
       const packageJson = JSON.parse(source)
 
       const command =
-        'node tests/architecture/check-native-crash-recovery.mjs'
+        'node tests/architecture/check-diagnostic-observability.mjs'
 
       const current =
         packageJson.scripts?.['test:architecture']
@@ -921,28 +1170,6 @@ async function transformFile(
   console.log(relativePath + ': updated.')
 }
 
-function insertLineOnce(
-  source,
-  line,
-  before,
-) {
-  if (source.includes(line)) {
-    return source
-  }
-
-  if (!source.includes(before)) {
-    throw new Error(
-      'Insertion marker was not found: ' +
-        before,
-    )
-  }
-
-  return source.replace(
-    before,
-    line + '\n' + before,
-  )
-}
-
 async function writeText(
   relativePath,
   content,
@@ -978,7 +1205,7 @@ function resolvePath(relativePath) {
 main().catch((error) => {
   console.error('')
   console.error(
-    'Native crash recovery refactor failed.',
+    'Diagnostic observability refactor failed.',
   )
   console.error(
     error instanceof Error

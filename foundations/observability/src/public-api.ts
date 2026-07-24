@@ -10,3 +10,13 @@ export type { MetricRecorder } from './metric'
 export { getMetricsRecorder, setMetricsRecorder } from './metric'
 export type { Span } from './trace'
 export { startSpan } from './trace'
+export type {
+  DiagnosticLogEntry,
+} from './diagnostic-buffer'
+
+export {
+  clearDiagnosticLogs,
+  configureDiagnosticBuffer,
+  formatDiagnosticLogs,
+  getRecentLogEntries,
+} from './diagnostic-buffer'

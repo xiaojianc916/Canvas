@@ -1,3 +1,9 @@
+import {
+  formatDiagnosticLogs,
+  getRecentLogEntries,
+  type DiagnosticLogEntry,
+} from '@hybrid-canvas/foundations-observability'
+
 export type FatalIncidentKind =
   | 'bootstrap'
   | 'render'
@@ -40,6 +46,7 @@ export interface FatalIncident {
   readonly userAgent: string
   readonly recovery: FatalRecovery
   readonly context: Readonly<Record<string, string>>
+  readonly recentLogs: readonly DiagnosticLogEntry[]
 }
 
 export interface CreateFatalIncidentInput {
@@ -85,6 +92,7 @@ export function createFatalIncident(
 ): FatalIncident {
   const normalized = normalizeUnknownError(input.error)
   const occurredAt = new Date().toISOString()
+  const recentLogs = getRecentLogEntries(100)
   const code =
     input.code ??
     createDefaultCode(input.kind, input.phase)
@@ -131,6 +139,7 @@ export function createFatalIncident(
     ),
     recovery: input.recovery ?? 'reload',
     context: sanitizeContext(input.context),
+    recentLogs,
   }
 }
 
@@ -172,6 +181,10 @@ export function formatFatalDiagnostic(
     incident.componentStack
       ? '\nReact Component Stack:\n' +
         incident.componentStack
+      : undefined,
+    incident.recentLogs.length > 0
+      ? '\n最近的结构化日志:\n' +
+        formatDiagnosticLogs(incident.recentLogs)
       : undefined,
   ]
     .filter(
