@@ -25,7 +25,6 @@ import {
 } from '@hybrid-canvas/workspace/react'
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 
-import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
 import { DesktopTitleBar } from '../chrome/DesktopTitleBar'
 import { reportUiError as reportError } from '../ui/ui-feedback'
 
@@ -384,14 +383,12 @@ function renderActiveSurface({
 
     case 'canvas':
       return (
-        <UiErrorBoundary area="画布编辑器">
-          <EditorSessionHost
-            activeSessionId={activeSessionId}
-            onSave={onSave}
-            sessions={hostedSessions}
-          />
-        </UiErrorBoundary>
-      )
+    <EditorSessionHost
+                activeSessionId={activeSessionId}
+                onSave={onSave}
+                sessions={hostedSessions}
+              />
+    )
   }
 }
 
