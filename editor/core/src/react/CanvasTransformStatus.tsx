@@ -756,7 +756,7 @@ function InlineTransformField({
       <span
         className="
           inline-grid h-6 w-[88px] shrink-0
-          grid-cols-[12px_minmax(0,1fr)_10px]
+          grid-cols-[12px_auto_auto_minmax(0,1fr)]
           items-center gap-1 rounded-md px-1.5
           text-[11px] tabular-nums
         "
@@ -774,7 +774,7 @@ function InlineTransformField({
           ref={inputRef}
           aria-label={'编辑 ' + label}
           className="
-            h-6 min-w-0 w-full appearance-none
+            h-6 min-w-0 w-[48px] appearance-none
             border-0 bg-transparent p-0
             text-left font-mono text-[11px]
             tabular-nums text-foreground
@@ -796,7 +796,7 @@ function InlineTransformField({
 
         <span
           className="
-            overflow-hidden text-left
+            -ml-1 whitespace-nowrap text-left
             font-sans text-[10px]
             text-muted-foreground/75
           "
@@ -816,7 +816,7 @@ function InlineTransformField({
       }
       className={[
         'inline-grid h-6 w-[88px] shrink-0',
-        'grid-cols-[12px_minmax(0,1fr)_10px]',
+        'grid-cols-[12px_auto_auto_minmax(0,1fr)]',
         'items-center gap-1 rounded-md px-1.5',
         'text-[11px] tabular-nums',
         'transition-colors',
@@ -863,7 +863,7 @@ function InlineTransformField({
 
       <span
         className="
-          overflow-hidden text-left
+          -ml-1 whitespace-nowrap text-left
           font-sans text-[10px]
           text-muted-foreground/75
         "
