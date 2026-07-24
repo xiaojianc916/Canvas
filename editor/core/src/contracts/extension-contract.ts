@@ -34,58 +34,34 @@ export function buildExtensionRegistration(
   const shapeLabels: Record<string, string> = {}
 
   for (const extension of input) {
-    if (
-      !extension.id ||
-      ids.has(extension.id)
-    ) {
-      throw new Error(
-        'EXTENSION_DUPLICATE_ID',
-      )
+    if (!extension.id || ids.has(extension.id)) {
+      throw new Error('EXTENSION_DUPLICATE_ID')
     }
 
-    if (
-      extension.apiVersion !==
-      HYBRID_CANVAS_EXTENSION_API_VERSION
-    ) {
-      throw new Error(
-        'EXTENSION_API_VERSION_MISMATCH',
-      )
+    if (extension.apiVersion !== HYBRID_CANVAS_EXTENSION_API_VERSION) {
+      throw new Error('EXTENSION_API_VERSION_MISMATCH')
     }
 
     ids.add(extension.id)
 
-    shapeUtils.push(
-      ...(extension.shapeUtils ?? []),
-    )
+    shapeUtils.push(...(extension.shapeUtils ?? []))
 
-    bindingUtils.push(
-      ...(extension.bindingUtils ?? []),
-    )
+    bindingUtils.push(...(extension.bindingUtils ?? []))
 
-    tools.push(
-      ...(extension.tools ?? []),
-    )
+    tools.push(...(extension.tools ?? []))
 
-    Object.assign(
-      shapeLabels,
-      extension.shapeLabels,
-    )
+    Object.assign(shapeLabels, extension.shapeLabels)
   }
 
   return Object.freeze({
-    extensions:
-      Object.freeze([...input]),
+    extensions: Object.freeze([...input]),
 
-    shapeUtils:
-      Object.freeze(shapeUtils),
+    shapeUtils: Object.freeze(shapeUtils),
 
-    bindingUtils:
-      Object.freeze(bindingUtils),
+    bindingUtils: Object.freeze(bindingUtils),
 
-    tools:
-      Object.freeze(tools),
+    tools: Object.freeze(tools),
 
-    shapeLabels:
-      Object.freeze(shapeLabels),
+    shapeLabels: Object.freeze(shapeLabels),
   })
 }

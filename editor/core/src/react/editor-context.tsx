@@ -61,9 +61,7 @@ export function EditorProvider({ children, licenseKey }: EditorProviderProps) {
 
   return (
     <EditorCtx.Provider value={value}>
-      <CanvasInspectorPortalProvider>
-        {children}
-      </CanvasInspectorPortalProvider>
+      <CanvasInspectorPortalProvider>{children}</CanvasInspectorPortalProvider>
     </EditorCtx.Provider>
   )
 }

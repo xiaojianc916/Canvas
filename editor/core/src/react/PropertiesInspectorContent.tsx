@@ -29,9 +29,7 @@ import {
   useStylePanelContext,
   useValue,
 } from 'tldraw'
-import type {
-  ReactNode,
-} from 'react'
+import type { ReactNode } from 'react'
 
 interface SelectionCapabilities {
   readonly canAlign: boolean
@@ -57,15 +55,11 @@ interface SelectionCapabilities {
 }
 
 export interface PropertiesInspectorContentProps {
-  readonly styles:
-    | ReadonlySharedStyleMap
-    | null
+  readonly styles: ReadonlySharedStyleMap | null
   readonly selectedShapeCount: number
 }
 
-interface StyleOption<
-  TValue extends string,
-> {
+interface StyleOption<TValue extends string> {
   readonly value: TValue
   readonly icon: TLUiIconType
   readonly label: string
@@ -309,56 +303,36 @@ const opacityOptions = [
   },
 ] as const
 
-const geoLabels:
-  Partial<
-    Record<
-      TLGeoShape['props']['geo'],
-      string
-    >
-  > = {
-    rectangle: '矩形',
-    ellipse: '椭圆',
-    triangle: '三角形',
-    diamond: '菱形',
-    star: '星形',
-    pentagon: '五边形',
-    hexagon: '六边形',
-    octagon: '八边形',
-    rhombus: '平行四边形',
-    'rhombus-2': '反向平行四边形',
-    oval: '椭圆框',
-    trapezoid: '梯形',
-    'arrow-left': '左箭头',
-    'arrow-up': '上箭头',
-    'arrow-down': '下箭头',
-    'arrow-right': '右箭头',
-    cloud: '云形',
-    'x-box': '叉号框',
-    'check-box': '勾选框',
-    heart: '心形',
-  }
+const geoLabels: Partial<Record<TLGeoShape['props']['geo'], string>> = {
+  rectangle: '矩形',
+  ellipse: '椭圆',
+  triangle: '三角形',
+  diamond: '菱形',
+  star: '星形',
+  pentagon: '五边形',
+  hexagon: '六边形',
+  octagon: '八边形',
+  rhombus: '平行四边形',
+  'rhombus-2': '反向平行四边形',
+  oval: '椭圆框',
+  trapezoid: '梯形',
+  'arrow-left': '左箭头',
+  'arrow-up': '上箭头',
+  'arrow-down': '下箭头',
+  'arrow-right': '右箭头',
+  cloud: '云形',
+  'x-box': '叉号框',
+  'check-box': '勾选框',
+  heart: '心形',
+}
 
-const geoOptions:
-  readonly StyleOption<
-    TLGeoShape['props']['geo']
-  >[] =
-  Object.entries(
-    defaultGeoTypeDefinitions,
-  ).map(
-    ([
-      value,
-      definition,
-    ]) => ({
-      value:
-        value as TLGeoShape['props']['geo'],
-      icon:
-        definition.icon as TLUiIconType,
-      label:
-        geoLabels[
-          value as TLGeoShape['props']['geo']
-        ] ?? value,
-    }),
-  )
+const geoOptions: readonly StyleOption<TLGeoShape['props']['geo']>[] = Object.entries(
+  defaultGeoTypeDefinitions,
+).map(([value, definition]) => ({
+  value: value as TLGeoShape['props']['geo'],
+  icon: definition.icon as TLUiIconType,
+  label: geoLabels[value as TLGeoShape['props']['geo']] ?? value,
+}))
 
 export function PropertiesInspectorContent({
   styles,
@@ -366,460 +340,225 @@ export function PropertiesInspectorContent({
 }: PropertiesInspectorContentProps) {
   const editor = useEditor()
 
-  const title =
-    useValue(
-      'right properties sidebar title',
-      () => {
-        const selected =
-          editor.getSelectedShapes()
+  const title = useValue('right properties sidebar title', () => {
+    const selected = editor.getSelectedShapes()
 
-        if (selected.length > 1) {
-          return (
-            String(selected.length) +
-            ' 个对象'
-          )
-        }
+    if (selected.length > 1) {
+      return String(selected.length) + ' 个对象'
+    }
 
-        if (selected.length === 1) {
-          return getShapeTitle(
-            selected[0]?.type,
-          )
-        }
+    if (selected.length === 1) {
+      return getShapeTitle(selected[0]?.type)
+    }
 
-        return getToolTitle(
-          editor.getCurrentToolId(),
-        )
-      },
-      [editor],
-    )
+    return getToolTitle(editor.getCurrentToolId())
+  }, [editor])
 
-  const onlySelectedShapeType =
-    useValue(
-      'right properties sidebar selected shape type',
-      () =>
-        editor
-          .getOnlySelectedShape()
-          ?.type ?? null,
-      [editor],
-    )
+  const onlySelectedShapeType = useValue(
+    'right properties sidebar selected shape type',
+    () => editor.getOnlySelectedShape()?.type ?? null,
+    [editor],
+  )
 
-  const selectionLockState =
-    useValue(
-      'right properties sidebar selection lock state',
-      () => {
-        const selected =
-          editor.getSelectedShapes()
+  const selectionLockState = useValue('right properties sidebar selection lock state', () => {
+    const selected = editor.getSelectedShapes()
 
-        if (
-          selected.length === 0
-        ) {
-          return 'unlocked'
-        }
+    if (selected.length === 0) {
+      return 'unlocked'
+    }
 
-        const lockedCount =
-          selected.filter(
-            (shape) =>
-              shape.isLocked,
-          ).length
+    const lockedCount = selected.filter((shape) => shape.isLocked).length
 
-        if (
-          lockedCount === 0
-        ) {
-          return 'unlocked'
-        }
+    if (lockedCount === 0) {
+      return 'unlocked'
+    }
 
-        if (
-          lockedCount ===
-          selected.length
-        ) {
-          return 'locked'
-        }
+    if (lockedCount === selected.length) {
+      return 'locked'
+    }
 
-        return 'mixed'
-      },
-      [editor],
-    )
+    return 'mixed'
+  }, [editor])
 
   const selectionCapabilities =
-    useValue<SelectionCapabilities>(
-      'right properties sidebar selection capabilities',
-      () => {
-        const selected =
-          editor.getSelectedShapes()
+    useValue<SelectionCapabilities>('right properties sidebar selection capabilities', () => {
+      const selected = editor.getSelectedShapes()
 
-        const readonly =
-          editor.getIsReadonly()
+      const readonly = editor.getIsReadonly()
 
-        const unlocked =
-          selected.filter(
-            (shape) =>
-              !shape.isLocked,
-          )
+      const unlocked = selected.filter((shape) => !shape.isLocked)
 
-        const alignable =
-          unlocked.filter(
-            (shape) =>
-              editor
-                .getShapeUtil(shape)
-                .canBeLaidOut(
-                  shape,
-                  {
-                    type: 'align',
-                    shapes: unlocked,
-                  },
-                ),
-          )
+      const alignable = unlocked.filter((shape) =>
+        editor.getShapeUtil(shape).canBeLaidOut(shape, {
+          type: 'align',
+          shapes: unlocked,
+        }),
+      )
 
-        const distributable =
-          unlocked.filter(
-            (shape) =>
-              editor
-                .getShapeUtil(shape)
-                .canBeLaidOut(
-                  shape,
-                  {
-                    type: 'distribute',
-                    shapes: unlocked,
-                  },
-                ),
-          )
+      const distributable = unlocked.filter((shape) =>
+        editor.getShapeUtil(shape).canBeLaidOut(shape, {
+          type: 'distribute',
+          shapes: unlocked,
+        }),
+      )
 
-        const rotatable =
-          unlocked.filter(
-            (shape) =>
-              !editor
-                .getShapeUtil(shape)
-                .hideRotateHandle(
-                  shape,
-                ),
-          )
+      const rotatable = unlocked.filter(
+        (shape) => !editor.getShapeUtil(shape).hideRotateHandle(shape),
+      )
 
-        const stretchable =
-          unlocked.filter(
-            (shape) =>
-              editor
-                .getShapeUtil(shape)
-                .canBeLaidOut(
-                  shape,
-                  {
-                    type: 'stretch',
-                    shapes: unlocked,
-                  },
-                ),
-          )
+      const stretchable = unlocked.filter((shape) =>
+        editor.getShapeUtil(shape).canBeLaidOut(shape, {
+          type: 'stretch',
+          shapes: unlocked,
+        }),
+      )
 
-        const stackable =
-          unlocked.filter(
-            (shape) =>
-              editor
-                .getShapeUtil(shape)
-                .canBeLaidOut(
-                  shape,
-                  {
-                    type: 'stack',
-                    shapes: unlocked,
-                  },
-                ),
-          )
+      const stackable = unlocked.filter((shape) =>
+        editor.getShapeUtil(shape).canBeLaidOut(shape, {
+          type: 'stack',
+          shapes: unlocked,
+        }),
+      )
 
-        const packable =
-          unlocked.filter(
-            (shape) =>
-              editor
-                .getShapeUtil(shape)
-                .canBeLaidOut(
-                  shape,
-                  {
-                    type: 'pack',
-                    shapes: unlocked,
-                  },
-                ),
-          )
+      const packable = unlocked.filter((shape) =>
+        editor.getShapeUtil(shape).canBeLaidOut(shape, {
+          type: 'pack',
+          shapes: unlocked,
+        }),
+      )
 
-        const canAlign =
-          !readonly &&
-          alignable.length >= 2
+      const canAlign = !readonly && alignable.length >= 2
 
-        const canDistribute =
-          !readonly &&
-          distributable.length >= 3
+      const canDistribute = !readonly && distributable.length >= 3
 
-        const canStretch =
-          !readonly &&
-          unlocked.length >= 2 &&
-          stretchable.length ===
-            unlocked.length
+      const canStretch = !readonly && unlocked.length >= 2 && stretchable.length === unlocked.length
 
-        const canStack =
-          !readonly &&
-          unlocked.length >= 2 &&
-          stackable.length ===
-            unlocked.length
+      const canStack = !readonly && unlocked.length >= 2 && stackable.length === unlocked.length
 
-        const canPack =
-          !readonly &&
-          unlocked.length >= 2 &&
-          packable.length ===
-            unlocked.length
+      const canPack = !readonly && unlocked.length >= 2 && packable.length === unlocked.length
 
-        const canEnableTextAutoSize =
-          !readonly &&
-          selected.some(
-            (shape) =>
-              editor.isShapeOfType(
-                shape,
-                'text',
-              ) &&
-              shape.props.autoSize ===
-                false,
-          )
+      const canEnableTextAutoSize =
+        !readonly &&
+        selected.some(
+          (shape) => editor.isShapeOfType(shape, 'text') && shape.props.autoSize === false,
+        )
 
-        const onlySelected =
-          editor.getOnlySelectedShape()
+      const onlySelected = editor.getOnlySelectedShape()
 
-        const onlySelectedIsFrameLike =
-          onlySelected
-            ? editor.isShapeFrameLike(
-                onlySelected,
-              )
-            : false
+      const onlySelectedIsFrameLike = onlySelected ? editor.isShapeFrameLike(onlySelected) : false
 
-        const onlySelectedIsImage =
-          onlySelected
-            ? editor.isShapeOfType(
-                onlySelected,
-                'image',
-              )
-            : false
+      const onlySelectedIsImage = onlySelected ? editor.isShapeOfType(onlySelected, 'image') : false
 
-        const onlySelectedIsVideo =
-          onlySelected
-            ? editor.isShapeOfType(
-                onlySelected,
-                'video',
-              )
-            : false
+      const onlySelectedIsVideo = onlySelected ? editor.isShapeOfType(onlySelected, 'video') : false
 
-        const onlySelectedIsUnlocked =
-          onlySelected !== null &&
-          onlySelected !== undefined &&
-          !onlySelected.isLocked
+      const onlySelectedIsUnlocked =
+        onlySelected !== null && onlySelected !== undefined && !onlySelected.isLocked
 
-        const onlySelectedHasUrl =
-          onlySelected !== null &&
-          onlySelected !== undefined &&
-          'url' in onlySelected.props &&
-          typeof onlySelected.props.url ===
-            'string'
+      const onlySelectedHasUrl =
+        onlySelected !== null &&
+        onlySelected !== undefined &&
+        'url' in onlySelected.props &&
+        typeof onlySelected.props.url === 'string'
 
-        return {
-          canAlign,
+      return {
+        canAlign,
 
-          canDistribute,
+        canDistribute,
 
-          canStretch,
+        canStretch,
 
-          canStack,
+        canStack,
 
-          canPack,
+        canPack,
 
-          canArrange:
-            canAlign ||
-            canDistribute ||
-            canStretch ||
-            canStack ||
-            canPack,
+        canArrange: canAlign || canDistribute || canStretch || canStack || canPack,
 
-          canEnableTextAutoSize,
+        canEnableTextAutoSize,
 
-          canEditLink:
-            !readonly &&
-            onlySelectedIsUnlocked &&
-            onlySelectedHasUrl,
+        canEditLink: !readonly && onlySelectedIsUnlocked && onlySelectedHasUrl,
 
-          canFitFrame:
-            !readonly &&
-            onlySelectedIsUnlocked &&
-            onlySelectedIsFrameLike,
+        canFitFrame: !readonly && onlySelectedIsUnlocked && onlySelectedIsFrameLike,
 
-          canRemoveFrame:
-            !readonly &&
-            onlySelectedIsUnlocked &&
-            onlySelectedIsFrameLike,
+        canRemoveFrame: !readonly && onlySelectedIsUnlocked && onlySelectedIsFrameLike,
 
-          canReplaceImage:
-            !readonly &&
-            onlySelectedIsUnlocked &&
-            onlySelectedIsImage,
+        canReplaceImage: !readonly && onlySelectedIsUnlocked && onlySelectedIsImage,
 
-          canReplaceVideo:
-            !readonly &&
-            onlySelectedIsUnlocked &&
-            onlySelectedIsVideo,
+        canReplaceVideo: !readonly && onlySelectedIsUnlocked && onlySelectedIsVideo,
 
-          canDownloadMedia:
-            onlySelectedIsImage ||
-            onlySelectedIsVideo,
+        canDownloadMedia: onlySelectedIsImage || onlySelectedIsVideo,
 
-          canReorder:
-            !readonly &&
-            unlocked.length > 0,
+        canReorder: !readonly && unlocked.length > 0,
 
-          canGroup:
-            !readonly &&
-            unlocked.length >= 2,
+        canGroup: !readonly && unlocked.length >= 2,
 
-          canUngroup:
-            !readonly &&
-            onlySelected?.type ===
-              'group' &&
-            !onlySelected.isLocked,
+        canUngroup: !readonly && onlySelected?.type === 'group' && !onlySelected.isLocked,
 
-          canRotate:
-            !readonly &&
-            unlocked.length > 0 &&
-            rotatable.length ===
-              unlocked.length,
+        canRotate: !readonly && unlocked.length > 0 && rotatable.length === unlocked.length,
 
-          canFrame:
-            !readonly &&
-            unlocked.length >= 2,
+        canFrame: !readonly && unlocked.length >= 2,
 
-          canDuplicate:
-            !readonly &&
-            selected.length > 0,
+        canDuplicate: !readonly && selected.length > 0,
 
-          canDelete:
-            !readonly &&
-            unlocked.length > 0,
-        }
-      },
-      [editor],
-    )
+        canDelete: !readonly && unlocked.length > 0,
+      }
+    }, [editor])
 
   return (
     <div className="hc-properties-sidebar__panel">
       <header className="hc-properties-sidebar__header">
-        <span className="hc-properties-sidebar__title">
-          {title}
-        </span>
+        <span className="hc-properties-sidebar__title">{title}</span>
       </header>
 
-      {styles ? (
-        <StyleSections
-          styles={styles}
-        />
-      ) : null}
+      {styles ? <StyleSections styles={styles} /> : null}
 
       {selectedShapeCount > 0 ? (
         <SelectionActions
-          capabilities={
-            selectionCapabilities
-          }
-          onlySelectedShapeType={
-            onlySelectedShapeType
-          }
-          selectionLockState={
-            selectionLockState
-          }
-          selectedShapeCount={
-            selectedShapeCount
-          }
+          capabilities={selectionCapabilities}
+          onlySelectedShapeType={onlySelectedShapeType}
+          selectionLockState={selectionLockState}
+          selectedShapeCount={selectedShapeCount}
         />
       ) : null}
     </div>
   )
 }
 
-function StyleSections({
-  styles,
-}: {
-  readonly styles:
-    ReadonlySharedStyleMap
-}) {
+function StyleSections({ styles }: { readonly styles: ReadonlySharedStyleMap }) {
   const editor = useEditor()
 
-  const opacity =
-    useValue(
-      'right properties sidebar opacity',
-      () =>
-        editor.getSharedOpacity(),
-      [editor],
-    )
+  const opacity = useValue('right properties sidebar opacity', () => editor.getSharedOpacity(), [
+    editor,
+  ])
 
-  const color =
-    styles.get(
-      DefaultColorStyle,
-    )
+  const color = styles.get(DefaultColorStyle)
 
-  const fill =
-    styles.get(
-      DefaultFillStyle,
-    )
+  const fill = styles.get(DefaultFillStyle)
 
-  const dash =
-    styles.get(
-      DefaultDashStyle,
-    )
+  const dash = styles.get(DefaultDashStyle)
 
-  const size =
-    styles.get(
-      DefaultSizeStyle,
-    )
+  const size = styles.get(DefaultSizeStyle)
 
-  const font =
-    styles.get(
-      DefaultFontStyle,
-    )
+  const font = styles.get(DefaultFontStyle)
 
-  const textAlign =
-    styles.get(
-      DefaultTextAlignStyle,
-    )
+  const textAlign = styles.get(DefaultTextAlignStyle)
 
-  const horizontalAlign =
-    styles.get(
-      DefaultHorizontalAlignStyle,
-    )
+  const horizontalAlign = styles.get(DefaultHorizontalAlignStyle)
 
-  const verticalAlign =
-    styles.get(
-      DefaultVerticalAlignStyle,
-    )
+  const verticalAlign = styles.get(DefaultVerticalAlignStyle)
 
-  const geo =
-    styles.get(
-      GeoShapeGeoStyle,
-    )
+  const geo = styles.get(GeoShapeGeoStyle)
 
-  const arrowKind =
-    styles.get(
-      ArrowShapeKindStyle,
-    )
+  const arrowKind = styles.get(ArrowShapeKindStyle)
 
-  const arrowheadStart =
-    styles.get(
-      ArrowShapeArrowheadStartStyle,
-    )
+  const arrowheadStart = styles.get(ArrowShapeArrowheadStartStyle)
 
-  const arrowheadEnd =
-    styles.get(
-      ArrowShapeArrowheadEndStyle,
-    )
+  const arrowheadEnd = styles.get(ArrowShapeArrowheadEndStyle)
 
-  const spline =
-    styles.get(
-      LineShapeSplineStyle,
-    )
+  const spline = styles.get(LineShapeSplineStyle)
 
-  const hasAppearance =
-    color !== undefined ||
-    opacity !== undefined
+  const hasAppearance = color !== undefined || opacity !== undefined
 
-  const hasCommonStyle =
-    fill !== undefined ||
-    dash !== undefined ||
-    size !== undefined
+  const hasCommonStyle = fill !== undefined || dash !== undefined || size !== undefined
 
   const hasText =
     font !== undefined ||
@@ -836,167 +575,77 @@ function StyleSections({
   return (
     <>
       {hasAppearance ? (
-        <SidebarSection
-          title="外观"
-        >
+        <SidebarSection title="外观">
           {color ? (
-            <SidebarField
-              mixed={
-                color.type === 'mixed'
-              }
-              title="颜色"
-            >
-              <ColorControl
-                value={color}
-              />
+            <SidebarField mixed={color.type === 'mixed'} title="颜色">
+              <ColorControl value={color} />
             </SidebarField>
           ) : null}
 
           {opacity ? (
-            <SidebarField
-              mixed={
-                opacity.type === 'mixed'
-              }
-              title="透明度"
-            >
-              <OpacityControl
-                value={opacity}
-              />
+            <SidebarField mixed={opacity.type === 'mixed'} title="透明度">
+              <OpacityControl value={opacity} />
             </SidebarField>
           ) : null}
         </SidebarSection>
       ) : null}
 
       {hasCommonStyle ? (
-        <SidebarSection
-          title="样式"
-        >
+        <SidebarSection title="样式">
           {fill ? (
-            <SidebarField
-              mixed={
-                fill.type === 'mixed'
-              }
-              title="填充"
-            >
-              <StyleControl
-                options={fillOptions}
-                style={DefaultFillStyle}
-                value={fill}
-              />
+            <SidebarField mixed={fill.type === 'mixed'} title="填充">
+              <StyleControl options={fillOptions} style={DefaultFillStyle} value={fill} />
             </SidebarField>
           ) : null}
 
           {dash ? (
-            <SidebarField
-              mixed={
-                dash.type === 'mixed'
-              }
-              title="线条"
-            >
-              <StyleControl
-                options={dashOptions}
-                style={DefaultDashStyle}
-                value={dash}
-              />
+            <SidebarField mixed={dash.type === 'mixed'} title="线条">
+              <StyleControl options={dashOptions} style={DefaultDashStyle} value={dash} />
             </SidebarField>
           ) : null}
 
           {size ? (
-            <SidebarField
-              mixed={
-                size.type === 'mixed'
-              }
-              title="粗细"
-            >
-              <StyleControl
-                options={sizeOptions}
-                style={DefaultSizeStyle}
-                value={size}
-              />
+            <SidebarField mixed={size.type === 'mixed'} title="粗细">
+              <StyleControl options={sizeOptions} style={DefaultSizeStyle} value={size} />
             </SidebarField>
           ) : null}
         </SidebarSection>
       ) : null}
 
       {hasText ? (
-        <SidebarSection
-          title="文本"
-        >
+        <SidebarSection title="文本">
           {font ? (
-            <SidebarField
-              mixed={
-                font.type === 'mixed'
-              }
-              title="字体"
-            >
-              <StyleControl
-                options={fontOptions}
-                style={DefaultFontStyle}
-                value={font}
-              />
+            <SidebarField mixed={font.type === 'mixed'} title="字体">
+              <StyleControl options={fontOptions} style={DefaultFontStyle} value={font} />
             </SidebarField>
           ) : null}
 
           {textAlign ? (
-            <SidebarField
-              mixed={
-                textAlign.type ===
-                'mixed'
-              }
-              title="文本对齐"
-            >
+            <SidebarField mixed={textAlign.type === 'mixed'} title="文本对齐">
               <StyleControl
-                options={
-                  textAlignOptions
-                }
-                style={
-                  DefaultTextAlignStyle
-                }
+                options={textAlignOptions}
+                style={DefaultTextAlignStyle}
                 value={textAlign}
               />
             </SidebarField>
           ) : null}
 
           {horizontalAlign ? (
-            <SidebarField
-              mixed={
-                horizontalAlign.type ===
-                'mixed'
-              }
-              title="水平位置"
-            >
+            <SidebarField mixed={horizontalAlign.type === 'mixed'} title="水平位置">
               <StyleControl
-                options={
-                  horizontalAlignOptions
-                }
-                style={
-                  DefaultHorizontalAlignStyle
-                }
-                value={
-                  horizontalAlign
-                }
+                options={horizontalAlignOptions}
+                style={DefaultHorizontalAlignStyle}
+                value={horizontalAlign}
               />
             </SidebarField>
           ) : null}
 
           {verticalAlign ? (
-            <SidebarField
-              mixed={
-                verticalAlign.type ===
-                'mixed'
-              }
-              title="垂直位置"
-            >
+            <SidebarField mixed={verticalAlign.type === 'mixed'} title="垂直位置">
               <StyleControl
-                options={
-                  verticalAlignOptions
-                }
-                style={
-                  DefaultVerticalAlignStyle
-                }
-                value={
-                  verticalAlign
-                }
+                options={verticalAlignOptions}
+                style={DefaultVerticalAlignStyle}
+                value={verticalAlign}
               />
             </SidebarField>
           ) : null}
@@ -1004,104 +653,47 @@ function StyleSections({
       ) : null}
 
       {geo ? (
-        <SidebarSection
-          title="形状类型"
-        >
-          <SidebarField
-            mixed={
-              geo.type === 'mixed'
-            }
-            title="图形"
-          >
-            <StyleControl
-              options={geoOptions}
-              style={GeoShapeGeoStyle}
-              value={geo}
-            />
+        <SidebarSection title="形状类型">
+          <SidebarField mixed={geo.type === 'mixed'} title="图形">
+            <StyleControl options={geoOptions} style={GeoShapeGeoStyle} value={geo} />
           </SidebarField>
         </SidebarSection>
       ) : null}
 
       {hasArrow ? (
-        <SidebarSection
-          title="线条与箭头"
-        >
+        <SidebarSection title="线条与箭头">
           {arrowKind ? (
-            <SidebarField
-              mixed={
-                arrowKind.type === 'mixed'
-              }
-              title="类型"
-            >
+            <SidebarField mixed={arrowKind.type === 'mixed'} title="类型">
               <StyleControl
-                options={
-                  arrowKindOptions
-                }
-                style={
-                  ArrowShapeKindStyle
-                }
+                options={arrowKindOptions}
+                style={ArrowShapeKindStyle}
                 value={arrowKind}
               />
             </SidebarField>
           ) : null}
 
           {spline ? (
-            <SidebarField
-              mixed={
-                spline.type === 'mixed'
-              }
-              title="路径"
-            >
-              <StyleControl
-                options={splineOptions}
-                style={
-                  LineShapeSplineStyle
-                }
-                value={spline}
-              />
+            <SidebarField mixed={spline.type === 'mixed'} title="路径">
+              <StyleControl options={splineOptions} style={LineShapeSplineStyle} value={spline} />
             </SidebarField>
           ) : null}
 
           {arrowheadStart ? (
-            <SidebarField
-              mixed={
-                arrowheadStart.type ===
-                'mixed'
-              }
-              title="起点"
-            >
+            <SidebarField mixed={arrowheadStart.type === 'mixed'} title="起点">
               <StyleControl
-                options={
-                  arrowheadOptions
-                }
-                style={
-                  ArrowShapeArrowheadStartStyle
-                }
-                value={
-                  arrowheadStart
-                }
+                options={arrowheadOptions}
+                style={ArrowShapeArrowheadStartStyle}
+                value={arrowheadStart}
               />
             </SidebarField>
           ) : null}
 
           {arrowheadEnd ? (
-            <SidebarField
-              mixed={
-                arrowheadEnd.type ===
-                'mixed'
-              }
-              title="终点"
-            >
+            <SidebarField mixed={arrowheadEnd.type === 'mixed'} title="终点">
               <StyleControl
-                options={
-                  arrowheadOptions
-                }
-                style={
-                  ArrowShapeArrowheadEndStyle
-                }
-                value={
-                  arrowheadEnd
-                }
+                options={arrowheadOptions}
+                style={ArrowShapeArrowheadEndStyle}
+                value={arrowheadEnd}
               />
             </SidebarField>
           ) : null}
@@ -1111,163 +703,38 @@ function StyleSections({
   )
 }
 
-function OpacityControl({
-  value,
-}: {
-  readonly value:
-    SharedStyle<number>
-}) {
-  const styleContext =
-    useStylePanelContext()
+function OpacityControl({ value }: { readonly value: SharedStyle<number> }) {
+  const styleContext = useStylePanelContext()
 
   return (
     <div
       aria-label="透明度"
       className="hc-properties-sidebar__opacity"
-      data-mixed={
-        value.type === 'mixed'
-          ? ''
-          : undefined
-      }
+      data-mixed={value.type === 'mixed' ? '' : undefined}
       role="group"
     >
-      {opacityOptions.map(
-        (option) => {
-          const active =
-            value.type ===
-              'shared' &&
-            value.value ===
-              option.value
-
-          return (
-            <TldrawUiTooltip
-              content={
-                '透明度 ' +
-                option.label
-              }
-              key={
-                option.value
-              }
-              side="left"
-              sideOffset={8}
-            >
-              <button
-                aria-label={
-                  '透明度 ' +
-                  option.label
-                }
-                aria-pressed={
-                  active
-                }
-                className="hc-properties-sidebar__opacity-option"
-                onClick={() => {
-                  styleContext.onHistoryMark(
-                    'change opacity',
-                  )
-
-                  styleContext.onOpacityChange(
-                    option.value,
-                  )
-                }}
-                type="button"
-              >
-                {option.label}
-              </button>
-            </TldrawUiTooltip>
-          )
-        },
-      )}
-    </div>
-  )
-}
-
-function ColorControl({
-  value,
-}: {
-  readonly value:
-    SharedStyle<TLDefaultColorStyle>
-}) {
-  const editor = useEditor()
-  const styleContext =
-    useStylePanelContext()
-
-  const colors =
-    useValue(
-      'right properties sidebar colors',
-      () =>
-        editor
-          .getCurrentTheme()
-          .colors[
-            editor.getColorMode()
-          ],
-      [editor],
-    )
-
-  const items =
-    getColorStyleItems(
-      colors,
-    )
-
-  return (
-    <div
-      aria-label="颜色"
-      className="hc-properties-sidebar__color-grid"
-      data-mixed={
-        value.type === 'mixed'
-          ? ''
-          : undefined
-      }
-      role="group"
-    >
-      {items.map((item) => {
-        const colorValue =
-          item.value as TLDefaultColorStyle
-
-        const active =
-          value.type === 'shared' &&
-          value.value === colorValue
-
-        const label =
-          '颜色 — ' +
-          getColorLabel(
-            colorValue,
-          )
+      {opacityOptions.map((option) => {
+        const active = value.type === 'shared' && value.value === option.value
 
         return (
           <TldrawUiTooltip
-            content={label}
-            key={item.value}
+            content={'透明度 ' + option.label}
+            key={option.value}
             side="left"
             sideOffset={8}
           >
             <button
-              aria-label={label}
+              aria-label={'透明度 ' + option.label}
               aria-pressed={active}
-              className="hc-properties-sidebar__color-button"
+              className="hc-properties-sidebar__opacity-option"
               onClick={() => {
-                styleContext.onHistoryMark(
-                  'change color',
-                )
+                styleContext.onHistoryMark('change opacity')
 
-                styleContext.onValueChange(
-                  DefaultColorStyle,
-                  colorValue,
-                )
+                styleContext.onOpacityChange(option.value)
               }}
-              style={{
-                '--hc-swatch-color':
-                  getColorValue(
-                    colors,
-                    colorValue,
-                    'solid',
-                  ),
-              } as React.CSSProperties}
               type="button"
             >
-              <TldrawUiIcon
-                icon="color"
-                label={label}
-              />
+              {option.label}
             </button>
           </TldrawUiTooltip>
         )
@@ -1276,26 +743,67 @@ function ColorControl({
   )
 }
 
-interface StyleControlProps<
-  TValue extends string,
-> {
-  readonly style:
-    StyleProp<TValue>
-  readonly value:
-    SharedStyle<TValue>
-  readonly options:
-    readonly StyleOption<TValue>[]
+function ColorControl({ value }: { readonly value: SharedStyle<TLDefaultColorStyle> }) {
+  const editor = useEditor()
+  const styleContext = useStylePanelContext()
+
+  const colors = useValue(
+    'right properties sidebar colors',
+    () => editor.getCurrentTheme().colors[editor.getColorMode()],
+    [editor],
+  )
+
+  const items = getColorStyleItems(colors)
+
+  return (
+    <div
+      aria-label="颜色"
+      className="hc-properties-sidebar__color-grid"
+      data-mixed={value.type === 'mixed' ? '' : undefined}
+      role="group"
+    >
+      {items.map((item) => {
+        const colorValue = item.value as TLDefaultColorStyle
+
+        const active = value.type === 'shared' && value.value === colorValue
+
+        const label = '颜色 — ' + getColorLabel(colorValue)
+
+        return (
+          <TldrawUiTooltip content={label} key={item.value} side="left" sideOffset={8}>
+            <button
+              aria-label={label}
+              aria-pressed={active}
+              className="hc-properties-sidebar__color-button"
+              onClick={() => {
+                styleContext.onHistoryMark('change color')
+
+                styleContext.onValueChange(DefaultColorStyle, colorValue)
+              }}
+              style={
+                {
+                  '--hc-swatch-color': getColorValue(colors, colorValue, 'solid'),
+                } as React.CSSProperties
+              }
+              type="button"
+            >
+              <TldrawUiIcon icon="color" label={label} />
+            </button>
+          </TldrawUiTooltip>
+        )
+      })}
+    </div>
+  )
 }
 
-function StyleControl<
-  TValue extends string,
->({
-  style,
-  value,
-  options,
-}: StyleControlProps<TValue>) {
-  const styleContext =
-    useStylePanelContext()
+interface StyleControlProps<TValue extends string> {
+  readonly style: StyleProp<TValue>
+  readonly value: SharedStyle<TValue>
+  readonly options: readonly StyleOption<TValue>[]
+}
+
+function StyleControl<TValue extends string>({ style, value, options }: StyleControlProps<TValue>) {
+  const styleContext = useStylePanelContext()
 
   return (
     <div
@@ -1304,66 +812,30 @@ function StyleControl<
           ? 'hc-properties-sidebar__segmented hc-properties-sidebar__segmented--grid'
           : 'hc-properties-sidebar__segmented'
       }
-      data-mixed={
-        value.type === 'mixed'
-          ? ''
-          : undefined
-      }
+      data-mixed={value.type === 'mixed' ? '' : undefined}
       role="group"
     >
-      {options.map(
-        (option) => {
-          const active =
-            value.type ===
-              'shared' &&
-            value.value ===
-              option.value
+      {options.map((option) => {
+        const active = value.type === 'shared' && value.value === option.value
 
-          return (
-            <TldrawUiTooltip
-              content={
-                option.label
-              }
-              key={
-                option.value
-              }
-              side="left"
-              sideOffset={8}
+        return (
+          <TldrawUiTooltip content={option.label} key={option.value} side="left" sideOffset={8}>
+            <button
+              aria-label={option.label}
+              aria-pressed={active}
+              className="hc-properties-sidebar__segment"
+              onClick={() => {
+                styleContext.onHistoryMark('change ' + style.id)
+
+                styleContext.onValueChange(style, option.value)
+              }}
+              type="button"
             >
-              <button
-                aria-label={
-                  option.label
-                }
-                aria-pressed={
-                  active
-                }
-                className="hc-properties-sidebar__segment"
-                onClick={() => {
-                  styleContext.onHistoryMark(
-                    'change ' +
-                      style.id,
-                  )
-
-                  styleContext.onValueChange(
-                    style,
-                    option.value,
-                  )
-                }}
-                type="button"
-              >
-                <TldrawUiIcon
-                  icon={
-                    option.icon
-                  }
-                  label={
-                    option.label
-                  }
-                />
-              </button>
-            </TldrawUiTooltip>
-          )
-        },
-      )}
+              <TldrawUiIcon icon={option.icon} label={option.label} />
+            </button>
+          </TldrawUiTooltip>
+        )
+      })}
     </div>
   )
 }
@@ -1373,19 +845,12 @@ interface SidebarSectionProps {
   readonly children: ReactNode
 }
 
-function SidebarSection({
-  title,
-  children,
-}: SidebarSectionProps) {
+function SidebarSection({ title, children }: SidebarSectionProps) {
   return (
     <section className="hc-properties-sidebar__section">
-      <h2 className="hc-properties-sidebar__section-title">
-        {title}
-      </h2>
+      <h2 className="hc-properties-sidebar__section-title">{title}</h2>
 
-      <div className="hc-properties-sidebar__section-content">
-        {children}
-      </div>
+      <div className="hc-properties-sidebar__section-content">{children}</div>
     </section>
   )
 }
@@ -1396,24 +861,14 @@ interface SidebarFieldProps {
   readonly children: ReactNode
 }
 
-function SidebarField({
-  title,
-  mixed,
-  children,
-}: SidebarFieldProps) {
+function SidebarField({ title, mixed, children }: SidebarFieldProps) {
   return (
     <div className="hc-properties-sidebar__field">
       <div className="hc-properties-sidebar__field-header">
-        <span>
-          {title}
-        </span>
+        <span>{title}</span>
 
         {mixed ? (
-          <span
-            aria-label="多个值"
-            className="hc-properties-sidebar__mixed"
-            title="多个值"
-          >
+          <span aria-label="多个值" className="hc-properties-sidebar__mixed" title="多个值">
             —
           </span>
         ) : null}
@@ -1425,16 +880,10 @@ function SidebarField({
 }
 
 interface SelectionActionsProps {
-  readonly capabilities:
-    SelectionCapabilities
+  readonly capabilities: SelectionCapabilities
   readonly selectedShapeCount: number
-  readonly onlySelectedShapeType:
-    | string
-    | null
-  readonly selectionLockState:
-    | 'locked'
-    | 'unlocked'
-    | 'mixed'
+  readonly onlySelectedShapeType: string | null
+  readonly selectionLockState: 'locked' | 'unlocked' | 'mixed'
 }
 
 function SelectionActions({
@@ -1443,191 +892,97 @@ function SelectionActions({
   onlySelectedShapeType,
   selectionLockState,
 }: SelectionActionsProps) {
-  const actions =
-    useActions()
+  const actions = useActions()
 
   return (
     <>
       {capabilities.canArrange ? (
-        <SidebarSection
-          title="排列"
-        >
+        <SidebarSection title="排列">
           <div className="hc-properties-sidebar__action-grid">
             {capabilities.canAlign ? (
               <>
-                <ActionButton
-                  actions={actions}
-                  id="align-left"
-                  label="左对齐"
-                />
+                <ActionButton actions={actions} id="align-left" label="左对齐" />
 
-            <ActionButton
-              actions={actions}
-              id="align-center-horizontal"
-              label="水平居中"
-            />
+                <ActionButton actions={actions} id="align-center-horizontal" label="水平居中" />
 
-            <ActionButton
-              actions={actions}
-              id="align-right"
-              label="右对齐"
-            />
+                <ActionButton actions={actions} id="align-right" label="右对齐" />
 
-            <ActionButton
-              actions={actions}
-              id="align-top"
-              label="顶部对齐"
-            />
+                <ActionButton actions={actions} id="align-top" label="顶部对齐" />
 
-            <ActionButton
-              actions={actions}
-              id="align-center-vertical"
-              label="垂直居中"
-            />
+                <ActionButton actions={actions} id="align-center-vertical" label="垂直居中" />
 
-                <ActionButton
-                  actions={actions}
-                  id="align-bottom"
-                  label="底部对齐"
-                />
+                <ActionButton actions={actions} id="align-bottom" label="底部对齐" />
               </>
             ) : null}
 
             {capabilities.canDistribute ? (
               <>
-                <ActionButton
-                  actions={actions}
-                  id="distribute-horizontal"
-                  label="水平分布"
-                />
+                <ActionButton actions={actions} id="distribute-horizontal" label="水平分布" />
 
-                <ActionButton
-                  actions={actions}
-                  id="distribute-vertical"
-                  label="垂直分布"
-                />
+                <ActionButton actions={actions} id="distribute-vertical" label="垂直分布" />
               </>
             ) : null}
 
             {capabilities.canStretch ? (
               <>
-                <ActionButton
-                  actions={actions}
-                  id="stretch-horizontal"
-                  label="水平拉伸"
-                />
+                <ActionButton actions={actions} id="stretch-horizontal" label="水平拉伸" />
 
-                <ActionButton
-                  actions={actions}
-                  id="stretch-vertical"
-                  label="垂直拉伸"
-                />
+                <ActionButton actions={actions} id="stretch-vertical" label="垂直拉伸" />
               </>
             ) : null}
 
             {capabilities.canStack ? (
               <>
-                <ActionButton
-                  actions={actions}
-                  id="stack-horizontal"
-                  label="水平堆叠"
-                />
+                <ActionButton actions={actions} id="stack-horizontal" label="水平堆叠" />
 
-                <ActionButton
-                  actions={actions}
-                  id="stack-vertical"
-                  label="垂直堆叠"
-                />
+                <ActionButton actions={actions} id="stack-vertical" label="垂直堆叠" />
               </>
             ) : null}
 
             {capabilities.canPack ? (
-              <ActionButton
-                actions={actions}
-                id="pack"
-                label="紧凑排列"
-              />
+              <ActionButton actions={actions} id="pack" label="紧凑排列" />
             ) : null}
           </div>
         </SidebarSection>
       ) : null}
 
       {capabilities.canReorder ? (
-        <SidebarSection
-          title="层级"
-        >
+        <SidebarSection title="层级">
           <div className="hc-properties-sidebar__action-grid">
-          <ActionButton
-            actions={actions}
-            id="bring-to-front"
-            label="置于顶层"
-          />
+            <ActionButton actions={actions} id="bring-to-front" label="置于顶层" />
 
-          <ActionButton
-            actions={actions}
-            id="bring-forward"
-            label="上移一层"
-          />
+            <ActionButton actions={actions} id="bring-forward" label="上移一层" />
 
-          <ActionButton
-            actions={actions}
-            id="send-backward"
-            label="下移一层"
-          />
+            <ActionButton actions={actions} id="send-backward" label="下移一层" />
 
-          <ActionButton
-            actions={actions}
-            id="send-to-back"
-            label="置于底层"
-          />
+            <ActionButton actions={actions} id="send-to-back" label="置于底层" />
           </div>
         </SidebarSection>
       ) : null}
 
-      <SidebarSection
-        title="对象"
-      >
+      <SidebarSection title="对象">
         <div className="hc-properties-sidebar__action-grid">
           {capabilities.canEditLink ? (
-            <ActionButton
-              actions={actions}
-              id="edit-link"
-              label="编辑链接"
-            />
+            <ActionButton actions={actions} id="edit-link" label="编辑链接" />
           ) : null}
 
           <ActionButton
             actions={actions}
-            icon={
-              selectionLockState ===
-              'locked'
-                ? 'unlock'
-                : 'lock'
-            }
+            icon={selectionLockState === 'locked' ? 'unlock' : 'lock'}
             id="toggle-lock"
             label={
-              selectionLockState ===
-              'locked'
+              selectionLockState === 'locked'
                 ? '解锁'
-                : selectionLockState ===
-                    'mixed'
+                : selectionLockState === 'mixed'
                   ? '统一锁定'
                   : '锁定'
             }
           />
 
           {capabilities.canUngroup ? (
-            <ActionButton
-              actions={actions}
-              id="ungroup"
-              label="取消编组"
-            />
+            <ActionButton actions={actions} id="ungroup" label="取消编组" />
           ) : capabilities.canGroup ? (
-            <ActionButton
-              actions={actions}
-              id="group"
-              label="编组"
-            />
+            <ActionButton actions={actions} id="group" label="编组" />
           ) : null}
 
           {capabilities.canFrame ? (
@@ -1639,8 +994,7 @@ function SelectionActions({
             />
           ) : null}
 
-          {capabilities.canFitFrame ||
-          capabilities.canRemoveFrame ? (
+          {capabilities.canFitFrame || capabilities.canRemoveFrame ? (
             <>
               {capabilities.canFitFrame ? (
                 <ActionButton
@@ -1652,29 +1006,16 @@ function SelectionActions({
               ) : null}
 
               {capabilities.canRemoveFrame ? (
-                <ActionButton
-                  actions={actions}
-                  icon="cross-2"
-                  id="remove-frame"
-                  label="移除画框"
-                />
+                <ActionButton actions={actions} icon="cross-2" id="remove-frame" label="移除画框" />
               ) : null}
             </>
           ) : null}
 
           {capabilities.canReplaceImage ||
-          (
-            onlySelectedShapeType ===
-              'image' &&
-            capabilities.canDownloadMedia
-          ) ? (
+          (onlySelectedShapeType === 'image' && capabilities.canDownloadMedia) ? (
             <>
               {capabilities.canReplaceImage ? (
-                <ActionButton
-                  actions={actions}
-                  id="image-replace"
-                  label="替换图片"
-                />
+                <ActionButton actions={actions} id="image-replace" label="替换图片" />
               ) : null}
 
               {capabilities.canDownloadMedia ? (
@@ -1689,18 +1030,10 @@ function SelectionActions({
           ) : null}
 
           {capabilities.canReplaceVideo ||
-          (
-            onlySelectedShapeType ===
-              'video' &&
-            capabilities.canDownloadMedia
-          ) ? (
+          (onlySelectedShapeType === 'video' && capabilities.canDownloadMedia) ? (
             <>
               {capabilities.canReplaceVideo ? (
-                <ActionButton
-                  actions={actions}
-                  id="video-replace"
-                  label="替换视频"
-                />
+                <ActionButton actions={actions} id="video-replace" label="替换视频" />
               ) : null}
 
               {capabilities.canDownloadMedia ? (
@@ -1725,35 +1058,18 @@ function SelectionActions({
 
           {capabilities.canRotate ? (
             <>
-              <ActionButton
-                actions={actions}
-                id="rotate-ccw"
-                label="逆时针旋转"
-              />
+              <ActionButton actions={actions} id="rotate-ccw" label="逆时针旋转" />
 
-              <ActionButton
-                actions={actions}
-                id="rotate-cw"
-                label="顺时针旋转"
-              />
+              <ActionButton actions={actions} id="rotate-cw" label="顺时针旋转" />
             </>
           ) : null}
 
           {capabilities.canDuplicate ? (
-            <ActionButton
-              actions={actions}
-              id="duplicate"
-              label="创建副本"
-            />
+            <ActionButton actions={actions} id="duplicate" label="创建副本" />
           ) : null}
 
           {capabilities.canDelete ? (
-            <ActionButton
-              actions={actions}
-              destructive
-              id="delete"
-              label="删除"
-            />
+            <ActionButton actions={actions} destructive id="delete" label="删除" />
           ) : null}
         </div>
       </SidebarSection>
@@ -1768,35 +1084,26 @@ function ActionButton({
   icon,
   destructive = false,
 }: {
-  readonly actions:
-    ReturnType<typeof useActions>
+  readonly actions: ReturnType<typeof useActions>
   readonly id: string
   readonly label: string
   readonly icon?: TLUiIconType
   readonly destructive?: boolean
 }) {
-  const item:
-    | TLUiActionItem
-    | undefined =
-    actions[id]
+  const item: TLUiActionItem | undefined = actions[id]
 
   if (!item) {
     return null
   }
 
-  const resolvedIcon =
-    icon ?? item.icon
+  const resolvedIcon = icon ?? item.icon
 
   if (!resolvedIcon) {
     return null
   }
 
   return (
-    <TldrawUiTooltip
-      content={label}
-      side="left"
-      sideOffset={8}
-    >
+    <TldrawUiTooltip content={label} side="left" sideOffset={8}>
       <button
         aria-label={label}
         className={
@@ -1805,20 +1112,12 @@ function ActionButton({
             : 'hc-properties-sidebar__action'
         }
         onClick={() => {
-          void item.onSelect(
-            'toolbar',
-          )
+          void item.onSelect('toolbar')
         }}
         type="button"
       >
-        {typeof resolvedIcon ===
-        'string' ? (
-          <TldrawUiIcon
-            icon={
-              resolvedIcon as TLUiIconType
-            }
-            label={label}
-          />
+        {typeof resolvedIcon === 'string' ? (
+          <TldrawUiIcon icon={resolvedIcon as TLUiIconType} label={label} />
         ) : (
           resolvedIcon
         )}
@@ -1827,77 +1126,52 @@ function ActionButton({
   )
 }
 
-function getToolTitle(
-  toolId: string,
-): string {
-  const titles:
-    Record<string, string> = {
-      draw: '画笔',
-      geo: '形状',
-      arrow: '箭头',
-      text: '文本',
-      note: '便签',
-      line: '线条',
-      highlight: '高亮',
-    }
+function getToolTitle(toolId: string): string {
+  const titles: Record<string, string> = {
+    draw: '画笔',
+    geo: '形状',
+    arrow: '箭头',
+    text: '文本',
+    note: '便签',
+    line: '线条',
+    highlight: '高亮',
+  }
 
-  return (
-    titles[toolId] ??
-    '属性'
-  )
+  return titles[toolId] ?? '属性'
 }
 
-function getShapeTitle(
-  shapeType:
-    | string
-    | undefined,
-): string {
-  const titles:
-    Record<string, string> = {
-      geo: '形状',
-      draw: '画笔',
-      arrow: '箭头',
-      text: '文本',
-      note: '便签',
-      line: '线条',
-      highlight: '高亮',
-      frame: '画框',
-      image: '图片',
-      video: '视频',
-      group: '编组',
-    }
+function getShapeTitle(shapeType: string | undefined): string {
+  const titles: Record<string, string> = {
+    geo: '形状',
+    draw: '画笔',
+    arrow: '箭头',
+    text: '文本',
+    note: '便签',
+    line: '线条',
+    highlight: '高亮',
+    frame: '画框',
+    image: '图片',
+    video: '视频',
+    group: '编组',
+  }
 
-  return shapeType
-    ? titles[shapeType] ??
-        '对象'
-    : '对象'
+  return shapeType ? (titles[shapeType] ?? '对象') : '对象'
 }
 
-function getColorLabel(
-  color: TLDefaultColorStyle,
-): string {
-  const labels:
-    Partial<
-      Record<
-        TLDefaultColorStyle,
-        string
-      >
-    > = {
-      black: '黑色',
-      grey: '灰色',
-      violet: '紫色',
-      blue: '蓝色',
-      'light-blue': '浅蓝色',
-      yellow: '黄色',
-      orange: '橙色',
-      green: '绿色',
-      'light-green': '浅绿色',
-      red: '红色',
-      'light-red': '浅红色',
-    }
+function getColorLabel(color: TLDefaultColorStyle): string {
+  const labels: Partial<Record<TLDefaultColorStyle, string>> = {
+    black: '黑色',
+    grey: '灰色',
+    violet: '紫色',
+    blue: '蓝色',
+    'light-blue': '浅蓝色',
+    yellow: '黄色',
+    orange: '橙色',
+    green: '绿色',
+    'light-green': '浅绿色',
+    red: '红色',
+    'light-red': '浅红色',
+  }
 
-  return (
-    labels[color] ??
-    color
-  )
+  return labels[color] ?? color
 }

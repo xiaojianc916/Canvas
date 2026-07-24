@@ -32,8 +32,7 @@ const validDependencyLayers = new Set([
 const scaffoldPackagePatterns = {
   'apps/': 'desktop',
   'editor/': '(?:asset|canvas|document|file|plugin)',
-  'features/':
-    '(?:canvas-session|settings|workspace)',
+  'features/': '(?:canvas-session|settings|workspace)',
   'foundations/': '(?:design-system|foundations-[a-z-]+)',
   'platforms/': '(?:desktop-ipc|platforms-desktop-runtime)',
 }

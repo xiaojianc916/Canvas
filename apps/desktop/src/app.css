@@ -206,8 +206,7 @@ body {
  * - Inspector grid
  * - 状态栏
  */
-.workspace-shell
-  .tlui-layout__top__center {
+.workspace-shell .tlui-layout__top__center {
   position: absolute;
   top: 10px;
   left: 50%;
@@ -221,8 +220,7 @@ body {
 /*
  * 产品包装层只负责水平居中。
  */
-.workspace-shell
-  .hc-canvas-top-toolbar {
+.workspace-shell .hc-canvas-top-toolbar {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -237,9 +235,7 @@ body {
  * 放入 TopPanel 后只移除这段 padding；
  * 不重写背景、圆角、阴影和按钮尺寸。
  */
-.workspace-shell
-  .hc-canvas-top-toolbar
-  .tlui-main-toolbar--horizontal {
+.workspace-shell .hc-canvas-top-toolbar .tlui-main-toolbar--horizontal {
   width: 100%;
   max-width: 100%;
   padding-top: 0;
@@ -250,9 +246,7 @@ body {
 /*
  * 保持官方 Toolbar 按自身内容宽度居中。
  */
-.workspace-shell
-  .hc-canvas-top-toolbar
-  .tlui-main-toolbar__inner {
+.workspace-shell .hc-canvas-top-toolbar .tlui-main-toolbar__inner {
   width: fit-content;
   max-width: 100%;
   margin-right: auto;
@@ -262,18 +256,10 @@ body {
 /*
  * 允许官方 Toolbar 与 QuickActions 接收交互。
  */
-.workspace-shell
-  .hc-canvas-top-toolbar
-  .tlui-main-toolbar__tools,
-.workspace-shell
-  .hc-canvas-top-toolbar
-  .tlui-main-toolbar__extras,
-.workspace-shell
-  .hc-canvas-top-toolbar
-  .tlui-main-toolbar__extras__controls,
-.workspace-shell
-  .hc-canvas-top-toolbar
-  button {
+.workspace-shell .hc-canvas-top-toolbar .tlui-main-toolbar__tools,
+.workspace-shell .hc-canvas-top-toolbar .tlui-main-toolbar__extras,
+.workspace-shell .hc-canvas-top-toolbar .tlui-main-toolbar__extras__controls,
+.workspace-shell .hc-canvas-top-toolbar button {
   pointer-events: auto;
 }
 
@@ -287,9 +273,7 @@ body {
  * - Duplicate / Copy 类操作
  * - ActionsMenu
  */
-.workspace-shell
-  .hc-canvas-top-toolbar
-  .tlui-main-toolbar__extras {
+.workspace-shell .hc-canvas-top-toolbar .tlui-main-toolbar__extras {
   visibility: visible;
   opacity: 1;
 }
@@ -299,8 +283,7 @@ body {
  * 不触碰 Workspace 的列布局。
  */
 @media (max-width: 760px) {
-  .workspace-shell
-    .tlui-layout__top__center {
+  .workspace-shell .tlui-layout__top__center {
     top: 8px;
     width: calc(100% - 16px);
   }
@@ -328,12 +311,7 @@ body {
   height: 42px;
   align-items: center;
   padding: 0 16px;
-  border-bottom: 1px solid
-    color-mix(
-      in oklab,
-      var(--color-foreground) 8%,
-      transparent
-    );
+  border-bottom: 1px solid color-mix(in oklab, var(--color-foreground) 8%, transparent);
 }
 
 .hc-properties-sidebar__title {
@@ -350,19 +328,13 @@ body {
   padding: 16px;
 }
 
-.hc-properties-sidebar__section
-  + .hc-properties-sidebar__section {
+.hc-properties-sidebar__section + .hc-properties-sidebar__section {
   padding-top: 4px;
 }
 
 .hc-properties-sidebar__section-title {
   margin: 0 0 12px;
-  color:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 62%,
-      transparent
-    );
+  color: color-mix(in oklab, var(--color-foreground) 62%, transparent);
   font: inherit;
   font-size: 11px;
   font-weight: 600;
@@ -384,12 +356,7 @@ body {
   min-height: 16px;
   align-items: center;
   justify-content: space-between;
-  color:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 58%,
-      transparent
-    );
+  color: color-mix(in oklab, var(--color-foreground) 58%, transparent);
   font-size: 11px;
   line-height: 16px;
 }
@@ -401,8 +368,7 @@ body {
 
 .hc-properties-sidebar__color-grid {
   display: grid;
-  grid-template-columns:
-    repeat(7, 24px);
+  grid-template-columns: repeat(7, 24px);
   justify-content: space-between;
   gap: 8px 6px;
 }
@@ -420,34 +386,18 @@ body {
   cursor: pointer;
 }
 
-.hc-properties-sidebar__color-button
-  .tlui-icon {
+.hc-properties-sidebar__color-button .tlui-icon {
   width: 20px;
   height: 20px;
 }
 
 .hc-properties-sidebar__color-button:hover {
-  background:
-    color-mix(
-      in oklab,
-      currentColor 9%,
-      transparent
-    );
+  background: color-mix(in oklab, currentColor 9%, transparent);
 }
 
 .hc-properties-sidebar__color-button[aria-pressed="true"] {
-  border-color:
-    color-mix(
-      in oklab,
-      var(--color-primary) 72%,
-      transparent
-    );
-  background:
-    color-mix(
-      in oklab,
-      var(--color-primary) 10%,
-      transparent
-    );
+  border-color: color-mix(in oklab, var(--color-primary) 72%, transparent);
+  background: color-mix(in oklab, var(--color-primary) 10%, transparent);
 }
 
 .hc-properties-sidebar__segmented {
@@ -456,19 +406,9 @@ body {
   grid-auto-columns: 1fr;
   min-width: 0;
   padding: 2px;
-  border: 1px solid
-    color-mix(
-      in oklab,
-      var(--color-foreground) 9%,
-      transparent
-    );
+  border: 1px solid color-mix(in oklab, var(--color-foreground) 9%, transparent);
   border-radius: 8px;
-  background:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 3%,
-      transparent
-    );
+  background: color-mix(in oklab, var(--color-foreground) 3%, transparent);
 }
 
 .hc-properties-sidebar__segment {
@@ -485,34 +425,24 @@ body {
 }
 
 .hc-properties-sidebar__segment:hover {
-  background:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 6%,
-      transparent
-    );
+  background: color-mix(in oklab, var(--color-foreground) 6%, transparent);
 }
 
 .hc-properties-sidebar__segment[aria-pressed="true"] {
   background: var(--color-surface);
   color: var(--color-primary);
-  box-shadow:
-    0 1px 2px
-    rgb(0 0 0 / 8%);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
 }
 
-.hc-properties-sidebar__segment
-  .tlui-icon,
-.hc-properties-sidebar__action
-  .tlui-icon {
+.hc-properties-sidebar__segment .tlui-icon,
+.hc-properties-sidebar__action .tlui-icon {
   width: 18px;
   height: 18px;
 }
 
 .hc-properties-sidebar__action-grid {
   display: grid;
-  grid-template-columns:
-    repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
 }
 
@@ -530,18 +460,8 @@ body {
 }
 
 .hc-properties-sidebar__action:hover {
-  border-color:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 7%,
-      transparent
-    );
-  background:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 6%,
-      transparent
-    );
+  border-color: color-mix(in oklab, var(--color-foreground) 7%, transparent);
+  background: color-mix(in oklab, var(--color-foreground) 6%, transparent);
 }
 
 .hc-properties-sidebar__action--destructive {
@@ -549,12 +469,7 @@ body {
 }
 
 .hc-properties-sidebar__action--destructive:hover {
-  background:
-    color-mix(
-      in oklab,
-      var(--color-destructive) 9%,
-      transparent
-    );
+  background: color-mix(in oklab, var(--color-destructive) 9%, transparent);
 }
 
 .hc-properties-sidebar__color-button:focus-visible,
@@ -564,28 +479,16 @@ body {
   outline-offset: 1px;
 }
 
-
 /* hybrid-canvas:properties-sidebar-v2 */
 
 .hc-properties-sidebar__opacity {
   display: grid;
-  grid-template-columns:
-    repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 3px;
   padding: 2px;
-  border: 1px solid
-    color-mix(
-      in oklab,
-      var(--color-foreground) 9%,
-      transparent
-    );
+  border: 1px solid color-mix(in oklab, var(--color-foreground) 9%, transparent);
   border-radius: 8px;
-  background:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 3%,
-      transparent
-    );
+  background: color-mix(in oklab, var(--color-foreground) 3%, transparent);
 }
 
 .hc-properties-sidebar__opacity-option {
@@ -596,12 +499,7 @@ body {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 70%,
-      transparent
-    );
+  color: color-mix(in oklab, var(--color-foreground) 70%, transparent);
   font: inherit;
   font-size: 10px;
   line-height: 30px;
@@ -611,25 +509,18 @@ body {
 }
 
 .hc-properties-sidebar__opacity-option:hover {
-  background:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 6%,
-      transparent
-    );
+  background: color-mix(in oklab, var(--color-foreground) 6%, transparent);
 }
 
 .hc-properties-sidebar__opacity-option[aria-pressed="true"] {
   background: var(--color-surface);
   color: var(--color-primary);
   font-weight: 600;
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 8%);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
 }
 
 .hc-properties-sidebar__segmented--grid {
-  grid-template-columns:
-    repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-auto-flow: row;
   grid-auto-columns: auto;
   gap: 2px;
@@ -640,7 +531,6 @@ body {
   outline-offset: -2px;
 }
 
-
 /* hybrid-canvas:properties-sidebar-v4 */
 
 /*
@@ -649,23 +539,13 @@ body {
 .hc-properties-sidebar__segmented[data-mixed],
 .hc-properties-sidebar__opacity[data-mixed] {
   border-style: dashed;
-  border-color:
-    color-mix(
-      in oklab,
-      var(--color-primary) 40%,
-      transparent
-    );
+  border-color: color-mix(in oklab, var(--color-primary) 40%, transparent);
 }
 
 .hc-properties-sidebar__color-grid[data-mixed] {
   position: relative;
   padding: 5px;
-  border: 1px dashed
-    color-mix(
-      in oklab,
-      var(--color-primary) 40%,
-      transparent
-    );
+  border: 1px dashed color-mix(in oklab, var(--color-primary) 40%, transparent);
   border-radius: 8px;
 }
 
@@ -679,12 +559,7 @@ body {
   place-items: center;
   border-radius: 4px;
   background: var(--color-sidebar);
-  color:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 58%,
-      transparent
-    );
+  color: color-mix(in oklab, var(--color-foreground) 58%, transparent);
   content: "—";
   font-size: 11px;
   font-weight: 600;

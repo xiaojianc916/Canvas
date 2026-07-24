@@ -1,8 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   DefaultToolbar,
   type Editor,
@@ -14,16 +10,10 @@ import {
 } from 'tldraw'
 
 import type { EditorSession } from '../runtime/editor-session'
-import {
-  CanvasInspectorStylePanel,
-} from './canvas-inspector-portal'
-import {
-  useBindEditorSession,
-  useTldrawLicenseKey,
-} from './editor-context'
+import { CanvasInspectorStylePanel } from './canvas-inspector-portal'
+import { useBindEditorSession, useTldrawLicenseKey } from './editor-context'
 
-export const HYBRID_CANVAS_SAVE_ACTION_ID =
-  'hybrid-canvas.save'
+export const HYBRID_CANVAS_SAVE_ACTION_ID = 'hybrid-canvas.save'
 
 /**
  * tldraw 负责：
@@ -59,97 +49,59 @@ export interface EditorCanvasProps {
   readonly onSave?: () => void
 }
 
-export function EditorCanvas({
-  session,
-  isActive = true,
-  onSave,
-}: EditorCanvasProps) {
-  const licenseKey =
-    useTldrawLicenseKey()
+export function EditorCanvas({ session, isActive = true, onSave }: EditorCanvasProps) {
+  const licenseKey = useTldrawLicenseKey()
 
-  const [editor, setEditor] =
-    useState<Editor | null>(null)
+  const [editor, setEditor] = useState<Editor | null>(null)
 
-  const {
-    registration,
-    store,
-  } = session
+  const { registration, store } = session
 
-  useBindEditorSession(
-    isActive ? editor : null,
-    isActive ? registration : null,
-  )
+  useBindEditorSession(isActive ? editor : null, isActive ? registration : null)
 
-  const hasTools =
-    registration.tools.length > 0
+  const hasTools = registration.tools.length > 0
 
-  const overrides =
-    useMemo<TLUiOverrides>(
-      () =>
-        createCanvasUiOverrides(
-          onSave,
-        ),
-      [onSave],
-    )
+  const overrides = useMemo<TLUiOverrides>(() => createCanvasUiOverrides(onSave), [onSave])
 
   /*
    * 每个 Editor Session 都有自己的 StylePanel slot，
    * 但只有 active session 可以发布到 Workspace 右侧属性侧边栏。
    */
-  const components =
-    useMemo<TLComponents>(
-      () => ({
-        ...BASE_CANVAS_COMPONENTS,
+  const components = useMemo<TLComponents>(
+    () => ({
+      ...BASE_CANVAS_COMPONENTS,
 
-        StylePanel:
-          function WorkspacePropertiesInspector() {
-            return (
-              <CanvasInspectorStylePanel
-                active={isActive}
-              />
-            )
-          },
-      }),
-      [isActive],
-    )
+      StylePanel: function WorkspacePropertiesInspector() {
+        return <CanvasInspectorStylePanel active={isActive} />
+      },
+    }),
+    [isActive],
+  )
 
-  const tldrawProps =
-    useMemo((): TldrawProps => {
-      const base: TldrawProps = {
-        hideUi: false,
-        licenseKey,
-        store,
-        onMount: setEditor,
-        overrides,
-        components,
-
-        options: {
-          maxPages: 100,
-          actionShortcutsLocation:
-            'toolbar',
-        },
-
-        shapeUtils:
-          registration.shapeUtils,
-
-        bindingUtils:
-          registration.bindingUtils,
-      }
-
-      if (hasTools) {
-        base.tools =
-          registration.tools
-      }
-
-      return base
-    }, [
-      components,
-      hasTools,
+  const tldrawProps = useMemo((): TldrawProps => {
+    const base: TldrawProps = {
+      hideUi: false,
       licenseKey,
-      overrides,
-      registration,
       store,
-    ])
+      onMount: setEditor,
+      overrides,
+      components,
+
+      options: {
+        maxPages: 100,
+        actionShortcutsLocation: 'toolbar',
+      },
+
+      shapeUtils: registration.shapeUtils,
+
+      bindingUtils: registration.bindingUtils,
+    }
+
+    if (hasTools) {
+      base.tools = registration.tools
+    }
+
+    return base
+  }, [components, hasTools, licenseKey, overrides, registration, store])
 
   useEffect(() => {
     if (!editor) {
@@ -170,44 +122,28 @@ export function EditorCanvas({
 
       session.attachEditor(editor)
 
-      return () =>
-        session.detachEditor(editor)
+      return () => session.detachEditor(editor)
     }
 
     session.detachEditor(editor)
 
     return undefined
-  }, [
-    editor,
-    isActive,
-    session,
-  ])
+  }, [editor, isActive, session])
 
   return (
     <div
       className="relative size-full overflow-hidden bg-canvas"
-      data-document-id={
-        session.documentId
-      }
-      data-session-id={
-        session.sessionId
-      }
+      data-document-id={session.documentId}
+      data-session-id={session.sessionId}
     >
       <Tldraw {...tldrawProps} />
     </div>
   )
 }
 
-function createCanvasUiOverrides(
-  onSave:
-    | (() => void)
-    | undefined,
-): TLUiOverrides {
+function createCanvasUiOverrides(onSave: (() => void) | undefined): TLUiOverrides {
   return {
-    actions(
-      _editor,
-      actions,
-    ): TLUiActionsContextType {
+    actions(_editor, actions): TLUiActionsContextType {
       if (!onSave) {
         return actions
       }
@@ -216,8 +152,7 @@ function createCanvasUiOverrides(
         ...actions,
 
         [HYBRID_CANVAS_SAVE_ACTION_ID]: {
-          id:
-            HYBRID_CANVAS_SAVE_ACTION_ID,
+          id: HYBRID_CANVAS_SAVE_ACTION_ID,
 
           label: '保存',
           kbd: 'cmd+s,ctrl+s',
@@ -231,6 +166,4 @@ function createCanvasUiOverrides(
   }
 }
 
-export {
-  useEditor,
-} from './editor-context'
+export { useEditor } from './editor-context'

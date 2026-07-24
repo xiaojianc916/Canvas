@@ -1,56 +1,31 @@
 #!/usr/bin/env node
 
-import {
-  readFile,
-} from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 
 const root = process.cwd()
 
 const files = {
-  editorCanvas: path.join(
-    root,
-    'editor/core/src/react/EditorCanvas.tsx',
-  ),
+  editorCanvas: path.join(root, 'editor/core/src/react/EditorCanvas.tsx'),
 
-  portal: path.join(
-    root,
-    'editor/core/src/react/canvas-inspector-portal.tsx',
-  ),
+  portal: path.join(root, 'editor/core/src/react/canvas-inspector-portal.tsx'),
 
   workspaceContainer: path.join(
     root,
     'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
   ),
 
-  workspaceShell: path.join(
-    root,
-    'features/workspace/src/presentation/shell/WorkspaceShell.tsx',
-  ),
+  workspaceShell: path.join(root, 'features/workspace/src/presentation/shell/WorkspaceShell.tsx'),
 
-  shellContract: path.join(
-    root,
-    'features/workspace/src/contracts/shell-contract.ts',
-  ),
+  shellContract: path.join(root, 'features/workspace/src/contracts/shell-contract.ts'),
 
-  extensionContract: path.join(
-    root,
-    'editor/core/src/contracts/extension-contract.ts',
-  ),
+  extensionContract: path.join(root, 'editor/core/src/contracts/extension-contract.ts'),
 }
 
 const sources = Object.fromEntries(
   await Promise.all(
-    Object.entries(files).map(
-      async ([key, filePath]) => [
-        key,
-        await readFile(
-          filePath,
-          'utf8',
-        ),
-      ],
-    ),
+    Object.entries(files).map(async ([key, filePath]) => [key, await readFile(filePath, 'utf8')]),
   ),
 )
 
@@ -147,12 +122,9 @@ forbidPattern(
   'Extension API 不得恢复 tool-first Inspector',
 )
 
-
 if (violations.length > 0) {
   console.error('')
-  console.error(
-    'Properties Inspector architecture: FAILED',
-  )
+  console.error('Properties Inspector architecture: FAILED')
   console.error('')
 
   for (const violation of violations) {
@@ -162,33 +134,17 @@ if (violations.length > 0) {
   console.error('')
   process.exitCode = 1
 } else {
-  console.log(
-    'Properties Inspector architecture: OK',
-  )
+  console.log('Properties Inspector architecture: OK')
 }
 
-function requirePattern(
-  owner,
-  source,
-  pattern,
-  message,
-) {
+function requirePattern(owner, source, pattern, message) {
   if (!pattern.test(source)) {
-    violations.push(
-      owner + ': ' + message,
-    )
+    violations.push(owner + ': ' + message)
   }
 }
 
-function forbidPattern(
-  owner,
-  source,
-  pattern,
-  message,
-) {
+function forbidPattern(owner, source, pattern, message) {
   if (pattern.test(source)) {
-    violations.push(
-      owner + ': ' + message,
-    )
+    violations.push(owner + ': ' + message)
   }
 }

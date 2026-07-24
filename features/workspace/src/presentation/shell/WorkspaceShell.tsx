@@ -54,10 +54,7 @@ export function WorkspaceShell({
 
   const hasCanvas = model.activeSurface.kind === 'canvas'
   const dockSidebar = mode !== 'narrow' && isSidebarOpen
-  const dockInspector =
-    inspectorAvailable &&
-    isInspectorOpen &&
-    hasCanvas
+  const dockInspector = inspectorAvailable && isInspectorOpen && hasCanvas
 
   useEffect(() => {
     const previousMode = previousModeRef.current
@@ -236,60 +233,60 @@ export function WorkspaceShell({
 
   const inspectorRegion =
     hasCanvas && inspectorAvailable ? (
-    <>
-      <aside
-        aria-hidden={!dockInspector}
-        aria-label="属性检查器"
-        className="relative row-[2/-1] min-h-0 min-w-0 overflow-visible"
-        style={{
-          gridColumn: 4,
-          pointerEvents: dockInspector ? 'auto' : 'none',
-        }}
-      >
-        {dockInspector ? (
-          <div
-            className="absolute inset-y-0 right-0 overflow-visible"
-            style={{ width: INSPECTOR_WIDTH }}
-          >
-            <div className="relative h-full">
-              <Button
-                aria-label="收起属性面板"
-                className="absolute -left-8 top-3 z-30 size-7 rounded-r-none"
-                onClick={() => setInspectorOpen(false)}
-                size="icon"
-                type="button"
-                variant="outline"
-              >
-                <PanelRightClose aria-hidden="true" className="size-3.5" />
-              </Button>
-
-              {inspectorContent}
-            </div>
-          </div>
-        ) : null}
-      </aside>
-
-      {!dockInspector ? (
-        <Button
-          aria-expanded={false}
-          aria-label="展开属性面板"
-          className="fixed right-0 top-[calc(var(--chrome-height)+12px)] z-30 rounded-r-none"
-          onClick={() => {
-            if (mode !== 'wide') {
-              setSidebarOpen(false)
-            }
-
-            setInspectorOpen(true)
+      <>
+        <aside
+          aria-hidden={!dockInspector}
+          aria-label="属性检查器"
+          className="relative row-[2/-1] min-h-0 min-w-0 overflow-visible"
+          style={{
+            gridColumn: 4,
+            pointerEvents: dockInspector ? 'auto' : 'none',
           }}
-          size="icon"
-          type="button"
-          variant="outline"
         >
-          <PanelRightOpen aria-hidden="true" className="size-4" />
-        </Button>
-      ) : null}
-    </>
-  ) : null
+          {dockInspector ? (
+            <div
+              className="absolute inset-y-0 right-0 overflow-visible"
+              style={{ width: INSPECTOR_WIDTH }}
+            >
+              <div className="relative h-full">
+                <Button
+                  aria-label="收起属性面板"
+                  className="absolute -left-8 top-3 z-30 size-7 rounded-r-none"
+                  onClick={() => setInspectorOpen(false)}
+                  size="icon"
+                  type="button"
+                  variant="outline"
+                >
+                  <PanelRightClose aria-hidden="true" className="size-3.5" />
+                </Button>
+
+                {inspectorContent}
+              </div>
+            </div>
+          ) : null}
+        </aside>
+
+        {!dockInspector ? (
+          <Button
+            aria-expanded={false}
+            aria-label="展开属性面板"
+            className="fixed right-0 top-[calc(var(--chrome-height)+12px)] z-30 rounded-r-none"
+            onClick={() => {
+              if (mode !== 'wide') {
+                setSidebarOpen(false)
+              }
+
+              setInspectorOpen(true)
+            }}
+            size="icon"
+            type="button"
+            variant="outline"
+          >
+            <PanelRightOpen aria-hidden="true" className="size-4" />
+          </Button>
+        ) : null}
+      </>
+    ) : null
 
   const status = hasCanvas ? (
     <div

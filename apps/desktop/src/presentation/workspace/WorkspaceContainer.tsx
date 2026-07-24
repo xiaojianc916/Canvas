@@ -80,8 +80,7 @@ export function WorkspaceContainer({
 }: WorkspaceContainerProps) {
   const editor = useEditor()
 
-  const inspectorAvailable =
-    useCanvasInspectorAvailability()
+  const inspectorAvailable = useCanvasInspectorAvailability()
 
   const workbench = useSyncExternalStore(
     port.workspace.subscribe,
@@ -281,12 +280,8 @@ export function WorkspaceContainer({
   return (
     <WorkspaceShell
       actions={actions}
-      inspector={
-        <CanvasInspectorRightSidebar />
-      }
-      inspectorAvailable={
-        inspectorAvailable
-      }
+      inspector={<CanvasInspectorRightSidebar />}
+      inspectorAvailable={inspectorAvailable}
       mainContent={mainContent}
       model={model}
       overlays={
