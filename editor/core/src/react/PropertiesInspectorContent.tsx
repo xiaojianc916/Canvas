@@ -45,6 +45,8 @@ interface SelectionCapabilities {
   readonly canReplaceImage: boolean
   readonly canReplaceVideo: boolean
   readonly canDownloadMedia: boolean
+  readonly canCropImage: boolean
+  readonly canToggleLock: boolean
   readonly canReorder: boolean
   readonly canGroup: boolean
   readonly canUngroup: boolean
@@ -360,6 +362,12 @@ export function PropertiesInspectorContent({
     [editor],
   )
 
+  const isCroppingImage = useValue(
+    'right properties sidebar image crop state',
+    () => editor.isIn('select.crop.'),
+    [editor],
+  )
+
   const selectionLockState = useValue('right properties sidebar selection lock state', () => {
     const selected = editor.getSelectedShapes()
 
@@ -460,6 +468,13 @@ export function PropertiesInspectorContent({
         'url' in onlySelected.props &&
         typeof onlySelected.props.url === 'string'
 
+      const onlySelectedHasMediaAsset =
+        onlySelected !== null &&
+        onlySelected !== undefined &&
+        'assetId' in onlySelected.props &&
+        onlySelected.props.assetId !== null &&
+        onlySelected.props.assetId !== undefined
+
       return {
         canAlign,
 
@@ -485,7 +500,18 @@ export function PropertiesInspectorContent({
 
         canReplaceVideo: !readonly && onlySelectedIsUnlocked && onlySelectedIsVideo,
 
-        canDownloadMedia: onlySelectedIsImage || onlySelectedIsVideo,
+        canDownloadMedia:
+          (onlySelectedIsImage || onlySelectedIsVideo) &&
+          onlySelectedHasMediaAsset,
+
+        canCropImage:
+          !readonly &&
+          onlySelectedIsUnlocked &&
+          onlySelectedIsImage,
+
+        canToggleLock:
+          !readonly &&
+          selected.length > 0,
 
         canReorder: !readonly && unlocked.length > 0,
 
@@ -514,6 +540,7 @@ export function PropertiesInspectorContent({
       {selectedShapeCount > 0 ? (
         <SelectionActions
           capabilities={selectionCapabilities}
+          isCroppingImage={isCroppingImage}
           onlySelectedShapeType={onlySelectedShapeType}
           selectionLockState={selectionLockState}
           selectedShapeCount={selectedShapeCount}
@@ -881,6 +908,7 @@ function SidebarField({ title, mixed, children }: SidebarFieldProps) {
 
 interface SelectionActionsProps {
   readonly capabilities: SelectionCapabilities
+  readonly isCroppingImage: boolean
   readonly selectedShapeCount: number
   readonly onlySelectedShapeType: string | null
   readonly selectionLockState: 'locked' | 'unlocked' | 'mixed'
@@ -888,6 +916,7 @@ interface SelectionActionsProps {
 
 function SelectionActions({
   capabilities,
+  isCroppingImage,
   selectedShapeCount,
   onlySelectedShapeType,
   selectionLockState,
@@ -966,18 +995,27 @@ function SelectionActions({
             <ActionButton actions={actions} id="edit-link" label="编辑链接" />
           ) : null}
 
-          <ActionButton
-            actions={actions}
-            icon={selectionLockState === 'locked' ? 'unlock' : 'lock'}
-            id="toggle-lock"
-            label={
-              selectionLockState === 'locked'
-                ? '解锁'
-                : selectionLockState === 'mixed'
-                  ? '统一锁定'
-                  : '锁定'
-            }
-          />
+          {capabilities.canToggleLock ? (
+            <ActionButton
+              actions={actions}
+              icon={
+                selectionLockState ===
+                'locked'
+                  ? 'unlock'
+                  : 'lock'
+              }
+              id="toggle-lock"
+              label={
+                selectionLockState ===
+                'locked'
+                  ? '解锁'
+                  : selectionLockState ===
+                      'mixed'
+                    ? '统一锁定'
+                    : '锁定'
+              }
+            />
+          ) : null}
 
           {capabilities.canUngroup ? (
             <ActionButton actions={actions} id="ungroup" label="取消编组" />
@@ -1009,6 +1047,12 @@ function SelectionActions({
                 <ActionButton actions={actions} icon="cross-2" id="remove-frame" label="移除画框" />
               ) : null}
             </>
+          ) : null}
+
+          {capabilities.canCropImage ? (
+            <CropImageButton
+              active={isCroppingImage}
+            />
           ) : null}
 
           {capabilities.canReplaceImage ||
@@ -1074,6 +1118,60 @@ function SelectionActions({
         </div>
       </SidebarSection>
     </>
+  )
+}
+
+function CropImageButton({
+  active,
+}: {
+  readonly active: boolean
+}) {
+  const editor = useEditor()
+
+  const label =
+    active
+      ? '完成裁剪'
+      : '裁剪图片'
+
+  return (
+    <TldrawUiTooltip
+      content={label}
+      side="left"
+      sideOffset={8}
+    >
+      <button
+        aria-label={label}
+        aria-pressed={active}
+        className="hc-properties-sidebar__action"
+        onClick={() => {
+          if (active) {
+            editor.setCroppingShape(
+              null,
+            )
+
+            editor.setCurrentTool(
+              'select.idle',
+            )
+
+            return
+          }
+
+          editor.setCurrentTool(
+            'select.crop.idle',
+          )
+        }}
+        type="button"
+      >
+        <TldrawUiIcon
+          icon={
+            active
+              ? 'check'
+              : 'crop'
+          }
+          label={label}
+        />
+      </button>
+    </TldrawUiTooltip>
   )
 }
 
