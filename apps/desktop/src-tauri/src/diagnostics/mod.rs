@@ -137,7 +137,7 @@ fn create_report(
     );
 
     NativeCrashReport {
-        incident_id: format!("native-{}", Uuid::new_v4()),
+        incident_id: format!("native-{}", Uuid::now_v7()),
         occurred_at: current_timestamp(),
         process: "hybrid-canvas-desktop".to_owned(),
         thread: truncate(thread_name, 256),

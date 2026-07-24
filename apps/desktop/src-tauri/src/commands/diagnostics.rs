@@ -11,7 +11,7 @@ use crate::{
 /// unrestricted native error object.
 #[tauri::command]
 #[specta::specta]
-pub async fn diagnostics_take_previous_crash(
+pub fn diagnostics_take_previous_crash(
     app: AppHandle,
 ) -> Result<Option<NativeCrashReport>> {
     diagnostics::take_previous_crash_report(&app)
