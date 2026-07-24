@@ -6,7 +6,7 @@ import {
 } from '@hybrid-canvas/platforms-desktop-runtime'
 import { installApplicationLifecycle } from './bootstrap/application-lifecycle'
 import { mountReactApplication } from './bootstrap/react-root'
-import { fatalIncidentController } from './fatal/fatal-controller'
+import { fatalIncidentController } from './fatal/fatal-runtime'
 
 void bootstrapApplication()
 
