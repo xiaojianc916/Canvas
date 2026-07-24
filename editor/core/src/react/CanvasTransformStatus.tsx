@@ -8,10 +8,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import {
-  TldrawUiIcon,
-  useValue,
-} from 'tldraw'
+import { useValue } from 'tldraw'
 
 import { useEditor } from './editor-context'
 
@@ -400,7 +397,8 @@ export function CanvasTransformStatus({
           <StatusDivider />
 
           <TransformGroup
-            icon="corners"
+
+
             label="尺寸"
             title="页面轴对齐包围盒"
           >
@@ -463,7 +461,6 @@ export function CanvasTransformStatus({
               <StatusDivider />
 
               <StatusState
-                icon="lock"
                 label="只读"
                 title="当前画布为只读状态"
               />
@@ -473,7 +470,6 @@ export function CanvasTransformStatus({
               <StatusDivider />
 
               <StatusState
-                icon="lock"
                 label="已锁定"
                 title="选择中包含锁定对象"
               />
@@ -513,14 +509,12 @@ interface TransformGroupProps {
   readonly children: ReactNode
   readonly label: string
   readonly title: string
-  readonly icon?: 'corners'
 }
 
 function TransformGroup({
   children,
   label,
   title,
-  icon,
 }: TransformGroupProps) {
   return (
     <div
@@ -530,21 +524,6 @@ function TransformGroup({
       "
       title={title}
     >
-      {icon ? (
-        <span
-          aria-hidden="true"
-          className="
-            mr-0.5 inline-flex size-5 items-center
-            justify-center text-muted-foreground/65
-          "
-        >
-          <TldrawUiIcon
-            icon={icon}
-            label={label}
-            small
-          />
-        </span>
-      ) : null}
 
       {children}
     </div>
@@ -867,23 +846,22 @@ function AspectRatioLockButton({
       title={title}
       type="button"
     >
-      <TldrawUiIcon
-        icon={locked ? 'lock' : 'unlock'}
-        label={title}
-        small
-      />
+      <span
+        aria-hidden="true"
+        className="font-mono text-[9px] font-semibold tracking-[-0.08em]"
+      >
+        {locked ? 'W:H' : 'W/H'}
+      </span>
     </button>
   )
 }
 
 interface StatusStateProps {
-  readonly icon: 'lock'
   readonly label: string
   readonly title: string
 }
 
 function StatusState({
-  icon,
   label,
   title,
 }: StatusStateProps) {
@@ -895,11 +873,6 @@ function StatusState({
       "
       title={title}
     >
-      <TldrawUiIcon
-        icon={icon}
-        label={label}
-        small
-      />
 
       <span>{label}</span>
     </span>
