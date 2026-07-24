@@ -10,6 +10,8 @@ import {
   DefaultSizeStyle,
   DefaultTextAlignStyle,
   DefaultVerticalAlignStyle,
+  defaultGeoTypeDefinitions,
+  GeoShapeGeoStyle,
   getColorStyleItems,
   getColorValue,
   LineShapeSplineStyle,
@@ -18,6 +20,7 @@ import {
   type StyleProp,
   TldrawUiIcon,
   type TLDefaultColorStyle,
+  type TLGeoShape,
   type TLUiActionItem,
   type TLUiIconType,
   useActions,
@@ -282,6 +285,57 @@ const opacityOptions = [
   },
 ] as const
 
+const geoLabels:
+  Partial<
+    Record<
+      TLGeoShape['props']['geo'],
+      string
+    >
+  > = {
+    rectangle: '矩形',
+    ellipse: '椭圆',
+    triangle: '三角形',
+    diamond: '菱形',
+    star: '星形',
+    pentagon: '五边形',
+    hexagon: '六边形',
+    octagon: '八边形',
+    rhombus: '平行四边形',
+    'rhombus-2': '反向平行四边形',
+    oval: '椭圆框',
+    trapezoid: '梯形',
+    'arrow-left': '左箭头',
+    'arrow-up': '上箭头',
+    'arrow-down': '下箭头',
+    'arrow-right': '右箭头',
+    cloud: '云形',
+    'x-box': '叉号框',
+    'check-box': '勾选框',
+    heart: '心形',
+  }
+
+const geoOptions:
+  readonly StyleOption<
+    TLGeoShape['props']['geo']
+  >[] =
+  Object.entries(
+    defaultGeoTypeDefinitions,
+  ).map(
+    ([
+      value,
+      definition,
+    ]) => ({
+      value:
+        value as TLGeoShape['props']['geo'],
+      icon:
+        definition.icon as TLUiIconType,
+      label:
+        geoLabels[
+          value as TLGeoShape['props']['geo']
+        ] ?? value,
+    }),
+  )
+
 export function PropertiesInspectorContent({
   styles,
   selectedShapeCount,
@@ -325,6 +379,43 @@ export function PropertiesInspectorContent({
       [editor],
     )
 
+  const selectionLockState =
+    useValue(
+      'right properties sidebar selection lock state',
+      () => {
+        const selected =
+          editor.getSelectedShapes()
+
+        if (
+          selected.length === 0
+        ) {
+          return 'unlocked'
+        }
+
+        const lockedCount =
+          selected.filter(
+            (shape) =>
+              shape.isLocked,
+          ).length
+
+        if (
+          lockedCount === 0
+        ) {
+          return 'unlocked'
+        }
+
+        if (
+          lockedCount ===
+          selected.length
+        ) {
+          return 'locked'
+        }
+
+        return 'mixed'
+      },
+      [editor],
+    )
+
   return (
     <div className="hc-properties-sidebar__panel">
       <header className="hc-properties-sidebar__header">
@@ -343,6 +434,9 @@ export function PropertiesInspectorContent({
         <SelectionActions
           onlySelectedShapeType={
             onlySelectedShapeType
+          }
+          selectionLockState={
+            selectionLockState
           }
           selectedShapeCount={
             selectedShapeCount
@@ -407,6 +501,11 @@ function StyleSections({
   const verticalAlign =
     styles.get(
       DefaultVerticalAlignStyle,
+    )
+
+  const geo =
+    styles.get(
+      GeoShapeGeoStyle,
     )
 
   const arrowKind =
@@ -617,6 +716,25 @@ function StyleSections({
               />
             </SidebarField>
           ) : null}
+        </SidebarSection>
+      ) : null}
+
+      {geo ? (
+        <SidebarSection
+          title="形状类型"
+        >
+          <SidebarField
+            mixed={
+              geo.type === 'mixed'
+            }
+            title="图形"
+          >
+            <StyleControl
+              options={geoOptions}
+              style={GeoShapeGeoStyle}
+              value={geo}
+            />
+          </SidebarField>
         </SidebarSection>
       ) : null}
 
@@ -1012,11 +1130,16 @@ interface SelectionActionsProps {
   readonly onlySelectedShapeType:
     | string
     | null
+  readonly selectionLockState:
+    | 'locked'
+    | 'unlocked'
+    | 'mixed'
 }
 
 function SelectionActions({
   selectedShapeCount,
   onlySelectedShapeType,
+  selectionLockState,
 }: SelectionActionsProps) {
   const actions =
     useActions()
@@ -1117,6 +1240,26 @@ function SelectionActions({
         title="对象"
       >
         <div className="hc-properties-sidebar__action-grid">
+          <ActionButton
+            actions={actions}
+            icon={
+              selectionLockState ===
+              'locked'
+                ? 'unlock'
+                : 'lock'
+            }
+            id="toggle-lock"
+            label={
+              selectionLockState ===
+              'locked'
+                ? '解锁'
+                : selectionLockState ===
+                    'mixed'
+                  ? '统一锁定'
+                  : '锁定'
+            }
+          />
+
           {onlySelectedShapeType ===
           'group' ? (
             <ActionButton
@@ -1131,6 +1274,70 @@ function SelectionActions({
               id="group"
               label="编组"
             />
+          ) : null}
+
+          {selectedShapeCount >= 2 ? (
+            <ActionButton
+              actions={actions}
+              icon="tool-frame"
+              id="frame-selection"
+              label="创建画框"
+            />
+          ) : null}
+
+          {onlySelectedShapeType ===
+          'frame' ? (
+            <>
+              <ActionButton
+                actions={actions}
+                icon="corners"
+                id="fit-frame-to-content"
+                label="适应内容"
+              />
+
+              <ActionButton
+                actions={actions}
+                icon="cross-2"
+                id="remove-frame"
+                label="移除画框"
+              />
+            </>
+          ) : null}
+
+          {onlySelectedShapeType ===
+          'image' ? (
+            <>
+              <ActionButton
+                actions={actions}
+                id="image-replace"
+                label="替换图片"
+              />
+
+              <ActionButton
+                actions={actions}
+                icon="download"
+                id="download-original"
+                label="下载原图"
+              />
+            </>
+          ) : null}
+
+          {onlySelectedShapeType ===
+          'video' ? (
+            <>
+              <ActionButton
+                actions={actions}
+                id="video-replace"
+                label="替换视频"
+              />
+
+              <ActionButton
+                actions={actions}
+                icon="download"
+                id="download-original"
+                label="下载原视频"
+              />
+            </>
           ) : null}
 
           <ActionButton
@@ -1167,12 +1374,14 @@ function ActionButton({
   actions,
   id,
   label,
+  icon,
   destructive = false,
 }: {
   readonly actions:
     ReturnType<typeof useActions>
   readonly id: string
   readonly label: string
+  readonly icon?: TLUiIconType
   readonly destructive?: boolean
 }) {
   const item:
@@ -1180,10 +1389,14 @@ function ActionButton({
     | undefined =
     actions[id]
 
-  if (
-    !item ||
-    !item.icon
-  ) {
+  if (!item) {
+    return null
+  }
+
+  const resolvedIcon =
+    icon ?? item.icon
+
+  if (!resolvedIcon) {
     return null
   }
 
@@ -1203,13 +1416,16 @@ function ActionButton({
       title={label}
       type="button"
     >
-      {typeof item.icon === 'string' ? (
+      {typeof resolvedIcon ===
+      'string' ? (
         <TldrawUiIcon
-          icon={item.icon as TLUiIconType}
+          icon={
+            resolvedIcon as TLUiIconType
+          }
           label={label}
         />
       ) : (
-        item.icon
+        resolvedIcon
       )}
     </button>
   )

@@ -7,54 +7,48 @@ import {
 import path from 'node:path'
 import process from 'node:process'
 
-const root = process.cwd()
-
-const contentPath = path.join(
-  root,
+const filePath = path.join(
+  process.cwd(),
   'editor/core/src/react/PropertiesInspectorContent.tsx',
 )
 
-const cssPath = path.join(
-  root,
-  'apps/desktop/src/app.css',
-)
-
-const CSS_MARKER =
-  '/* hybrid-canvas:properties-sidebar-v2 */'
-
-let source = normalize(
+let source = (
   await readFile(
-    contentPath,
+    filePath,
     'utf8',
-  ),
+  )
+).replaceAll(
+  '\r\n',
+  '\n',
 )
 
 source = updateImports(source)
-source = insertOptions(source)
-source = replaceStyleSections(source)
-source = insertOpacityControl(source)
-source = updateSegmentedLayout(source)
+source = addGeoOptions(source)
+source = addGeoStyleState(source)
+source = addGeoSection(source)
+source = addSelectionState(source)
 source = extendSelectionActions(source)
+source = replaceActionButton(source)
 
-await write(
-  contentPath,
-  source,
+await writeFile(
+  filePath,
+  source.trimEnd() + '\n',
+  'utf8',
 )
-
-await updateCss()
 
 console.log('')
 console.log(
-  '右侧属性侧边栏第二阶段内容已添加。',
+  '右侧属性侧边栏第三阶段已完成。',
 )
 console.log('')
 console.log('新增：')
-console.log('  - 透明度')
-console.log('  - 标签水平与垂直对齐')
-console.log('  - 箭头类型和端点')
-console.log('  - 线条曲率')
-console.log('  - 对象层级')
-console.log('  - 对象旋转')
+console.log('  - 官方几何形状图例')
+console.log('  - 锁定与解锁')
+console.log('  - 创建画框')
+console.log('  - 适应画框内容')
+console.log('  - 移除画框')
+console.log('  - 替换图片/视频')
+console.log('  - 下载媒体原文件')
 console.log('')
 console.log('验证：')
 console.log('  pnpm format')
@@ -66,43 +60,41 @@ console.log('')
 
 function updateImports(input) {
   if (
-    input.includes(
-      'ArrowShapeArrowheadEndStyle',
+    !input.includes(
+      'defaultGeoTypeDefinitions',
     )
   ) {
-    return input
+    input = input.replace(
+      `  DefaultVerticalAlignStyle,
+  getColorStyleItems,`,
+      `  DefaultVerticalAlignStyle,
+  defaultGeoTypeDefinitions,
+  GeoShapeGeoStyle,
+  getColorStyleItems,`,
+    )
   }
 
-  return input.replace(
-    `import {
-  DefaultColorStyle,`,
-    `import {
-  ArrowShapeArrowheadEndStyle,
-  ArrowShapeArrowheadStartStyle,
-  ArrowShapeKindStyle,
-  DefaultColorStyle,`,
-  ).replace(
-    `  DefaultFontStyle,
-  DefaultSizeStyle,
-  DefaultTextAlignStyle,`,
-    `  DefaultFontStyle,
-  DefaultHorizontalAlignStyle,
-  DefaultSizeStyle,
-  DefaultTextAlignStyle,
-  DefaultVerticalAlignStyle,`,
-  ).replace(
-    `  getColorValue,
-  type ReadonlySharedStyleMap,`,
-    `  getColorValue,
-  LineShapeSplineStyle,
-  type ReadonlySharedStyleMap,`,
-  )
+  if (
+    !input.includes(
+      'type TLGeoShape,',
+    )
+  ) {
+    input = input.replace(
+      `  type TLDefaultColorStyle,
+  type TLUiActionItem,`,
+      `  type TLDefaultColorStyle,
+  type TLGeoShape,
+  type TLUiActionItem,`,
+    )
+  }
+
+  return input
 }
 
-function insertOptions(input) {
+function addGeoOptions(input) {
   if (
     input.includes(
-      'const horizontalAlignOptions',
+      'const geoOptions',
     )
   ) {
     return input
@@ -111,862 +103,493 @@ function insertOptions(input) {
   const marker =
     'export function PropertiesInspectorContent'
 
-  const markerIndex =
+  const index =
     input.indexOf(marker)
 
-  if (markerIndex < 0) {
+  if (index < 0) {
     throw new Error(
       '没有找到 PropertiesInspectorContent。',
     )
   }
 
-  const additions = `const horizontalAlignOptions = [
-  {
-    value: 'start',
-    icon: 'horizontal-align-start',
-    label: '左侧',
-  },
-  {
-    value: 'middle',
-    icon: 'horizontal-align-middle',
-    label: '水平居中',
-  },
-  {
-    value: 'end',
-    icon: 'horizontal-align-end',
-    label: '右侧',
-  },
-] as const
+  const content = `const geoLabels:
+  Partial<
+    Record<
+      TLGeoShape['props']['geo'],
+      string
+    >
+  > = {
+    rectangle: '矩形',
+    ellipse: '椭圆',
+    triangle: '三角形',
+    diamond: '菱形',
+    star: '星形',
+    pentagon: '五边形',
+    hexagon: '六边形',
+    octagon: '八边形',
+    rhombus: '平行四边形',
+    'rhombus-2': '反向平行四边形',
+    oval: '椭圆框',
+    trapezoid: '梯形',
+    'arrow-left': '左箭头',
+    'arrow-up': '上箭头',
+    'arrow-down': '下箭头',
+    'arrow-right': '右箭头',
+    cloud: '云形',
+    'x-box': '叉号框',
+    'check-box': '勾选框',
+    heart: '心形',
+  }
 
-const verticalAlignOptions = [
-  {
-    value: 'start',
-    icon: 'vertical-align-start',
-    label: '顶部',
-  },
-  {
-    value: 'middle',
-    icon: 'vertical-align-middle',
-    label: '垂直居中',
-  },
-  {
-    value: 'end',
-    icon: 'vertical-align-end',
-    label: '底部',
-  },
-] as const
-
-const arrowKindOptions = [
-  {
-    value: 'arc',
-    icon: 'arrow-arc',
-    label: '曲线箭头',
-  },
-  {
-    value: 'elbow',
-    icon: 'arrow-elbow',
-    label: '折线箭头',
-  },
-] as const
-
-const arrowheadOptions = [
-  {
-    value: 'none',
-    icon: 'arrowhead-none',
-    label: '无端点',
-  },
-  {
-    value: 'arrow',
-    icon: 'arrowhead-arrow',
-    label: '箭头',
-  },
-  {
-    value: 'triangle',
-    icon: 'arrowhead-triangle',
-    label: '三角形',
-  },
-  {
-    value: 'square',
-    icon: 'arrowhead-square',
-    label: '方形',
-  },
-  {
-    value: 'dot',
-    icon: 'arrowhead-dot',
-    label: '圆点',
-  },
-  {
-    value: 'diamond',
-    icon: 'arrowhead-diamond',
-    label: '菱形',
-  },
-  {
-    value: 'inverted',
-    icon: 'arrowhead-triangle-inverted',
-    label: '反向三角',
-  },
-  {
-    value: 'bar',
-    icon: 'arrowhead-bar',
-    label: '端线',
-  },
-] as const
-
-const splineOptions = [
-  {
-    value: 'line',
-    icon: 'spline-line',
-    label: '直线',
-  },
-  {
-    value: 'cubic',
-    icon: 'spline-cubic',
-    label: '曲线',
-  },
-] as const
-
-const opacityOptions = [
-  {
-    value: 0.1,
-    label: '10%',
-  },
-  {
-    value: 0.25,
-    label: '25%',
-  },
-  {
-    value: 0.5,
-    label: '50%',
-  },
-  {
-    value: 0.75,
-    label: '75%',
-  },
-  {
-    value: 1,
-    label: '100%',
-  },
-] as const
+const geoOptions:
+  readonly StyleOption<
+    TLGeoShape['props']['geo']
+  >[] =
+  Object.entries(
+    defaultGeoTypeDefinitions,
+  ).map(
+    ([
+      value,
+      definition,
+    ]) => ({
+      value:
+        value as TLGeoShape['props']['geo'],
+      icon:
+        definition.icon as TLUiIconType,
+      label:
+        geoLabels[
+          value as TLGeoShape['props']['geo']
+        ] ?? value,
+    }),
+  )
 
 `
 
   return (
     input.slice(
       0,
-      markerIndex,
+      index,
     ) +
-    additions +
+    content +
     input.slice(
-      markerIndex,
+      index,
     )
   )
 }
 
-function replaceStyleSections(input) {
-  const pattern =
-    /function StyleSections\(\{[\s\S]*?\n\}\n\nfunction ColorControl/
-
-  if (
-    !pattern.test(input)
-  ) {
-    throw new Error(
-      '没有找到现有 StyleSections。',
-    )
-  }
-
-  return input.replace(
-    pattern,
-    `function StyleSections({
-  styles,
-}: {
-  readonly styles:
-    ReadonlySharedStyleMap
-}) {
-  const editor = useEditor()
-
-  const opacity =
-    useValue(
-      'right properties sidebar opacity',
-      () =>
-        editor.getSharedOpacity(),
-      [editor],
-    )
-
-  const color =
-    styles.get(
-      DefaultColorStyle,
-    )
-
-  const fill =
-    styles.get(
-      DefaultFillStyle,
-    )
-
-  const dash =
-    styles.get(
-      DefaultDashStyle,
-    )
-
-  const size =
-    styles.get(
-      DefaultSizeStyle,
-    )
-
-  const font =
-    styles.get(
-      DefaultFontStyle,
-    )
-
-  const textAlign =
-    styles.get(
-      DefaultTextAlignStyle,
-    )
-
-  const horizontalAlign =
-    styles.get(
-      DefaultHorizontalAlignStyle,
-    )
-
-  const verticalAlign =
-    styles.get(
-      DefaultVerticalAlignStyle,
-    )
-
-  const arrowKind =
-    styles.get(
-      ArrowShapeKindStyle,
-    )
-
-  const arrowheadStart =
-    styles.get(
-      ArrowShapeArrowheadStartStyle,
-    )
-
-  const arrowheadEnd =
-    styles.get(
-      ArrowShapeArrowheadEndStyle,
-    )
-
-  const spline =
-    styles.get(
-      LineShapeSplineStyle,
-    )
-
-  const hasAppearance =
-    color !== undefined ||
-    opacity !== undefined
-
-  const hasCommonStyle =
-    fill !== undefined ||
-    dash !== undefined ||
-    size !== undefined
-
-  const hasText =
-    font !== undefined ||
-    textAlign !== undefined ||
-    horizontalAlign !== undefined ||
-    verticalAlign !== undefined
-
-  const hasArrow =
-    arrowKind !== undefined ||
-    arrowheadStart !== undefined ||
-    arrowheadEnd !== undefined ||
-    spline !== undefined
-
-  return (
-    <>
-      {hasAppearance ? (
-        <SidebarSection
-          title="外观"
-        >
-          {color ? (
-            <SidebarField
-              mixed={
-                color.type === 'mixed'
-              }
-              title="颜色"
-            >
-              <ColorControl
-                value={color}
-              />
-            </SidebarField>
-          ) : null}
-
-          {opacity ? (
-            <SidebarField
-              mixed={
-                opacity.type === 'mixed'
-              }
-              title="透明度"
-            >
-              <OpacityControl
-                value={opacity}
-              />
-            </SidebarField>
-          ) : null}
-        </SidebarSection>
-      ) : null}
-
-      {hasCommonStyle ? (
-        <SidebarSection
-          title="样式"
-        >
-          {fill ? (
-            <SidebarField
-              mixed={
-                fill.type === 'mixed'
-              }
-              title="填充"
-            >
-              <StyleControl
-                options={fillOptions}
-                style={DefaultFillStyle}
-                value={fill}
-              />
-            </SidebarField>
-          ) : null}
-
-          {dash ? (
-            <SidebarField
-              mixed={
-                dash.type === 'mixed'
-              }
-              title="线条"
-            >
-              <StyleControl
-                options={dashOptions}
-                style={DefaultDashStyle}
-                value={dash}
-              />
-            </SidebarField>
-          ) : null}
-
-          {size ? (
-            <SidebarField
-              mixed={
-                size.type === 'mixed'
-              }
-              title="粗细"
-            >
-              <StyleControl
-                options={sizeOptions}
-                style={DefaultSizeStyle}
-                value={size}
-              />
-            </SidebarField>
-          ) : null}
-        </SidebarSection>
-      ) : null}
-
-      {hasText ? (
-        <SidebarSection
-          title="文本"
-        >
-          {font ? (
-            <SidebarField
-              mixed={
-                font.type === 'mixed'
-              }
-              title="字体"
-            >
-              <StyleControl
-                options={fontOptions}
-                style={DefaultFontStyle}
-                value={font}
-              />
-            </SidebarField>
-          ) : null}
-
-          {textAlign ? (
-            <SidebarField
-              mixed={
-                textAlign.type ===
-                'mixed'
-              }
-              title="文本对齐"
-            >
-              <StyleControl
-                options={
-                  textAlignOptions
-                }
-                style={
-                  DefaultTextAlignStyle
-                }
-                value={textAlign}
-              />
-            </SidebarField>
-          ) : null}
-
-          {horizontalAlign ? (
-            <SidebarField
-              mixed={
-                horizontalAlign.type ===
-                'mixed'
-              }
-              title="水平位置"
-            >
-              <StyleControl
-                options={
-                  horizontalAlignOptions
-                }
-                style={
-                  DefaultHorizontalAlignStyle
-                }
-                value={
-                  horizontalAlign
-                }
-              />
-            </SidebarField>
-          ) : null}
-
-          {verticalAlign ? (
-            <SidebarField
-              mixed={
-                verticalAlign.type ===
-                'mixed'
-              }
-              title="垂直位置"
-            >
-              <StyleControl
-                options={
-                  verticalAlignOptions
-                }
-                style={
-                  DefaultVerticalAlignStyle
-                }
-                value={
-                  verticalAlign
-                }
-              />
-            </SidebarField>
-          ) : null}
-        </SidebarSection>
-      ) : null}
-
-      {hasArrow ? (
-        <SidebarSection
-          title="线条与箭头"
-        >
-          {arrowKind ? (
-            <SidebarField
-              mixed={
-                arrowKind.type === 'mixed'
-              }
-              title="类型"
-            >
-              <StyleControl
-                options={
-                  arrowKindOptions
-                }
-                style={
-                  ArrowShapeKindStyle
-                }
-                value={arrowKind}
-              />
-            </SidebarField>
-          ) : null}
-
-          {spline ? (
-            <SidebarField
-              mixed={
-                spline.type === 'mixed'
-              }
-              title="路径"
-            >
-              <StyleControl
-                options={splineOptions}
-                style={
-                  LineShapeSplineStyle
-                }
-                value={spline}
-              />
-            </SidebarField>
-          ) : null}
-
-          {arrowheadStart ? (
-            <SidebarField
-              mixed={
-                arrowheadStart.type ===
-                'mixed'
-              }
-              title="起点"
-            >
-              <StyleControl
-                options={
-                  arrowheadOptions
-                }
-                style={
-                  ArrowShapeArrowheadStartStyle
-                }
-                value={
-                  arrowheadStart
-                }
-              />
-            </SidebarField>
-          ) : null}
-
-          {arrowheadEnd ? (
-            <SidebarField
-              mixed={
-                arrowheadEnd.type ===
-                'mixed'
-              }
-              title="终点"
-            >
-              <StyleControl
-                options={
-                  arrowheadOptions
-                }
-                style={
-                  ArrowShapeArrowheadEndStyle
-                }
-                value={
-                  arrowheadEnd
-                }
-              />
-            </SidebarField>
-          ) : null}
-        </SidebarSection>
-      ) : null}
-    </>
-  )
-}
-
-function ColorControl`,
-  )
-}
-
-function insertOpacityControl(input) {
+function addGeoStyleState(input) {
   if (
     input.includes(
-      'function OpacityControl',
+      `styles.get(
+      GeoShapeGeoStyle`,
     )
   ) {
     return input
   }
 
-  const marker =
-    'function ColorControl'
+  const anchor = `  const arrowKind =
+    styles.get(
+      ArrowShapeKindStyle,
+    )`
 
-  const markerIndex =
-    input.indexOf(marker)
-
-  if (markerIndex < 0) {
+  if (
+    !input.includes(anchor)
+  ) {
     throw new Error(
-      '没有找到 ColorControl。',
+      '没有找到 ArrowShapeKindStyle 状态。',
     )
   }
 
-  const component = `function OpacityControl({
-  value,
-}: {
-  readonly value:
-    SharedStyle<number>
-}) {
-  const styleContext =
-    useStylePanelContext()
+  return input.replace(
+    anchor,
+    `  const geo =
+    styles.get(
+      GeoShapeGeoStyle,
+    )
 
-  return (
-    <div
-      aria-label="透明度"
-      className="hc-properties-sidebar__opacity"
-      data-mixed={
-        value.type === 'mixed'
-          ? ''
-          : undefined
-      }
-      role="group"
-    >
-      {opacityOptions.map(
-        (option) => {
-          const active =
-            value.type ===
-              'shared' &&
-            value.value ===
-              option.value
-
-          return (
-            <button
-              aria-label={
-                '透明度 ' +
-                option.label
-              }
-              aria-pressed={
-                active
-              }
-              className="hc-properties-sidebar__opacity-option"
-              key={
-                option.value
-              }
-              onClick={() => {
-                styleContext.onHistoryMark(
-                  'change opacity',
-                )
-
-                styleContext.onOpacityChange(
-                  option.value,
-                )
-              }}
-              title={
-                '透明度 ' +
-                option.label
-              }
-              type="button"
-            >
-              {option.label}
-            </button>
-          )
-        },
-      )}
-    </div>
+${anchor}`,
   )
 }
+
+function addGeoSection(input) {
+  if (
+    input.includes(
+      'title="形状类型"',
+    )
+  ) {
+    return input
+  }
+
+  const anchor = `      {hasArrow ? (
+        <SidebarSection
+          title="线条与箭头"
+        >`
+
+  if (
+    !input.includes(anchor)
+  ) {
+    throw new Error(
+      '没有找到线条与箭头区。',
+    )
+  }
+
+  const section = `      {geo ? (
+        <SidebarSection
+          title="形状类型"
+        >
+          <SidebarField
+            mixed={
+              geo.type === 'mixed'
+            }
+            title="图形"
+          >
+            <StyleControl
+              options={geoOptions}
+              style={GeoShapeGeoStyle}
+              value={geo}
+            />
+          </SidebarField>
+        </SidebarSection>
+      ) : null}
 
 `
 
-  return (
-    input.slice(
-      0,
-      markerIndex,
-    ) +
-    component +
-    input.slice(
-      markerIndex,
-    )
+  return input.replace(
+    anchor,
+    section + anchor,
   )
 }
 
-function updateSegmentedLayout(input) {
+function addSelectionState(input) {
+  if (
+    input.includes(
+      'selectionLockState',
+    )
+  ) {
+    return input
+  }
+
+  const returnAnchor = `  return (
+    <div className="hc-properties-sidebar__panel">`
+
+  if (
+    !input.includes(returnAnchor)
+  ) {
+    throw new Error(
+      '没有找到 Properties Inspector 返回内容。',
+    )
+  }
+
+  input = input.replace(
+    returnAnchor,
+    `  const selectionLockState =
+    useValue(
+      'right properties sidebar selection lock state',
+      () => {
+        const selected =
+          editor.getSelectedShapes()
+
+        if (
+          selected.length === 0
+        ) {
+          return 'unlocked'
+        }
+
+        const lockedCount =
+          selected.filter(
+            (shape) =>
+              shape.isLocked,
+          ).length
+
+        if (
+          lockedCount === 0
+        ) {
+          return 'unlocked'
+        }
+
+        if (
+          lockedCount ===
+          selected.length
+        ) {
+          return 'locked'
+        }
+
+        return 'mixed'
+      },
+      [editor],
+    )
+
+${returnAnchor}`,
+  )
+
+  const propsAnchor = `          onlySelectedShapeType={
+            onlySelectedShapeType
+          }
+          selectedShapeCount={`
+
+  if (
+    !input.includes(propsAnchor)
+  ) {
+    throw new Error(
+      '没有找到 SelectionActions 属性。',
+    )
+  }
+
   return input.replace(
-    `className="hc-properties-sidebar__segmented"`,
-    `className={
-        options.length > 4
-          ? 'hc-properties-sidebar__segmented hc-properties-sidebar__segmented--grid'
-          : 'hc-properties-sidebar__segmented'
-      }`,
+    propsAnchor,
+    `          onlySelectedShapeType={
+            onlySelectedShapeType
+          }
+          selectionLockState={
+            selectionLockState
+          }
+          selectedShapeCount={`,
   )
 }
 
 function extendSelectionActions(input) {
   if (
     input.includes(
-      'title="层级"',
+      'readonly selectionLockState',
     )
   ) {
     return input
   }
 
-  const objectSection = `      <SidebarSection
-        title="对象"
-      >`
+  input = input.replace(
+    `interface SelectionActionsProps {
+  readonly selectedShapeCount: number
+  readonly onlySelectedShapeType:
+    | string
+    | null
+}`,
+    `interface SelectionActionsProps {
+  readonly selectedShapeCount: number
+  readonly onlySelectedShapeType:
+    | string
+    | null
+  readonly selectionLockState:
+    | 'locked'
+    | 'unlocked'
+    | 'mixed'
+}`,
+  )
+
+  input = input.replace(
+    `function SelectionActions({
+  selectedShapeCount,
+  onlySelectedShapeType,
+}: SelectionActionsProps)`,
+    `function SelectionActions({
+  selectedShapeCount,
+  onlySelectedShapeType,
+  selectionLockState,
+}: SelectionActionsProps)`,
+  )
+
+  const objectGridAnchor = `        <div className="hc-properties-sidebar__action-grid">
+          {onlySelectedShapeType ===`
 
   if (
     !input.includes(
-      objectSection,
+      objectGridAnchor,
     )
   ) {
     throw new Error(
-      '没有找到对象操作区。',
+      '没有找到对象操作网格。',
     )
   }
 
-  const layerSection = `      <SidebarSection
-        title="层级"
-      >
-        <div className="hc-properties-sidebar__action-grid">
-          <ActionButton
-            actions={actions}
-            id="bring-to-front"
-            label="置于顶层"
-          />
-
-          <ActionButton
-            actions={actions}
-            id="bring-forward"
-            label="上移一层"
-          />
-
-          <ActionButton
-            actions={actions}
-            id="send-backward"
-            label="下移一层"
-          />
-
-          <ActionButton
-            actions={actions}
-            id="send-to-back"
-            label="置于底层"
-          />
-        </div>
-      </SidebarSection>
-
-`
-
   input = input.replace(
-    objectSection,
-    layerSection +
-      objectSection,
+    objectGridAnchor,
+    `        <div className="hc-properties-sidebar__action-grid">
+          <ActionButton
+            actions={actions}
+            icon={
+              selectionLockState ===
+              'locked'
+                ? 'unlock'
+                : 'lock'
+            }
+            id="toggle-lock"
+            label={
+              selectionLockState ===
+              'locked'
+                ? '解锁'
+                : selectionLockState ===
+                    'mixed'
+                  ? '统一锁定'
+                  : '锁定'
+            }
+          />
+
+          {onlySelectedShapeType ===`,
   )
 
-  const duplicateButton = `          <ActionButton
+  const rotateAnchor = `          <ActionButton
             actions={actions}
-            id="duplicate"
-            label="创建副本"
+            id="rotate-ccw"
+            label="逆时针旋转"
           />`
 
   if (
     !input.includes(
-      duplicateButton,
+      rotateAnchor,
     )
   ) {
     throw new Error(
-      '没有找到创建副本按钮。',
+      '没有找到旋转操作。',
     )
   }
 
-  const rotationButtons = `          <ActionButton
-            actions={actions}
-            id="rotate-ccw"
-            label="逆时针旋转"
-          />
+  const contextualActions = `          {selectedShapeCount >= 2 ? (
+            <ActionButton
+              actions={actions}
+              icon="tool-frame"
+              id="frame-selection"
+              label="创建画框"
+            />
+          ) : null}
 
-          <ActionButton
-            actions={actions}
-            id="rotate-cw"
-            label="顺时针旋转"
-          />
+          {onlySelectedShapeType ===
+          'frame' ? (
+            <>
+              <ActionButton
+                actions={actions}
+                icon="corners"
+                id="fit-frame-to-content"
+                label="适应内容"
+              />
+
+              <ActionButton
+                actions={actions}
+                icon="cross-2"
+                id="remove-frame"
+                label="移除画框"
+              />
+            </>
+          ) : null}
+
+          {onlySelectedShapeType ===
+          'image' ? (
+            <>
+              <ActionButton
+                actions={actions}
+                id="image-replace"
+                label="替换图片"
+              />
+
+              <ActionButton
+                actions={actions}
+                icon="download"
+                id="download-original"
+                label="下载原图"
+              />
+            </>
+          ) : null}
+
+          {onlySelectedShapeType ===
+          'video' ? (
+            <>
+              <ActionButton
+                actions={actions}
+                id="video-replace"
+                label="替换视频"
+              />
+
+              <ActionButton
+                actions={actions}
+                icon="download"
+                id="download-original"
+                label="下载原视频"
+              />
+            </>
+          ) : null}
 
 `
 
   return input.replace(
-    duplicateButton,
-    rotationButtons +
-      duplicateButton,
+    rotateAnchor,
+    contextualActions +
+      rotateAnchor,
   )
 }
 
-async function updateCss() {
-  let css = normalize(
-    await readFile(
-      cssPath,
-      'utf8',
-    ),
-  )
+function replaceActionButton(input) {
+  const pattern =
+    /function ActionButton\(\{[\s\S]*?\n\}\n\nfunction getToolTitle/
 
-  const markerIndex =
-    css.indexOf(
-      CSS_MARKER,
+  if (
+    !pattern.test(input)
+  ) {
+    throw new Error(
+      '没有找到 ActionButton。',
     )
-
-  if (markerIndex >= 0) {
-    css = css
-      .slice(
-        0,
-        markerIndex,
-      )
-      .trimEnd()
   }
 
-  css += `
+  return input.replace(
+    pattern,
+    `function ActionButton({
+  actions,
+  id,
+  label,
+  icon,
+  destructive = false,
+}: {
+  readonly actions:
+    ReturnType<typeof useActions>
+  readonly id: string
+  readonly label: string
+  readonly icon?: TLUiIconType
+  readonly destructive?: boolean
+}) {
+  const item:
+    | TLUiActionItem
+    | undefined =
+    actions[id]
 
-${CSS_MARKER}
+  if (!item) {
+    return null
+  }
 
-.hc-properties-sidebar__opacity {
-  display: grid;
-  grid-template-columns:
-    repeat(5, minmax(0, 1fr));
-  gap: 3px;
-  padding: 2px;
-  border: 1px solid
-    color-mix(
-      in oklab,
-      var(--color-foreground) 9%,
-      transparent
-    );
-  border-radius: 8px;
-  background:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 3%,
-      transparent
-    );
-}
+  const resolvedIcon =
+    icon ?? item.icon
 
-.hc-properties-sidebar__opacity-option {
-  min-width: 0;
-  height: 30px;
-  padding: 0 2px;
-  overflow: hidden;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 70%,
-      transparent
-    );
-  font: inherit;
-  font-size: 10px;
-  line-height: 30px;
-  text-overflow: clip;
-  white-space: nowrap;
-  cursor: pointer;
-}
+  if (!resolvedIcon) {
+    return null
+  }
 
-.hc-properties-sidebar__opacity-option:hover {
-  background:
-    color-mix(
-      in oklab,
-      var(--color-foreground) 6%,
-      transparent
-    );
-}
-
-.hc-properties-sidebar__opacity-option[aria-pressed="true"] {
-  background: var(--color-surface);
-  color: var(--color-primary);
-  font-weight: 600;
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 8%);
-}
-
-.hc-properties-sidebar__segmented--grid {
-  grid-template-columns:
-    repeat(4, minmax(0, 1fr));
-  grid-auto-flow: row;
-  grid-auto-columns: auto;
-  gap: 2px;
-}
-
-.hc-properties-sidebar__opacity-option:focus-visible {
-  outline: 2px solid var(--color-ring);
-  outline-offset: -2px;
-}
-`
-
-  await write(
-    cssPath,
-    css,
+  return (
+    <button
+      aria-label={label}
+      className={
+        destructive
+          ? 'hc-properties-sidebar__action hc-properties-sidebar__action--destructive'
+          : 'hc-properties-sidebar__action'
+      }
+      onClick={() => {
+        void item.onSelect(
+          'toolbar',
+        )
+      }}
+      title={label}
+      type="button"
+    >
+      {typeof resolvedIcon ===
+      'string' ? (
+        <TldrawUiIcon
+          icon={
+            resolvedIcon as TLUiIconType
+          }
+          label={label}
+        />
+      ) : (
+        resolvedIcon
+      )}
+    </button>
   )
 }
 
-async function write(
-  filePath,
-  content,
-) {
-  await writeFile(
-    filePath,
-    normalize(
-      content,
-    ).trimEnd() + '\n',
-    'utf8',
-  )
-}
-
-function normalize(input) {
-  return input.replaceAll(
-    '\r\n',
-    '\n',
+function getToolTitle`,
   )
 }
