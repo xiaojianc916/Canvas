@@ -18,60 +18,41 @@ async function ensureFileExists(file) {
     await access(absolutePath)
   } catch {
     throw new Error(
-      [
-        `找不到目标文件：${absolutePath}`,
-        '',
-        '请确认当前 PowerShell 路径是仓库根目录后重新执行：',
-        'node refactor.mjs',
-      ].join('\n'),
+      `找不到目标文件：${absolutePath}\n请在仓库根目录执行：node refactor.mjs`,
     )
   }
 }
 
-async function replaceExactly(file, replacements) {
+async function readTarget(file) {
   await ensureFileExists(file)
-
-  const absolutePath = path.join(root, file)
-  let content = await readFile(absolutePath, 'utf8')
-  let changed = false
-
-  for (const { oldText, newText, description } of replacements) {
-    if (content.includes(newText)) {
-      console.log(`跳过：${file} - ${description}（修改已存在）`)
-      continue
-    }
-
-    if (!content.includes(oldText)) {
-      throw new Error(
-        [
-          `未在文件中找到预期代码：${file}`,
-          `修改项：${description}`,
-          '',
-          '为避免错误覆盖，脚本已停止。请确认文件内容与当前仓库版本一致。',
-        ].join('\n'),
-      )
-    }
-
-    content = content.replace(oldText, newText)
-    changed = true
-    console.log(`已应用：${file} - ${description}`)
-  }
-
-  if (!changed) {
-    return
-  }
-
-  await writeFile(absolutePath, content, 'utf8')
-  console.log(`已写入：${file}`)
+  return readFile(path.join(root, file), 'utf8')
 }
 
-async function main() {
-  console.log(`仓库根目录：${root}\n`)
+async function writeTarget(file, content) {
+  await writeFile(path.join(root, file), content, 'utf8')
+}
 
-  await replaceExactly(files.diagnosticBuffer, [
-    {
-      description: '修复 exactOptionalPropertyTypes 可选字段赋值',
-      oldText: `    const entry: DiagnosticLogEntry = {
+function replaceOnce(content, oldText, newText, label) {
+  if (content.includes(newText)) {
+    console.log(`跳过：${label}（修改已存在）`)
+    return content
+  }
+
+  if (!content.includes(oldText)) {
+    throw new Error(`未找到预期代码：${label}`)
+  }
+
+  console.log(`已应用：${label}`)
+  return content.replace(oldText, newText)
+}
+
+async function fixDiagnosticBuffer() {
+  const file = files.diagnosticBuffer
+  let content = await readTarget(file)
+
+  content = replaceOnce(
+    content,
+    `    const entry: DiagnosticLogEntry = {
       sequence: nextSequence,
       timestamp: normalizeTimestamp(timestamp),
       level,
@@ -80,7 +61,7 @@ async function main() {
       correlationId: normalizeOptionalText(context.correlationId, 256),
       context: sanitizeContext(context),
     }`,
-      newText: `    const scope = normalizeOptionalText(context.scope, 256)
+    `    const scope = normalizeOptionalText(context.scope, 256)
     const correlationId = normalizeOptionalText(context.correlationId, 256)
 
     const entry: DiagnosticLogEntry = {
@@ -92,52 +73,58 @@ async function main() {
       ...(correlationId === undefined ? {} : { correlationId }),
       context: sanitizeContext(context),
     }`,
-    },
-  ])
+    `${file}：修复 exactOptionalPropertyTypes`,
+  )
 
-  await replaceExactly(files.diagnosticBufferTest, [
-    {
-      description: '修复 accessToken 索引签名访问',
-      oldText: `entry?.context.accessToken`,
-      newText: `entry?.context['accessToken']`,
-    },
-    {
-      description: '修复 authorization 索引签名访问',
-      oldText: `entry?.context.authorization`,
-      newText: `entry?.context['authorization']`,
-    },
-    {
-      description: '修复 endpoint 索引签名访问',
-      oldText: `entry?.context.endpoint`,
-      newText: `entry?.context['endpoint']`,
-    },
-    {
-      description: '修复 cause 索引签名访问',
-      oldText: `entry?.context.cause`,
-      newText: `entry?.context['cause']`,
-    },
-    {
-      description: '修复 circular 索引签名访问',
-      oldText: `entry?.context.circular`,
-      newText: `entry?.context['circular']`,
-    },
-  ])
+  await writeTarget(file, content)
+}
 
-  await replaceExactly(files.ipcPublicApi, [
-    {
-      description: '移除生成 IPC 绑定中不存在的 NativeCrashReport 导出',
-      oldText: `export {
+async function fixDiagnosticBufferTest() {
+  const file = files.diagnosticBufferTest
+  let content = await readTarget(file)
+
+  const replacements = [
+    ['entry?.context.accessToken', `entry?.context['accessToken']`],
+    ['entry?.context.authorization', `entry?.context['authorization']`],
+    ['entry?.context.endpoint', `entry?.context['endpoint']`],
+    ['entry?.context.cause', `entry?.context['cause']`],
+    ['entry?.context.circular', `entry?.context['circular']`],
+  ]
+
+  for (const [oldText, newText] of replacements) {
+    content = replaceOnce(
+      content,
+      oldText,
+      newText,
+      `${file}：修复 ${oldText}`,
+    )
+  }
+
+  await writeTarget(file, content)
+}
+
+async function fixIpcPublicApi() {
+  const file = files.ipcPublicApi
+  let content = await readTarget(file)
+
+  content = replaceOnce(
+    content,
+    `export {
   commands,
   type NativeCrashReport,
 } from './generated/ipc-bindings'`,
-      newText: `export { commands } from './generated/ipc-bindings'`,
-    },
-  ])
+    `export { commands } from './generated/ipc-bindings'`,
+    `${file}：移除失效的生成类型导出`,
+  )
 
-  await replaceExactly(files.nativeCrashReport, [
-    {
-      description: '禁用尚未注册的 native crash IPC 调用',
-      oldText: `import { commands, type NativeCrashReport } from '@hybrid-canvas/desktop-ipc'
+  await writeTarget(file, content)
+}
+
+async function fixNativeCrashReportAdapter() {
+  const file = files.nativeCrashReport
+  let content = await readTarget(file)
+
+  const originalImplementation = `import { commands, type NativeCrashReport } from '@hybrid-canvas/desktop-ipc'
 
 export type { NativeCrashReport }
 
@@ -151,8 +138,9 @@ export async function takePreviousNativeCrashReport(): Promise<NativeCrashReport
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-}`,
-      newText: `/**
+}`
+
+  const incompletePlaceholder = `/**
  * 原生诊断崩溃报告尚未注册为 Tauri IPC 命令。
  *
  * 待 native 端实现 diagnostics_take_previous_crash 并重新生成
@@ -166,11 +154,57 @@ export interface NativeCrashReport {
 
 export async function takePreviousNativeCrashReport(): Promise<NativeCrashReport | null> {
   return null
-}`,
-    },
-  ])
+}`
 
-  console.log('\n修改完成。请运行：pnpm typecheck')
+  const completeImplementation = `/**
+ * 原生诊断崩溃报告尚未注册为 Tauri IPC 命令。
+ *
+ * 保留与桌面端消费逻辑一致的数据模型；在 native 端实现
+ * diagnostics_take_previous_crash 并重新生成 IPC 绑定前，此函数稳定返回 null。
+ */
+export interface NativeCrashReport {
+  readonly incidentId: string
+  readonly occurredAt: string
+  readonly message: string
+  readonly backtrace: string
+  readonly location: string | null
+  readonly process: string
+  readonly thread: string
+  readonly appVersion: string
+  readonly targetOs: string
+  readonly targetArch: string
+}
+
+export async function takePreviousNativeCrashReport(): Promise<NativeCrashReport | null> {
+  return null
+}`
+
+  if (content.includes(completeImplementation)) {
+    console.log(`跳过：${file}：完整 NativeCrashReport 类型已存在`)
+  } else if (content.includes(incompletePlaceholder)) {
+    content = content.replace(incompletePlaceholder, completeImplementation)
+    console.log(`已应用：${file}：补全 NativeCrashReport 类型字段`)
+  } else if (content.includes(originalImplementation)) {
+    content = content.replace(originalImplementation, completeImplementation)
+    console.log(`已应用：${file}：替换失效的 crash IPC 调用`)
+  } else {
+    throw new Error(
+      `未识别 ${file} 的当前内容；为避免覆盖已有修改，脚本已停止。`,
+    )
+  }
+
+  await writeTarget(file, content)
+}
+
+async function main() {
+  console.log(`仓库根目录：${root}\n`)
+
+  await fixDiagnosticBuffer()
+  await fixDiagnosticBufferTest()
+  await fixIpcPublicApi()
+  await fixNativeCrashReportAdapter()
+
+  console.log('\n修改完成。现在请运行：pnpm typecheck')
 }
 
 main().catch((error) => {
