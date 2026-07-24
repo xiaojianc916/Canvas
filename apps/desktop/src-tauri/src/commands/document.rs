@@ -1,8 +1,8 @@
 use crate::asset_protocol::{AssetProtocolError, AssetProtocolRegistry, AssetSessionSnapshotEntry};
 use crate::error::{Error, IpcError, Result};
 use hybrid_canvas_file_native::{
-    DocumentRevision, DrawAssetInput, DrawDocumentInput, atomic_write, decode_draw_document, document_revision,
-    encode_draw_document,
+    DocumentRevision, DrawAssetInput, DrawDocumentInput, atomic_write, decode_draw_document,
+    document_revision, encode_draw_document,
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
