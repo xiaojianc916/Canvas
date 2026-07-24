@@ -1,9 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   clearDiagnosticLogs,
   configureDiagnosticBuffer,
@@ -37,8 +32,7 @@ describe('diagnostic buffer', () => {
         level: 'error',
         message: 'canvas save failed',
         scope: 'workspace',
-        timestamp:
-          '2026-07-24T00:00:00.000Z',
+        timestamp: '2026-07-24T00:00:00.000Z',
         context: {
           operation: 'save',
           documentId: 'document-1',
@@ -52,32 +46,13 @@ describe('diagnostic buffer', () => {
       capacity: 2,
     })
 
-    recordDiagnosticLog(
-      'info',
-      'one',
-      {},
-      new Date().toISOString(),
-    )
+    recordDiagnosticLog('info', 'one', {}, new Date().toISOString())
 
-    recordDiagnosticLog(
-      'info',
-      'two',
-      {},
-      new Date().toISOString(),
-    )
+    recordDiagnosticLog('info', 'two', {}, new Date().toISOString())
 
-    recordDiagnosticLog(
-      'info',
-      'three',
-      {},
-      new Date().toISOString(),
-    )
+    recordDiagnosticLog('info', 'three', {}, new Date().toISOString())
 
-    expect(
-      getRecentLogEntries().map(
-        (entry) => entry.message,
-      ),
-    ).toEqual(['two', 'three'])
+    expect(getRecentLogEntries().map((entry) => entry.message)).toEqual(['two', 'three'])
   })
 
   it('redacts sensitive keys and bearer tokens', () => {
@@ -86,27 +61,19 @@ describe('diagnostic buffer', () => {
       'request failed',
       {
         accessToken: 'private-token',
-        authorization:
-          'Bearer very-private-token',
-        endpoint:
-          'https://user:password@example.com',
+        authorization: 'Bearer very-private-token',
+        endpoint: 'https://user:password@example.com',
       },
       new Date().toISOString(),
     )
 
     const [entry] = getRecentLogEntries()
 
-    expect(entry?.context.accessToken).toBe(
-      '[REDACTED]',
-    )
+    expect(entry?.context.accessToken).toBe('[REDACTED]')
 
-    expect(
-      entry?.context.authorization,
-    ).toBe('[REDACTED]')
+    expect(entry?.context.authorization).toBe('[REDACTED]')
 
-    expect(entry?.context.endpoint).not.toContain(
-      'password',
-    )
+    expect(entry?.context.endpoint).not.toContain('password')
   })
 
   it('serializes Error and circular values safely', () => {
@@ -128,13 +95,9 @@ describe('diagnostic buffer', () => {
 
     const [entry] = getRecentLogEntries()
 
-    expect(entry?.context.cause).toContain(
-      'broken',
-    )
+    expect(entry?.context.cause).toContain('broken')
 
-    expect(entry?.context.circular).toContain(
-      '[Circular]',
-    )
+    expect(entry?.context.circular).toContain('[Circular]')
   })
 
   it('returns cloned immutable snapshots', () => {
@@ -151,9 +114,7 @@ describe('diagnostic buffer', () => {
     const second = getRecentLogEntries()
 
     expect(first).not.toBe(second)
-    expect(first[0]?.context).not.toBe(
-      second[0]?.context,
-    )
+    expect(first[0]?.context).not.toBe(second[0]?.context)
   })
 
   it('formats readable diagnostic output', () => {
@@ -167,16 +128,10 @@ describe('diagnostic buffer', () => {
       '2026-07-24T00:00:00.000Z',
     )
 
-    const formatted = formatDiagnosticLogs(
-      getRecentLogEntries(),
-    )
+    const formatted = formatDiagnosticLogs(getRecentLogEntries())
 
-    expect(formatted).toContain(
-      '2026-07-24T00:00:00.000Z WARN [document]',
-    )
+    expect(formatted).toContain('2026-07-24T00:00:00.000Z WARN [document]')
 
-    expect(formatted).toContain(
-      'attempt: 2',
-    )
+    expect(formatted).toContain('attempt: 2')
   })
 })

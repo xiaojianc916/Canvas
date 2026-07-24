@@ -11,22 +11,16 @@ import { fatalIncidentController } from './fatal/fatal-runtime'
 void bootstrapApplication()
 
 async function bootstrapApplication(): Promise<void> {
-  const previousCrash =
-    await readPreviousNativeCrashReport()
+  const previousCrash = await readPreviousNativeCrashReport()
 
   if (previousCrash) {
     reportPreviousNativeCrash(previousCrash)
     return
   }
 
-  const mounted = mountReactApplication(
-    getApplicationRoot(),
-  )
+  const mounted = mountReactApplication(getApplicationRoot())
 
-  installApplicationLifecycle(
-    mounted.runtime,
-    mounted,
-  )
+  installApplicationLifecycle(mounted.runtime, mounted)
 }
 
 async function readPreviousNativeCrashReport(): Promise<NativeCrashReport | null> {
@@ -35,27 +29,17 @@ async function readPreviousNativeCrashReport(): Promise<NativeCrashReport | null
   } catch (error: unknown) {
     // Failure to inspect an old crash report must not prevent a healthy
     // application startup. The current failure remains visible in native logs.
-    console.error(
-      '[Hybrid Canvas] Failed to inspect previous native crash report',
-      error,
-    )
+    console.error('[Hybrid Canvas] Failed to inspect previous native crash report', error)
 
     return null
   }
 }
 
-function reportPreviousNativeCrash(
-  report: NativeCrashReport,
-): void {
+function reportPreviousNativeCrash(report: NativeCrashReport): void {
   const error = new Error(report.message)
 
   error.name = 'NativeProcessCrash'
-  error.stack = [
-    report.message,
-    '',
-    'Native backtrace:',
-    report.backtrace,
-  ].join('\n')
+  error.stack = [report.message, '', 'Native backtrace:', report.backtrace].join('\n')
 
   fatalIncidentController.report({
     error,
@@ -85,9 +69,7 @@ function getApplicationRoot(): HTMLElement {
   const root = document.getElementById('root')
 
   if (!root) {
-    throw new Error(
-      'Application root element "#root" was not found.',
-    )
+    throw new Error('Application root element "#root" was not found.')
   }
 
   return root

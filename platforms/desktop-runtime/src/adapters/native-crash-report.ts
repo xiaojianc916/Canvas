@@ -1,7 +1,4 @@
-import {
-  commands,
-  type NativeCrashReport,
-} from '@hybrid-canvas/desktop-ipc'
+import { commands, type NativeCrashReport } from '@hybrid-canvas/desktop-ipc'
 
 export type { NativeCrashReport }
 
@@ -14,8 +11,5 @@ export async function takePreviousNativeCrashReport(): Promise<NativeCrashReport
 }
 
 function isTauriRuntime(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    '__TAURI_INTERNALS__' in window
-  )
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }

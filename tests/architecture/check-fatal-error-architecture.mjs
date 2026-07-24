@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 
-import {
-  existsSync,
-  readFileSync,
-} from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 
@@ -26,37 +23,24 @@ const forbiddenFiles = [
 ]
 
 function read(relativePath) {
-  return readFileSync(
-    path.join(ROOT, relativePath),
-    'utf8',
-  )
+  return readFileSync(path.join(ROOT, relativePath), 'utf8')
 }
 
 for (const relativePath of requiredFiles) {
   if (!existsSync(path.join(ROOT, relativePath))) {
-    failures.push(
-      'Missing fatal architecture file: ' +
-        relativePath,
-    )
+    failures.push('Missing fatal architecture file: ' + relativePath)
   }
 }
 
 for (const relativePath of forbiddenFiles) {
   if (existsSync(path.join(ROOT, relativePath))) {
-    failures.push(
-      'Legacy fatal implementation still exists: ' +
-        relativePath,
-    )
+    failures.push('Legacy fatal implementation still exists: ' + relativePath)
   }
 }
 
 const html = read('apps/desktop/index.html')
-const appShell = read(
-  'apps/desktop/src/presentation/AppShell.tsx',
-)
-const reactRoot = read(
-  'apps/desktop/src/bootstrap/react-root.tsx',
-)
+const appShell = read('apps/desktop/src/presentation/AppShell.tsx')
+const reactRoot = read('apps/desktop/src/bootstrap/react-root.tsx')
 
 const forbiddenHtmlTerms = [
   'Hybrid Canvas 正在启动',
@@ -67,69 +51,38 @@ const forbiddenHtmlTerms = [
 
 for (const term of forbiddenHtmlTerms) {
   if (html.includes(term)) {
-    failures.push(
-      'Legacy startup UI remains in index.html: ' +
-        term,
-    )
+    failures.push('Legacy startup UI remains in index.html: ' + term)
   }
 }
 
-if (
-  !html.includes(
-    '/src/fatal/pre-react-entry.ts',
-  )
-) {
-  failures.push(
-    'The pre-React fatal collector is not loaded.',
-  )
+if (!html.includes('/src/fatal/pre-react-entry.ts')) {
+  failures.push('The pre-React fatal collector is not loaded.')
 }
 
-if (
-  !html.includes(
-    'class="fatal-content"',
-  ) &&
-  html.includes('fatal-card')
-) {
-  failures.push(
-    'Fatal UI must not use a card container.',
-  )
+if (!html.includes('class="fatal-content"') && html.includes('fatal-card')) {
+  failures.push('Fatal UI must not use a card container.')
 }
 
 if (appShell.includes('UiErrorBoundary')) {
-  failures.push(
-    'The Workspace root must not use UiErrorBoundary.',
-  )
+  failures.push('The Workspace root must not use UiErrorBoundary.')
 }
 
 if (!reactRoot.includes('FatalErrorHost')) {
-  failures.push(
-    'React root is not hosted by FatalErrorHost.',
-  )
+  failures.push('React root is not hosted by FatalErrorHost.')
 }
 
-if (
-  !reactRoot.includes(
-    'fatalIncidentController.markReactMounted()',
-  )
-) {
-  failures.push(
-    'React mount ownership was not transferred to the fatal controller.',
-  )
+if (!reactRoot.includes('fatalIncidentController.markReactMounted()')) {
+  failures.push('React mount ownership was not transferred to the fatal controller.')
 }
 
 if (failures.length > 0) {
   console.error(
-    [
-      'Fatal error architecture checks failed:',
-      ...failures.map(
-        (failure) => '- ' + failure,
-      ),
-    ].join('\n'),
+    ['Fatal error architecture checks failed:', ...failures.map((failure) => '- ' + failure)].join(
+      '\n',
+    ),
   )
 
   process.exitCode = 1
 } else {
-  console.log(
-    'Fatal error architecture checks passed.',
-  )
+  console.log('Fatal error architecture checks passed.')
 }

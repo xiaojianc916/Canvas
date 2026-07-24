@@ -1,26 +1,17 @@
 import type { Root } from 'react-dom/client'
 import { createRoot } from 'react-dom/client'
-import {
-  fatalIncidentController,
-  markReactFatalHostMounted,
-} from '../fatal/fatal-runtime'
+import { fatalIncidentController, markReactFatalHostMounted } from '../fatal/fatal-runtime'
 import { FatalErrorHost } from '../fatal/FatalErrorHost'
 import { AppShell } from '../presentation/AppShell'
 import { createApplicationRuntime } from './application'
 
 export interface MountedReactApplication {
-  readonly runtime: ReturnType<
-    typeof createApplicationRuntime
-  >
+  readonly runtime: ReturnType<typeof createApplicationRuntime>
   readonly unmount: () => Promise<void>
 }
 
-export function mountReactApplication(
-  container: HTMLElement,
-): MountedReactApplication {
-  let runtime: ReturnType<
-    typeof createApplicationRuntime
-  >
+export function mountReactApplication(container: HTMLElement): MountedReactApplication {
+  let runtime: ReturnType<typeof createApplicationRuntime>
 
   try {
     runtime = createApplicationRuntime({
@@ -61,13 +52,10 @@ export function mountReactApplication(
 }
 
 function readTldrawLicenseKey(): string {
-  const licenseKey =
-    import.meta.env.VITE_TLDRAW_LICENSE_KEY?.trim()
+  const licenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY?.trim()
 
   if (!licenseKey) {
-    throw new Error(
-      'Required tldraw license configuration is missing.',
-    )
+    throw new Error('Required tldraw license configuration is missing.')
   }
 
   return licenseKey

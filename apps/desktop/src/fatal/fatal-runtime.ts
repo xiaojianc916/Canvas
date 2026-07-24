@@ -1,7 +1,6 @@
 import { FatalIncidentController } from './fatal-controller'
 
-export const fatalIncidentController =
-  new FatalIncidentController()
+export const fatalIncidentController = new FatalIncidentController()
 
 let reactFatalHostMounted = false
 

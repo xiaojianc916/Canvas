@@ -4,9 +4,7 @@ export interface StatusBarHostProps {
   readonly children: ReactNode
 }
 
-export function StatusBarHost({
-  children,
-}: StatusBarHostProps) {
+export function StatusBarHost({ children }: StatusBarHostProps) {
   return (
     <footer
       aria-label="画布状态栏"

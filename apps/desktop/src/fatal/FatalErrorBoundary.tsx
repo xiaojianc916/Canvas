@@ -1,8 +1,4 @@
-import {
-  Component,
-  type ErrorInfo,
-  type ReactNode,
-} from 'react'
+import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { fatalIncidentController } from './fatal-runtime'
 
 export interface FatalErrorBoundaryProps {
@@ -27,12 +23,8 @@ export class FatalErrorBoundary extends Component<
     }
   }
 
-  override componentDidCatch(
-    error: Error,
-    info: ErrorInfo,
-  ): void {
-    const componentStack =
-      info.componentStack ?? undefined
+  override componentDidCatch(error: Error, info: ErrorInfo): void {
+    const componentStack = info.componentStack ?? undefined
 
     fatalIncidentController.report({
       error,

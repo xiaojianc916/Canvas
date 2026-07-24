@@ -1,12 +1,6 @@
 import { installFatalCollectors } from './fatal-collectors'
-import {
-  fatalIncidentController,
-  isReactFatalHostMounted,
-} from './fatal-runtime'
-import {
-  formatFatalDiagnostic,
-  type FatalIncident,
-} from './fatal-incident'
+import { fatalIncidentController, isReactFatalHostMounted } from './fatal-runtime'
+import { formatFatalDiagnostic, type FatalIncident } from './fatal-incident'
 
 installFatalCollectors()
 
@@ -15,8 +9,7 @@ fatalIncidentController.subscribe(() => {
     return
   }
 
-  const snapshot =
-    fatalIncidentController.getSnapshot()
+  const snapshot = fatalIncidentController.getSnapshot()
 
   if (snapshot.status !== 'fatal') {
     return
@@ -25,31 +18,20 @@ fatalIncidentController.subscribe(() => {
   renderPreReactFatalScreen(snapshot.incident)
 })
 
-function renderPreReactFatalScreen(
-  incident: FatalIncident,
-): void {
+function renderPreReactFatalScreen(incident: FatalIncident): void {
   const root = document.getElementById('root')
 
   if (!root) {
-    console.error(
-      '[Hybrid Canvas] Root element unavailable',
-      incident,
-    )
+    console.error('[Hybrid Canvas] Root element unavailable', incident)
     return
   }
 
-  const diagnostic =
-    formatFatalDiagnostic(incident)
+  const diagnostic = formatFatalDiagnostic(incident)
 
-  root.replaceChildren(
-    createFatalSurface(incident, diagnostic),
-  )
+  root.replaceChildren(createFatalSurface(incident, diagnostic))
 }
 
-function createFatalSurface(
-  incident: FatalIncident,
-  diagnostic: string,
-): HTMLElement {
+function createFatalSurface(incident: FatalIncident, diagnostic: string): HTMLElement {
   const main = document.createElement('main')
   main.className = 'fatal-surface'
   main.setAttribute('role', 'alert')
@@ -73,14 +55,12 @@ function createFatalSurface(
 
   const summary = document.createElement('p')
   summary.className = 'fatal-summary'
-  summary.textContent =
-    incident.code + ' · ' + incident.id
+  summary.textContent = incident.code + ' · ' + incident.id
 
   const details = document.createElement('details')
   details.className = 'fatal-details'
 
-  const detailsSummary =
-    document.createElement('summary')
+  const detailsSummary = document.createElement('summary')
   detailsSummary.textContent = '查看诊断信息'
 
   const pre = document.createElement('pre')
@@ -92,18 +72,15 @@ function createFatalSurface(
   const actions = document.createElement('div')
   actions.className = 'fatal-actions'
 
-  const reloadButton =
-    document.createElement('button')
-  reloadButton.className =
-    'fatal-button fatal-button-primary'
+  const reloadButton = document.createElement('button')
+  reloadButton.className = 'fatal-button fatal-button-primary'
   reloadButton.type = 'button'
   reloadButton.textContent = '重新加载'
   reloadButton.onclick = () => {
     window.location.reload()
   }
 
-  const copyButton =
-    document.createElement('button')
+  const copyButton = document.createElement('button')
   copyButton.className = 'fatal-button'
   copyButton.type = 'button'
   copyButton.textContent = '复制诊断信息'
@@ -119,14 +96,7 @@ function createFatalSurface(
 
   actions.append(reloadButton, copyButton)
 
-  content.append(
-    icon,
-    title,
-    description,
-    summary,
-    actions,
-    details,
-  )
+  content.append(icon, title, description, summary, actions, details)
 
   main.append(content)
 

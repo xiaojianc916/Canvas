@@ -16,14 +16,11 @@ export type FatalSnapshot =
 
 export type FatalListener = () => void
 
-export type FatalIncidentFactory = (
-  input: CreateFatalIncidentInput,
-) => FatalIncident
+export type FatalIncidentFactory = (input: CreateFatalIncidentInput) => FatalIncident
 
-const HEALTHY_SNAPSHOT: FatalSnapshot =
-  Object.freeze({
-    status: 'healthy',
-  })
+const HEALTHY_SNAPSHOT: FatalSnapshot = Object.freeze({
+  status: 'healthy',
+})
 
 /**
  * Owns only the terminal fatal-incident state.
@@ -31,34 +28,23 @@ const HEALTHY_SNAPSHOT: FatalSnapshot =
  * Browser, React, Vite and native failure sources are adapted elsewhere.
  */
 export class FatalIncidentController {
-  private snapshot: FatalSnapshot =
-    HEALTHY_SNAPSHOT
+  private snapshot: FatalSnapshot = HEALTHY_SNAPSHOT
 
-  private readonly listeners =
-    new Set<FatalListener>()
+  private readonly listeners = new Set<FatalListener>()
 
-  private readonly fingerprints =
-    new Set<string>()
+  private readonly fingerprints = new Set<string>()
 
-  private readonly createIncident:
-    FatalIncidentFactory
+  private readonly createIncident: FatalIncidentFactory
 
-  constructor(
-    createIncident:
-      FatalIncidentFactory =
-      createFatalIncident,
-  ) {
+  constructor(createIncident: FatalIncidentFactory = createFatalIncident) {
     this.createIncident = createIncident
   }
 
-  readonly getSnapshot =
-    (): FatalSnapshot => {
-      return this.snapshot
-    }
+  readonly getSnapshot = (): FatalSnapshot => {
+    return this.snapshot
+  }
 
-  readonly subscribe = (
-    listener: FatalListener,
-  ): (() => void) => {
+  readonly subscribe = (listener: FatalListener): (() => void) => {
     this.listeners.add(listener)
 
     return () => {
@@ -66,17 +52,10 @@ export class FatalIncidentController {
     }
   }
 
-  report(
-    input: CreateFatalIncidentInput,
-  ): FatalIncident {
-    const incident =
-      this.createIncident(input)
+  report(input: CreateFatalIncidentInput): FatalIncident {
+    const incident = this.createIncident(input)
 
-    if (
-      this.fingerprints.has(
-        incident.fingerprint,
-      )
-    ) {
+    if (this.fingerprints.has(incident.fingerprint)) {
       if (this.snapshot.status === 'fatal') {
         return this.snapshot.incident
       }
@@ -84,17 +63,13 @@ export class FatalIncidentController {
       return incident
     }
 
-    this.fingerprints.add(
-      incident.fingerprint,
-    )
+    this.fingerprints.add(incident.fingerprint)
 
     if (this.snapshot.status === 'fatal') {
       this.snapshot = Object.freeze({
         status: 'fatal',
         incident: this.snapshot.incident,
-        additionalIncidentCount:
-          this.snapshot
-            .additionalIncidentCount + 1,
+        additionalIncidentCount: this.snapshot.additionalIncidentCount + 1,
       })
 
       this.emit()
@@ -114,9 +89,7 @@ export class FatalIncidentController {
   }
 
   private emit(): void {
-    const listeners = [
-      ...this.listeners,
-    ]
+    const listeners = [...this.listeners]
 
     for (const listener of listeners) {
       try {
@@ -128,14 +101,9 @@ export class FatalIncidentController {
   }
 }
 
-function emergencyReportListenerFailure(
-  error: unknown,
-): void {
+function emergencyReportListenerFailure(error: unknown): void {
   try {
-    console.error(
-      '[Hybrid Canvas] Fatal state listener failed',
-      error,
-    )
+    console.error('[Hybrid Canvas] Fatal state listener failed', error)
   } catch {
     // No further fallback is safe.
   }

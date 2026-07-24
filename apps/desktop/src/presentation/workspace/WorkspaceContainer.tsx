@@ -383,12 +383,12 @@ function renderActiveSurface({
 
     case 'canvas':
       return (
-    <EditorSessionHost
-                activeSessionId={activeSessionId}
-                onSave={onSave}
-                sessions={hostedSessions}
-              />
-    )
+        <EditorSessionHost
+          activeSessionId={activeSessionId}
+          onSave={onSave}
+          sessions={hostedSessions}
+        />
+      )
   }
 }
 

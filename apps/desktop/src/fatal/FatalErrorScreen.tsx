@@ -1,29 +1,16 @@
-import {
-  useMemo,
-  useState,
-} from 'react'
-import {
-  formatFatalDiagnostic,
-  type FatalIncident,
-} from './fatal-incident'
+import { useMemo, useState } from 'react'
+import { formatFatalDiagnostic, type FatalIncident } from './fatal-incident'
 
 export interface FatalErrorScreenProps {
   readonly incident: FatalIncident
   readonly additionalIncidentCount?: number
 }
 
-export function FatalErrorScreen({
-  incident,
-  additionalIncidentCount = 0,
-}: FatalErrorScreenProps) {
+export function FatalErrorScreen({ incident, additionalIncidentCount = 0 }: FatalErrorScreenProps) {
   const [copied, setCopied] = useState(false)
-  const [copyFailed, setCopyFailed] =
-    useState(false)
+  const [copyFailed, setCopyFailed] = useState(false)
 
-  const diagnostic = useMemo(
-    () => formatFatalDiagnostic(incident),
-    [incident],
-  )
+  const diagnostic = useMemo(() => formatFatalDiagnostic(incident), [incident])
 
   const copyDiagnostic = async (): Promise<void> => {
     try {
@@ -37,26 +24,15 @@ export function FatalErrorScreen({
   }
 
   return (
-    <main
-      aria-live="assertive"
-      className="fatal-surface"
-      role="alert"
-    >
+    <main aria-live="assertive" className="fatal-surface" role="alert">
       <section className="fatal-content">
-        <div
-          aria-hidden="true"
-          className="fatal-icon"
-        >
+        <div aria-hidden="true" className="fatal-icon">
           <WarningIcon />
         </div>
 
-        <h1 className="fatal-title">
-          {incident.title}
-        </h1>
+        <h1 className="fatal-title">{incident.title}</h1>
 
-        <p className="fatal-description">
-          {incident.message}
-        </p>
+        <p className="fatal-description">{incident.message}</p>
 
         <p className="fatal-summary">
           {incident.code}
@@ -65,10 +41,7 @@ export function FatalErrorScreen({
         </p>
 
         {additionalIncidentCount > 0 ? (
-          <p className="fatal-secondary">
-            此后还捕获到 {additionalIncidentCount}{' '}
-            个相关异常。
-          </p>
+          <p className="fatal-secondary">此后还捕获到 {additionalIncidentCount} 个相关异常。</p>
         ) : null}
 
         <div className="fatal-actions">
@@ -89,23 +62,14 @@ export function FatalErrorScreen({
             type="button"
           >
             <CopyIcon />
-            {copied
-              ? '已复制'
-              : copyFailed
-                ? '复制失败'
-                : '复制诊断信息'}
+            {copied ? '已复制' : copyFailed ? '复制失败' : '复制诊断信息'}
           </button>
         </div>
 
-        <details
-          className="fatal-details"
-          open={copyFailed}
-        >
+        <details className="fatal-details" open={copyFailed}>
           <summary>查看诊断信息</summary>
 
-          <pre className="fatal-diagnostic">
-            {diagnostic}
-          </pre>
+          <pre className="fatal-diagnostic">{diagnostic}</pre>
         </details>
       </section>
     </main>
@@ -160,13 +124,7 @@ function CopyIcon() {
       strokeWidth="1.7"
       viewBox="0 0 24 24"
     >
-      <rect
-        height="13"
-        rx="2"
-        width="13"
-        x="8"
-        y="8"
-      />
+      <rect height="13" rx="2" width="13" x="8" y="8" />
       <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
     </svg>
   )

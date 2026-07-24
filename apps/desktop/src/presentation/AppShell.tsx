@@ -178,17 +178,17 @@ export function AppShell({ runtime }: AppShellProps) {
 
   return (
     <EditorProvider licenseKey={runtime.tldrawLicenseKey}>
-        <WorkspaceContainer
-          isWindowMaximized={isWindowMaximized}
-          onCommandPaletteOpen={openCommandPalette}
-          onDeveloperToolsOpen={openDeveloperTools}
-          onSettingsOpen={openSettings}
-          onWindowClose={requestApplicationClose}
-          onWindowMaximize={maximizeWindow}
-          onWindowMinimize={minimizeWindow}
-          onWindowStartDragging={startWindowDragging}
-          port={workspacePort}
-        />
+      <WorkspaceContainer
+        isWindowMaximized={isWindowMaximized}
+        onCommandPaletteOpen={openCommandPalette}
+        onDeveloperToolsOpen={openDeveloperTools}
+        onSettingsOpen={openSettings}
+        onWindowClose={requestApplicationClose}
+        onWindowMaximize={maximizeWindow}
+        onWindowMinimize={minimizeWindow}
+        onWindowStartDragging={startWindowDragging}
+        port={workspacePort}
+      />
 
       <CommandPalette
         onOpenChange={setCommandPaletteOpen}

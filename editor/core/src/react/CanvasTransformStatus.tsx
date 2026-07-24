@@ -1,13 +1,5 @@
-import type {
-  FocusEvent,
-  KeyboardEvent,
-  ReactNode,
-} from 'react'
-import {
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
+import type { FocusEvent, KeyboardEvent, ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useValue } from 'tldraw'
 
 import { useEditor } from './editor-context'
@@ -31,30 +23,20 @@ export interface CanvasTransformStatusProps {
   readonly canvasTitle: string | null
 }
 
-export function CanvasTransformStatus({
-  canvasTitle,
-}: CanvasTransformStatusProps) {
+export function CanvasTransformStatus({ canvasTitle }: CanvasTransformStatusProps) {
   const editor = useEditor()
 
-  const [activeField, setActiveField] =
-    useState<SelectionTransformField | null>(null)
+  const [activeField, setActiveField] = useState<SelectionTransformField | null>(null)
 
-  const [userAspectRatioLocked, setUserAspectRatioLocked] =
-    useState(false)
+  const [userAspectRatioLocked, setUserAspectRatioLocked] = useState(false)
 
-  const snapshot = useValue(
-    'canvas transform status',
-    () => {
-      if (!editor) {
-        return null
-      }
+  const snapshot = useValue('canvas transform status', () => {
+    if (!editor) {
+      return null
+    }
 
-      return getSelectionTransformSnapshot(
-        editor,
-      )
-    },
-    [editor],
-  )
+    return getSelectionTransformSnapshot(editor)
+  }, [editor])
 
   useEffect(() => {
     setActiveField(null)
@@ -65,14 +47,9 @@ export function CanvasTransformStatus({
     return null
   }
 
-  const isAspectRatioLocked =
-    snapshot?.hasForcedAspectRatio === true ||
-    userAspectRatioLocked
+  const isAspectRatioLocked = snapshot?.hasForcedAspectRatio === true || userAspectRatioLocked
 
-  const commitTransform = (
-    field: SelectionTransformField,
-    value: number,
-  ) => {
+  const commitTransform = (field: SelectionTransformField, value: number) => {
     if (!editor || !snapshot) {
       return
     }
@@ -85,39 +62,24 @@ export function CanvasTransformStatus({
     })
   }
 
-  const navigateField = (
-    currentField: SelectionTransformField,
-    direction: 1 | -1,
-  ) => {
+  const navigateField = (currentField: SelectionTransformField, direction: 1 | -1) => {
     if (!snapshot) {
       return
     }
 
-    const currentIndex =
-      TRANSFORM_FIELDS.indexOf(currentField)
+    const currentIndex = TRANSFORM_FIELDS.indexOf(currentField)
 
     if (currentIndex === -1) {
       return
     }
 
-    for (
-      let step = 1;
-      step <= TRANSFORM_FIELDS.length;
-      step += 1
-    ) {
+    for (let step = 1; step <= TRANSFORM_FIELDS.length; step += 1) {
       const nextIndex =
-        (
-          currentIndex +
-          direction * step +
-          TRANSFORM_FIELDS.length
-        ) % TRANSFORM_FIELDS.length
+        (currentIndex + direction * step + TRANSFORM_FIELDS.length) % TRANSFORM_FIELDS.length
 
       const candidate = TRANSFORM_FIELDS[nextIndex]
 
-      if (
-        candidate &&
-        isFieldEditable(candidate, snapshot)
-      ) {
+      if (candidate && isFieldEditable(candidate, snapshot)) {
         setActiveField(candidate)
         return
       }
@@ -148,10 +110,7 @@ export function CanvasTransformStatus({
 
           <StatusDivider />
 
-          <TransformGroup
-            label="位置"
-            title="页面坐标"
-          >
+          <TransformGroup label="位置" title="页面坐标">
             <InlineTransformField
               active={activeField === 'x'}
               disabled={!snapshot.canMove}
@@ -178,13 +137,8 @@ export function CanvasTransformStatus({
           <StatusDivider />
 
           <TransformGroup
-
             label="尺寸"
-            title={
-              snapshot.hasMixedRotation
-                ? '页面轴对齐包围盒'
-                : '选择包围盒'
-            }
+            title={snapshot.hasMixedRotation ? '页面轴对齐包围盒' : '选择包围盒'}
           >
             <InlineTransformField
               active={activeField === 'width'}
@@ -215,11 +169,7 @@ export function CanvasTransformStatus({
 
           <TransformGroup
             label="旋转"
-            title={
-              snapshot.hasMixedRotation
-                ? '多个旋转角度'
-                : '选择旋转角度'
-            }
+            title={snapshot.hasMixedRotation ? '多个旋转角度' : '选择旋转角度'}
           >
             <InlineTransformField
               active={activeField === 'rotation'}
@@ -238,29 +188,20 @@ export function CanvasTransformStatus({
             <>
               <StatusDivider />
 
-              <StatusState
-                label="只读"
-                title="当前画布为只读状态"
-              />
+              <StatusState label="只读" title="当前画布为只读状态" />
             </>
           ) : snapshot.hasLockedShape ? (
             <>
               <StatusDivider />
 
-              <StatusState
-                label="已锁定"
-                title="选择中包含锁定对象"
-              />
+              <StatusState label="已锁定" title="选择中包含锁定对象" />
             </>
           ) : null}
 
           <StatusDivider />
 
           <AspectRatioLockButton
-            disabled={
-              !snapshot.canResize ||
-              snapshot.hasForcedAspectRatio
-            }
+            disabled={!snapshot.canResize || snapshot.hasForcedAspectRatio}
             forced={snapshot.hasForcedAspectRatio}
             locked={isAspectRatioLocked}
             onChange={setUserAspectRatioLocked}
@@ -271,15 +212,8 @@ export function CanvasTransformStatus({
   )
 }
 
-function SelectionCount({
-  count,
-}: {
-  readonly count: number
-}) {
-  const label =
-    count === 1
-      ? '1 个对象'
-      : String(count) + ' 个对象'
+function SelectionCount({ count }: { readonly count: number }) {
+  const label = count === 1 ? '1 个对象' : String(count) + ' 个对象'
 
   return (
     <span
@@ -287,15 +221,9 @@ function SelectionCount({
         inline-flex h-6 w-[56px] shrink-0 items-center overflow-hidden px-1 text-foreground/65
         tabular-nums whitespace-nowrap
       "
-      title={
-        count === 1
-          ? '已选择 1 个对象'
-          : '已选择 ' + String(count) + ' 个对象'
-      }
+      title={count === 1 ? '已选择 1 个对象' : '已选择 ' + String(count) + ' 个对象'}
     >
-      <span className="block w-full whitespace-nowrap">
-        {label}
-      </span>
+      <span className="block w-full whitespace-nowrap">{label}</span>
     </span>
   )
 }
@@ -306,11 +234,7 @@ interface TransformGroupProps {
   readonly title: string
 }
 
-function TransformGroup({
-  children,
-  label,
-  title,
-}: TransformGroupProps) {
+function TransformGroup({ children, label, title }: TransformGroupProps) {
   return (
     <div
       aria-label={label}
@@ -319,7 +243,6 @@ function TransformGroup({
       "
       title={title}
     >
-
       {children}
     </div>
   )
@@ -333,17 +256,9 @@ interface InlineTransformFieldProps {
   readonly minimum?: number
   readonly active: boolean
   readonly disabled: boolean
-  readonly onActivate: (
-    field: SelectionTransformField | null,
-  ) => void
-  readonly onCommit: (
-    field: SelectionTransformField,
-    value: number,
-  ) => void
-  readonly onNavigate: (
-    field: SelectionTransformField,
-    direction: 1 | -1,
-  ) => void
+  readonly onActivate: (field: SelectionTransformField | null) => void
+  readonly onCommit: (field: SelectionTransformField, value: number) => void
+  readonly onNavigate: (field: SelectionTransformField, direction: 1 | -1) => void
 }
 
 function InlineTransformField({
@@ -360,11 +275,9 @@ function InlineTransformField({
 }: InlineTransformFieldProps) {
   const formattedValue = formatStatusNumber(value)
 
-  const [draft, setDraft] =
-    useState(formattedValue)
+  const [draft, setDraft] = useState(formattedValue)
 
-  const inputRef =
-    useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   /*
    * Enter / Tab 会先主动提交，然后输入框卸载并触发 blur。
@@ -405,13 +318,7 @@ function InlineTransformField({
 
     const parsed = Number(normalizedDraft)
 
-    if (
-      !Number.isFinite(parsed) ||
-      (
-        minimum !== undefined &&
-        parsed < minimum
-      )
-    ) {
+    if (!Number.isFinite(parsed) || (minimum !== undefined && parsed < minimum)) {
       return null
     }
 
@@ -441,9 +348,7 @@ function InlineTransformField({
     onActivate(null)
   }
 
-  const handleBlur = (
-    _event: FocusEvent<HTMLInputElement>,
-  ) => {
+  const handleBlur = (_event: FocusEvent<HTMLInputElement>) => {
     if (skipNextBlurRef.current) {
       skipNextBlurRef.current = false
       return
@@ -457,9 +362,7 @@ function InlineTransformField({
     finishWithCommit()
   }
 
-  const handleKeyDown = (
-    event: KeyboardEvent<HTMLInputElement>,
-  ) => {
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault()
 
@@ -481,49 +384,27 @@ function InlineTransformField({
       skipNextBlurRef.current = true
       commitDraft()
 
-      onNavigate(
-        field,
-        event.shiftKey ? -1 : 1,
-      )
+      onNavigate(field, event.shiftKey ? -1 : 1)
       return
     }
 
-    if (
-      event.key === 'ArrowUp' ||
-      event.key === 'ArrowDown'
-    ) {
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       event.preventDefault()
 
-      const current =
-        parseDraft() ?? value ?? 0
+      const current = parseDraft() ?? value ?? 0
 
-      const direction =
-        event.key === 'ArrowUp'
-          ? 1
-          : -1
+      const direction = event.key === 'ArrowUp' ? 1 : -1
 
-      const increment = event.shiftKey
-        ? 10
-        : event.altKey
-          ? 0.1
-          : 1
+      const increment = event.shiftKey ? 10 : event.altKey ? 0.1 : 1
 
-      const nextValue =
-        current + direction * increment
+      const nextValue = current + direction * increment
 
-      if (
-        minimum !== undefined &&
-        nextValue < minimum
-      ) {
-        setDraft(
-          formatStatusNumber(minimum),
-        )
+      if (minimum !== undefined && nextValue < minimum) {
+        setDraft(formatStatusNumber(minimum))
         return
       }
 
-      setDraft(
-        formatStatusNumber(nextValue),
-      )
+      setDraft(formatStatusNumber(nextValue))
     }
   }
 
@@ -595,11 +476,7 @@ function InlineTransformField({
 
   return (
     <button
-      aria-label={
-        disabled
-          ? label + ' 不可编辑'
-          : '双击编辑 ' + label
-      }
+      aria-label={disabled ? label + ' 不可编辑' : '双击编辑 ' + label}
       className={[
         'inline-grid h-6 w-[88px] shrink-0',
         'grid-cols-[12px_auto_auto_minmax(0,1fr)]',
@@ -609,19 +486,13 @@ function InlineTransformField({
         'focus-visible:outline-none',
         'focus-visible:ring-1',
         'focus-visible:ring-primary/60',
-        disabled
-          ? 'cursor-not-allowed opacity-45'
-          : 'cursor-default hover:bg-background/55',
+        disabled ? 'cursor-not-allowed opacity-45' : 'cursor-default hover:bg-background/55',
       ].join(' ')}
       disabled={disabled}
       onDoubleClick={() => {
         onActivate(field)
       }}
-      title={
-        disabled
-          ? label + ' 当前不可编辑'
-          : '双击编辑 ' + label
-      }
+      title={disabled ? label + ' 当前不可编辑' : '双击编辑 ' + label}
       type="button"
     >
       <span
@@ -639,10 +510,7 @@ function InlineTransformField({
           text-left font-mono
           text-foreground/85
         "
-        title={
-          formattedValue +
-          (suffix ?? '')
-        }
+        title={formattedValue + (suffix ?? '')}
       >
         {formattedValue}
       </span>
@@ -667,17 +535,8 @@ interface AspectRatioLockButtonProps {
   readonly onChange: (locked: boolean) => void
 }
 
-function AspectRatioLockButton({
-  locked,
-  forced,
-  disabled,
-  onChange,
-}: AspectRatioLockButtonProps) {
-  const title = forced
-    ? '对象类型要求保持宽高比'
-    : locked
-      ? '解除宽高比锁定'
-      : '锁定宽高比'
+function AspectRatioLockButton({ locked, forced, disabled, onChange }: AspectRatioLockButtonProps) {
+  const title = forced ? '对象类型要求保持宽高比' : locked ? '解除宽高比锁定' : '锁定宽高比'
 
   return (
     <button
@@ -690,15 +549,9 @@ function AspectRatioLockButton({
         'focus-visible:outline-none',
         'focus-visible:ring-1',
         'focus-visible:ring-primary',
-        locked
-          ? 'bg-primary/10 text-primary'
-          : 'text-muted-foreground hover:bg-background/85',
-        disabled && !forced
-          ? 'cursor-not-allowed opacity-45'
-          : '',
-        forced
-          ? 'cursor-default text-primary'
-          : '',
+        locked ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-background/85',
+        disabled && !forced ? 'cursor-not-allowed opacity-45' : '',
+        forced ? 'cursor-default text-primary' : '',
       ].join(' ')}
       disabled={disabled}
       onClick={() => {
@@ -707,10 +560,7 @@ function AspectRatioLockButton({
       title={title}
       type="button"
     >
-      <span
-        aria-hidden="true"
-        className="font-mono text-[9px] font-semibold tracking-[-0.08em]"
-      >
+      <span aria-hidden="true" className="font-mono text-[9px] font-semibold tracking-[-0.08em]">
         {locked ? 'W:H' : 'W/H'}
       </span>
     </button>
@@ -722,10 +572,7 @@ interface StatusStateProps {
   readonly title: string
 }
 
-function StatusState({
-  label,
-  title,
-}: StatusStateProps) {
+function StatusState({ label, title }: StatusStateProps) {
   return (
     <span
       className="
@@ -734,19 +581,13 @@ function StatusState({
       "
       title={title}
     >
-
       <span>{label}</span>
     </span>
   )
 }
 
 function StatusDivider() {
-  return (
-    <span
-      aria-hidden="true"
-      className="mx-1 h-3 w-px shrink-0 bg-divider"
-    />
-  )
+  return <span aria-hidden="true" className="mx-1 h-3 w-px shrink-0 bg-divider" />
 }
 
 function isFieldEditable(
@@ -767,22 +608,12 @@ function isFieldEditable(
   }
 }
 
-function formatStatusNumber(
-  value: number | null,
-): string {
-  if (
-    value === null ||
-    !Number.isFinite(value)
-  ) {
+function formatStatusNumber(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) {
     return '—'
   }
 
-  const rounded =
-    Math.round(value * 100) / 100
+  const rounded = Math.round(value * 100) / 100
 
-  return String(
-    Object.is(rounded, -0)
-      ? 0
-      : rounded,
-  )
+  return String(Object.is(rounded, -0) ? 0 : rounded)
 }
