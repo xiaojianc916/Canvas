@@ -21,8 +21,9 @@ let source = normalize(
 
 source = extendCapabilitiesType(source)
 source = extendCapabilitiesState(source)
-source = extendArrangementSection(source)
-source = addTextAutoSizeAction(source)
+source = addLinkAction(source)
+source = updateFrameActions(source)
+source = updateMediaActions(source)
 
 await writeFile(
   filePath,
@@ -32,16 +33,15 @@ await writeFile(
 
 console.log('')
 console.log(
-  '右侧属性侧边栏通用操作已补充。',
+  '右侧属性侧边栏上下文操作已补充。',
 )
 console.log('')
 console.log('新增：')
-console.log('  - 水平拉伸')
-console.log('  - 垂直拉伸')
-console.log('  - 水平堆叠')
-console.log('  - 垂直堆叠')
-console.log('  - 紧凑排列')
-console.log('  - 恢复文本自动宽度')
+console.log('  - 编辑链接')
+console.log('  - Frame-like 官方判断')
+console.log('  - 图片替换能力判断')
+console.log('  - 视频替换能力判断')
+console.log('  - 媒体下载能力判断')
 console.log('')
 console.log('验证：')
 console.log('  pnpm format')
@@ -54,31 +54,32 @@ console.log('')
 function extendCapabilitiesType(input) {
   if (
     input.includes(
-      'readonly canStretch:',
+      'readonly canEditLink:',
     )
   ) {
     return input
   }
 
-  const anchor = `  readonly canDistribute: boolean
+  const anchor = `  readonly canEnableTextAutoSize: boolean
   readonly canReorder: boolean`
 
   if (
     !input.includes(anchor)
   ) {
     throw new Error(
-      '没有找到 SelectionCapabilities。',
+      '没有找到 SelectionCapabilities 插入位置。',
     )
   }
 
   return input.replace(
     anchor,
-    `  readonly canDistribute: boolean
-  readonly canStretch: boolean
-  readonly canStack: boolean
-  readonly canPack: boolean
-  readonly canArrange: boolean
-  readonly canEnableTextAutoSize: boolean
+    `  readonly canEnableTextAutoSize: boolean
+  readonly canEditLink: boolean
+  readonly canFitFrame: boolean
+  readonly canRemoveFrame: boolean
+  readonly canReplaceImage: boolean
+  readonly canReplaceVideo: boolean
+  readonly canDownloadMedia: boolean
   readonly canReorder: boolean`,
   )
 }
@@ -86,329 +87,323 @@ function extendCapabilitiesType(input) {
 function extendCapabilitiesState(input) {
   if (
     input.includes(
-      'const stretchable =',
+      'const onlySelectedIsFrameLike',
     )
   ) {
     return input
   }
 
-  const rotatableAnchor = `        const rotatable =
-          unlocked.filter(
-            (shape) =>
-              !editor
-                .getShapeUtil(shape)
-                .hideRotateHandle(
-                  shape,
-                ),
-          )`
+  const onlySelectedAnchor = `        const onlySelected =
+          editor.getOnlySelectedShape()`
 
   if (
     !input.includes(
-      rotatableAnchor,
+      onlySelectedAnchor,
     )
   ) {
     throw new Error(
-      '没有找到 rotatable 能力计算。',
+      '没有找到 onlySelected。',
     )
   }
 
-  const extraState = `${rotatableAnchor}
+  const contextState = `${onlySelectedAnchor}
 
-        const stretchable =
-          unlocked.filter(
-            (shape) =>
-              editor
-                .getShapeUtil(shape)
-                .canBeLaidOut(
-                  shape,
-                  {
-                    type: 'stretch',
-                    shapes: unlocked,
-                  },
-                ),
-          )
+        const onlySelectedIsFrameLike =
+          onlySelected
+            ? editor.isShapeFrameLike(
+                onlySelected,
+              )
+            : false
 
-        const stackable =
-          unlocked.filter(
-            (shape) =>
-              editor
-                .getShapeUtil(shape)
-                .canBeLaidOut(
-                  shape,
-                  {
-                    type: 'stack',
-                    shapes: unlocked,
-                  },
-                ),
-          )
+        const onlySelectedIsImage =
+          onlySelected
+            ? editor.isShapeOfType(
+                onlySelected,
+                'image',
+              )
+            : false
 
-        const packable =
-          unlocked.filter(
-            (shape) =>
-              editor
-                .getShapeUtil(shape)
-                .canBeLaidOut(
-                  shape,
-                  {
-                    type: 'pack',
-                    shapes: unlocked,
-                  },
-                ),
-          )
+        const onlySelectedIsVideo =
+          onlySelected
+            ? editor.isShapeOfType(
+                onlySelected,
+                'video',
+              )
+            : false
 
-        const canAlign =
-          !readonly &&
-          alignable.length >= 2
+        const onlySelectedIsUnlocked =
+          onlySelected !== null &&
+          onlySelected !== undefined &&
+          !onlySelected.isLocked
 
-        const canDistribute =
-          !readonly &&
-          distributable.length >= 3
-
-        const canStretch =
-          !readonly &&
-          unlocked.length >= 2 &&
-          stretchable.length ===
-            unlocked.length
-
-        const canStack =
-          !readonly &&
-          unlocked.length >= 2 &&
-          stackable.length ===
-            unlocked.length
-
-        const canPack =
-          !readonly &&
-          unlocked.length >= 2 &&
-          packable.length ===
-            unlocked.length
-
-        const canEnableTextAutoSize =
-          !readonly &&
-          selected.some(
-            (shape) =>
-              editor.isShapeOfType(
-                shape,
-                'text',
-              ) &&
-              shape.props.autoSize ===
-                false,
-          )`
+        const onlySelectedHasUrl =
+          onlySelected !== null &&
+          onlySelected !== undefined &&
+          'url' in onlySelected.props &&
+          typeof onlySelected.props.url ===
+            'string'`
 
   input = input.replace(
-    rotatableAnchor,
-    extraState,
+    onlySelectedAnchor,
+    contextState,
   )
 
-  input = input.replace(
-    `          canAlign:
-            !readonly &&
-            alignable.length >= 2,
+  const returnAnchor = `          canEnableTextAutoSize,
 
-          canDistribute:
-            !readonly &&
-            distributable.length >= 3,`,
-    `          canAlign,
-
-          canDistribute,
-
-          canStretch,
-
-          canStack,
-
-          canPack,
-
-          canArrange:
-            canAlign ||
-            canDistribute ||
-            canStretch ||
-            canStack ||
-            canPack,
-
-          canEnableTextAutoSize,`,
-  )
-
-  return input
-}
-
-function extendArrangementSection(input) {
-  if (
-    input.includes(
-      'id="stretch-horizontal"',
-    )
-  ) {
-    return input
-  }
-
-  input = input.replace(
-    `{capabilities.canAlign ? (
-        <SidebarSection
-          title="排列"`,
-    `{capabilities.canArrange ? (
-        <SidebarSection
-          title="排列"`,
-  )
-
-  const alignStart = `            <ActionButton
-              actions={actions}
-              id="align-left"
-              label="左对齐"
-            />`
+          canReorder:`
 
   if (
     !input.includes(
-      alignStart,
+      returnAnchor,
     )
   ) {
     throw new Error(
-      '没有找到对齐操作。',
+      '没有找到 capability 返回对象。',
     )
   }
-
-  input = input.replace(
-    alignStart,
-    `            {capabilities.canAlign ? (
-              <>
-                <ActionButton
-                  actions={actions}
-                  id="align-left"
-                  label="左对齐"
-                />`,
-  )
-
-  const alignEnd = `            <ActionButton
-              actions={actions}
-              id="align-bottom"
-              label="底部对齐"
-            />
-
-            {capabilities.canDistribute ? (`
-
-  if (
-    !input.includes(
-      alignEnd,
-    )
-  ) {
-    throw new Error(
-      '没有找到对齐操作结尾。',
-    )
-  }
-
-  input = input.replace(
-    alignEnd,
-    `                <ActionButton
-                  actions={actions}
-                  id="align-bottom"
-                  label="底部对齐"
-                />
-              </>
-            ) : null}
-
-            {capabilities.canDistribute ? (`,
-  )
-
-  const distributeEnd = `                <ActionButton
-                  actions={actions}
-                  id="distribute-vertical"
-                  label="垂直分布"
-                />
-              </>
-            ) : null}`
-
-  if (
-    !input.includes(
-      distributeEnd,
-    )
-  ) {
-    throw new Error(
-      '没有找到分布操作结尾。',
-    )
-  }
-
-  const additions = `${distributeEnd}
-
-            {capabilities.canStretch ? (
-              <>
-                <ActionButton
-                  actions={actions}
-                  id="stretch-horizontal"
-                  label="水平拉伸"
-                />
-
-                <ActionButton
-                  actions={actions}
-                  id="stretch-vertical"
-                  label="垂直拉伸"
-                />
-              </>
-            ) : null}
-
-            {capabilities.canStack ? (
-              <>
-                <ActionButton
-                  actions={actions}
-                  id="stack-horizontal"
-                  label="水平堆叠"
-                />
-
-                <ActionButton
-                  actions={actions}
-                  id="stack-vertical"
-                  label="垂直堆叠"
-                />
-              </>
-            ) : null}
-
-            {capabilities.canPack ? (
-              <ActionButton
-                actions={actions}
-                id="pack"
-                label="紧凑排列"
-              />
-            ) : null}`
 
   return input.replace(
-    distributeEnd,
-    additions,
+    returnAnchor,
+    `          canEnableTextAutoSize,
+
+          canEditLink:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedHasUrl,
+
+          canFitFrame:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsFrameLike,
+
+          canRemoveFrame:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsFrameLike,
+
+          canReplaceImage:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsImage,
+
+          canReplaceVideo:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsVideo,
+
+          canDownloadMedia:
+            onlySelectedIsImage ||
+            onlySelectedIsVideo,
+
+          canReorder:`,
   )
 }
 
-function addTextAutoSizeAction(input) {
+function addLinkAction(input) {
   if (
     input.includes(
-      'label="恢复自动宽度"',
+      'label="编辑链接"',
     )
   ) {
     return input
   }
 
-  const rotateAnchor = `          {capabilities.canRotate ? (
-            <>`
+  const lockAnchor = `          <ActionButton
+            actions={actions}
+            icon={
+              selectionLockState ===`
 
   if (
     !input.includes(
-      rotateAnchor,
+      lockAnchor,
     )
   ) {
     throw new Error(
-      '没有找到对象旋转操作。',
+      '没有找到锁定操作。',
     )
   }
 
-  const textAction = `          {capabilities.canEnableTextAutoSize ? (
+  const linkAction = `          {capabilities.canEditLink ? (
             <ActionButton
               actions={actions}
-              icon="toggle-on"
-              id="toggle-auto-size"
-              label="恢复自动宽度"
+              id="edit-link"
+              label="编辑链接"
             />
           ) : null}
 
 `
 
   return input.replace(
-    rotateAnchor,
-    textAction +
-      rotateAnchor,
+    lockAnchor,
+    linkAction +
+      lockAnchor,
+  )
+}
+
+function updateFrameActions(input) {
+  input = input.replace(
+    `{onlySelectedShapeType ===
+          'frame' ? (
+            <>
+              <ActionButton
+                actions={actions}
+                icon="corners"
+                id="fit-frame-to-content"
+                label="适应内容"
+              />
+
+              <ActionButton
+                actions={actions}
+                icon="cross-2"
+                id="remove-frame"
+                label="移除画框"
+              />
+            </>
+          ) : null}`,
+    `{capabilities.canFitFrame ||
+          capabilities.canRemoveFrame ? (
+            <>
+              {capabilities.canFitFrame ? (
+                <ActionButton
+                  actions={actions}
+                  icon="corners"
+                  id="fit-frame-to-content"
+                  label="适应内容"
+                />
+              ) : null}
+
+              {capabilities.canRemoveFrame ? (
+                <ActionButton
+                  actions={actions}
+                  icon="cross-2"
+                  id="remove-frame"
+                  label="移除画框"
+                />
+              ) : null}
+            </>
+          ) : null}`,
+  )
+
+  return input
+}
+
+function updateMediaActions(input) {
+  const imageBlock = `          {onlySelectedShapeType ===
+          'image' ? (
+            <>
+              <ActionButton
+                actions={actions}
+                id="image-replace"
+                label="替换图片"
+              />
+
+              <ActionButton
+                actions={actions}
+                icon="download"
+                id="download-original"
+                label="下载原图"
+              />
+            </>
+          ) : null}`
+
+  const imageReplacement = `          {capabilities.canReplaceImage ||
+          (
+            onlySelectedShapeType ===
+              'image' &&
+            capabilities.canDownloadMedia
+          ) ? (
+            <>
+              {capabilities.canReplaceImage ? (
+                <ActionButton
+                  actions={actions}
+                  id="image-replace"
+                  label="替换图片"
+                />
+              ) : null}
+
+              {capabilities.canDownloadMedia ? (
+                <ActionButton
+                  actions={actions}
+                  icon="download"
+                  id="download-original"
+                  label="下载原图"
+                />
+              ) : null}
+            </>
+          ) : null}`
+
+  if (
+    !input.includes(
+      imageBlock,
+    )
+  ) {
+    throw new Error(
+      '没有找到图片操作区。',
+    )
+  }
+
+  input = input.replace(
+    imageBlock,
+    imageReplacement,
+  )
+
+  const videoBlock = `          {onlySelectedShapeType ===
+          'video' ? (
+            <>
+              <ActionButton
+                actions={actions}
+                id="video-replace"
+                label="替换视频"
+              />
+
+              <ActionButton
+                actions={actions}
+                icon="download"
+                id="download-original"
+                label="下载原视频"
+              />
+            </>
+          ) : null}`
+
+  const videoReplacement = `          {capabilities.canReplaceVideo ||
+          (
+            onlySelectedShapeType ===
+              'video' &&
+            capabilities.canDownloadMedia
+          ) ? (
+            <>
+              {capabilities.canReplaceVideo ? (
+                <ActionButton
+                  actions={actions}
+                  id="video-replace"
+                  label="替换视频"
+                />
+              ) : null}
+
+              {capabilities.canDownloadMedia ? (
+                <ActionButton
+                  actions={actions}
+                  icon="download"
+                  id="download-original"
+                  label="下载原视频"
+                />
+              ) : null}
+            </>
+          ) : null}`
+
+  if (
+    !input.includes(
+      videoBlock,
+    )
+  ) {
+    throw new Error(
+      '没有找到视频操作区。',
+    )
+  }
+
+  return input.replace(
+    videoBlock,
+    videoReplacement,
   )
 }
 

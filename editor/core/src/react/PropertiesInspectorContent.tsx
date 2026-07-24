@@ -41,6 +41,12 @@ interface SelectionCapabilities {
   readonly canPack: boolean
   readonly canArrange: boolean
   readonly canEnableTextAutoSize: boolean
+  readonly canEditLink: boolean
+  readonly canFitFrame: boolean
+  readonly canRemoveFrame: boolean
+  readonly canReplaceImage: boolean
+  readonly canReplaceVideo: boolean
+  readonly canDownloadMedia: boolean
   readonly canReorder: boolean
   readonly canGroup: boolean
   readonly canUngroup: boolean
@@ -571,6 +577,41 @@ export function PropertiesInspectorContent({
         const onlySelected =
           editor.getOnlySelectedShape()
 
+        const onlySelectedIsFrameLike =
+          onlySelected
+            ? editor.isShapeFrameLike(
+                onlySelected,
+              )
+            : false
+
+        const onlySelectedIsImage =
+          onlySelected
+            ? editor.isShapeOfType(
+                onlySelected,
+                'image',
+              )
+            : false
+
+        const onlySelectedIsVideo =
+          onlySelected
+            ? editor.isShapeOfType(
+                onlySelected,
+                'video',
+              )
+            : false
+
+        const onlySelectedIsUnlocked =
+          onlySelected !== null &&
+          onlySelected !== undefined &&
+          !onlySelected.isLocked
+
+        const onlySelectedHasUrl =
+          onlySelected !== null &&
+          onlySelected !== undefined &&
+          'url' in onlySelected.props &&
+          typeof onlySelected.props.url ===
+            'string'
+
         return {
           canAlign,
 
@@ -590,6 +631,35 @@ export function PropertiesInspectorContent({
             canPack,
 
           canEnableTextAutoSize,
+
+          canEditLink:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedHasUrl,
+
+          canFitFrame:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsFrameLike,
+
+          canRemoveFrame:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsFrameLike,
+
+          canReplaceImage:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsImage,
+
+          canReplaceVideo:
+            !readonly &&
+            onlySelectedIsUnlocked &&
+            onlySelectedIsVideo,
+
+          canDownloadMedia:
+            onlySelectedIsImage ||
+            onlySelectedIsVideo,
 
           canReorder:
             !readonly &&
@@ -1518,6 +1588,14 @@ function SelectionActions({
         title="对象"
       >
         <div className="hc-properties-sidebar__action-grid">
+          {capabilities.canEditLink ? (
+            <ActionButton
+              actions={actions}
+              id="edit-link"
+              label="编辑链接"
+            />
+          ) : null}
+
           <ActionButton
             actions={actions}
             icon={
@@ -1561,58 +1639,78 @@ function SelectionActions({
             />
           ) : null}
 
-          {onlySelectedShapeType ===
-          'frame' ? (
+          {capabilities.canFitFrame ||
+          capabilities.canRemoveFrame ? (
             <>
-              <ActionButton
-                actions={actions}
-                icon="corners"
-                id="fit-frame-to-content"
-                label="适应内容"
-              />
+              {capabilities.canFitFrame ? (
+                <ActionButton
+                  actions={actions}
+                  icon="corners"
+                  id="fit-frame-to-content"
+                  label="适应内容"
+                />
+              ) : null}
 
-              <ActionButton
-                actions={actions}
-                icon="cross-2"
-                id="remove-frame"
-                label="移除画框"
-              />
+              {capabilities.canRemoveFrame ? (
+                <ActionButton
+                  actions={actions}
+                  icon="cross-2"
+                  id="remove-frame"
+                  label="移除画框"
+                />
+              ) : null}
             </>
           ) : null}
 
-          {onlySelectedShapeType ===
-          'image' ? (
+          {capabilities.canReplaceImage ||
+          (
+            onlySelectedShapeType ===
+              'image' &&
+            capabilities.canDownloadMedia
+          ) ? (
             <>
-              <ActionButton
-                actions={actions}
-                id="image-replace"
-                label="替换图片"
-              />
+              {capabilities.canReplaceImage ? (
+                <ActionButton
+                  actions={actions}
+                  id="image-replace"
+                  label="替换图片"
+                />
+              ) : null}
 
-              <ActionButton
-                actions={actions}
-                icon="download"
-                id="download-original"
-                label="下载原图"
-              />
+              {capabilities.canDownloadMedia ? (
+                <ActionButton
+                  actions={actions}
+                  icon="download"
+                  id="download-original"
+                  label="下载原图"
+                />
+              ) : null}
             </>
           ) : null}
 
-          {onlySelectedShapeType ===
-          'video' ? (
+          {capabilities.canReplaceVideo ||
+          (
+            onlySelectedShapeType ===
+              'video' &&
+            capabilities.canDownloadMedia
+          ) ? (
             <>
-              <ActionButton
-                actions={actions}
-                id="video-replace"
-                label="替换视频"
-              />
+              {capabilities.canReplaceVideo ? (
+                <ActionButton
+                  actions={actions}
+                  id="video-replace"
+                  label="替换视频"
+                />
+              ) : null}
 
-              <ActionButton
-                actions={actions}
-                icon="download"
-                id="download-original"
-                label="下载原视频"
-              />
+              {capabilities.canDownloadMedia ? (
+                <ActionButton
+                  actions={actions}
+                  icon="download"
+                  id="download-original"
+                  label="下载原视频"
+                />
+              ) : null}
             </>
           ) : null}
 
