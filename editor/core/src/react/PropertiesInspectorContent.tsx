@@ -40,11 +40,11 @@ interface SelectionCapabilities {
   readonly canArrange: boolean
   readonly canEnableTextAutoSize: boolean
   readonly canEditLink: boolean
-  readonly canFitFrame: boolean
-  readonly canRemoveFrame: boolean
+  readonly canManageFrame: boolean
   readonly canReplaceImage: boolean
   readonly canReplaceVideo: boolean
-  readonly canDownloadMedia: boolean
+  readonly canDownloadImage: boolean
+  readonly canDownloadVideo: boolean
   readonly canCropImage: boolean
   readonly canToggleLock: boolean
   readonly canReorder: boolean
@@ -360,12 +360,6 @@ export function PropertiesInspectorContent({
     return getToolTitle(editor.getCurrentToolId())
   }, [editor])
 
-  const onlySelectedShapeType = useValue(
-    'right properties sidebar selected shape type',
-    () => editor.getOnlySelectedShape()?.type ?? null,
-    [editor],
-  )
-
   const isCroppingImage = useValue(
     'right properties sidebar image crop state',
     () => editor.isIn('select.crop.'),
@@ -592,12 +586,7 @@ export function PropertiesInspectorContent({
             onlySelectedIsBookmark &&
             onlySelectedHasUrl,
 
-          canFitFrame:
-            !readonly &&
-            onlySelectedIsUnlocked &&
-            onlySelectedIsFrameLike,
-
-          canRemoveFrame:
+          canManageFrame:
             !readonly &&
             onlySelectedIsUnlocked &&
             onlySelectedIsFrameLike,
@@ -612,11 +601,12 @@ export function PropertiesInspectorContent({
             onlySelectedIsUnlocked &&
             onlySelectedIsVideo,
 
-          canDownloadMedia:
-            (
-              onlySelectedIsImage ||
-              onlySelectedIsVideo
-            ) &&
+          canDownloadImage:
+            onlySelectedIsImage &&
+            onlySelectedHasMediaAsset,
+
+          canDownloadVideo:
+            onlySelectedIsVideo &&
             onlySelectedHasMediaAsset,
 
           canCropImage,
@@ -673,7 +663,6 @@ export function PropertiesInspectorContent({
         <SelectionActions
           capabilities={selectionCapabilities}
           isCroppingImage={isCroppingImage}
-          onlySelectedShapeType={onlySelectedShapeType}
           selectionLockState={selectionLockState}
         />
       ) : null}
@@ -1048,15 +1037,13 @@ function SidebarField({ title, mixed, children }: SidebarFieldProps) {
 interface SelectionActionsProps {
   readonly capabilities: SelectionCapabilities
   readonly isCroppingImage: boolean
-  readonly onlySelectedShapeType: string | null
   readonly selectionLockState: 'locked' | 'unlocked' | 'mixed'
 }
 
 function SelectionActions({
   capabilities,
   isCroppingImage,
-onlySelectedShapeType,
-  selectionLockState,
+selectionLockState,
 }: SelectionActionsProps) {
   const actions = useActions()
 
@@ -1214,20 +1201,21 @@ onlySelectedShapeType,
             />
           ) : null}
 
-          {capabilities.canFitFrame || capabilities.canRemoveFrame ? (
+          {capabilities.canManageFrame ? (
             <>
-              {capabilities.canFitFrame ? (
-                <ActionButton
-                  actions={actions}
-                  icon="corners"
-                  id="fit-frame-to-content"
-                  label="适应内容"
-                />
-              ) : null}
+              <ActionButton
+                actions={actions}
+                icon="corners"
+                id="fit-frame-to-content"
+                label="适应内容"
+              />
 
-              {capabilities.canRemoveFrame ? (
-                <ActionButton actions={actions} icon="cross-2" id="remove-frame" label="移除画框" />
-              ) : null}
+              <ActionButton
+                actions={actions}
+                icon="cross-2"
+                id="remove-frame"
+                label="移除画框"
+              />
             </>
           ) : null}
 
@@ -1237,14 +1225,13 @@ onlySelectedShapeType,
             />
           ) : null}
 
-          {capabilities.canReplaceImage ||
-          (onlySelectedShapeType === 'image' && capabilities.canDownloadMedia) ? (
+          {capabilities.canReplaceImage || capabilities.canDownloadImage ? (
             <>
               {capabilities.canReplaceImage ? (
                 <ActionButton actions={actions} id="image-replace" label="替换图片" />
               ) : null}
 
-              {capabilities.canDownloadMedia ? (
+              {capabilities.canDownloadImage ? (
                 <ActionButton
                   actions={actions}
                   icon="download"
@@ -1255,14 +1242,13 @@ onlySelectedShapeType,
             </>
           ) : null}
 
-          {capabilities.canReplaceVideo ||
-          (onlySelectedShapeType === 'video' && capabilities.canDownloadMedia) ? (
+          {capabilities.canReplaceVideo || capabilities.canDownloadVideo ? (
             <>
               {capabilities.canReplaceVideo ? (
                 <ActionButton actions={actions} id="video-replace" label="替换视频" />
               ) : null}
 
-              {capabilities.canDownloadMedia ? (
+              {capabilities.canDownloadVideo ? (
                 <ActionButton
                   actions={actions}
                   icon="download"

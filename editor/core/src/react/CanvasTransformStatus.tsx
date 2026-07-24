@@ -179,9 +179,12 @@ export function CanvasTransformStatus({
 
           <TransformGroup
 
-
             label="尺寸"
-            title="页面轴对齐包围盒"
+            title={
+              snapshot.hasMixedRotation
+                ? '页面轴对齐包围盒'
+                : '选择包围盒'
+            }
           >
             <InlineTransformField
               active={activeField === 'width'}
@@ -250,8 +253,6 @@ export function CanvasTransformStatus({
               />
             </>
           ) : null}
-
-          <StatusDivider />
 
           <StatusDivider />
 

@@ -196,3 +196,7 @@ flamegraph.svg
 # Local reports
 biome-report.*
 eslint-report.*
+
+# Local development logs
+dev-err.txt
+dev-output.txt

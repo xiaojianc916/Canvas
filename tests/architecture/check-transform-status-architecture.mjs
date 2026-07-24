@@ -16,6 +16,10 @@ const files = {
     ROOT,
     'editor/core/src/react/selection-transform-geometry.ts',
   ),
+  propertiesInspector: path.join(
+    ROOT,
+    'editor/core/src/react/PropertiesInspectorContent.tsx',
+  ),
   workspaceContainer: path.join(
     ROOT,
     'apps/desktop/src/presentation/workspace/WorkspaceContainer.tsx',
@@ -36,152 +40,165 @@ const files = {
 
 await Promise.all(
   Object.values(files).map(
-    async (filePath) => {
-      await access(filePath)
-    },
+    (filePath) => access(filePath),
   ),
 )
 
-const [
-  transformStatus,
-  transformGeometry,
-  workspaceContainer,
-  shellContract,
-  workspaceShell,
-  statusBarHost,
-] = await Promise.all([
-  readFile(files.transformStatus, 'utf8'),
-  readFile(files.transformGeometry, 'utf8'),
-  readFile(files.workspaceContainer, 'utf8'),
-  readFile(files.shellContract, 'utf8'),
-  readFile(files.workspaceShell, 'utf8'),
-  readFile(files.statusBarHost, 'utf8'),
-])
+const entries = await Promise.all(
+  Object.entries(files).map(
+    async ([name, filePath]) => [
+      name,
+      await readFile(filePath, 'utf8'),
+    ],
+  ),
+)
 
+const sources = Object.fromEntries(entries)
 const failures = []
 
-const forbiddenWorkspaceTerms = [
-  'statusLeft',
-  'statusRight',
-  'CanvasStatusRightContent',
-  'SelectionTransformStatus',
-]
+checkForbiddenTerms(
+  'Workspace 状态栏',
+  [
+    sources.workspaceContainer,
+    sources.shellContract,
+    sources.workspaceShell,
+    sources.statusBarHost,
+  ],
+  [
+    'statusLeft',
+    'statusRight',
+    'CanvasStatusRightContent',
+    'SelectionTransformStatus',
+  ],
+)
+
+checkRequiredTerms(
+  'Workspace 状态栏',
+  sources.shellContract +
+    sources.workspaceShell +
+    sources.workspaceContainer,
+  [
+    'statusContent',
+  ],
+)
+
+checkForbiddenTerms(
+  'CanvasTransformStatus',
+  [sources.transformStatus],
+  [
+    'editor.resizeShape',
+    'editor.rotateShapesBy',
+    'editor.updateShapes',
+    'editor.getSelectionPageBounds',
+    'editor.getSelectionRotatedPageBounds',
+    'editor.getShapePageTransform',
+    'editor.markHistoryStoppingPoint',
+    'editor.run(',
+    'resizeToBounds',
+    'TldrawUiIcon',
+    'TransformFieldId',
+  ],
+)
+
+checkRequiredTerms(
+  'CanvasTransformStatus',
+  sources.transformStatus,
+  [
+    'getSelectionTransformSnapshot',
+    'commitSelectionTransform',
+    'SelectionTransformField',
+    'SelectionTransformSnapshot',
+  ],
+)
+
+checkForbiddenTerms(
+  'Transform geometry',
+  [sources.transformGeometry],
+  [
+    "from 'react'",
+    'CanvasTransformStatus',
+    'PropertiesInspectorContent',
+    'WorkspaceShell',
+    'StatusBarHost',
+    'useEditor',
+    'useValue',
+  ],
+)
+
+checkRequiredTerms(
+  'Transform geometry public boundary',
+  sources.transformGeometry,
+  [
+    'export function getSelectionTransformSnapshot',
+    'export function commitSelectionTransform',
+    'export type SelectionTransformField',
+    'export interface SelectionTransformSnapshot',
+    'readonly bounds: Box',
+  ],
+)
+
+checkForbiddenTerms(
+  'Properties Inspector',
+  [sources.propertiesInspector],
+  [
+    'onlySelectedShapeType',
+    'canDownloadMedia',
+    'canFitFrame',
+    'canRemoveFrame',
+    'creationInspectors',
+    'CanvasInspectorDock',
+    'HybridCanvasCreationInspector',
+    'ConnectorToolInspector',
+    'FreehandToolInspector',
+    'ScientificChartToolInspector',
+  ],
+)
+
+checkRequiredTerms(
+  'Properties Inspector capabilities',
+  sources.propertiesInspector,
+  [
+    'canManageFrame',
+    'canDownloadImage',
+    'canDownloadVideo',
+  ],
+)
+
+if (
+  sources.transformStatus.includes(
+    '<StatusDivider />\n\n          <StatusDivider />',
+  )
+) {
+  failures.push(
+    'CanvasTransformStatus 存在连续重复分隔线。',
+  )
+}
 
 for (
-  const [
-    label,
-    source,
-  ] of [
-    ['WorkspaceContainer', workspaceContainer],
-    ['WorkspaceShellProps', shellContract],
-    ['WorkspaceShell', workspaceShell],
-    ['StatusBarHost', statusBarHost],
+  const artifact of [
+    'refactor.mjs',
+    'dev-err.txt',
+    'dev-output.txt',
   ]
 ) {
-  for (
-    const term of forbiddenWorkspaceTerms
-  ) {
-    if (source.includes(term)) {
-      failures.push(
-        label +
-          ' 仍包含旧状态栏术语：' +
-          term,
-      )
-    }
-  }
-}
-
-const forbiddenStatusGeometry = [
-  'resizeToBounds',
-  'rotateShapesBy',
-  'updateShapes(',
-  'getSelectionPageBounds',
-  'getSelectionRotatedPageBounds',
-  'getShapePageTransform',
-  'markHistoryStoppingPoint',
-  'TransformFieldId',
-  'normalizeRadians',
-  'normalizeDegrees',
-  'radiansToDegrees',
-  'degreesToRadians',
-  'TldrawUiIcon',
-]
-
-for (
-  const term of forbiddenStatusGeometry
-) {
-  if (transformStatus.includes(term)) {
-    failures.push(
-      'CanvasTransformStatus 绕过 geometry：' +
-        term,
+  try {
+    await access(
+      path.join(ROOT, artifact),
     )
-  }
-}
 
-const requiredGeometryTerms = [
-  'getSelectionTransformSnapshot',
-  'commitSelectionTransform',
-  'resizeShape(',
-  'rotateShapesBy(',
-  'getShapePageTransform',
-  'markHistoryStoppingPoint',
-  'MINIMUM_SELECTION_SIZE',
-]
-
-for (
-  const term of requiredGeometryTerms
-) {
-  if (!transformGeometry.includes(term)) {
     failures.push(
-      'selection-transform-geometry 缺少：' +
-        term,
+      '仓库根目录仍存在临时文件：' +
+        artifact,
     )
+  } catch {
+    // 文件不存在即为正确状态。
   }
-}
-
-const forbiddenGeometryDependencies = [
-  "from 'react'",
-  'CanvasTransformStatus',
-  'PropertiesInspectorContent',
-  'WorkspaceShell',
-  'StatusBarHost',
-]
-
-for (
-  const term of forbiddenGeometryDependencies
-) {
-  if (transformGeometry.includes(term)) {
-    failures.push(
-      'geometry 反向依赖 UI：' +
-        term,
-    )
-  }
-}
-
-if (
-  !shellContract.includes(
-    'readonly statusContent: ReactNode',
-  )
-) {
-  failures.push(
-    'WorkspaceShellProps 缺少唯一 statusContent。',
-  )
-}
-
-if (
-  !workspaceShell.includes(
-    '<StatusBarHost>{statusContent}</StatusBarHost>',
-  )
-) {
-  failures.push(
-    'WorkspaceShell 未使用唯一 StatusBarHost children。',
-  )
 }
 
 if (failures.length > 0) {
   console.error(
     [
-      'Transform/状态栏架构检查失败：',
+      'Transform / Inspector 架构检查失败：',
       ...failures.map(
         (failure) => '- ' + failure,
       ),
@@ -191,6 +208,40 @@ if (failures.length > 0) {
   process.exitCode = 1
 } else {
   console.log(
-    'Transform/状态栏架构检查通过。',
+    'Transform / Inspector 架构检查通过。',
   )
+}
+
+function checkForbiddenTerms(
+  label,
+  candidateSources,
+  terms,
+) {
+  const source = candidateSources.join('\n')
+
+  for (const term of terms) {
+    if (source.includes(term)) {
+      failures.push(
+        label +
+          ' 不应包含：' +
+          term,
+      )
+    }
+  }
+}
+
+function checkRequiredTerms(
+  label,
+  source,
+  terms,
+) {
+  for (const term of terms) {
+    if (!source.includes(term)) {
+      failures.push(
+        label +
+          ' 缺少：' +
+          term,
+      )
+    }
+  }
 }

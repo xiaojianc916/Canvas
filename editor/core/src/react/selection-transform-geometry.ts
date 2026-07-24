@@ -1,4 +1,5 @@
 import {
+  type Box,
   type Editor,
   kickoutOccludedShapes,
   type TLShape,
@@ -33,16 +34,7 @@ export interface SelectionTransformSnapshot {
 interface DerivedSelectionGeometry {
   readonly snapshot: SelectionTransformSnapshot
   readonly shapes: readonly TLShape[]
-  readonly bounds: {
-    readonly x: number
-    readonly y: number
-    readonly w: number
-    readonly h: number
-    readonly point: {
-      readonly x: number
-      readonly y: number
-    }
-  }
+  readonly bounds: Box
   readonly sharedRotation: number | null
 }
 

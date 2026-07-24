@@ -395,7 +395,6 @@ function renderActiveSurface({
   }
 }
 
-
 function createUntitledCanvasTitle(existingTitles: readonly string[]): string {
   const baseTitle = '未命名画布'
 
