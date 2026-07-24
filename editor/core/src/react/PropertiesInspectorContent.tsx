@@ -1,12 +1,18 @@
 import {
+  ArrowShapeArrowheadEndStyle,
+  ArrowShapeArrowheadStartStyle,
+  ArrowShapeKindStyle,
   DefaultColorStyle,
   DefaultDashStyle,
   DefaultFillStyle,
   DefaultFontStyle,
+  DefaultHorizontalAlignStyle,
   DefaultSizeStyle,
   DefaultTextAlignStyle,
+  DefaultVerticalAlignStyle,
   getColorStyleItems,
   getColorValue,
+  LineShapeSplineStyle,
   type ReadonlySharedStyleMap,
   type SharedStyle,
   type StyleProp,
@@ -148,6 +154,134 @@ const textAlignOptions = [
   },
 ] as const
 
+const horizontalAlignOptions = [
+  {
+    value: 'start',
+    icon: 'horizontal-align-start',
+    label: '左侧',
+  },
+  {
+    value: 'middle',
+    icon: 'horizontal-align-middle',
+    label: '水平居中',
+  },
+  {
+    value: 'end',
+    icon: 'horizontal-align-end',
+    label: '右侧',
+  },
+] as const
+
+const verticalAlignOptions = [
+  {
+    value: 'start',
+    icon: 'vertical-align-start',
+    label: '顶部',
+  },
+  {
+    value: 'middle',
+    icon: 'vertical-align-middle',
+    label: '垂直居中',
+  },
+  {
+    value: 'end',
+    icon: 'vertical-align-end',
+    label: '底部',
+  },
+] as const
+
+const arrowKindOptions = [
+  {
+    value: 'arc',
+    icon: 'arrow-arc',
+    label: '曲线箭头',
+  },
+  {
+    value: 'elbow',
+    icon: 'arrow-elbow',
+    label: '折线箭头',
+  },
+] as const
+
+const arrowheadOptions = [
+  {
+    value: 'none',
+    icon: 'arrowhead-none',
+    label: '无端点',
+  },
+  {
+    value: 'arrow',
+    icon: 'arrowhead-arrow',
+    label: '箭头',
+  },
+  {
+    value: 'triangle',
+    icon: 'arrowhead-triangle',
+    label: '三角形',
+  },
+  {
+    value: 'square',
+    icon: 'arrowhead-square',
+    label: '方形',
+  },
+  {
+    value: 'dot',
+    icon: 'arrowhead-dot',
+    label: '圆点',
+  },
+  {
+    value: 'diamond',
+    icon: 'arrowhead-diamond',
+    label: '菱形',
+  },
+  {
+    value: 'inverted',
+    icon: 'arrowhead-triangle-inverted',
+    label: '反向三角',
+  },
+  {
+    value: 'bar',
+    icon: 'arrowhead-bar',
+    label: '端线',
+  },
+] as const
+
+const splineOptions = [
+  {
+    value: 'line',
+    icon: 'spline-line',
+    label: '直线',
+  },
+  {
+    value: 'cubic',
+    icon: 'spline-cubic',
+    label: '曲线',
+  },
+] as const
+
+const opacityOptions = [
+  {
+    value: 0.1,
+    label: '10%',
+  },
+  {
+    value: 0.25,
+    label: '25%',
+  },
+  {
+    value: 0.5,
+    label: '50%',
+  },
+  {
+    value: 0.75,
+    label: '75%',
+  },
+  {
+    value: 1,
+    label: '100%',
+  },
+] as const
+
 export function PropertiesInspectorContent({
   styles,
   selectedShapeCount,
@@ -225,6 +359,16 @@ function StyleSections({
   readonly styles:
     ReadonlySharedStyleMap
 }) {
+  const editor = useEditor()
+
+  const opacity =
+    useValue(
+      'right properties sidebar opacity',
+      () =>
+        editor.getSharedOpacity(),
+      [editor],
+    )
+
   const color =
     styles.get(
       DefaultColorStyle,
@@ -255,21 +399,92 @@ function StyleSections({
       DefaultTextAlignStyle,
     )
 
+  const horizontalAlign =
+    styles.get(
+      DefaultHorizontalAlignStyle,
+    )
+
+  const verticalAlign =
+    styles.get(
+      DefaultVerticalAlignStyle,
+    )
+
+  const arrowKind =
+    styles.get(
+      ArrowShapeKindStyle,
+    )
+
+  const arrowheadStart =
+    styles.get(
+      ArrowShapeArrowheadStartStyle,
+    )
+
+  const arrowheadEnd =
+    styles.get(
+      ArrowShapeArrowheadEndStyle,
+    )
+
+  const spline =
+    styles.get(
+      LineShapeSplineStyle,
+    )
+
+  const hasAppearance =
+    color !== undefined ||
+    opacity !== undefined
+
+  const hasCommonStyle =
+    fill !== undefined ||
+    dash !== undefined ||
+    size !== undefined
+
+  const hasText =
+    font !== undefined ||
+    textAlign !== undefined ||
+    horizontalAlign !== undefined ||
+    verticalAlign !== undefined
+
+  const hasArrow =
+    arrowKind !== undefined ||
+    arrowheadStart !== undefined ||
+    arrowheadEnd !== undefined ||
+    spline !== undefined
+
   return (
     <>
-      {color ? (
+      {hasAppearance ? (
         <SidebarSection
-          title="颜色"
+          title="外观"
         >
-          <ColorControl
-            value={color}
-          />
+          {color ? (
+            <SidebarField
+              mixed={
+                color.type === 'mixed'
+              }
+              title="颜色"
+            >
+              <ColorControl
+                value={color}
+              />
+            </SidebarField>
+          ) : null}
+
+          {opacity ? (
+            <SidebarField
+              mixed={
+                opacity.type === 'mixed'
+              }
+              title="透明度"
+            >
+              <OpacityControl
+                value={opacity}
+              />
+            </SidebarField>
+          ) : null}
         </SidebarSection>
       ) : null}
 
-      {fill ||
-      dash ||
-      size ? (
+      {hasCommonStyle ? (
         <SidebarSection
           title="样式"
         >
@@ -320,8 +535,7 @@ function StyleSections({
         </SidebarSection>
       ) : null}
 
-      {font ||
-      textAlign ? (
+      {hasText ? (
         <SidebarSection
           title="文本"
         >
@@ -346,7 +560,7 @@ function StyleSections({
                 textAlign.type ===
                 'mixed'
               }
-              title="对齐"
+              title="文本对齐"
             >
               <StyleControl
                 options={
@@ -359,9 +573,204 @@ function StyleSections({
               />
             </SidebarField>
           ) : null}
+
+          {horizontalAlign ? (
+            <SidebarField
+              mixed={
+                horizontalAlign.type ===
+                'mixed'
+              }
+              title="水平位置"
+            >
+              <StyleControl
+                options={
+                  horizontalAlignOptions
+                }
+                style={
+                  DefaultHorizontalAlignStyle
+                }
+                value={
+                  horizontalAlign
+                }
+              />
+            </SidebarField>
+          ) : null}
+
+          {verticalAlign ? (
+            <SidebarField
+              mixed={
+                verticalAlign.type ===
+                'mixed'
+              }
+              title="垂直位置"
+            >
+              <StyleControl
+                options={
+                  verticalAlignOptions
+                }
+                style={
+                  DefaultVerticalAlignStyle
+                }
+                value={
+                  verticalAlign
+                }
+              />
+            </SidebarField>
+          ) : null}
+        </SidebarSection>
+      ) : null}
+
+      {hasArrow ? (
+        <SidebarSection
+          title="线条与箭头"
+        >
+          {arrowKind ? (
+            <SidebarField
+              mixed={
+                arrowKind.type === 'mixed'
+              }
+              title="类型"
+            >
+              <StyleControl
+                options={
+                  arrowKindOptions
+                }
+                style={
+                  ArrowShapeKindStyle
+                }
+                value={arrowKind}
+              />
+            </SidebarField>
+          ) : null}
+
+          {spline ? (
+            <SidebarField
+              mixed={
+                spline.type === 'mixed'
+              }
+              title="路径"
+            >
+              <StyleControl
+                options={splineOptions}
+                style={
+                  LineShapeSplineStyle
+                }
+                value={spline}
+              />
+            </SidebarField>
+          ) : null}
+
+          {arrowheadStart ? (
+            <SidebarField
+              mixed={
+                arrowheadStart.type ===
+                'mixed'
+              }
+              title="起点"
+            >
+              <StyleControl
+                options={
+                  arrowheadOptions
+                }
+                style={
+                  ArrowShapeArrowheadStartStyle
+                }
+                value={
+                  arrowheadStart
+                }
+              />
+            </SidebarField>
+          ) : null}
+
+          {arrowheadEnd ? (
+            <SidebarField
+              mixed={
+                arrowheadEnd.type ===
+                'mixed'
+              }
+              title="终点"
+            >
+              <StyleControl
+                options={
+                  arrowheadOptions
+                }
+                style={
+                  ArrowShapeArrowheadEndStyle
+                }
+                value={
+                  arrowheadEnd
+                }
+              />
+            </SidebarField>
+          ) : null}
         </SidebarSection>
       ) : null}
     </>
+  )
+}
+
+function OpacityControl({
+  value,
+}: {
+  readonly value:
+    SharedStyle<number>
+}) {
+  const styleContext =
+    useStylePanelContext()
+
+  return (
+    <div
+      aria-label="透明度"
+      className="hc-properties-sidebar__opacity"
+      data-mixed={
+        value.type === 'mixed'
+          ? ''
+          : undefined
+      }
+      role="group"
+    >
+      {opacityOptions.map(
+        (option) => {
+          const active =
+            value.type ===
+              'shared' &&
+            value.value ===
+              option.value
+
+          return (
+            <button
+              aria-label={
+                '透明度 ' +
+                option.label
+              }
+              aria-pressed={
+                active
+              }
+              className="hc-properties-sidebar__opacity-option"
+              key={
+                option.value
+              }
+              onClick={() => {
+                styleContext.onHistoryMark(
+                  'change opacity',
+                )
+
+                styleContext.onOpacityChange(
+                  option.value,
+                )
+              }}
+              title={
+                '透明度 ' +
+                option.label
+              }
+              type="button"
+            >
+              {option.label}
+            </button>
+          )
+        },
+      )}
+    </div>
   )
 }
 
@@ -478,7 +887,11 @@ function StyleControl<
 
   return (
     <div
-      className="hc-properties-sidebar__segmented"
+      className={
+        options.length > 4
+          ? 'hc-properties-sidebar__segmented hc-properties-sidebar__segmented--grid'
+          : 'hc-properties-sidebar__segmented'
+      }
       data-mixed={
         value.type === 'mixed'
           ? ''
@@ -671,6 +1084,36 @@ function SelectionActions({
       ) : null}
 
       <SidebarSection
+        title="层级"
+      >
+        <div className="hc-properties-sidebar__action-grid">
+          <ActionButton
+            actions={actions}
+            id="bring-to-front"
+            label="置于顶层"
+          />
+
+          <ActionButton
+            actions={actions}
+            id="bring-forward"
+            label="上移一层"
+          />
+
+          <ActionButton
+            actions={actions}
+            id="send-backward"
+            label="下移一层"
+          />
+
+          <ActionButton
+            actions={actions}
+            id="send-to-back"
+            label="置于底层"
+          />
+        </div>
+      </SidebarSection>
+
+      <SidebarSection
         title="对象"
       >
         <div className="hc-properties-sidebar__action-grid">
@@ -689,6 +1132,18 @@ function SelectionActions({
               label="编组"
             />
           ) : null}
+
+          <ActionButton
+            actions={actions}
+            id="rotate-ccw"
+            label="逆时针旋转"
+          />
+
+          <ActionButton
+            actions={actions}
+            id="rotate-cw"
+            label="顺时针旋转"
+          />
 
           <ActionButton
             actions={actions}
