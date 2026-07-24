@@ -6,8 +6,8 @@
 
 pub mod asset_protocol;
 pub mod bootstrap;
-pub mod diagnostics;
 pub mod commands;
+pub mod diagnostics;
 pub mod error;
 pub mod ipc;
 

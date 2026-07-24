@@ -9,7 +9,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{AppHandle, Manager};
-use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use uuid::Uuid;
 
 use crate::Result;
@@ -51,9 +51,7 @@ pub fn install(app: &AppHandle) -> Result<()> {
         let report = create_report(panic_info, &app_version);
 
         if let Err(error) = write_report_atomically(&report_directory, &report) {
-            eprintln!(
-                "[Hybrid Canvas] failed to persist native crash report: {error}"
-            );
+            eprintln!("[Hybrid Canvas] failed to persist native crash report: {error}");
         }
 
         previous_hook(panic_info);
@@ -66,9 +64,7 @@ pub fn install(app: &AppHandle) -> Result<()> {
 ///
 /// Reports are removed after a successful read so reloading the renderer does
 /// not display the same historical crash indefinitely.
-pub fn take_previous_crash_report(
-    app: &AppHandle,
-) -> Result<Option<NativeCrashReport>> {
+pub fn take_previous_crash_report(app: &AppHandle) -> Result<Option<NativeCrashReport>> {
     let report_path = crash_report_path(app)?;
 
     if !report_path.exists() {
@@ -78,10 +74,7 @@ pub fn take_previous_crash_report(
     let source = match fs::read_to_string(&report_path) {
         Ok(source) => source,
         Err(error) => {
-            log::error!(
-                "failed to read native crash report: {}",
-                error
-            );
+            log::error!("failed to read native crash report: {}", error);
 
             let _ = fs::remove_file(&report_path);
             return Ok(None);
@@ -91,10 +84,7 @@ pub fn take_previous_crash_report(
     let report = match serde_json::from_str::<NativeCrashReport>(&source) {
         Ok(report) => report,
         Err(error) => {
-            log::error!(
-                "invalid native crash report was discarded: {}",
-                error
-            );
+            log::error!("invalid native crash report was discarded: {}", error);
 
             let _ = fs::remove_file(&report_path);
             return Ok(None);
@@ -106,16 +96,10 @@ pub fn take_previous_crash_report(
     Ok(Some(report))
 }
 
-fn create_report(
-    panic_info: &PanicHookInfo<'_>,
-    app_version: &str,
-) -> NativeCrashReport {
+fn create_report(panic_info: &PanicHookInfo<'_>, app_version: &str) -> NativeCrashReport {
     let current_thread = std::thread::current();
 
-    let thread_name = current_thread
-        .name()
-        .unwrap_or("unnamed")
-        .to_owned();
+    let thread_name = current_thread.name().unwrap_or("unnamed").to_owned();
 
     let message = panic_payload_message(panic_info);
 
@@ -131,10 +115,7 @@ fn create_report(
         )
     });
 
-    let backtrace = truncate(
-        Backtrace::force_capture().to_string(),
-        MAX_BACKTRACE_LENGTH,
-    );
+    let backtrace = truncate(Backtrace::force_capture().to_string(), MAX_BACKTRACE_LENGTH);
 
     NativeCrashReport {
         incident_id: format!("native-{}", Uuid::now_v7()),
@@ -150,9 +131,7 @@ fn create_report(
     }
 }
 
-fn panic_payload_message(
-    panic_info: &PanicHookInfo<'_>,
-) -> String {
+fn panic_payload_message(panic_info: &PanicHookInfo<'_>) -> String {
     if let Some(message) = panic_info.payload().downcast_ref::<&str>() {
         return (*message).to_owned();
     }
@@ -164,17 +143,13 @@ fn panic_payload_message(
     "Rust panic with a non-string payload".to_owned()
 }
 
-fn write_report_atomically(
-    directory: &Path,
-    report: &NativeCrashReport,
-) -> std::io::Result<()> {
+fn write_report_atomically(directory: &Path, report: &NativeCrashReport) -> std::io::Result<()> {
     fs::create_dir_all(directory)?;
 
     let target_path = directory.join(CRASH_REPORT_FILE_NAME);
     let temporary_path = directory.join(CRASH_REPORT_TEMP_FILE_NAME);
 
-    let serialized = serde_json::to_vec_pretty(report)
-        .map_err(std::io::Error::other)?;
+    let serialized = serde_json::to_vec_pretty(report).map_err(std::io::Error::other)?;
 
     let mut file = File::create(&temporary_path)?;
     file.write_all(&serialized)?;
@@ -206,24 +181,14 @@ fn sync_directory(directory: &Path) {
     }
 }
 
-fn crash_report_path(
-    app: &AppHandle,
-) -> Result<PathBuf> {
-    Ok(
-        app.path()
-            .app_log_dir()?
-            .join(CRASH_REPORT_FILE_NAME),
-    )
+fn crash_report_path(app: &AppHandle) -> Result<PathBuf> {
+    Ok(app.path().app_log_dir()?.join(CRASH_REPORT_FILE_NAME))
 }
 
 fn current_timestamp() -> String {
     OffsetDateTime::now_utc()
         .format(&Rfc3339)
-        .unwrap_or_else(|_| {
-            OffsetDateTime::now_utc()
-                .unix_timestamp()
-                .to_string()
-        })
+        .unwrap_or_else(|_| OffsetDateTime::now_utc().unix_timestamp().to_string())
 }
 
 fn truncate(mut value: String, maximum_length: usize) -> String {
@@ -243,7 +208,7 @@ fn truncate(mut value: String, maximum_length: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{truncate, MAX_MESSAGE_LENGTH};
+    use super::{MAX_MESSAGE_LENGTH, truncate};
 
     #[test]
     fn short_values_are_not_changed() {
