@@ -1,28 +1,34 @@
-import { ScrollArea } from '@hybrid-canvas/design-system'
-import type { ReactNode } from 'react'
+import {
+  ScrollArea,
+} from '@hybrid-canvas/design-system'
+import type {
+  ReactNode,
+} from 'react'
 
 export interface InspectorHostProps {
-  readonly title?: string
   readonly children: ReactNode
 }
 
 /**
- * Right-side contextual inspector host.
+ * 只拥有右栏布局和滚动。
  *
- * The host owns only layout and scrolling. It must not own editor selection,
- * active tool state, shape-specific rules, data configuration, or interaction
- * configuration.
- *
- * The rendered content is supplied by the active tool or selected object.
+ * Editor 状态、样式相关性和对象操作均由
+ * tldraw StylePanel slot 提供。
  */
-export function InspectorHost({ children }: InspectorHostProps) {
+export function InspectorHost({
+  children,
+}: InspectorHostProps) {
   return (
     <aside
-      aria-label="工具选项与对象属性"
+      aria-label="属性检查器"
       className="flex h-full min-h-0 min-w-0 flex-col border-l border-divider bg-sidebar"
     >
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="min-w-0 p-3">{children}</div>
+      <ScrollArea
+        className="min-h-0 flex-1"
+      >
+        <div className="hc-properties-inspector-host">
+          {children}
+        </div>
       </ScrollArea>
     </aside>
   )

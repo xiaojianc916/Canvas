@@ -305,3 +305,137 @@ body {
     width: calc(100% - 16px);
   }
 }
+
+
+/* hybrid-canvas:properties-inspector-v1 */
+
+/*
+ * Workspace Dock 填满右栏。
+ */
+.hc-properties-inspector-host,
+.hc-properties-inspector-dock {
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+}
+
+/*
+ * Portal 后的官方 StylePanel 不再使用画布浮层定位。
+ * 保留官方按钮、图例、选中态、颜色和控件布局。
+ */
+.hc-properties-inspector-dock
+  .tlui-style-panel {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+/*
+ * 不修改官方各个 picker 内部样式。
+ * 仅确保官方 Section 使用右栏宽度。
+ */
+.hc-properties-inspector-dock
+  .tlui-style-panel__section {
+  width: 100%;
+}
+
+/*
+ * 自定义扩展区域只使用必要标题，
+ * 不显示描述性小字。
+ */
+.hc-properties-inspector-section {
+  width: 100%;
+  padding: 10px 8px;
+  border-top: 1px solid
+    var(
+      --color-divider,
+      rgba(0, 0, 0, 0.1)
+    );
+}
+
+.hc-properties-inspector-section__label {
+  margin: 0 0 6px;
+  color: var(
+    --color-text-3,
+    rgba(0, 0, 0, 0.58)
+  );
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+/*
+ * 图标按钮与官方 StylePanel 的紧凑尺寸保持一致。
+ */
+.hc-properties-inspector-actions {
+  display: grid;
+  grid-template-columns:
+    repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.hc-properties-inspector-action {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(
+    --color-text-1,
+    currentColor
+  );
+  cursor: pointer;
+}
+
+.hc-properties-inspector-action:hover {
+  background: var(
+    --color-low,
+    rgba(0, 0, 0, 0.06)
+  );
+}
+
+.hc-properties-inspector-action:focus-visible {
+  outline: 2px solid
+    var(
+      --color-focus,
+      var(--color-primary)
+    );
+  outline-offset: -2px;
+}
+
+.hc-properties-inspector-action--destructive {
+  color: var(
+    --color-destructive,
+    #c62828
+  );
+}
+
+.hc-properties-inspector-action--destructive:hover {
+  background:
+    color-mix(
+      in oklab,
+      var(
+        --color-destructive,
+        #c62828
+      ) 10%,
+      transparent
+    );
+}
+
+/*
+ * 官方图标尺寸，不引入第二套 SVG。
+ */
+.hc-properties-inspector-action
+  .tlui-icon {
+  width: 18px;
+  height: 18px;
+}
