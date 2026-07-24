@@ -9,13 +9,30 @@ import {
 } from 'tldraw'
 
 import type { EditorSession } from '../runtime/editor-session'
-import { useBindEditorSession, useTldrawLicenseKey } from './editor-context'
-import { TldrawOfficialUi } from './TldrawOfficialUi'
+import {
+  useBindEditorSession,
+  useTldrawLicenseKey,
+} from './editor-context'
 
-export const HYBRID_CANVAS_SAVE_ACTION_ID = 'hybrid-canvas.save'
+export const HYBRID_CANVAS_SAVE_ACTION_ID =
+  'hybrid-canvas.save'
 
+/**
+ * 使用 tldraw 默认 UI，只替换产品已经有自己实现的区域。
+ *
+ * Toolbar 不覆盖，因此由 tldraw 自动渲染默认 Toolbar。
+ * NavigationPanel、QuickActions、ActionsMenu 同样使用官方默认实现。
+ *
+ * PageMenu：
+ * Canvas 已经有自己的页面与工作区管理，所以禁用。
+ *
+ * StylePanel：
+ * Canvas 使用原来的 Workspace CanvasInspectorContent，
+ * 避免同时出现两套右侧属性面板。
+ */
 const CANVAS_COMPONENTS: TLComponents = {
-  InFrontOfTheCanvas: TldrawOfficialUi,
+  PageMenu: null,
+  StylePanel: null,
 }
 
 export interface EditorCanvasProps {
@@ -30,7 +47,8 @@ export function EditorCanvas({
   onSave,
 }: EditorCanvasProps) {
   const licenseKey = useTldrawLicenseKey()
-  const [editor, setEditor] = useState<Editor | null>(null)
+  const [editor, setEditor] =
+    useState<Editor | null>(null)
 
   const { registration, store } = session
 
@@ -39,7 +57,8 @@ export function EditorCanvas({
     isActive ? registration : null,
   )
 
-  const hasTools = registration.tools.length > 0
+  const hasTools =
+    registration.tools.length > 0
 
   const overrides = useMemo<TLUiOverrides>(
     () => createCanvasUiOverrides(onSave),
@@ -49,10 +68,12 @@ export function EditorCanvas({
   const tldrawProps = useMemo((): TldrawProps => {
     const base: TldrawProps = {
       /*
-       * 不让 tldraw 自动生成第二套默认布局。
-       * 官方 Toolbar / Navigation 由 TldrawOfficialUi 放置。
+       * 关键点：
+       *
+       * 不再 hideUi。
+       * 让 tldraw 渲染完整的默认 UI 与默认布局。
        */
-      hideUi: true,
+      hideUi: false,
       licenseKey,
       store,
       onMount: setEditor,
@@ -97,13 +118,18 @@ export function EditorCanvas({
 
       session.attachEditor(editor)
 
-      return () => session.detachEditor(editor)
+      return () =>
+        session.detachEditor(editor)
     }
 
     session.detachEditor(editor)
 
     return undefined
-  }, [editor, isActive, session])
+  }, [
+    editor,
+    isActive,
+    session,
+  ])
 
   return (
     <div
@@ -120,7 +146,10 @@ function createCanvasUiOverrides(
   onSave: (() => void) | undefined,
 ): TLUiOverrides {
   return {
-    actions(_editor, actions): TLUiActionsContextType {
+    actions(
+      _editor,
+      actions,
+    ): TLUiActionsContextType {
       if (!onSave) {
         return actions
       }
@@ -142,4 +171,6 @@ function createCanvasUiOverrides(
   }
 }
 
-export { useEditor } from './editor-context'
+export {
+  useEditor,
+} from './editor-context'

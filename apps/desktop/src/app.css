@@ -95,7 +95,6 @@ body {
 
 .tlui-help-menu,
 .tlui-menu-zone,
-.tlui-navigation-zone,
 .tlui-debug-panel {
   display: none;
 }
@@ -193,85 +192,3 @@ body {
     animation-iteration-count: 1;
   }
 }
-
-/* hybrid-canvas:tldraw-official-ui */
-
-/*
- * 工具栏只负责定位。
- * 尺寸、按钮排列和 overflow 交给 DefaultToolbar 自己处理。
- */
-.hc-tldraw-toolbar {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  z-index: 30;
-  width: auto;
-  max-width: calc(100% - 32px);
-  transform: translateX(-50%);
-  pointer-events: auto;
-}
-
-.hc-tldraw-toolbar .tlui-main-toolbar {
-  position: static !important;
-  inset: auto !important;
-  width: auto !important;
-  max-width: min(470px, calc(100vw - 64px)) !important;
-  margin: 0 !important;
-  transform: none !important;
-}
-
-.hc-tldraw-toolbar .tlui-main-toolbar__inner {
-  width: auto !important;
-  max-width: 100% !important;
-  margin: 0 !important;
-}
-
-/*
- * 防止旧 CSS 再次把所有工具横向展开。
- */
-.hc-tldraw-toolbar
-  .tlui-main-toolbar__left {
-  width: auto !important;
-  max-width: 100% !important;
-}
-
-.hc-tldraw-toolbar
-  .tlui-main-toolbar__tools {
-  width: auto !important;
-  max-width: 100% !important;
-}
-
-/*
- * 官方缩放与导航。
- */
-.hc-tldraw-navigation {
-  position: absolute;
-  bottom: 12px;
-  left: 12px;
-  z-index: 30;
-  display: block !important;
-  pointer-events: auto;
-}
-
-.hc-tldraw-navigation
-  .tlui-navigation-panel {
-  position: static !important;
-  inset: auto !important;
-  display: block !important;
-  margin: 0 !important;
-  transform: none !important;
-}
-
-/*
- * 不再在 EditorCanvas 内创建第二个 StylePanel 或侧边栏。
- */
-.hc-editor-layout {
-  display: block !important;
-}
-
-.hc-tldraw-style-sidebar,
-.hc-tldraw-style-host,
-.hc-tldraw-page-menu {
-  display: none !important;
-}
-

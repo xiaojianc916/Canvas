@@ -5,8 +5,6 @@ export {
   type HybridCanvasExtension,
 } from '../contracts/public-api'
 export { EditorCanvas, type EditorCanvasProps } from './EditorCanvas'
-export { TldrawOfficialUi } from './TldrawOfficialUi'
-export type { TldrawOfficialUiProps } from './TldrawOfficialUi'
 export {
   EditorSessionHost,
   type EditorSessionHostEntry,
