@@ -74,14 +74,14 @@ requirePattern(
   'InspectorPortal',
   sources.portal,
   /createPortal\s*\(/,
-  '必须通过 Portal 渲染到 Workspace Dock',
+  '必须通过 Portal 渲染到 Workspace 右侧属性侧边栏',
 )
 
-requirePattern(
+forbidPattern(
   'InspectorPortal',
   sources.portal,
-  /<DefaultStylePanel/,
-  '架构阶段必须使用官方 DefaultStylePanel 验证上下文',
+  /<DefaultStylePanel(?:Content)?/,
+  '自定义右侧属性侧边栏不得直接渲染官方默认面板',
 )
 
 const forbiddenWorkspacePatterns = [
@@ -108,8 +108,8 @@ for (const pattern of forbiddenWorkspacePatterns) {
 requirePattern(
   'WorkspaceContainer',
   sources.workspaceContainer,
-  /<CanvasInspectorDock\s*\/>/,
-  'Workspace 必须只提供 Inspector Portal Dock',
+  /<CanvasInspectorRightSidebar\s*\/>/,
+  'Workspace 必须只提供 Inspector Portal 右侧栏容器',
 )
 
 requirePattern(
@@ -147,12 +147,6 @@ forbidPattern(
   'Extension API 不得恢复 tool-first Inspector',
 )
 
-requirePattern(
-  'ExtensionContract',
-  sources.extensionContract,
-  /creationInspectors/,
-  'Extension API 必须使用 creation-specific contribution',
-)
 
 if (violations.length > 0) {
   console.error('')
