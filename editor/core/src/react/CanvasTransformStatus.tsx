@@ -1,6 +1,7 @@
 import type {
   FocusEvent,
   KeyboardEvent,
+  ReactNode,
 } from 'react'
 import {
   useEffect,
@@ -274,9 +275,6 @@ export function CanvasTransformStatus({
         break
       }
 
-      case 'rotation': {
-        return
-      }
     }
 
     if (
@@ -512,7 +510,7 @@ function SelectionCount({
 }
 
 interface TransformGroupProps {
-  readonly children: React.ReactNode
+  readonly children: ReactNode
   readonly label: string
   readonly title: string
   readonly icon?: 'corners'
@@ -542,6 +540,7 @@ function TransformGroup({
         >
           <TldrawUiIcon
             icon={icon}
+            label={label}
             small
           />
         </span>
@@ -870,6 +869,7 @@ function AspectRatioLockButton({
     >
       <TldrawUiIcon
         icon={locked ? 'lock' : 'unlock'}
+        label={title}
         small
       />
     </button>
@@ -897,6 +897,7 @@ function StatusState({
     >
       <TldrawUiIcon
         icon={icon}
+        label={label}
         small
       />
 
