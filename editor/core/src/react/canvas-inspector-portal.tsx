@@ -151,7 +151,7 @@ export function CanvasInspectorRightSidebar() {
   return (
     <div
       className="hc-properties-sidebar"
-      data-properties-inspector-dock=""
+      data-properties-sidebar=""
       ref={ref}
     />
   )
@@ -247,16 +247,12 @@ export function CanvasInspectorStylePanel({
         />
       </StylePanelContextProvider>
     ) : (
-      <div
-        className="hc-properties-panel hc-properties-panel--actions-only"
-      >
-        <PropertiesInspectorContent
-          selectedShapeCount={
-            selectedShapeCount
-          }
-          styles={null}
-        />
-      </div>
+      <PropertiesInspectorContent
+        selectedShapeCount={
+          selectedShapeCount
+        }
+        styles={null}
+      />
     ),
     context.host,
   )

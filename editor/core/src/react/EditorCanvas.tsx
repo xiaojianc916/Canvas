@@ -94,7 +94,7 @@ export function EditorCanvas({
 
   /*
    * 每个 Editor Session 都有自己的 StylePanel slot，
-   * 但只有 active session 可以发布到 Workspace Dock。
+   * 但只有 active session 可以发布到 Workspace 右侧属性侧边栏。
    */
   const components =
     useMemo<TLComponents>(
