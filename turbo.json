@@ -18,7 +18,7 @@
       "interruptible": true
     },
     "build": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^typecheck"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "!**/*.test.*",
@@ -26,7 +26,7 @@
         "!**/__tests__/**",
         "!**/fixtures/**"
       ],
-      "outputs": ["dist/**", "build/**", ".vite/**", "coverage/**"]
+      "outputs": ["dist/**", "build/**", ".vite/**"]
     },
     "typecheck": {
       "dependsOn": ["^typecheck"],
@@ -48,17 +48,17 @@
       "outputs": ["coverage/**", "test-results/**", "playwright-report/**"]
     },
     "test:unit": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^typecheck"],
       "inputs": ["$TURBO_DEFAULT$", "vitest.config.*"],
       "outputs": ["coverage/**"]
     },
     "test:integration": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^typecheck"],
       "cache": false,
       "outputs": ["test-results/**"]
     },
     "test:architecture": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^typecheck"],
       "outputs": ["test-results/architecture/**"]
     },
     "test:e2e": {

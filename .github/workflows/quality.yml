@@ -79,6 +79,50 @@ jobs:
       - name: Bundle budget
         run: pnpm analyze:bundle:check
 
+  windows-desktop:
+    name: Windows Desktop
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.0
+          run_install: false
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck workspace
+        run: pnpm typecheck
+
+      - name: Build desktop frontend
+        run: pnpm build
+
+      - name: Check Windows native target
+        run: cargo check -p hybrid-canvas-desktop --all-targets --all-features
+
+      - name: Build Windows desktop binary
+        run: pnpm --filter @hybrid-canvas/desktop exec tauri build --debug --no-bundle
+
   rust:
     name: Rust
     runs-on: ubuntu-latest

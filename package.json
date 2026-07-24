@@ -20,8 +20,8 @@
   "scripts": {
     "dev": "turbo run dev --filter=@hybrid-canvas/desktop",
     "dev:desktop": "pnpm --filter @hybrid-canvas/desktop dev",
-    "build": "turbo run build",
-    "build:desktop": "pnpm --filter @hybrid-canvas/desktop build",
+    "build": "pnpm build:desktop",
+    "build:desktop": "turbo run build --filter=@hybrid-canvas/desktop",
     "build:native": "cargo build --workspace",
     "check": "pnpm test:architecture && node scripts/quality/run.mjs check",
     "check:rust": "cargo check --workspace --all-targets --all-features",

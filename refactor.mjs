@@ -1,1216 +1,445 @@
 #!/usr/bin/env node
 
-import {
-  mkdir,
-  readFile,
-  writeFile,
-} from 'node:fs/promises'
-import path from 'node:path'
+/**
+ * Hybrid Canvas 构建语义与 Windows CI 调整脚本
+ *
+ * 放在仓库根目录运行：
+ *   node apply-ci-build-fixes.mjs
+ *
+ * 只检查、不修改：
+ *   node apply-ci-build-fixes.mjs --check
+ *
+ * 注意：
+ * - 保留 TypeScript 7 和 @typescript/typescript6，不修改锁文件。
+ * - 只有 apps/desktop 保留真正的 build。
+ * - 内部源码包只执行 typecheck。
+ * - 脚本可重复执行。
+ */
+
+import { readFile, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import process from 'node:process'
 
-const ROOT = process.cwd()
+const root = process.cwd()
+const checkOnly = process.argv.includes('--check')
+const files = new Map()
 
-const PATHS = Object.freeze({
-  package: 'package.json',
-
-  diagnosticBuffer:
-    'foundations/observability/src/diagnostic-buffer.ts',
-
-  diagnosticBufferTest:
-    'foundations/observability/src/diagnostic-buffer.test.ts',
-
-  observabilityLog:
-    'foundations/observability/src/log.ts',
-
-  observabilityPublicApi:
-    'foundations/observability/src/public-api.ts',
-
-  fatalIncident:
-    'apps/desktop/src/fatal/fatal-incident.ts',
-
-  architectureCheck:
-    'tests/architecture/check-diagnostic-observability.mjs',
-})
-
-async function main() {
-  await assertRepository()
-
-  await createDiagnosticBuffer()
-  await createDiagnosticBufferTests()
-  await replaceObservabilityLog()
-  await exportDiagnosticBuffer()
-  await integrateFatalSnapshot()
-  await createArchitectureCheck()
-  await registerArchitectureCheck()
-
-  console.log('')
-  console.log(
-    'Diagnostic observability refactor applied.',
-  )
-  console.log('')
-  console.log('Run:')
-  console.log('  pnpm format')
-  console.log('  pnpm typecheck')
-  console.log('  pnpm test')
-  console.log('  pnpm test:architecture')
-}
-
-async function assertRepository() {
-  const source = await readFile(
-    resolvePath(PATHS.package),
-    'utf8',
-  )
-
-  const packageJson = JSON.parse(source)
-
-  if (packageJson.name !== 'hybrid-canvas') {
-    throw new Error(
-      'Run this script from the Hybrid Canvas repository root.',
-    )
+for (const argument of process.argv.slice(2)) {
+  if (argument !== '--check') {
+    fail(`未知参数：${argument}`)
   }
 }
 
-async function createDiagnosticBuffer() {
-  await writeText(
-    PATHS.diagnosticBuffer,
-    String.raw`
-import type {
-  LogContext,
-  LogLevel,
-} from './log'
+const sourcePackagePaths = [
+  'editor/assets/package.json',
+  'editor/core/package.json',
+  'editor/document/package.json',
+  'editor/extensions/package.json',
+  'editor/persistence/package.json',
+  'features/settings/package.json',
+  'features/workspace/package.json',
+  'foundations/design-system/package.json',
+  'foundations/geometry/package.json',
+  'foundations/kernel/package.json',
+  'foundations/observability/package.json',
+  'foundations/serialization/package.json',
+  'foundations/test-kit/package.json',
+]
 
-export interface DiagnosticLogEntry {
-  readonly sequence: number
-  readonly timestamp: string
-  readonly level: LogLevel
-  readonly message: string
-  readonly scope?: string
-  readonly correlationId?: string
-  readonly context: Readonly<Record<string, string>>
-}
+await updateRootPackage()
+await updateTurboConfig()
+await updateWindowsCi()
+await updateSourcePackages()
 
-const DEFAULT_CAPACITY = 200
-const MAX_MESSAGE_LENGTH = 2_000
-const MAX_CONTEXT_ENTRIES = 32
-const MAX_CONTEXT_VALUE_LENGTH = 4_000
-const REDACTED = '[REDACTED]'
+const changedFiles = [...files.values()].filter(
+  ({ original, updated }) => original !== updated,
+)
 
-const SENSITIVE_KEY_PATTERN =
-  /token|secret|password|authorization|cookie|license|api[-_]?key|credential/i
-
-const BEARER_PATTERN =
-  /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi
-
-const WINDOWS_USER_PATH_PATTERN =
-  /[A-Za-z]:[\\/](?:Users|Documents and Settings)[\\/][^\\/\s]+/gi
-
-const UNIX_USER_PATH_PATTERN =
-  /\/(?:Users|home)\/[^/\s]+/gi
-
-const URL_CREDENTIAL_PATTERN =
-  /([a-z][a-z0-9+.-]*:\/\/)([^:@/\s]+):([^@/\s]+)@/gi
-
-let capacity = DEFAULT_CAPACITY
-let nextSequence = 1
-let entries: DiagnosticLogEntry[] = []
-
-export function recordDiagnosticLog(
-  level: LogLevel,
-  message: string,
-  context: LogContext,
-  timestamp: string,
-): void {
-  try {
-    const entry: DiagnosticLogEntry = {
-      sequence: nextSequence,
-      timestamp: normalizeTimestamp(timestamp),
-      level,
-      message: normalizeText(
-        message,
-        MAX_MESSAGE_LENGTH,
-      ),
-      scope: normalizeOptionalText(
-        context.scope,
-        256,
-      ),
-      correlationId: normalizeOptionalText(
-        context.correlationId,
-        256,
-      ),
-      context: sanitizeContext(context),
-    }
-
-    nextSequence += 1
-    entries.push(entry)
-
-    if (entries.length > capacity) {
-      entries = entries.slice(
-        entries.length - capacity,
-      )
-    }
-  } catch (error: unknown) {
-    // Observability must never become an application failure source.
-    emergencyConsoleError(
-      'Failed to record diagnostic log entry',
-      error,
-    )
-  }
-}
-
-export function getRecentLogEntries(
-  limit = capacity,
-): readonly DiagnosticLogEntry[] {
-  const normalizedLimit = Math.max(
-    0,
-    Math.min(
-      Math.floor(limit),
-      capacity,
-    ),
-  )
-
-  return entries
-    .slice(
-      Math.max(
-        0,
-        entries.length - normalizedLimit,
-      ),
-    )
-    .map(cloneEntry)
-}
-
-export function clearDiagnosticLogs(): void {
-  entries = []
-}
-
-export function configureDiagnosticBuffer(
-  options: {
-    readonly capacity?: number
-  },
-): void {
-  if (options.capacity === undefined) {
-    return
+if (checkOnly) {
+  if (changedFiles.length === 0) {
+    console.log('无需修改，构建语义与 Windows CI 已经符合要求。')
+    process.exit(0)
   }
 
-  if (
-    !Number.isInteger(options.capacity) ||
-    options.capacity < 1 ||
-    options.capacity > 2_000
-  ) {
-    throw new RangeError(
-      'Diagnostic buffer capacity must be an integer between 1 and 2000.',
-    )
+  console.error('以下文件需要修改：')
+
+  for (const file of changedFiles) {
+    console.error(`- ${file.relativePath}`)
   }
 
-  capacity = options.capacity
-
-  if (entries.length > capacity) {
-    entries = entries.slice(
-      entries.length - capacity,
-    )
-  }
+  process.exit(1)
 }
 
-export function formatDiagnosticLogs(
-  logEntries: readonly DiagnosticLogEntry[],
-): string {
-  return logEntries
-    .map((entry) => {
-      const prefix = [
-        entry.timestamp,
-        entry.level.toUpperCase(),
-        entry.scope
-          ? '[' + entry.scope + ']'
-          : undefined,
-        '#' + String(entry.sequence),
-      ]
-        .filter(
-          (value): value is string =>
-            typeof value === 'string',
-        )
-        .join(' ')
-
-      const contextEntries = Object.entries(
-        entry.context,
-      )
-
-      if (contextEntries.length === 0) {
-        return prefix + ' ' + entry.message
-      }
-
-      return [
-        prefix + ' ' + entry.message,
-        ...contextEntries.map(
-          ([key, value]) =>
-            '  ' + key + ': ' + value,
-        ),
-      ].join('\n')
-    })
-    .join('\n')
+/*
+ * 所有修改均已在内存中完成并通过验证，
+ * 确认没有错误后再统一写入，避免只修改一半。
+ */
+for (const file of changedFiles) {
+  await writeFile(file.absolutePath, file.updated, 'utf8')
 }
 
-function sanitizeContext(
-  context: LogContext,
-): Readonly<Record<string, string>> {
-  const sanitizedEntries = Object.entries(context)
-    .filter(
-      ([key]) =>
-        key !== 'scope' &&
-        key !== 'correlationId',
-    )
-    .slice(0, MAX_CONTEXT_ENTRIES)
-    .map(([key, value]) => {
-      if (SENSITIVE_KEY_PATTERN.test(key)) {
-        return [key, REDACTED] as const
-      }
-
-      return [
-        key,
-        normalizeText(
-          serializeUnknown(value),
-          MAX_CONTEXT_VALUE_LENGTH,
-        ),
-      ] as const
-    })
-
-  return Object.fromEntries(sanitizedEntries)
-}
-
-function serializeUnknown(
-  value: unknown,
-): string {
-  if (value === undefined) {
-    return 'undefined'
-  }
-
-  if (value === null) {
-    return 'null'
-  }
-
-  if (
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean' ||
-    typeof value === 'bigint'
-  ) {
-    return String(value)
-  }
-
-  if (typeof value === 'symbol') {
-    return value.description
-      ? 'Symbol(' + value.description + ')'
-      : 'Symbol()'
-  }
-
-  if (typeof value === 'function') {
-    return (
-      '[Function ' +
-      (value.name || 'anonymous') +
-      ']'
-    )
-  }
-
-  const seen = new WeakSet<object>()
-
-  try {
-    return JSON.stringify(
-      value,
-      (_key, candidate: unknown) => {
-        if (candidate instanceof Error) {
-          return serializeError(candidate)
-        }
-
-        if (
-          typeof candidate === 'object' &&
-          candidate !== null
-        ) {
-          if (seen.has(candidate)) {
-            return '[Circular]'
-          }
-
-          seen.add(candidate)
-        }
-
-        if (typeof candidate === 'bigint') {
-          return String(candidate)
-        }
-
-        if (typeof candidate === 'symbol') {
-          return String(candidate)
-        }
-
-        if (typeof candidate === 'function') {
-          return (
-            '[Function ' +
-            (candidate.name || 'anonymous') +
-            ']'
-          )
-        }
-
-        return candidate
-      },
-      2,
-    )
-  } catch {
-    try {
-      return String(value)
-    } catch {
-      return '[Unserializable value]'
-    }
-  }
-}
-
-function serializeError(
-  error: Error,
-): Readonly<Record<string, unknown>> {
-  const cause =
-    'cause' in error
-      ? error.cause
-      : undefined
-
-  return {
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-    cause:
-      cause instanceof Error
-        ? {
-            name: cause.name,
-            message: cause.message,
-            stack: cause.stack,
-          }
-        : cause,
-  }
-}
-
-function cloneEntry(
-  entry: DiagnosticLogEntry,
-): DiagnosticLogEntry {
-  return {
-    ...entry,
-    context: {
-      ...entry.context,
-    },
-  }
-}
-
-function normalizeTimestamp(
-  timestamp: string,
-): string {
-  const parsed = Date.parse(timestamp)
-
-  if (Number.isNaN(parsed)) {
-    return new Date().toISOString()
-  }
-
-  return new Date(parsed).toISOString()
-}
-
-function normalizeOptionalText(
-  value: string | undefined,
-  maximumLength: number,
-): string | undefined {
-  if (!value) {
-    return undefined
-  }
-
-  return normalizeText(
-    value,
-    maximumLength,
-  )
-}
-
-function normalizeText(
-  value: string,
-  maximumLength: number,
-): string {
-  const redacted = redactText(value)
-
-  if (redacted.length <= maximumLength) {
-    return redacted
-  }
-
-  return (
-    redacted.slice(0, maximumLength) +
-    '\n[Diagnostic value truncated]'
-  )
-}
-
-function redactText(value: string): string {
-  return value
-    .replace(
-      BEARER_PATTERN,
-      'Bearer ' + REDACTED,
-    )
-    .replace(
-      WINDOWS_USER_PATH_PATTERN,
-      'C:\\Users\\' + REDACTED,
-    )
-    .replace(
-      UNIX_USER_PATH_PATTERN,
-      '/Users/' + REDACTED,
-    )
-    .replace(
-      URL_CREDENTIAL_PATTERN,
-      '$1' + REDACTED + ':' + REDACTED + '@',
-    )
-}
-
-function emergencyConsoleError(
-  message: string,
-  error: unknown,
-): void {
-  try {
-    console.error(
-      '[Hybrid Canvas Observability] ' +
-        message,
-      error,
-    )
-  } catch {
-    // There is deliberately no further fallback.
-  }
-}
-`,
-  )
-}
-
-async function createDiagnosticBufferTests() {
-  await writeText(
-    PATHS.diagnosticBufferTest,
-    String.raw`
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from 'vitest'
-import {
-  clearDiagnosticLogs,
-  configureDiagnosticBuffer,
-  formatDiagnosticLogs,
-  getRecentLogEntries,
-  recordDiagnosticLog,
-} from './diagnostic-buffer'
-
-describe('diagnostic buffer', () => {
-  beforeEach(() => {
-    clearDiagnosticLogs()
-    configureDiagnosticBuffer({
-      capacity: 200,
-    })
-  })
-
-  it('records structured log entries', () => {
-    recordDiagnosticLog(
-      'error',
-      'canvas save failed',
-      {
-        scope: 'workspace',
-        operation: 'save',
-        documentId: 'document-1',
-      },
-      '2026-07-24T00:00:00.000Z',
-    )
-
-    expect(getRecentLogEntries()).toEqual([
-      expect.objectContaining({
-        level: 'error',
-        message: 'canvas save failed',
-        scope: 'workspace',
-        timestamp:
-          '2026-07-24T00:00:00.000Z',
-        context: {
-          operation: 'save',
-          documentId: 'document-1',
-        },
-      }),
-    ])
-  })
-
-  it('keeps only the newest bounded entries', () => {
-    configureDiagnosticBuffer({
-      capacity: 2,
-    })
-
-    recordDiagnosticLog(
-      'info',
-      'one',
-      {},
-      new Date().toISOString(),
-    )
-
-    recordDiagnosticLog(
-      'info',
-      'two',
-      {},
-      new Date().toISOString(),
-    )
-
-    recordDiagnosticLog(
-      'info',
-      'three',
-      {},
-      new Date().toISOString(),
-    )
-
-    expect(
-      getRecentLogEntries().map(
-        (entry) => entry.message,
-      ),
-    ).toEqual(['two', 'three'])
-  })
-
-  it('redacts sensitive keys and bearer tokens', () => {
-    recordDiagnosticLog(
-      'error',
-      'request failed',
-      {
-        accessToken: 'private-token',
-        authorization:
-          'Bearer very-private-token',
-        endpoint:
-          'https://user:password@example.com',
-      },
-      new Date().toISOString(),
-    )
-
-    const [entry] = getRecentLogEntries()
-
-    expect(entry?.context.accessToken).toBe(
-      '[REDACTED]',
-    )
-
-    expect(
-      entry?.context.authorization,
-    ).toBe('[REDACTED]')
-
-    expect(entry?.context.endpoint).not.toContain(
-      'password',
-    )
-  })
-
-  it('serializes Error and circular values safely', () => {
-    const circular: {
-      self?: unknown
-    } = {}
-
-    circular.self = circular
-
-    recordDiagnosticLog(
-      'error',
-      'unexpected failure',
-      {
-        cause: new Error('broken'),
-        circular,
-      },
-      new Date().toISOString(),
-    )
-
-    const [entry] = getRecentLogEntries()
-
-    expect(entry?.context.cause).toContain(
-      'broken',
-    )
-
-    expect(entry?.context.circular).toContain(
-      '[Circular]',
-    )
-  })
-
-  it('returns cloned immutable snapshots', () => {
-    recordDiagnosticLog(
-      'info',
-      'snapshot',
-      {
-        operation: 'test',
-      },
-      new Date().toISOString(),
-    )
-
-    const first = getRecentLogEntries()
-    const second = getRecentLogEntries()
-
-    expect(first).not.toBe(second)
-    expect(first[0]?.context).not.toBe(
-      second[0]?.context,
-    )
-  })
-
-  it('formats readable diagnostic output', () => {
-    recordDiagnosticLog(
-      'warn',
-      'retrying operation',
-      {
-        scope: 'document',
-        attempt: 2,
-      },
-      '2026-07-24T00:00:00.000Z',
-    )
-
-    const formatted = formatDiagnosticLogs(
-      getRecentLogEntries(),
-    )
-
-    expect(formatted).toContain(
-      '2026-07-24T00:00:00.000Z WARN [document]',
-    )
-
-    expect(formatted).toContain(
-      'attempt: 2',
-    )
-  })
-})
-`,
-  )
-}
-
-async function replaceObservabilityLog() {
-  await writeText(
-    PATHS.observabilityLog,
-    String.raw`
-import {
-  recordDiagnosticLog,
-} from './diagnostic-buffer'
-import type { MetricRecorder } from './metric'
-import {
-  getMetricsRecorder,
-  setMetricsRecorder,
-} from './metric'
-
-export type LogLevel =
-  | 'trace'
-  | 'debug'
-  | 'info'
-  | 'warn'
-  | 'error'
-
-export interface LogContext {
-  readonly scope?: string
-  readonly correlationId?: string
-  readonly [key: string]: unknown
-}
-
-export type LogSink = (
-  level: LogLevel,
-  message: string,
-  context: LogContext,
-  timestamp: string,
-) => void
-
-let sink: LogSink = defaultConsoleSink
-
-function defaultConsoleSink(
-  level: LogLevel,
-  message: string,
-  context: LogContext,
-  timestamp: string,
-): void {
-  const prefix = context.scope
-    ? '[' + context.scope + ']'
-    : ''
-
-  const formatted = [
-    timestamp,
-    level.toUpperCase(),
-    prefix,
-    message,
-  ]
-    .filter(Boolean)
-    .join(' ')
-
-  switch (level) {
-    case 'trace':
-    case 'debug':
-      console.debug(formatted, context)
-      return
-
-    case 'info':
-      console.info(formatted, context)
-      return
-
-    case 'warn':
-      console.warn(formatted, context)
-      return
-
-    case 'error':
-      console.error(formatted, context)
-      return
-  }
-}
-
-export function setLogSink(
-  next: LogSink,
-): void {
-  sink = next
-}
-
-export function log(
-  level: LogLevel,
-  message: string,
-  context: LogContext = {},
-): void {
-  const timestamp = new Date().toISOString()
-
-  recordDiagnosticLog(
-    level,
-    message,
-    context,
-    timestamp,
-  )
-
-  try {
-    sink(
-      level,
-      message,
-      context,
-      timestamp,
-    )
-  } catch (error: unknown) {
-    // Logging must not recursively become a fatal application error.
-    try {
-      console.error(
-        '[Hybrid Canvas Observability] Log sink failed',
-        {
-          level,
-          message,
-          error,
-        },
-      )
-    } catch {
-      // No further fallback is safe.
-    }
-  }
-}
-
-export function trace(
-  message: string,
-  context?: LogContext,
-): void {
-  log('trace', message, context)
-}
-
-export function debug(
-  message: string,
-  context?: LogContext,
-): void {
-  log('debug', message, context)
-}
-
-export function info(
-  message: string,
-  context?: LogContext,
-): void {
-  log('info', message, context)
-}
-
-export function warn(
-  message: string,
-  context?: LogContext,
-): void {
-  log('warn', message, context)
-}
-
-export function error(
-  message: string,
-  context?: LogContext,
-): void {
-  log('error', message, context)
-}
-
-export function initObservability(
-  options?: {
-    readonly appName?: string
-    readonly sink?: LogSink
-    readonly metrics?: MetricRecorder
-  },
-): void {
-  if (options?.sink) {
-    setLogSink(options.sink)
-  }
-
-  if (options?.metrics) {
-    setMetricsRecorder(options.metrics)
-  } else {
-    getMetricsRecorder()
-  }
-
-  info('observability initialized', {
-    scope: 'observability',
-    appName:
-      options?.appName ??
-      'hybrid-canvas',
-  })
-}
-`,
-  )
-}
-
-async function exportDiagnosticBuffer() {
-  await transformFile(
-    PATHS.observabilityPublicApi,
-    (source) => {
-      if (
-        source.includes(
-          "from './diagnostic-buffer'",
-        )
-      ) {
-        return source
-      }
-
-      const addition = [
-        '',
-        'export type {',
-        '  DiagnosticLogEntry,',
-        "} from './diagnostic-buffer'",
-        '',
-        'export {',
-        '  clearDiagnosticLogs,',
-        '  configureDiagnosticBuffer,',
-        '  formatDiagnosticLogs,',
-        '  getRecentLogEntries,',
-        "} from './diagnostic-buffer'",
-        '',
-      ].join('\n')
-
-      return source.trimEnd() + addition
-    },
-  )
-}
-
-async function integrateFatalSnapshot() {
-  await transformFile(
-    PATHS.fatalIncident,
-    (source) => {
-      let next = source
-
-      if (
-        !next.includes(
-          "from '@hybrid-canvas/foundations-observability'",
-        )
-      ) {
-        next = [
-          "import {",
-          '  formatDiagnosticLogs,',
-          '  getRecentLogEntries,',
-          "  type DiagnosticLogEntry,",
-          "} from '@hybrid-canvas/foundations-observability'",
-          '',
-          next,
-        ].join('\n')
-      }
-
-      if (
-        !next.includes(
-          'readonly recentLogs: readonly DiagnosticLogEntry[]',
-        )
-      ) {
-        next = next.replace(
-          '  readonly context: Readonly<Record<string, string>>\n}',
-          [
-            '  readonly context: Readonly<Record<string, string>>',
-            '  readonly recentLogs: readonly DiagnosticLogEntry[]',
-            '}',
-          ].join('\n'),
-        )
-      }
-
-      if (
-        !next.includes(
-          'const recentLogs = getRecentLogEntries',
-        )
-      ) {
-        next = next.replace(
-          '  const occurredAt = new Date().toISOString()\n',
-          [
-            '  const occurredAt = new Date().toISOString()',
-            '  const recentLogs = getRecentLogEntries(100)',
-            '',
-          ].join('\n'),
-        )
-      }
-
-      if (
-        !next.includes(
-          'recentLogs,',
-        )
-      ) {
-        next = next.replace(
-          '    context: sanitizeContext(input.context),\n',
-          [
-            '    context: sanitizeContext(input.context),',
-            '    recentLogs,',
-            '',
-          ].join('\n'),
-        )
-      }
-
-      if (
-        !next.includes(
-          'formatDiagnosticLogs(incident.recentLogs)',
-        )
-      ) {
-        const marker =
-          "    incident.componentStack\n      ? '\\nReact Component Stack:\\n' +\n        incident.componentStack\n      : undefined,\n"
-
-        if (!next.includes(marker)) {
-          throw new Error(
-            'Could not locate the fatal diagnostic component stack section.',
-          )
-        }
-
-        const replacement = [
-          marker.trimEnd(),
-          '    incident.recentLogs.length > 0',
-          "      ? '\\n最近的结构化日志:\\n' +",
-          '        formatDiagnosticLogs(incident.recentLogs)',
-          '      : undefined,',
-          '',
-        ].join('\n')
-
-        next = next.replace(
-          marker,
-          replacement,
-        )
-      }
-
-      return next
-    },
-  )
-}
-
-async function createArchitectureCheck() {
-  await writeText(
-    PATHS.architectureCheck,
-    String.raw`
-#!/usr/bin/env node
-
-import {
-  existsSync,
-  readFileSync,
-} from 'node:fs'
-import path from 'node:path'
-import process from 'node:process'
-
-const ROOT = process.cwd()
-const failures = []
-
-const bufferPath =
-  'foundations/observability/src/diagnostic-buffer.ts'
-
-const logPath =
-  'foundations/observability/src/log.ts'
-
-const publicApiPath =
-  'foundations/observability/src/public-api.ts'
-
-const fatalIncidentPath =
-  'apps/desktop/src/fatal/fatal-incident.ts'
-
-for (const relativePath of [
-  bufferPath,
-  logPath,
-  publicApiPath,
-  fatalIncidentPath,
-]) {
-  if (!existsSync(path.join(ROOT, relativePath))) {
-    failures.push(
-      'Missing diagnostic observability file: ' +
-        relativePath,
-    )
-  }
-}
-
-if (failures.length === 0) {
-  const buffer = read(bufferPath)
-  const log = read(logPath)
-  const publicApi = read(publicApiPath)
-  const fatalIncident = read(fatalIncidentPath)
-
-  requireText(
-    buffer,
-    'DEFAULT_CAPACITY',
-    'Diagnostic logs are not bounded.',
-  )
-
-  requireText(
-    buffer,
-    'SENSITIVE_KEY_PATTERN',
-    'Diagnostic context has no sensitive-key redaction.',
-  )
-
-  requireText(
-    buffer,
-    'WeakSet<object>',
-    'Diagnostic serialization has no circular-reference protection.',
-  )
-
-  requireText(
-    log,
-    'recordDiagnosticLog(',
-    'The main log path does not record diagnostic entries.',
-  )
-
-  requireText(
-    log,
-    'Log sink failed',
-    'Log sink failures are not isolated.',
-  )
-
-  requireText(
-    publicApi,
-    'getRecentLogEntries',
-    'Diagnostic log snapshots are not exported.',
-  )
-
-  requireText(
-    fatalIncident,
-    'recentLogs',
-    'Fatal incidents do not freeze recent logs.',
-  )
-
-  requireText(
-    fatalIncident,
-    'formatDiagnosticLogs(incident.recentLogs)',
-    'Fatal diagnostic text does not contain recent logs.',
-  )
-}
-
-if (failures.length > 0) {
-  console.error(
-    [
-      'Diagnostic observability architecture checks failed:',
-      ...failures.map(
-        (failure) => '- ' + failure,
-      ),
-    ].join('\n'),
-  )
-
-  process.exitCode = 1
+if (changedFiles.length === 0) {
+  console.log('无需修改，脚本已经应用过。')
 } else {
-  console.log(
-    'Diagnostic observability architecture checks passed.',
-  )
-}
+  console.log(`已修改 ${changedFiles.length} 个文件：`)
 
-function read(relativePath) {
-  return readFileSync(
-    path.join(ROOT, relativePath),
-    'utf8',
-  )
-}
-
-function requireText(
-  source,
-  expected,
-  failure,
-) {
-  if (!source.includes(expected)) {
-    failures.push(failure)
+  for (const file of changedFiles) {
+    console.log(`- ${file.relativePath}`)
   }
 }
-`,
-  )
-}
 
-async function registerArchitectureCheck() {
-  await transformFile(
-    PATHS.package,
-    (source) => {
-      const packageJson = JSON.parse(source)
+console.log('')
+console.log('TypeScript 依赖保持不变。')
+console.log('')
+console.log('请继续执行：')
+console.log('  pnpm format:check')
+console.log('  pnpm lint')
+console.log('  pnpm test:architecture')
+console.log('  pnpm typecheck')
+console.log('  pnpm test')
+console.log('  pnpm build')
 
-      const command =
-        'node tests/architecture/check-diagnostic-observability.mjs'
+async function updateRootPackage() {
+  const relativePath = 'package.json'
+  let text = await load(relativePath)
 
-      const current =
-        packageJson.scripts?.['test:architecture']
-
-      if (typeof current !== 'string') {
-        throw new Error(
-          'package.json is missing test:architecture.',
-        )
-      }
-
-      if (!current.includes(command)) {
-        packageJson.scripts['test:architecture'] =
-          current + ' && ' + command
-      }
-
-      return (
-        JSON.stringify(packageJson, null, 2) +
-        '\n'
-      )
-    },
-  )
-}
-
-async function transformFile(
-  relativePath,
-  transform,
-) {
-  const absolutePath = resolvePath(relativePath)
-  const source = await readFile(
-    absolutePath,
-    'utf8',
-  )
-
-  const nextSource = transform(source)
-
-  if (nextSource === source) {
-    console.log(
-      relativePath + ': no changes required.',
-    )
-    return
-  }
-
-  await writeFile(
-    absolutePath,
-    normalizeContent(nextSource),
-    'utf8',
-  )
-
-  console.log(relativePath + ': updated.')
-}
-
-async function writeText(
-  relativePath,
-  content,
-) {
-  const absolutePath = resolvePath(relativePath)
-
-  await mkdir(path.dirname(absolutePath), {
-    recursive: true,
+  text = migrateExact({
+    text,
+    relativePath,
+    description: '根构建脚本',
+    oldValue:
+      '    "build": "turbo run build",\n' +
+      '    "build:desktop": "pnpm --filter @hybrid-canvas/desktop build",',
+    newValue:
+      '    "build": "pnpm build:desktop",\n' +
+      '    "build:desktop": "turbo run build --filter=@hybrid-canvas/desktop",',
   })
 
-  await writeFile(
+  validateJson(relativePath, text)
+
+  const manifest = JSON.parse(stripBom(text))
+
+  if (manifest.scripts?.build !== 'pnpm build:desktop') {
+    fail(`${relativePath}：根 build 脚本配置错误`)
+  }
+
+  if (
+    manifest.scripts?.['build:desktop'] !==
+    'turbo run build --filter=@hybrid-canvas/desktop'
+  ) {
+    fail(`${relativePath}：build:desktop 脚本配置错误`)
+  }
+
+  update(relativePath, text)
+}
+
+async function updateTurboConfig() {
+  const relativePath = 'turbo.json'
+  let text = await load(relativePath)
+
+  text = migrateExact({
+    text,
+    relativePath,
+    description: '桌面构建前置任务',
+    oldValue:
+      '    "build": {\n' +
+      '      "dependsOn": ["^build"],',
+    newValue:
+      '    "build": {\n' +
+      '      "dependsOn": ["^typecheck"],',
+  })
+
+  text = migrateExact({
+    text,
+    relativePath,
+    description: '构建输出目录',
+    oldValue:
+      '      "outputs": ["dist/**", "build/**", ".vite/**", "coverage/**"]',
+    newValue:
+      '      "outputs": ["dist/**", "build/**", ".vite/**"]',
+  })
+
+  for (const task of [
+    'test:unit',
+    'test:integration',
+    'test:architecture',
+  ]) {
+    text = migrateExact({
+      text,
+      relativePath,
+      description: `${task} 前置任务`,
+      oldValue:
+        `    "${task}": {\n` +
+        '      "dependsOn": ["^build"],',
+      newValue:
+        `    "${task}": {\n` +
+        '      "dependsOn": ["^typecheck"],',
+    })
+  }
+
+  validateJson(relativePath, text)
+
+  const turbo = JSON.parse(text)
+
+  if (
+    JSON.stringify(turbo.tasks?.build?.dependsOn) !==
+    JSON.stringify(['^typecheck'])
+  ) {
+    fail(`${relativePath}：build 必须依赖 ^typecheck`)
+  }
+
+  for (const task of [
+    'test:unit',
+    'test:integration',
+    'test:architecture',
+  ]) {
+    if (
+      JSON.stringify(turbo.tasks?.[task]?.dependsOn) !==
+      JSON.stringify(['^typecheck'])
+    ) {
+      fail(`${relativePath}：${task} 必须依赖 ^typecheck`)
+    }
+  }
+
+  update(relativePath, text)
+}
+
+async function updateWindowsCi() {
+  const relativePath = '.github/workflows/quality.yml'
+  let text = await load(relativePath)
+
+  const windowsJobMarker = '  windows-desktop:\n'
+
+  if (!text.includes(windowsJobMarker)) {
+    const rustJobAnchor =
+      '  rust:\n' +
+      '    name: Rust\n'
+
+    assertOccurrence({
+      text,
+      value: rustJobAnchor,
+      relativePath,
+      description: 'Rust CI 任务定位点',
+      expected: 1,
+    })
+
+    text = text.replace(
+      rustJobAnchor,
+      `${createWindowsJob()}${rustJobAnchor}`,
+    )
+  } else {
+    assertOccurrence({
+      text,
+      value: windowsJobMarker,
+      relativePath,
+      description: 'Windows Desktop CI 任务',
+      expected: 1,
+    })
+  }
+
+  update(relativePath, text)
+}
+
+async function updateSourcePackages() {
+  const buildLinePattern =
+    /^    "build": "tsc (?:--project|-p) tsconfig\.json --noEmit",\r?\n/m
+
+  for (const relativePath of sourcePackagePaths) {
+    let text = await load(relativePath)
+
+    const matches =
+      text.match(
+        new RegExp(buildLinePattern.source, 'gm'),
+      ) ?? []
+
+    if (matches.length > 1) {
+      fail(
+        `${relativePath}：发现多个 tsc --noEmit build 脚本`,
+      )
+    }
+
+    if (matches.length === 1) {
+      text = text.replace(buildLinePattern, '')
+    }
+
+    validateJson(relativePath, text)
+
+    const manifest = JSON.parse(stripBom(text))
+
+    if (manifest.scripts?.build !== undefined) {
+      fail(
+        `${relativePath}：源码包不应保留 build 脚本`,
+      )
+    }
+
+    if (typeof manifest.scripts?.typecheck !== 'string') {
+      fail(
+        `${relativePath}：源码包必须提供 typecheck 脚本`,
+      )
+    }
+
+    update(relativePath, text)
+  }
+}
+
+function createWindowsJob() {
+  return `  windows-desktop:
+    name: Windows Desktop
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.0
+          run_install: false
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck workspace
+        run: pnpm typecheck
+
+      - name: Build desktop frontend
+        run: pnpm build
+
+      - name: Check Windows native target
+        run: cargo check -p hybrid-canvas-desktop --all-targets --all-features
+
+      - name: Build Windows desktop binary
+        run: pnpm --filter @hybrid-canvas/desktop exec tauri build --debug --no-bundle
+
+`
+}
+
+async function load(relativePath) {
+  if (files.has(relativePath)) {
+    return files.get(relativePath).updated
+  }
+
+  const absolutePath = resolve(root, relativePath)
+
+  let original
+
+  try {
+    original = await readFile(absolutePath, 'utf8')
+  } catch (error) {
+    fail(
+      `${relativePath}：无法读取文件：${formatError(error)}`,
+    )
+  }
+
+  files.set(relativePath, {
+    relativePath,
     absolutePath,
-    normalizeContent(content),
-    'utf8',
-  )
+    original,
+    updated: original,
+  })
 
-  console.log(relativePath + ': written.')
+  return original
 }
 
-function normalizeContent(source) {
-  return (
-    source
-      .replace(/^\n/, '')
-      .replace(/\r\n/g, '\n')
-      .trimEnd() + '\n'
-  )
+function update(relativePath, updated) {
+  const file = files.get(relativePath)
+
+  if (!file) {
+    fail(`${relativePath}：内部文件状态错误`)
+  }
+
+  file.updated = updated
 }
 
-function resolvePath(relativePath) {
-  return path.join(ROOT, relativePath)
+function migrateExact({
+  text,
+  relativePath,
+  description,
+  oldValue,
+  newValue,
+}) {
+  if (text.includes(newValue)) {
+    assertOccurrence({
+      text,
+      value: newValue,
+      relativePath,
+      description,
+      expected: 1,
+    })
+
+    if (text.includes(oldValue)) {
+      fail(
+        `${relativePath}：同时存在新旧${description}`,
+      )
+    }
+
+    return text
+  }
+
+  assertOccurrence({
+    text,
+    value: oldValue,
+    relativePath,
+    description,
+    expected: 1,
+  })
+
+  return text.replace(oldValue, newValue)
 }
 
-main().catch((error) => {
-  console.error('')
-  console.error(
-    'Diagnostic observability refactor failed.',
-  )
-  console.error(
-    error instanceof Error
-      ? error.stack ?? error.message
-      : error,
-  )
-  process.exitCode = 1
-})
+function assertOccurrence({
+  text,
+  value,
+  relativePath,
+  description,
+  expected,
+}) {
+  const count = text.split(value).length - 1
+
+  if (count !== expected) {
+    fail(
+      `${relativePath}：${description}应出现 ${expected} 次，实际为 ${count} 次`,
+    )
+  }
+}
+
+function validateJson(relativePath, text) {
+  try {
+    JSON.parse(stripBom(text))
+  } catch (error) {
+    fail(
+      `${relativePath}：修改后不是有效 JSON：${formatError(error)}`,
+    )
+  }
+}
+
+function stripBom(text) {
+  return text.replace(/^\uFEFF/, '')
+}
+
+function formatError(error) {
+  return error instanceof Error
+    ? error.message
+    : String(error)
+}
+
+function fail(message) {
+  console.error(message)
+  process.exit(1)
+}

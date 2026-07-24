@@ -25,7 +25,6 @@
     }
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json --noEmit",
     "check": "tsc --project tsconfig.json --noEmit",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "clean": "rimraf .turbo *.tsbuildinfo"
