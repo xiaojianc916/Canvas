@@ -4,7 +4,7 @@ import type {
   CanvasSessionSnapshot,
 } from '@hybrid-canvas/document'
 import type { EditorSession } from '@hybrid-canvas/canvas/application'
-import { EditorSessionHost, useEditor } from '@hybrid-canvas/canvas/react'
+import { EditorSessionHost } from '@hybrid-canvas/canvas/react'
 import { ConfirmationDialog } from '@hybrid-canvas/design-system'
 import type {
   CanvasSessionId,
@@ -19,13 +19,10 @@ import {
   WorkspaceSurface,
 } from '@hybrid-canvas/workspace/react'
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
-import { useValue } from 'tldraw'
 
 import { UiErrorBoundary } from '../boundaries/UiErrorBoundary'
 import { DesktopTitleBar } from '../chrome/DesktopTitleBar'
 import { reportUiError as reportError } from '../ui/ui-feedback'
-import { CanvasInspectorContent } from './inspector/CanvasInspectorContent'
-import { createToolInspectorRegistry } from './inspector/tools/ToolInspectorRegistry'
 import { SelectionTransformStatus } from './status/SelectionTransformStatus'
 
 const EMPTY_EDITOR_SESSION_SNAPSHOT = Object.freeze({
@@ -76,28 +73,6 @@ export function WorkspaceContainer({
   onWindowClose,
   onWindowStartDragging,
 }: WorkspaceContainerProps) {
-  const editor = useEditor()
-
-  const inspectorSelectionKey = useValue('workspace inspector selection key', () => {
-    if (!editor) {
-      return ''
-    }
-
-    const selectedIds = editor.getSelectedShapeIds().map(String).sort()
-
-    if (selectedIds.length > 0) {
-      return 'selection:' + selectedIds.join('|')
-    }
-
-    const toolId = editor.getCurrentToolId()
-
-    if (toolId === 'select' || toolId === 'hand') {
-      return ''
-    }
-
-    return 'tool:' + toolId
-  }, [editor])
-
   const workbench = useSyncExternalStore(
     port.workspace.subscribe,
     port.workspace.getSnapshot,
@@ -126,11 +101,6 @@ export function WorkspaceContainer({
   const activeEditorSession = activeSessionId
     ? port.canvases.getEditorSession(activeSessionId)
     : null
-
-  const toolInspectorRegistry = useMemo(
-    () => createToolInspectorRegistry(activeEditorSession?.registration.toolInspectors ?? []),
-    [activeEditorSession],
-  )
 
   const pages = useSyncExternalStore(
     activeEditorSession?.subscribe ?? EMPTY_SUBSCRIBE,
@@ -301,13 +271,7 @@ export function WorkspaceContainer({
   return (
     <WorkspaceShell
       actions={actions}
-      inspector={
-        <CanvasInspectorContent
-          hasActiveCanvas={workbench.activeCanvas !== null}
-          toolInspectorRegistry={toolInspectorRegistry}
-        />
-      }
-      inspectorSelectionKey={inspectorSelectionKey}
+      inspector={null}
       mainContent={mainContent}
       model={model}
       overlays={

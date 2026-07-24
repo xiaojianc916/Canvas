@@ -1,4 +1,4 @@
-﻿@import "tldraw/tldraw.css";
+@import "tldraw/tldraw.css";
 @import "@hybrid-canvas/design-system/styles.css";
 @import "tailwindcss" source("../../../");
 @import "./styles/tldraw-overrides.css";
@@ -193,3 +193,185 @@ body {
     animation-iteration-count: 1;
   }
 }
+
+
+/* hybrid-canvas:tldraw-official-ui */
+
+/*
+ * tldraw 官方 UI 的产品布局层。
+ *
+ * 这里只改变位置、尺寸、边框和侧栏布局。
+ * 工具、actions、selection、styles 和 shape 更新仍由 tldraw 管理。
+ */
+
+:root {
+  --hc-tldraw-style-sidebar-width: 276px;
+}
+
+.hc-editor-layout {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr)
+    var(--hc-tldraw-style-sidebar-width);
+  grid-template-rows: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.hc-editor-canvas {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.hc-tldraw-style-sidebar {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  grid-column: 2;
+    box-shadow: none !important;
+  background: transparent !important;
+}
+
+.hc-tldraw-style-sidebar__content .tlui-style-panel {
+  padding: 8px !important;
+}
+
+.hc-tldraw-style-sidebar__content .tlui-style-panel__section {
+  width: 100%;
+}
+
+/*
+ * 官方工具栏。
+ *
+ * DefaultToolbar 继续负责：
+ * - 官方工具定义
+ * - 当前工具状态
+ * - 快捷键
+ * - overflow
+ * - ActionsMenu
+ * - QuickActions
+ * - tool lock
+ */
+.hc-tldraw-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 30;
+  width: min(1200px, calc(100% - 160px));
+  min-width: 0;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.hc-tldraw-toolbar .tlui-main-toolbar {
+  position: static !important;
+  inset: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  transform: none !important;
+}
+
+.hc-tldraw-toolbar .tlui-main-toolbar__inner {
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+/*
+ * 页面菜单仍然使用 tldraw DefaultPageMenu。
+ */
+.hc-tldraw-page-menu {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 31;
+  pointer-events: auto;
+}
+
+.hc-tldraw-page-menu .tlui-page-menu {
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+}
+
+/*
+ * 缩放、适应画布、Minimap 等使用官方 DefaultNavigationPanel。
+ */
+.hc-tldraw-navigation {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 30;
+  pointer-events: auto;
+}
+
+.hc-tldraw-navigation .tlui-navigation-panel {
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+}
+
+/*
+ * 原来的 app.css 隐藏了 .tlui-navigation-zone。
+ * 我们直接挂载 DefaultNavigationPanel，因此只确保新容器可见。
+ */
+.hc-tldraw-navigation,
+.hc-tldraw-navigation .tlui-navigation-panel {
+  display: block;
+}
+
+/*
+ * 避免 tldraw 官方浮层被 Canvas 右侧栏裁切。
+ */
+.hc-editor-canvas .tlui-popover__content,
+.hc-editor-canvas .tlui-dropdown-menu__content,
+.hc-editor-canvas [data-radix-popper-content-wrapper] {
+  z-index: var(--ui-z-popover) !important;
+}
+
+/*
+ * 中等尺寸窗口缩小右侧栏。
+ */
+@media (max-width: 1100px) {
+  :root {
+    --hc-tldraw-style-sidebar-width: 248px;
+  }
+
+  .hc-tldraw-toolbar {
+    width: calc(100% - 112px);
+  }
+}
+
+/*
+ * 窄窗口仍然保留 StylePanel，但让它以画布内浮动抽屉显示，
+ * 避免将画布主体压缩到不可用。
+ */
+@media (max-width: 760px) {
+  .hc-editor-layout {
+    position: relative;
+    display: block;
+  }
+
+  .hc-editor-canvas {
+    width: 100%;
+    height: 100%;
+  }
+
+  .hc-tldraw-style-sidebar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(276px, 82vw);
+    box-shadow: -12px 0 32px rgb(0 0 0 / 12%);
+  }
+
+  .hc-tldraw-toolbar {
+    right: 8px;
+    left: 56px;
+    width: auto;
+    transform: none;
+  }
+}
+

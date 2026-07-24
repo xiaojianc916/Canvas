@@ -4,9 +4,9 @@ export {
   HYBRID_CANVAS_EXTENSION_API_VERSION,
   type HybridCanvasExtension,
 } from '../contracts/public-api'
-export { CanvasToolbar } from './CanvasToolbar'
-export type { CanvasToolbarProps } from './CanvasToolbar'
 export { EditorCanvas, type EditorCanvasProps } from './EditorCanvas'
+export { TldrawOfficialUi } from './TldrawOfficialUi'
+export type { TldrawOfficialUiProps } from './TldrawOfficialUi'
 export {
   EditorSessionHost,
   type EditorSessionHostEntry,
