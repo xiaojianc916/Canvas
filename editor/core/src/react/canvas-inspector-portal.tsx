@@ -1,6 +1,5 @@
 import {
   createContext,
-  isValidElement,
   type ReactNode,
   useCallback,
   useContext,
@@ -10,12 +9,9 @@ import {
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { PropertiesInspectorContent } from './PropertiesInspectorContent'
 import {
   DefaultStylePanel,
-  DefaultStylePanelContent,
-  TldrawUiIcon,
-  type TLUiActionItem,
-  useActions,
   useEditor,
   useRelevantStyles,
   useValue,
@@ -244,231 +240,26 @@ export function CanvasInspectorStylePanel({
         isMobile={false}
         styles={styles}
       >
-        <DefaultStylePanelContent />
-
-        {selectedShapeCount > 0 ? (
-          <SelectionActionSections
-            selectedShapeCount={
-              selectedShapeCount
-            }
-          />
-        ) : null}
-      </DefaultStylePanel>
-    ) : (
-      <div
-        className="tlui-style-panel tlui-style-panel__wrapper"
-        data-testid="style.panel"
-      >
-        <SelectionActionSections
+        <PropertiesInspectorContent
           selectedShapeCount={
             selectedShapeCount
           }
+          styles={styles}
+        />
+      </DefaultStylePanel>
+    ) : (
+      <div
+        className="hc-properties-panel hc-properties-panel--actions-only"
+      >
+        <PropertiesInspectorContent
+          selectedShapeCount={
+            selectedShapeCount
+          }
+          styles={null}
         />
       </div>
     ),
     context.host,
-  )
-}
-
-interface SelectionActionSectionsProps {
-  readonly selectedShapeCount: number
-}
-
-function SelectionActionSections({
-  selectedShapeCount,
-}: SelectionActionSectionsProps) {
-  const actions =
-    useActions()
-
-  return (
-    <>
-      {selectedShapeCount >= 2 ? (
-        <InspectorActionSection
-          label="排列"
-        >
-          <InspectorActionButton
-            action={
-              actions[
-                'align-left'
-              ]
-            }
-            title="左对齐"
-          />
-
-          <InspectorActionButton
-            action={
-              actions[
-                'align-center-horizontal'
-              ]
-            }
-            title="水平居中"
-          />
-
-          <InspectorActionButton
-            action={
-              actions[
-                'align-right'
-              ]
-            }
-            title="右对齐"
-          />
-
-          <InspectorActionButton
-            action={
-              actions[
-                'align-top'
-              ]
-            }
-            title="顶部对齐"
-          />
-
-          <InspectorActionButton
-            action={
-              actions[
-                'align-center-vertical'
-              ]
-            }
-            title="垂直居中"
-          />
-
-          <InspectorActionButton
-            action={
-              actions[
-                'align-bottom'
-              ]
-            }
-            title="底部对齐"
-          />
-
-          {selectedShapeCount >= 3 ? (
-            <>
-              <InspectorActionButton
-                action={
-                  actions[
-                    'distribute-horizontal'
-                  ]
-                }
-                title="水平分布"
-              />
-
-              <InspectorActionButton
-                action={
-                  actions[
-                    'distribute-vertical'
-                  ]
-                }
-                title="垂直分布"
-              />
-            </>
-          ) : null}
-        </InspectorActionSection>
-      ) : null}
-
-      <InspectorActionSection
-        label="对象"
-      >
-        <InspectorActionButton
-          action={
-            actions.group
-          }
-          title="编组或取消编组"
-        />
-
-        <InspectorActionButton
-          action={
-            actions.duplicate
-          }
-          title="创建副本"
-        />
-
-        <InspectorActionButton
-          action={
-            actions.delete
-          }
-          destructive
-          title="删除"
-        />
-      </InspectorActionSection>
-    </>
-  )
-}
-
-interface InspectorActionSectionProps {
-  readonly label: string
-  readonly children: ReactNode
-}
-
-function InspectorActionSection({
-  label,
-  children,
-}: InspectorActionSectionProps) {
-  return (
-    <section
-      aria-label={label}
-      className="hc-properties-inspector-section"
-    >
-      <div className="hc-properties-inspector-section__label">
-        {label}
-      </div>
-
-      <div className="hc-properties-inspector-actions">
-        {children}
-      </div>
-    </section>
-  )
-}
-
-interface InspectorActionButtonProps {
-  readonly action:
-    | TLUiActionItem
-    | undefined
-  readonly title: string
-  readonly destructive?: boolean
-}
-
-function InspectorActionButton({
-  action,
-  title,
-  destructive = false,
-}: InspectorActionButtonProps) {
-  if (
-    !action ||
-    !action.icon
-  ) {
-    return null
-  }
-
-  const icon =
-    typeof action.icon === 'string' ||
-    isValidElement(action.icon)
-      ? action.icon
-      : 'question-mark-circle'
-
-  return (
-    <button
-      aria-label={title}
-      className={
-        destructive
-          ? 'hc-properties-inspector-action hc-properties-inspector-action--destructive'
-          : 'hc-properties-inspector-action'
-      }
-      data-action-id={
-        action.id
-      }
-      onClick={() => {
-        void action.onSelect(
-          'toolbar',
-        )
-      }}
-      title={title}
-      type="button"
-    >
-      <TldrawUiIcon
-        icon={icon}
-        label={title}
-        small
-      />
-    </button>
   )
 }
 
